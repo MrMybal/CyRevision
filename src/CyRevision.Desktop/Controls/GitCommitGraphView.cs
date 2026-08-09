@@ -17,16 +17,13 @@ public sealed class GitCommitGraphView : UserControl
         Color.Parse("#55A7F3"), Color.Parse("#E56B91"), Color.Parse("#A477D4")
     ];
 
-    private readonly Canvas _canvas = new() { Background = Brushes.Transparent };
+    private readonly Canvas _canvas = new() { Background = new SolidColorBrush(Color.Parse("#0F1729")) };
+    private readonly GraphViewport _viewport;
 
     public GitCommitGraphView()
     {
-        Content = new ScrollViewer
-        {
-            Content = _canvas,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
-        };
+        _viewport = new GraphViewport(_canvas);
+        Content = _viewport;
         Rebuild();
     }
 
@@ -55,10 +52,10 @@ public sealed class GitCommitGraphView : UserControl
             return;
         }
 
-        const double nodeWidth = 248;
-        const double nodeHeight = 62;
-        const double horizontalGap = 44;
-        const double verticalGap = 24;
+        const double nodeWidth = 276;
+        const double nodeHeight = 70;
+        const double horizontalGap = 54;
+        const double verticalGap = 30;
         Dictionary<string, NodePosition> positions = new(StringComparer.Ordinal);
         List<string?> activeLanes = [];
         int largestLane = 0;
@@ -78,7 +75,7 @@ public sealed class GitCommitGraphView : UserControl
 
             largestLane = Math.Max(largestLane, lane);
             double x = 26 + lane * (nodeWidth + horizontalGap);
-            double y = 22 + index * (nodeHeight + verticalGap);
+            double y = 76 + index * (nodeHeight + verticalGap);
             positions[commit.Hash] = new NodePosition(x, y, lane);
             activeLanes[lane] = commit.ParentHashes.FirstOrDefault();
             foreach (string additionalParent in commit.ParentHashes.Skip(1))
@@ -101,7 +98,8 @@ public sealed class GitCommitGraphView : UserControl
         }
 
         _canvas.Width = Math.Max(900, 52 + (largestLane + 1) * (nodeWidth + horizontalGap));
-        _canvas.Height = 44 + commits.Length * (nodeHeight + verticalGap);
+        _canvas.Height = 110 + commits.Length * (nodeHeight + verticalGap);
+        AddGridBackground(_canvas.Width, _canvas.Height);
 
         foreach (GitGraphCommit commit in commits)
         {
@@ -135,6 +133,8 @@ public sealed class GitCommitGraphView : UserControl
             Canvas.SetTop(node, position.Y);
             _canvas.Children.Add(node);
         }
+
+        _viewport.ResetView();
     }
 
     private static Border CreateNode(
@@ -148,7 +148,7 @@ public sealed class GitCommitGraphView : UserControl
         {
             Text = $"{commit.ShortHash}  {commit.Subject}",
             FontWeight = FontWeight.SemiBold,
-            FontSize = 12,
+            FontSize = 13,
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = width - 22
         };
@@ -156,7 +156,7 @@ public sealed class GitCommitGraphView : UserControl
         {
             Text = $"{commit.AuthorName} · {commit.AuthoredAt.LocalDateTime:g}",
             Foreground = new SolidColorBrush(Color.Parse("#9DA8BE")),
-            FontSize = 10,
+            FontSize = 10.5,
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = width - 22
         };
@@ -167,7 +167,7 @@ public sealed class GitCommitGraphView : UserControl
             Height = height,
             Padding = new Thickness(10, 8),
             CornerRadius = new CornerRadius(9),
-            Background = new SolidColorBrush(isHead ? Color.Parse("#24204A") : Color.Parse("#151E33")),
+            Background = new SolidColorBrush(isHead ? Color.Parse("#302A61") : Color.Parse("#1A2740")),
             BorderBrush = new SolidColorBrush(laneColor),
             BorderThickness = new Thickness(isHead ? 2.2 : 1.2),
             Child = content
@@ -197,6 +197,28 @@ public sealed class GitCommitGraphView : UserControl
         Canvas.SetLeft(text, 28);
         Canvas.SetTop(text, 28);
         _canvas.Children.Add(text);
+    }
+
+    private void AddGridBackground(double width, double height)
+    {
+        SolidColorBrush brush = new(Color.Parse("#35425D")) { Opacity = 0.22 };
+        for (double x = 40; x < width; x += 100)
+        {
+            _canvas.Children.Add(new Line
+            {
+                StartPoint = new Point(x, 0), EndPoint = new Point(x, height),
+                Stroke = brush, StrokeThickness = 0.6, IsHitTestVisible = false
+            });
+        }
+
+        for (double y = 40; y < height; y += 100)
+        {
+            _canvas.Children.Add(new Line
+            {
+                StartPoint = new Point(0, y), EndPoint = new Point(width, y),
+                Stroke = brush, StrokeThickness = 0.6, IsHitTestVisible = false
+            });
+        }
     }
 
     private readonly record struct NodePosition(double X, double Y, int Lane);
