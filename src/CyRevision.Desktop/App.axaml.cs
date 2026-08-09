@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
 using CyRevision.Desktop.Localization;
+using CyRevision.Desktop.Documentation;
 using CyRevision.Desktop.ViewModels;
 using CyRevision.Diff;
 using CyRevision.Git;
@@ -26,6 +27,8 @@ public partial class App : Application
             ApplicationPaths paths = ApplicationPaths.CreateDefault();
             LocalizationService localization = new();
             localization.Configure(paths.ConfigurationDirectory);
+            OfflineDocumentationService documentation = new(
+                Path.Combine(AppContext.BaseDirectory, "Documentation"));
             JsonProjectCatalog catalog = new(paths.ProjectCatalogPath);
             GitCliRepositoryService gitService = new();
             GitPeerExchangeService gitExchange = new();
@@ -38,7 +41,7 @@ public partial class App : Application
             MainWindowViewModel viewModel = new(
                 catalog, gitService, paths, syncProfiles, gitExchange, assetDiff,
                 vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine,
-                localization, initialProjectPath);
+                localization, documentation, initialProjectPath);
 
             desktop.MainWindow = new MainWindow(viewModel, localization);
             desktop.Exit += (_, _) =>

@@ -1,0 +1,66 @@
+[
+  {
+    "id": "getting-started",
+    "category": "Bases",
+    "title": "Bien démarrer",
+    "summary": "Choisir un mode de projet, enregistrer un dossier et comprendre les outils facultatifs.",
+    "body": "CyRevision garde Git, la synchronisation, les sauvegardes et le VPN indépendants. Activez uniquement les modules nécessaires au projet.\n\nCRÉER UN DÉPÔT\nUtilisez Créer un dépôt pour un nouveau projet Git, ou Ouvrir un dépôt pour un dépôt existant. Ajouter un dossier enregistre un dossier pour Sync ou Backup sans imposer Git.\n\nMODES DE PROJET\n• Git : gestion locale des révisions uniquement.\n• Git + Sync : Git local et échange signé entre pairs.\n• Sync : fichiers courants synchronisés sans Git.\n• Sync + versions : synchronisation avec versioning Syncthing.\n• Backup : snapshots dédupliqués sans synchronisation continue.\n\nPRÉREQUIS\nGit et Git LFS sont requis pour les projets Git. Syncthing est nécessaire uniquement pour un mode Sync. WireGuard est nécessaire uniquement pour le VPN. Ouvrir un projet ne lance jamais implicitement un outil facultatif.",
+    "keywords": ["démarrer", "projet", "mode", "prérequis", "dossier", "dépôt"]
+  },
+  {
+    "id": "git-workflow",
+    "category": "Git",
+    "title": "Utilisation quotidienne de Git",
+    "summary": "Examiner les modifications, créer des commits, gérer les branches et consulter l'historique.",
+    "body": "ACTUALISER ET VÉRIFIER\nActualiser lit l'état du dépôt. Sélectionnez un fichier modifié pour examiner son diff avant de l'indexer. Les fichiers binaires et LFS sont identifiés explicitement.\n\nCRÉER UNE RÉVISION\n1. Vérifiez les fichiers modifiés.\n2. Indexez les modifications souhaitées.\n3. Saisissez un message de commit clair.\n4. Créez la révision.\n\nBRANCHES ET REMOTES\nCréez ou sélectionnez les branches locales dans le panneau Branches. Fetch télécharge les références distantes sans modifier le dossier de travail. Pull intègre la branche distante configurée. Push publie les commits locaux.\n\nEXPLORATEUR D'HISTORIQUE\nRecherchez les commits par message, auteur ou hash. Sélectionnez deux révisions pour une comparaison A ↔ B. Exporter un ancien fichier écrit une copie séparée sans modifier le projet.",
+    "keywords": ["git", "commit", "index", "branche", "fusion", "fetch", "pull", "push", "historique"]
+  },
+  {
+    "id": "lfs-time-machine",
+    "category": "Git LFS",
+    "title": "Time Machine LFS",
+    "summary": "Consulter, demander, exporter et restaurer les versions de fichiers lourds sans téléchargement silencieux.",
+    "body": "SUIVRE LES ASSETS LOURDS\nAjoutez des motifs comme *.uasset, *.umap, *.png ou *.fbx à Git LFS avant de committer les gros assets binaires.\n\nÉTATS DE STOCKAGE\n• Local : l'objet peut être prévisualisé, exporté ou restauré immédiatement.\n• Pair : un appareil autorisé a annoncé l'objet dans un inventaire signé.\n• Archive : l'objet a été détecté dans l'archive froide configurée.\n• Missing : aucun emplacement vérifié n'est connu.\n\nDEMANDE À LA CARTE\nSélectionnez une ancienne version absente puis Demander au pair. La demande signée expire après sept jours. Un pair autorisé publie l'objet lors d'un échange ultérieur. Une copie interrompue reprend depuis un fichier partiel vérifié et n'est acceptée qu'après validation SHA-256.\n\nRESTAURATION SÛRE\nRestaurer modifie uniquement le fichier de travail. L'opération n'indexe, ne committe, ne pousse et ne verrouille rien automatiquement.",
+    "keywords": ["lfs", "time machine", "asset", "demande", "restauration", "pair", "archive", "sha-256"]
+  },
+  {
+    "id": "sync-and-peers",
+    "category": "Synchronisation",
+    "title": "Smart Sync et pairs autorisés",
+    "summary": "Utiliser une instance Syncthing isolée et échanger des données Git/LFS signées.",
+    "body": "SYNCTHING ISOLÉ\nChaque projet CyRevision possède sa configuration, sa base, sa clé API, son adresse loopback et son port. CyRevision ne recherche, ne reconfigure, ne met en pause et n'arrête jamais une instance Syncthing personnelle.\n\nDÉMARRER ET ARRÊTER\nSélectionner l'exécutable ne le lance pas. Démarrer crée l'instance dédiée au projet. Pause, Reprendre et Arrêter concernent uniquement le processus enfant exact créé par CyRevision.\n\nADMISSION D'UN PAIR\nCréez une invitation à usage unique et transmettez son code par un canal séparé. Vérifiez l'appareil et le rôle avant d'approuver la demande. La révocation interdit les futurs échanges Git/LFS.\n\nPOLITIQUE LFS INTELLIGENTE\nLes objets courants sont toujours prioritaires. L'historique peut rester à la demande, inclure un nombre réglable de versions récentes ou être répliqué entièrement. Les inventaires signés annoncent la disponibilité sans forcer le téléchargement.",
+    "keywords": ["sync", "syncthing", "pair", "invitation", "rôle", "révocation", "smart sync"]
+  },
+  {
+    "id": "backups",
+    "category": "Sauvegarde",
+    "title": "Backups, rétention et archive froide",
+    "summary": "Créer des snapshots dédupliqués et copier les anciens contenus vers un stockage moins cher.",
+    "body": "SNAPSHOTS\nChoisissez un emplacement puis créez un snapshot. Les fichiers sont adressés par SHA-256 : un contenu identique n'est stocké qu'une fois. Les caches Unreal et sorties de compilation sont exclus par défaut.\n\nRÉTENTION\nConfigurez une chronologie, un nombre maximal de versions, un âge maximal ou un budget de stockage. La rétention est appliquée au stockage actif après la réussite du snapshot.\n\nRESTAURATION\nRestaurez de préférence dans un dossier vide. CyRevision refuse d'écraser les fichiers existants sauf lorsqu'une opération l'autorise explicitement.\n\nARCHIVE FROIDE\nSélectionnez un disque secondaire, un dossier NAS ou un stockage objet monté, puis un âge d'archivage. Les manifests admissibles et objets manquants sont copiés tout en conservant les snapshots les plus récents dans le stockage actif. L'archivage ne supprime jamais automatiquement la copie active.",
+    "keywords": ["backup", "snapshot", "restauration", "rétention", "archive", "nas", "déduplication"]
+  },
+  {
+    "id": "vpn",
+    "category": "VPN",
+    "title": "WireGuard, services et Unreal Swarm",
+    "summary": "Créer un VPN facultatif indépendant des permissions Git et Sync.",
+    "body": "MODULE INDÉPENDANT\nLe VPN peut fonctionner seul ou avec Git et Sync. Rejoindre un VPN n'accorde jamais automatiquement un accès au dépôt ou au dossier synchronisé.\n\nCONFIGURATION\nSélectionnez l'exécutable WireGuard officiel, configurez le réseau et l'adresse locale, puis enregistrez avant l'activation. CyRevision gère uniquement l'interface cyrev-* du projet sélectionné.\n\nCAPACITÉS DES PAIRS\nLes invitations peuvent décrire un accès général, Unreal Swarm, une CI ou un service. Un appareil peut rester VPN-only sans recevoir d'appartenance Git ou Sync.\n\nUNREAL SWARM\nUtilisez des adresses VPN stables pour le coordinator et les agents. Sous Windows, Swarm utilise couramment TCP 8008 et 8009 ; le pare-feu et la configuration Unreal doivent toujours autoriser ces connexions.",
+    "keywords": ["vpn", "wireguard", "swarm", "ci", "service", "tunnel", "port"]
+  },
+  {
+    "id": "unreal-plugin",
+    "category": "Unreal Engine",
+    "title": "Plugin Unreal et réservations souples",
+    "summary": "Ouvrir CyRevision depuis Unreal et signaler le travail sur un asset sans bloquer personne.",
+    "body": "INSTALLATION DU PLUGIN\nCopiez plugins/CyRevisionUnreal dans le dossier Plugins du projet Unreal, appliquez l'exemple de configuration Editor, régénérez les fichiers de projet puis compilez la cible Editor.\n\nOUVRIR DANS CYREVISION\nLe menu Tools ouvre le client CyRevision externe pour le projet actuel. Git, LFS, Sync, les backups et la plupart des comparaisons restent utilisables avec Unreal fermé.\n\nRÉSERVATIONS SOUPLES\nDans le Content Browser, choisissez Signaler : je travaille dessus. Le marqueur partage l'utilisateur, la machine et la date. Il reste informatif : aucun checkout, changement de permission ou verrou Git LFS n'est créé. Plusieurs utilisateurs peuvent continuer après l'avertissement.\n\nEXPIRATION\nLe plugin renouvelle périodiquement les marqueurs actifs. Les marqueurs inactifs expirent après la durée configurée et peuvent être nettoyés depuis l'onglet Travail en cours.",
+    "keywords": ["unreal", "plugin", "asset", "réservation", "checkout", "verrou", "content browser"]
+  },
+  {
+    "id": "troubleshooting",
+    "category": "Assistance",
+    "title": "Dépannage et sécurité",
+    "summary": "Diagnostiquer les outils absents, échanges bloqués, transferts partiels et problèmes Git courants.",
+    "body": "OUTILS NON DÉTECTÉS\nVérifiez que git --version et git lfs version fonctionnent dans un terminal. Redémarrez CyRevision après une modification du PATH. Syncthing et WireGuard restent facultatifs jusqu'à l'activation de leurs modules.\n\nPUSH REFUSÉ\nEffectuez d'abord Fetch et examinez la branche entrante. N'utilisez jamais un push forcé sans vouloir réellement remplacer l'historique distant.\n\nÉCHANGE ENTRE PAIRS BLOQUÉ\nVérifiez que l'instance Sync dédiée fonctionne, que le pair est connecté et que son certificat possède toujours un rôle autorisé à écrire Git. Un fichier présent dans le dossier d'échange n'est jamais importé sans inventaire signé d'un pair autorisé.\n\nFICHIERS LFS PARTIELS\nLes fichiers .cyrevision-partial sont des zones de reprise locales. Ne les renommez pas manuellement dans le stockage LFS. Le prochain échange vérifie le préfixe existant et termine ou redémarre proprement la copie.\n\nRÉCUPÉRATION SÛRE\nConservez le working tree, le .git actif, le stockage des backups et l'archive froide dans des emplacements séparés. Avant toute suppression, créez un snapshot et vérifiez sa restauration dans un autre dossier.",
+    "keywords": ["dépannage", "erreur", "absent", "push", "partiel", "journaux", "récupération", "sécurité"]
+  }
+]

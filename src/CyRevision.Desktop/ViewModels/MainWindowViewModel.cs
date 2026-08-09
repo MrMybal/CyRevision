@@ -5,6 +5,7 @@ using CyRevision.Backup;
 using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
 using CyRevision.Desktop.Localization;
+using CyRevision.Desktop.Documentation;
 using CyRevision.Diff;
 using CyRevision.Git;
 using CyRevision.Security;
@@ -26,6 +27,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly WireGuardConfigService _wireGuardConfiguration;
     private readonly ManagedWireGuardEngine _wireGuardEngine;
     private readonly LocalizationService _localization;
+    private readonly OfflineDocumentationService _documentationService;
     private readonly string? _initialProjectPath;
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
@@ -112,6 +114,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private VpnNodeCapabilities _selectedVpnInvitationCapability = VpnNodeCapabilities.GeneralAccess;
     private VpnPeerViewModel? _selectedVpnPeer;
     private LanguageOption? _selectedLanguage;
+    private IReadOnlyList<DocumentationTopic> _allDocumentationTopics = [];
+    private DocumentationTopic? _selectedDocumentationTopic;
+    private string _documentationSearch = string.Empty;
 
     public MainWindowViewModel(
         IProjectCatalog projectCatalog,
@@ -125,6 +130,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         WireGuardConfigService wireGuardConfiguration,
         ManagedWireGuardEngine wireGuardEngine,
         LocalizationService localization,
+        OfflineDocumentationService documentationService,
         string? initialProjectPath = null)
     {
         _projectCatalog = projectCatalog;
@@ -138,9 +144,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _wireGuardConfiguration = wireGuardConfiguration;
         _wireGuardEngine = wireGuardEngine;
         _localization = localization;
+        _documentationService = documentationService;
         _selectedLanguage = localization.Languages.FirstOrDefault(language =>
             string.Equals(language.Code, localization.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase));
         _initialProjectPath = initialProjectPath;
+        ReloadDocumentation();
     }
 
     public ObservableCollection<ProjectItemViewModel> Projects { get; } = [];
@@ -168,6 +176,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<PeerMemberViewModel> PeerMembers { get; } = [];
 
     public ObservableCollection<AdvisoryReservationViewModel> AdvisoryReservations { get; } = [];
+
+    public ObservableCollection<DocumentationTopic> DocumentationTopics { get; } = [];
 
     public IReadOnlyList<GitGraphCommit> GitGraphCommits
     {
@@ -411,8 +421,27 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             if (SetProperty(ref _selectedLanguage, value) && value is not null)
             {
                 _localization.SetLanguage(value.Code);
+                ReloadDocumentation();
             }
         }
+    }
+
+    public string DocumentationSearch
+    {
+        get => _documentationSearch;
+        set
+        {
+            if (SetProperty(ref _documentationSearch, value))
+            {
+                FilterDocumentation();
+            }
+        }
+    }
+
+    public DocumentationTopic? SelectedDocumentationTopic
+    {
+        get => _selectedDocumentationTopic;
+        set => SetProperty(ref _selectedDocumentationTopic, value);
     }
 
     public ProjectItemViewModel? SelectedProject
@@ -2973,6 +3002,37 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await RefreshCoreAsync();
         }, successMessage);
     }
+
+    private void ReloadDocumentation()
+    {
+        string? selectedId = SelectedDocumentationTopic?.Id;
+        _allDocumentationTopics = _documentationService.Load(_localization.CurrentLanguageCode);
+        FilterDocumentation(selectedId);
+    }
+
+    private void FilterDocumentation(string? preferredTopicId = null)
+    {
+        string search = DocumentationSearch.Trim();
+        IEnumerable<DocumentationTopic> filtered = _allDocumentationTopics;
+        if (search.Length > 0)
+        {
+            filtered = filtered.Where(topic =>
+                ContainsSearch(topic.Title, search) ||
+                ContainsSearch(topic.Category, search) ||
+                ContainsSearch(topic.Summary, search) ||
+                ContainsSearch(topic.Body, search) ||
+                topic.Keywords?.Any(keyword => ContainsSearch(keyword, search)) == true);
+        }
+
+        DocumentationTopic[] topics = filtered.ToArray();
+        ReplaceCollection(DocumentationTopics, topics);
+        SelectedDocumentationTopic = topics.FirstOrDefault(topic =>
+                                         string.Equals(topic.Id, preferredTopicId, StringComparison.OrdinalIgnoreCase))
+                                     ?? topics.FirstOrDefault();
+    }
+
+    private static bool ContainsSearch(string? value, string search) =>
+        value?.Contains(search, StringComparison.CurrentCultureIgnoreCase) == true;
 
     private static bool ProjectPathsEqual(string left, string right)
     {
