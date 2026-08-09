@@ -1,0 +1,151 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DesignWidth="1280"
+        d:DesignHeight="800"
+        x:Class="CyRevision.Desktop.MainWindow"
+        Title="CyRevision"
+        Width="1280"
+        Height="800"
+        MinWidth="1050"
+        MinHeight="680"
+        Background="#0B1020">
+
+    <Window.Styles>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="#6D5EF5" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="18,10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.secondary">
+            <Setter Property="Background" Value="#202941" />
+            <Setter Property="Foreground" Value="#E7EAF2" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16,9" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="#8D96AC" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#141B2D" />
+            <Setter Property="BorderBrush" Value="#29324A" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="22" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="64,*,38" ColumnDefinitions="236,*">
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="#10172A" BorderBrush="#252E45" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="236,*,Auto" Margin="18,0">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
+                    <Border Width="34" Height="34" CornerRadius="9" Background="#6D5EF5">
+                        <TextBlock Text="C" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="19" FontWeight="Bold" />
+                    </Border>
+                    <TextBlock Text="CyRevision" VerticalAlignment="Center" FontSize="19" FontWeight="SemiBold" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="Espace de travail" FontSize="12" Classes="muted" />
+                    <TextBlock Text="Aucun projet ouvert" FontSize="14" FontWeight="SemiBold" />
+                </StackPanel>
+
+                <Button Grid.Column="2" Classes="primary" Content="Nouveau projet" VerticalAlignment="Center" Click="OnCreateProjectClick" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="0" Background="#10172A" BorderBrush="#252E45" BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto,*,Auto" Margin="14,20">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="NAVIGATION" Margin="10,0,0,8" FontSize="10" FontWeight="Bold" Classes="muted" />
+                    <Border Background="#242C47" CornerRadius="8" Padding="12,10">
+                        <TextBlock Text="Projets" FontWeight="SemiBold" />
+                    </Border>
+                    <Border CornerRadius="8" Padding="12,10"><TextBlock Text="Modifications" Classes="muted" /></Border>
+                    <Border CornerRadius="8" Padding="12,10"><TextBlock Text="Historique" Classes="muted" /></Border>
+                    <Border CornerRadius="8" Padding="12,10"><TextBlock Text="Git LFS" Classes="muted" /></Border>
+                    <Border CornerRadius="8" Padding="12,10"><TextBlock Text="Pairs et accès" Classes="muted" /></Border>
+                    <Border CornerRadius="8" Padding="12,10"><TextBlock Text="Sauvegardes" Classes="muted" /></Border>
+                </StackPanel>
+
+                <Border Grid.Row="2" Background="#151D31" CornerRadius="10" Padding="13">
+                    <StackPanel Spacing="7">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Width="8" Height="8" CornerRadius="4" Background="#758098" VerticalAlignment="Center" />
+                            <TextBlock Text="Sync arrêté" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <TextBlock Text="Aucun moteur Syncthing CyRevision n'est lancé." TextWrapping="Wrap" FontSize="11" Classes="muted" />
+                        <TextBlock Text="L'installation personnelle reste isolée." TextWrapping="Wrap" FontSize="11" Foreground="#78D7B7" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" Grid.Column="1">
+            <StackPanel Margin="34,30" Spacing="24">
+                <StackPanel Spacing="7">
+                    <TextBlock Text="Créer un espace CyRevision" FontSize="28" FontWeight="Bold" />
+                    <TextBlock Text="Choisissez un point de départ. Git, Sync, LFS et Backup resteront modifiables séparément." FontSize="14" Classes="muted" />
+                </StackPanel>
+
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="18" RowSpacing="18">
+                    <Border Grid.Row="0" Grid.Column="0" Classes="card">
+                        <Grid RowDefinitions="Auto,Auto,*,Auto" MinHeight="190">
+                            <Border Width="38" Height="38" CornerRadius="9" Background="#302A65" HorizontalAlignment="Left">
+                                <TextBlock Text="G" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Foreground="#B9B2FF" />
+                            </Border>
+                            <TextBlock Grid.Row="1" Text="Git uniquement" Margin="0,15,0,6" FontSize="18" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="2" Text="Interface Git et LFS complète. Aucun service de synchronisation n'est démarré." TextWrapping="Wrap" Classes="muted" />
+                            <Button Grid.Row="3" Classes="secondary" Content="Configurer Git" HorizontalAlignment="Left" Margin="0,16,0,0" Click="OnPresetClick" />
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="0" Grid.Column="1" Classes="card">
+                        <Grid RowDefinitions="Auto,Auto,*,Auto" MinHeight="190">
+                            <Border Width="38" Height="38" CornerRadius="9" Background="#174B46" HorizontalAlignment="Left">
+                                <TextBlock Text="P2P" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11" FontWeight="Bold" Foreground="#7CE4C4" />
+                            </Border>
+                            <TextBlock Grid.Row="1" Text="Git + Sync" Margin="0,15,0,6" FontSize="18" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="2" Text="Révisions Git et objets LFS distribués entre les appareils autorisés." TextWrapping="Wrap" Classes="muted" />
+                            <Button Grid.Row="3" Classes="secondary" Content="Configurer Git + Sync" HorizontalAlignment="Left" Margin="0,16,0,0" Click="OnPresetClick" />
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="1" Grid.Column="0" Classes="card">
+                        <Grid RowDefinitions="Auto,Auto,*,Auto" MinHeight="190">
+                            <Border Width="38" Height="38" CornerRadius="9" Background="#193C5D" HorizontalAlignment="Left">
+                                <TextBlock Text="S" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Foreground="#7FC7FF" />
+                            </Border>
+                            <TextBlock Grid.Row="1" Text="Sync uniquement" Margin="0,15,0,6" FontSize="18" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="2" Text="Synchronisation simple de dossiers, sans dépôt Git et sans historique obligatoire." TextWrapping="Wrap" Classes="muted" />
+                            <Button Grid.Row="3" Classes="secondary" Content="Configurer Sync" HorizontalAlignment="Left" Margin="0,16,0,0" Click="OnPresetClick" />
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="1" Grid.Column="1" Classes="card">
+                        <Grid RowDefinitions="Auto,Auto,*,Auto" MinHeight="190">
+                            <Border Width="38" Height="38" CornerRadius="9" Background="#59351E" HorizontalAlignment="Left">
+                                <TextBlock Text="B" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Foreground="#FFBF7A" />
+                            </Border>
+                            <TextBlock Grid.Row="1" Text="Sync + versions" Margin="0,15,0,6" FontSize="18" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="2" Text="Synchronisation avec sauvegardes et durée de conservation configurable." TextWrapping="Wrap" Classes="muted" />
+                            <Button Grid.Row="3" Classes="secondary" Content="Configurer les versions" HorizontalAlignment="Left" Margin="0,16,0,0" Click="OnPresetClick" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Grid.Column="1" Background="#0E1526" BorderBrush="#252E45" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto" Margin="16,0">
+                <TextBlock x:Name="StatusText" Text="Prêt — aucun processus de synchronisation actif" VerticalAlignment="Center" FontSize="11" Classes="muted" />
+                <TextBlock Grid.Column="1" Text="Architecture initiale" VerticalAlignment="Center" FontSize="11" Classes="muted" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
+
