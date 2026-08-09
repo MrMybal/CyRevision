@@ -9,6 +9,8 @@ public sealed record ApplicationPaths(
 
     public string ManagedSyncthingDirectory => Path.Combine(DataDirectory, "syncthing");
 
+    public string VpnDirectory => Path.Combine(DataDirectory, "vpn");
+
     public string BackupDirectory => Path.Combine(DataDirectory, "backups");
 
     public static ApplicationPaths CreateDefault()

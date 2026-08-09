@@ -9,3 +9,4 @@
 - diff textures, OBJ, texte, binaire et assets Unreal simplifiés ;
 - serveur Linux, dashboard web, Docker, systemd et planificateurs ;
 - pont Unreal Editor optionnel.
+- assistant WireGuard indépendant, pairs VPN-only et profils Swarm/CI/services.

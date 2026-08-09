@@ -15,6 +15,8 @@ public sealed record ServerOptions(
 
     public string SyncthingDirectory => Path.Combine(DataDirectory, "syncthing");
 
+    public string VpnDirectory => Path.Combine(DataDirectory, "vpn");
+
     public static ServerOptions Create(IConfiguration configuration, IHostEnvironment environment)
     {
         string defaultData = OperatingSystem.IsWindows()
@@ -64,6 +66,7 @@ public sealed record ServerOptions(
         Directory.CreateDirectory(Path.GetDirectoryName(ProjectCatalogPath)!);
         Directory.CreateDirectory(BackupDirectory);
         Directory.CreateDirectory(SyncthingDirectory);
+        Directory.CreateDirectory(VpnDirectory);
     }
 
     public bool IsAllowedProjectPath(string path)
@@ -88,3 +91,17 @@ public sealed record ConfigureServerSyncRequest(string ExecutablePath);
 public sealed record CreatePeerInvitationRequest(CyRevision.Security.PeerRole Role = CyRevision.Security.PeerRole.Contributor);
 
 public sealed record PeerExchangeRequest(string ExchangeText, string VerificationCode = "");
+
+public sealed record ConfigureServerVpnRequest(
+    string? NetworkCidr = null,
+    string? LocalAddress = null,
+    int? ListenPort = null,
+    string? PublicEndpoint = null,
+    CyRevision.Vpn.VpnNodeCapabilities Capabilities = CyRevision.Vpn.VpnNodeCapabilities.ServiceHost);
+
+public sealed record CreateVpnInvitationRequest(
+    CyRevision.Vpn.VpnNodeCapabilities Capabilities = CyRevision.Vpn.VpnNodeCapabilities.GeneralAccess);
+
+public sealed record VpnPeerExchangeRequest(
+    string ExchangeText,
+    CyRevision.Vpn.VpnNodeCapabilities Capabilities = CyRevision.Vpn.VpnNodeCapabilities.GeneralAccess);

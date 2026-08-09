@@ -7,6 +7,7 @@ using CyRevision.Desktop.ViewModels;
 using CyRevision.Diff;
 using CyRevision.Git;
 using CyRevision.Sync;
+using CyRevision.Vpn;
 
 namespace CyRevision.Desktop;
 
@@ -27,8 +28,14 @@ public partial class App : Application
             GitPeerExchangeService gitExchange = new();
             AssetDiffService assetDiff = new();
             JsonSyncthingProfileStore syncProfiles = new(paths.ManagedSyncthingDirectory);
+            JsonVpnProfileStore vpnProfiles = new(paths.VpnDirectory);
+            WireGuardConfigService vpnConfiguration = new(paths.VpnDirectory);
+            ManagedWireGuardEngine vpnEngine = new(paths.VpnDirectory, vpnConfiguration);
             string? initialProjectPath = ReadProjectArgument(desktop.Args);
-            MainWindowViewModel viewModel = new(catalog, gitService, paths, syncProfiles, gitExchange, assetDiff, initialProjectPath);
+            MainWindowViewModel viewModel = new(
+                catalog, gitService, paths, syncProfiles, gitExchange, assetDiff,
+                vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine,
+                initialProjectPath);
 
             desktop.MainWindow = new MainWindow(viewModel);
             desktop.Exit += (_, _) =>

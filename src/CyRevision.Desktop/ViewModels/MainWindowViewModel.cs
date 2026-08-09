@@ -8,6 +8,7 @@ using CyRevision.Diff;
 using CyRevision.Git;
 using CyRevision.Security;
 using CyRevision.Sync;
+using CyRevision.Vpn;
 
 namespace CyRevision.Desktop.ViewModels;
 
@@ -19,6 +20,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly ISyncthingProfileStore _syncthingProfileStore;
     private readonly IGitPeerExchangeService _gitPeerExchangeService;
     private readonly IAssetDiffService _assetDiffService;
+    private readonly IVpnProfileStore _vpnProfileStore;
+    private readonly WireGuardKeyService _wireGuardKeyService;
+    private readonly WireGuardConfigService _wireGuardConfiguration;
+    private readonly ManagedWireGuardEngine _wireGuardEngine;
     private readonly string? _initialProjectPath;
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
@@ -55,6 +60,19 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private Bitmap? _assetDiffPreview;
     private PeerMemberViewModel? _selectedPeerMember;
     private string _reservationSummary = "Aucune réservation souple active.";
+    private VpnProjectProfile? _currentVpnProfile;
+    private string _vpnState = "VPN non configuré";
+    private string _vpnDetails = "WireGuard reste indépendant de Git et de Sync.";
+    private string _wireGuardExecutablePath = string.Empty;
+    private string _vpnNetworkCidr = string.Empty;
+    private string _vpnLocalAddress = string.Empty;
+    private string _vpnPublicEndpoint = string.Empty;
+    private string _vpnListenPort = "51820";
+    private string _vpnExchangeText = string.Empty;
+    private string _vpnConfigurationPreview = "Configurez WireGuard pour afficher le tunnel CyRevision.";
+    private VpnNodeCapabilities _selectedVpnCapability = VpnNodeCapabilities.GeneralAccess;
+    private VpnNodeCapabilities _selectedVpnInvitationCapability = VpnNodeCapabilities.GeneralAccess;
+    private VpnPeerViewModel? _selectedVpnPeer;
 
     public MainWindowViewModel(
         IProjectCatalog projectCatalog,
@@ -63,6 +81,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         ISyncthingProfileStore syncthingProfileStore,
         IGitPeerExchangeService gitPeerExchangeService,
         IAssetDiffService assetDiffService,
+        IVpnProfileStore vpnProfileStore,
+        WireGuardKeyService wireGuardKeyService,
+        WireGuardConfigService wireGuardConfiguration,
+        ManagedWireGuardEngine wireGuardEngine,
         string? initialProjectPath = null)
     {
         _projectCatalog = projectCatalog;
@@ -71,6 +93,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _syncthingProfileStore = syncthingProfileStore;
         _gitPeerExchangeService = gitPeerExchangeService;
         _assetDiffService = assetDiffService;
+        _vpnProfileStore = vpnProfileStore;
+        _wireGuardKeyService = wireGuardKeyService;
+        _wireGuardConfiguration = wireGuardConfiguration;
+        _wireGuardEngine = wireGuardEngine;
         _initialProjectPath = initialProjectPath;
     }
 
@@ -90,11 +116,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<AdvisoryReservationViewModel> AdvisoryReservations { get; } = [];
 
+    public ObservableCollection<VpnPeerViewModel> VpnPeers { get; } = [];
+
     public IReadOnlyList<RetentionMode> RetentionModes { get; } = Enum.GetValues<RetentionMode>();
 
     public IReadOnlyList<ProjectPreset> Presets { get; } = ProjectPresets.All;
 
     public IReadOnlyList<PeerRole> PeerRoles { get; } = Enum.GetValues<PeerRole>();
+
+    public IReadOnlyList<VpnNodeCapabilities> VpnCapabilities { get; } =
+        Enum.GetValues<VpnNodeCapabilities>().Where(value => value != VpnNodeCapabilities.None).ToArray();
 
     public ProjectItemViewModel? SelectedProject
     {
@@ -312,6 +343,78 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         private set => SetProperty(ref _reservationSummary, value);
     }
 
+    public string VpnState
+    {
+        get => _vpnState;
+        private set => SetProperty(ref _vpnState, value);
+    }
+
+    public string VpnDetails
+    {
+        get => _vpnDetails;
+        private set => SetProperty(ref _vpnDetails, value);
+    }
+
+    public string WireGuardExecutablePath
+    {
+        get => _wireGuardExecutablePath;
+        private set => SetProperty(ref _wireGuardExecutablePath, value);
+    }
+
+    public string VpnNetworkCidr
+    {
+        get => _vpnNetworkCidr;
+        set => SetProperty(ref _vpnNetworkCidr, value);
+    }
+
+    public string VpnLocalAddress
+    {
+        get => _vpnLocalAddress;
+        set => SetProperty(ref _vpnLocalAddress, value);
+    }
+
+    public string VpnPublicEndpoint
+    {
+        get => _vpnPublicEndpoint;
+        set => SetProperty(ref _vpnPublicEndpoint, value);
+    }
+
+    public string VpnListenPort
+    {
+        get => _vpnListenPort;
+        set => SetProperty(ref _vpnListenPort, value);
+    }
+
+    public string VpnExchangeText
+    {
+        get => _vpnExchangeText;
+        set => SetProperty(ref _vpnExchangeText, value);
+    }
+
+    public string VpnConfigurationPreview
+    {
+        get => _vpnConfigurationPreview;
+        private set => SetProperty(ref _vpnConfigurationPreview, value);
+    }
+
+    public VpnNodeCapabilities SelectedVpnCapability
+    {
+        get => _selectedVpnCapability;
+        set => SetProperty(ref _selectedVpnCapability, value);
+    }
+
+    public VpnNodeCapabilities SelectedVpnInvitationCapability
+    {
+        get => _selectedVpnInvitationCapability;
+        set => SetProperty(ref _selectedVpnInvitationCapability, value);
+    }
+
+    public VpnPeerViewModel? SelectedVpnPeer
+    {
+        get => _selectedVpnPeer;
+        set => SetProperty(ref _selectedVpnPeer, value);
+    }
+
     public async Task InitializeAsync()
     {
         await RunOperationAsync("Chargement des projets…", async () =>
@@ -422,6 +525,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         if (SelectedProject is null)
         {
+            return;
+        }
+
+        if (_currentVpnProfile?.ProjectId == SelectedProject.Id &&
+            (await _wireGuardEngine.GetStatusAsync(_currentVpnProfile)).State == VpnRuntimeState.Running)
+        {
+            StatusMessage = "Arrêtez le tunnel VPN CyRevision avant de retirer ce projet du catalogue";
             return;
         }
 
@@ -798,6 +908,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await RefreshCoreAsync();
             await LoadBackupsCoreAsync();
             await LoadSyncProfileCoreAsync();
+            await LoadVpnProfileCoreAsync();
             await LoadAdvisoryReservationsCoreAsync();
         }, $"Mode « {preset.Name} » appliqué");
     }
@@ -1083,6 +1194,175 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, $"Pair {selected.DisplayName} révoqué");
     }
 
+    public async Task ConfigureVpnAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Configuration de WireGuard…", async () =>
+        {
+            WireGuardInstallation installation = _wireGuardKeyService.DetectInstallation();
+            if (!installation.CanGenerateKeys)
+            {
+                throw new FileNotFoundException(
+                    "WireGuard est introuvable. Installez l'application officielle puis relancez la détection.");
+            }
+
+            string keyPath = Path.Combine(
+                _applicationPaths.VpnDirectory,
+                "keys",
+                SelectedProject.Id.ToString("N"),
+                "private.key");
+            VpnProjectProfile profile = _currentVpnProfile ?? VpnProfileFactory.CreateDefault(SelectedProject.Id, keyPath);
+            profile = profile with
+            {
+                WireGuardExecutablePath = installation.WireGuardExecutablePath ?? profile.WireGuardExecutablePath,
+                WgExecutablePath = installation.WgExecutablePath ?? profile.WgExecutablePath,
+                WgQuickExecutablePath = installation.WgQuickExecutablePath ?? profile.WgQuickExecutablePath,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            if (string.IsNullOrWhiteSpace(profile.PublicKey) || !File.Exists(profile.PrivateKeyPath))
+            {
+                (string publicKey, string privatePath) = await _wireGuardKeyService.GenerateKeyPairAsync(
+                    profile.WgExecutablePath!, keyPath);
+                profile = profile with { PublicKey = publicKey, PrivateKeyPath = privatePath };
+            }
+
+            await _vpnProfileStore.SaveAsync(profile);
+            _currentVpnProfile = profile;
+            ApplyVpnProfile(profile);
+            await RefreshVpnStatusCoreAsync();
+        }, "WireGuard est configuré pour ce projet");
+    }
+
+    public async Task SaveVpnSettingsAsync()
+    {
+        await RunOperationAsync("Enregistrement du profil VPN…", async () =>
+        {
+            await SaveVpnFormCoreAsync();
+            await RefreshVpnStatusCoreAsync();
+        }, "Profil VPN enregistré");
+    }
+
+    public async Task StartVpnAsync()
+    {
+        await RunOperationAsync("Activation du tunnel VPN CyRevision…", async () =>
+        {
+            VpnProjectProfile profile = await SaveVpnFormCoreAsync();
+            VpnEngineStatus status = await _wireGuardEngine.StartAsync(profile);
+            ApplyVpnStatus(status);
+        }, "Tunnel VPN CyRevision actif");
+    }
+
+    public async Task StopVpnAsync()
+    {
+        if (_currentVpnProfile is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Arrêt du tunnel VPN CyRevision…", async () =>
+        {
+            VpnEngineStatus status = await _wireGuardEngine.StopAsync(_currentVpnProfile);
+            ApplyVpnStatus(status);
+        }, "Tunnel VPN CyRevision arrêté");
+    }
+
+    public async Task RefreshVpnAsync() => await RunOperationAsync(
+        "Actualisation du VPN…",
+        RefreshVpnStatusCoreAsync,
+        "État VPN actualisé");
+
+    public async Task CreateVpnInvitationAsync()
+    {
+        await RunOperationAsync("Création de l'invitation VPN signée…", async () =>
+        {
+            VpnProjectProfile profile = await SaveVpnFormCoreAsync();
+            using FileDeviceIdentityStore identity = await OpenVpnIdentityAsync(profile);
+            SignedVpnInvitation invitation = VpnPeerExchangeCodec.CreateInvitation(
+                profile,
+                identity,
+                SelectedVpnInvitationCapability,
+                TimeSpan.FromHours(24));
+            VpnExchangeText = VpnPeerExchangeCodec.ExportInvitation(invitation);
+            VpnDetails = $"Invitation {SelectedVpnInvitationCapability} valable 24 h, sans accès Git ni Sync implicite.";
+        }, "Invitation VPN prête à transmettre");
+    }
+
+    public async Task JoinVpnInvitationAsync()
+    {
+        await RunOperationAsync("Préparation du pair VPN…", async () =>
+        {
+            if (_currentVpnProfile is null)
+            {
+                throw new InvalidOperationException("Configurez d'abord WireGuard sur cet appareil.");
+            }
+
+            SignedVpnInvitation invitation = VpnPeerExchangeCodec.ImportInvitation(VpnExchangeText);
+            VpnProjectProfile profile = VpnPeerExchangeCodec.ApplyInvitation(_currentVpnProfile, invitation) with
+            {
+                LocalCapabilities = SelectedVpnInvitationCapability
+            };
+            using FileDeviceIdentityStore identity = await OpenVpnIdentityAsync(profile);
+            VpnJoinResponse response = VpnPeerExchangeCodec.CreateJoinResponse(
+                invitation,
+                profile,
+                identity,
+                SelectedVpnInvitationCapability);
+            await _vpnProfileStore.SaveAsync(profile);
+            _currentVpnProfile = profile;
+            ApplyVpnProfile(profile);
+            VpnExchangeText = VpnPeerExchangeCodec.ExportJoinResponse(response);
+        }, "Réponse VPN signée prête à renvoyer au propriétaire");
+    }
+
+    public async Task AcceptVpnResponseAsync()
+    {
+        await RunOperationAsync("Validation de la réponse VPN…", async () =>
+        {
+            VpnProjectProfile profile = await SaveVpnFormCoreAsync();
+            using FileDeviceIdentityStore identity = await OpenVpnIdentityAsync(profile);
+            VpnJoinResponse response = VpnPeerExchangeCodec.ImportJoinResponse(VpnExchangeText);
+            VpnPeerDefinition peer = VpnPeerExchangeCodec.ValidateJoinResponse(
+                response,
+                profile.ProjectId,
+                identity.Identity);
+            if (profile.Peers.Any(item => item.PeerId == peer.PeerId ||
+                                          item.PublicKey == peer.PublicKey ||
+                                          item.TunnelAddress == peer.TunnelAddress))
+            {
+                throw new InvalidOperationException("Ce pair, cette clé ou cette adresse VPN est déjà enregistré.");
+            }
+
+            profile = profile with { Peers = [.. profile.Peers, peer], UpdatedAt = DateTimeOffset.UtcNow };
+            await _vpnProfileStore.SaveAsync(profile);
+            _currentVpnProfile = profile;
+            ApplyVpnProfile(profile);
+        }, "Pair VPN autorisé");
+    }
+
+    public async Task RemoveSelectedVpnPeerAsync()
+    {
+        if (_currentVpnProfile is null || SelectedVpnPeer is null)
+        {
+            return;
+        }
+
+        VpnPeerViewModel selected = SelectedVpnPeer;
+        await RunOperationAsync("Retrait du pair VPN…", async () =>
+        {
+            _currentVpnProfile = _currentVpnProfile with
+            {
+                Peers = _currentVpnProfile.Peers.Where(peer => peer.PeerId != selected.PeerId).ToArray(),
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            await _vpnProfileStore.SaveAsync(_currentVpnProfile);
+            ApplyVpnProfile(_currentVpnProfile);
+        }, $"Pair VPN {selected.DisplayName} retiré");
+    }
+
     private async Task LoadSelectedProjectAsync()
     {
         if (SelectedProject is null)
@@ -1109,6 +1389,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await RefreshCoreAsync();
             await LoadBackupsCoreAsync();
             await LoadSyncProfileCoreAsync();
+            await LoadVpnProfileCoreAsync();
             await LoadAdvisoryReservationsCoreAsync();
             StatusMessage = "Dépôt chargé";
         }
@@ -1215,6 +1496,122 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             SyncState = "Sync prêt — arrêté";
             SyncDetails = $"Profil isolé sur {_currentSyncProfile.ApiEndpoint}.";
         }
+    }
+
+    private async Task LoadVpnProfileCoreAsync()
+    {
+        if (SelectedProject is null)
+        {
+            _currentVpnProfile = null;
+            ClearVpnView();
+            return;
+        }
+
+        _currentVpnProfile = await _vpnProfileStore.GetAsync(SelectedProject.Id);
+        if (_currentVpnProfile is null)
+        {
+            ClearVpnView();
+            WireGuardInstallation detected = _wireGuardKeyService.DetectInstallation();
+            WireGuardExecutablePath = detected.WireGuardExecutablePath ?? detected.WgExecutablePath ?? string.Empty;
+            VpnState = detected.CanGenerateKeys ? "WireGuard détecté — à configurer" : "WireGuard non détecté";
+            VpnDetails = "Le VPN peut être utilisé seul, sans lancer Git ni Syncthing.";
+            return;
+        }
+
+        ApplyVpnProfile(_currentVpnProfile);
+        await RefreshVpnStatusCoreAsync();
+    }
+
+    private async Task<VpnProjectProfile> SaveVpnFormCoreAsync()
+    {
+        if (SelectedProject is null || _currentVpnProfile is null)
+        {
+            throw new InvalidOperationException("Configurez d'abord WireGuard pour ce projet.");
+        }
+
+        if (!int.TryParse(VpnListenPort, out int listenPort))
+        {
+            throw new InvalidDataException("Le port WireGuard n'est pas un nombre valide.");
+        }
+
+        VpnProjectProfile profile = _currentVpnProfile with
+        {
+            NetworkCidr = VpnNetworkCidr.Trim(),
+            LocalAddress = VpnLocalAddress.Trim(),
+            ListenPort = listenPort,
+            PublicEndpoint = string.IsNullOrWhiteSpace(VpnPublicEndpoint) ? null : VpnPublicEndpoint.Trim(),
+            LocalCapabilities = SelectedVpnCapability,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        VpnProfileValidator.Validate(profile);
+        await _vpnProfileStore.SaveAsync(profile);
+        _currentVpnProfile = profile;
+        ApplyVpnProfile(profile);
+        VpnConfigurationPreview = await _wireGuardConfiguration.RenderAsync(profile);
+        return profile;
+    }
+
+    private async Task RefreshVpnStatusCoreAsync()
+    {
+        if (_currentVpnProfile is null)
+        {
+            return;
+        }
+
+        VpnConfigurationPreview = await _wireGuardConfiguration.RenderAsync(_currentVpnProfile);
+        ApplyVpnStatus(await _wireGuardEngine.GetStatusAsync(_currentVpnProfile));
+    }
+
+    private void ApplyVpnProfile(VpnProjectProfile profile)
+    {
+        WireGuardExecutablePath = profile.WireGuardExecutablePath ?? profile.WgExecutablePath ?? string.Empty;
+        VpnNetworkCidr = profile.NetworkCidr;
+        VpnLocalAddress = profile.LocalAddress;
+        VpnPublicEndpoint = profile.PublicEndpoint ?? string.Empty;
+        VpnListenPort = profile.ListenPort.ToString();
+        SelectedVpnCapability = profile.LocalCapabilities;
+        ReplaceCollection(VpnPeers, profile.Peers.Select(peer => new VpnPeerViewModel(peer)));
+        SelectedVpnPeer = VpnPeers.FirstOrDefault();
+    }
+
+    private void ApplyVpnStatus(VpnEngineStatus status)
+    {
+        VpnState = status.State switch
+        {
+            VpnRuntimeState.Running => "VPN actif",
+            VpnRuntimeState.Stopped => "VPN prêt — arrêté",
+            VpnRuntimeState.Collision => "Conflit d'interface — aucune action",
+            VpnRuntimeState.Unavailable => "WireGuard indisponible",
+            VpnRuntimeState.Faulted => "Erreur VPN",
+            _ => "VPN non configuré"
+        };
+        string swarm = _currentVpnProfile?.LocalCapabilities.HasFlag(VpnNodeCapabilities.SwarmCoordinator) == true
+            ? " Coordinateur Swarm sur cette adresse VPN, ports 8008/8009."
+            : _currentVpnProfile?.Peers.FirstOrDefault(peer => peer.Capabilities.HasFlag(VpnNodeCapabilities.SwarmCoordinator)) is { } coordinator
+                ? $" Coordinateur Swarm : {coordinator.TunnelAddress}, ports 8008/8009."
+                : string.Empty;
+        VpnDetails = status.Message + swarm;
+    }
+
+    private async Task<FileDeviceIdentityStore> OpenVpnIdentityAsync(VpnProjectProfile profile) =>
+        await FileDeviceIdentityStore.OpenOrCreateAsync(
+            Path.Combine(_applicationPaths.VpnDirectory, "security", profile.ProjectId.ToString("N"), "local-device"),
+            Environment.MachineName,
+            "vpn:" + profile.PublicKey[..Math.Min(12, profile.PublicKey.Length)]);
+
+    private void ClearVpnView()
+    {
+        VpnState = "VPN non configuré";
+        VpnDetails = "WireGuard reste indépendant de Git et de Sync.";
+        WireGuardExecutablePath = string.Empty;
+        VpnNetworkCidr = string.Empty;
+        VpnLocalAddress = string.Empty;
+        VpnPublicEndpoint = string.Empty;
+        VpnListenPort = "51820";
+        VpnExchangeText = string.Empty;
+        VpnConfigurationPreview = "Configurez WireGuard pour afficher le tunnel CyRevision.";
+        VpnPeers.Clear();
+        SelectedVpnPeer = null;
     }
 
     private async Task ConfigureCurrentSyncFolderAsync()
@@ -1732,6 +2129,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         SelectedPeerMember = null;
         AdvisoryReservations.Clear();
         ReservationSummary = "Aucun projet sélectionné.";
+        _currentVpnProfile = null;
+        ClearVpnView();
         DiffText = "Sélectionnez un projet Git.";
     }
 

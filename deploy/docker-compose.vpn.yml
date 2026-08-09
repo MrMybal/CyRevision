@@ -1,0 +1,5 @@
+# Extension facultative. Le compose principal ne reçoit aucun droit réseau élevé.
+services:
+  cyrevision-server:
+    cap_add:
+      - NET_ADMIN

@@ -5,6 +5,7 @@ using CyRevision.Core.Projects;
 using CyRevision.Git;
 using CyRevision.Security;
 using CyRevision.Sync;
+using CyRevision.Vpn;
 
 namespace CyRevision.Server;
 
@@ -15,6 +16,9 @@ public sealed class ServerRuntime : IAsyncDisposable
     private readonly IGitRepositoryService _git;
     private readonly ISyncthingProfileStore _syncProfiles;
     private readonly IGitPeerExchangeService _gitExchange;
+    private readonly IVpnProfileStore _vpnProfiles;
+    private readonly WireGuardKeyService _vpnKeys;
+    private readonly ManagedWireGuardEngine _vpnEngine;
     private readonly ConcurrentDictionary<Guid, ManagedSyncthingEngine> _syncEngines = new();
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _projectGates = new();
 
@@ -23,13 +27,19 @@ public sealed class ServerRuntime : IAsyncDisposable
         IProjectCatalog catalog,
         IGitRepositoryService git,
         ISyncthingProfileStore syncProfiles,
-        IGitPeerExchangeService gitExchange)
+        IGitPeerExchangeService gitExchange,
+        IVpnProfileStore vpnProfiles,
+        WireGuardKeyService vpnKeys,
+        ManagedWireGuardEngine vpnEngine)
     {
         _options = options;
         _catalog = catalog;
         _git = git;
         _syncProfiles = syncProfiles;
         _gitExchange = gitExchange;
+        _vpnProfiles = vpnProfiles;
+        _vpnKeys = vpnKeys;
+        _vpnEngine = vpnEngine;
     }
 
     public async Task<ProjectDefinition> CreateProjectAsync(
@@ -76,6 +86,12 @@ public sealed class ServerRuntime : IAsyncDisposable
     public async Task RemoveProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         await StopSyncAsync(projectId, cancellationToken);
+        VpnProjectProfile? vpnProfile = await _vpnProfiles.GetAsync(projectId, cancellationToken);
+        if (vpnProfile is not null &&
+            (await _vpnEngine.GetStatusAsync(vpnProfile, cancellationToken)).State == VpnRuntimeState.Running)
+        {
+            throw new InvalidOperationException("Stop the CyRevision VPN tunnel before removing this project.");
+        }
         await _catalog.RemoveAsync(projectId, cancellationToken);
     }
 
@@ -179,6 +195,119 @@ public sealed class ServerRuntime : IAsyncDisposable
         }
 
         return await engine.RefreshStatusAsync(cancellationToken);
+    }
+
+    public async Task<VpnProjectProfile> ConfigureVpnAsync(
+        Guid projectId,
+        ConfigureServerVpnRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await GetProjectAsync(projectId, cancellationToken);
+        WireGuardInstallation installation = _vpnKeys.DetectInstallation();
+        if (!installation.CanGenerateKeys)
+        {
+            throw new FileNotFoundException("WireGuard wg is not installed on this server.");
+        }
+
+        string privateKeyPath = Path.Combine(_options.VpnDirectory, "keys", projectId.ToString("N"), "private.key");
+        VpnProjectProfile profile = await _vpnProfiles.GetAsync(projectId, cancellationToken)
+                                    ?? VpnProfileFactory.CreateDefault(projectId, privateKeyPath);
+        profile = profile with
+        {
+            NetworkCidr = request.NetworkCidr ?? profile.NetworkCidr,
+            LocalAddress = request.LocalAddress ?? profile.LocalAddress,
+            ListenPort = request.ListenPort ?? profile.ListenPort,
+            PublicEndpoint = string.IsNullOrWhiteSpace(request.PublicEndpoint) ? profile.PublicEndpoint : request.PublicEndpoint.Trim(),
+            LocalCapabilities = request.Capabilities,
+            WireGuardExecutablePath = installation.WireGuardExecutablePath ?? profile.WireGuardExecutablePath,
+            WgExecutablePath = installation.WgExecutablePath ?? profile.WgExecutablePath,
+            WgQuickExecutablePath = installation.WgQuickExecutablePath ?? profile.WgQuickExecutablePath,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        if (string.IsNullOrWhiteSpace(profile.PublicKey) || !File.Exists(profile.PrivateKeyPath))
+        {
+            (string publicKey, string keyPath) = await _vpnKeys.GenerateKeyPairAsync(
+                profile.WgExecutablePath!, privateKeyPath, cancellationToken);
+            profile = profile with { PublicKey = publicKey, PrivateKeyPath = keyPath };
+        }
+
+        await _vpnProfiles.SaveAsync(profile, cancellationToken);
+        return profile;
+    }
+
+    public async Task<VpnProjectProfile> GetVpnProfileAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        await GetProjectAsync(projectId, cancellationToken);
+        return await _vpnProfiles.GetAsync(projectId, cancellationToken)
+               ?? throw new InvalidOperationException("WireGuard is not configured for this project.");
+    }
+
+    public async Task<VpnEngineStatus> GetVpnStatusAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        await _vpnEngine.GetStatusAsync(await GetVpnProfileAsync(projectId, cancellationToken), cancellationToken);
+
+    public async Task<VpnEngineStatus> StartVpnAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        await _vpnEngine.StartAsync(await GetVpnProfileAsync(projectId, cancellationToken), cancellationToken);
+
+    public async Task<VpnEngineStatus> StopVpnAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        await _vpnEngine.StopAsync(await GetVpnProfileAsync(projectId, cancellationToken), cancellationToken);
+
+    public async Task<SignedVpnInvitation> CreateVpnInvitationAsync(
+        Guid projectId,
+        VpnNodeCapabilities capabilities,
+        CancellationToken cancellationToken = default)
+    {
+        VpnProjectProfile profile = await GetVpnProfileAsync(projectId, cancellationToken);
+        using FileDeviceIdentityStore identity = await OpenVpnIdentityAsync(profile, cancellationToken);
+        return VpnPeerExchangeCodec.CreateInvitation(profile, identity, capabilities, TimeSpan.FromHours(24));
+    }
+
+    public async Task<string> JoinVpnInvitationAsync(
+        Guid projectId,
+        string invitationText,
+        VpnNodeCapabilities capabilities,
+        CancellationToken cancellationToken = default)
+    {
+        VpnProjectProfile profile = await GetVpnProfileAsync(projectId, cancellationToken);
+        SignedVpnInvitation invitation = VpnPeerExchangeCodec.ImportInvitation(invitationText);
+        profile = VpnPeerExchangeCodec.ApplyInvitation(profile, invitation) with { LocalCapabilities = capabilities };
+        using FileDeviceIdentityStore identity = await OpenVpnIdentityAsync(profile, cancellationToken);
+        VpnJoinResponse response = VpnPeerExchangeCodec.CreateJoinResponse(invitation, profile, identity, capabilities);
+        await _vpnProfiles.SaveAsync(profile, cancellationToken);
+        return VpnPeerExchangeCodec.ExportJoinResponse(response);
+    }
+
+    public async Task<VpnPeerDefinition> AcceptVpnResponseAsync(
+        Guid projectId,
+        string responseText,
+        CancellationToken cancellationToken = default)
+    {
+        VpnProjectProfile profile = await GetVpnProfileAsync(projectId, cancellationToken);
+        using FileDeviceIdentityStore identity = await OpenVpnIdentityAsync(profile, cancellationToken);
+        VpnPeerDefinition peer = VpnPeerExchangeCodec.ValidateJoinResponse(
+            VpnPeerExchangeCodec.ImportJoinResponse(responseText), projectId, identity.Identity);
+        if (profile.Peers.Any(item => item.PeerId == peer.PeerId || item.PublicKey == peer.PublicKey || item.TunnelAddress == peer.TunnelAddress))
+        {
+            throw new InvalidOperationException("The VPN peer, key or address is already registered.");
+        }
+
+        profile = profile with { Peers = [.. profile.Peers, peer], UpdatedAt = DateTimeOffset.UtcNow };
+        await _vpnProfiles.SaveAsync(profile, cancellationToken);
+        return peer;
+    }
+
+    public async Task RemoveVpnPeerAsync(Guid projectId, Guid peerId, CancellationToken cancellationToken = default)
+    {
+        VpnProjectProfile profile = await GetVpnProfileAsync(projectId, cancellationToken);
+        if (!profile.Peers.Any(peer => peer.PeerId == peerId))
+        {
+            throw new KeyNotFoundException("VPN peer not found.");
+        }
+
+        await _vpnProfiles.SaveAsync(profile with
+        {
+            Peers = profile.Peers.Where(peer => peer.PeerId != peerId).ToArray(),
+            UpdatedAt = DateTimeOffset.UtcNow
+        }, cancellationToken);
     }
 
     public async Task<PeerInvitationPackage> CreatePeerInvitationAsync(
@@ -483,6 +612,15 @@ public sealed class ServerRuntime : IAsyncDisposable
             Path.Combine(GetSecurityPath(project.Id), "local-device"),
             Environment.MachineName,
             syncthingDeviceId,
+            cancellationToken: cancellationToken);
+
+    private async Task<FileDeviceIdentityStore> OpenVpnIdentityAsync(
+        VpnProjectProfile profile,
+        CancellationToken cancellationToken) =>
+        await FileDeviceIdentityStore.OpenOrCreateAsync(
+            Path.Combine(_options.VpnDirectory, "security", profile.ProjectId.ToString("N"), "local-device"),
+            Environment.MachineName,
+            "vpn:" + profile.PublicKey[..Math.Min(12, profile.PublicKey.Length)],
             cancellationToken: cancellationToken);
 
     private JsonPeerAdmissionService CreateAdmissionService(Guid projectId, IDeviceIdentityStore identity) =>

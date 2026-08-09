@@ -130,6 +130,28 @@ public partial class MainWindow : Window
 
     private async void OnExchangeGitClick(object? sender, RoutedEventArgs e) => await _viewModel.ExchangeGitAsync();
 
+    private async void OnConfigureVpnClick(object? sender, RoutedEventArgs e) => await _viewModel.ConfigureVpnAsync();
+
+    private async void OnSaveVpnClick(object? sender, RoutedEventArgs e) => await _viewModel.SaveVpnSettingsAsync();
+
+    private async void OnStartVpnClick(object? sender, RoutedEventArgs e) => await _viewModel.StartVpnAsync();
+
+    private async void OnStopVpnClick(object? sender, RoutedEventArgs e) => await _viewModel.StopVpnAsync();
+
+    private async void OnRefreshVpnClick(object? sender, RoutedEventArgs e) => await _viewModel.RefreshVpnAsync();
+
+    private async void OnCreateVpnInvitationClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CreateVpnInvitationAsync();
+
+    private async void OnJoinVpnInvitationClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.JoinVpnInvitationAsync();
+
+    private async void OnAcceptVpnResponseClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.AcceptVpnResponseAsync();
+
+    private async void OnRemoveVpnPeerClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RemoveSelectedVpnPeerAsync();
+
     private async void OnCreateInvitationClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CreatePeerInvitationAsync();
 

@@ -14,6 +14,7 @@ CyRevision est un client de révision, synchronisation et sauvegarde pensé pour
 - diff hors moteur : texte, texture + heatmap, OBJ + superposition 3D, binaire et inspection simplifiée `.uasset`/`.umap` ;
 - serveur Linux optionnel avec API, planification des backups, échange Git et tableau de bord web protégé ;
 - plugin Unreal Editor optionnel avec ouverture du client et réservations souples non bloquantes des assets.
+- VPN WireGuard optionnel intégré : setup, clés, tunnel isolé, pairs VPN-only et profils Unreal Swarm/CI/services ;
 
 ## Ouvrir dans Rider
 
@@ -25,6 +26,7 @@ Prérequis :
 - Git ;
 - Git LFS ;
 - Syncthing uniquement si le mode Sync est utilisé ;
+- WireGuard uniquement si le mode VPN est utilisé ;
 - plugin Avalonia pour la prévisualisation XAML dans Rider, recommandé mais non obligatoire.
 
 ## Compiler et lancer
@@ -62,4 +64,5 @@ Pour Git + Sync, le dossier partagé contient des bundles Git signés, des certi
 - [Serveur Linux](docs/linux-server.md)
 - [Diff hors moteur](docs/asset-diff.md)
 - [API serveur](docs/server-api.md)
+- [VPN WireGuard](docs/wireguard-vpn.md)
 - [Pont Unreal](plugins/CyRevisionUnreal/README.md)
