@@ -59,14 +59,19 @@ public sealed class JsonSyncthingProfileStore : ISyncthingProfileStore
                 existing = await JsonSerializer.DeserializeAsync<SyncthingProfile>(existingStream, JsonOptions, cancellationToken);
             }
 
+            Uri apiEndpoint = existing?.ApiEndpoint ?? new Uri($"http://127.0.0.1:{GetFreeLoopbackPort()}");
+            int listenPort = existing?.ListenPort is > 0
+                ? existing.ListenPort
+                : GetDistinctFreePort(apiEndpoint.Port);
             SyncthingProfile profile = new(
                 projectId,
                 Path.GetFullPath(executablePath),
                 Path.Combine(projectDirectory, "config"),
                 Path.Combine(projectDirectory, "data"),
                 Path.GetFullPath(exchangeDirectory),
-                existing?.ApiEndpoint ?? new Uri($"http://127.0.0.1:{GetFreeLoopbackPort()}"),
+                apiEndpoint,
                 existing?.ApiKey ?? CreateApiKey(),
+                listenPort,
                 existing?.FolderId ?? "cyrevision-" + projectId.ToString("N"));
             profile.ToIsolationOptions().Validate();
             Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
@@ -111,6 +116,17 @@ public sealed class JsonSyncthingProfileStore : ISyncthingProfileStore
         {
             listener.Stop();
         }
+    }
+
+    private static int GetDistinctFreePort(int excludedPort)
+    {
+        int port;
+        do
+        {
+            port = GetFreeLoopbackPort();
+        }
+        while (port == excludedPort);
+        return port;
     }
 
     private static async Task WriteAtomicallyAsync(string path, SyncthingProfile profile, CancellationToken cancellationToken)

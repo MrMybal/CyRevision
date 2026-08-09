@@ -222,7 +222,10 @@
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
-                                <Button Grid.Row="2" Classes="secondary" Content="Basculer sur la branche" Click="OnCheckoutBranchClick" HorizontalAlignment="Left" />
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="secondary" Content="Basculer / créer locale" Click="OnCheckoutBranchClick" />
+                                    <Button Classes="primary" Content="Intégrer" Click="OnMergeBranchClick" />
+                                </StackPanel>
                             </Grid>
                         </Border>
                         <Border Grid.Column="1" Classes="card">
@@ -342,6 +345,7 @@
                                     <Button Classes="secondary" Content="Pause" Click="OnPauseSyncClick" Margin="0,4,7,4" />
                                     <Button Classes="secondary" Content="Reprendre" Click="OnResumeSyncClick" Margin="0,4,7,4" />
                                     <Button Classes="danger" Content="Arrêter" Click="OnStopSyncClick" Margin="0,4,7,4" />
+                                    <Button Classes="secondary" Content="Échanger Git maintenant" Click="OnExchangeGitClick" Margin="0,4,7,4" />
                                 </WrapPanel>
                                 <Border Background="#10241F" CornerRadius="8" Padding="11" Margin="0,8,0,0">
                                     <TextBlock Text="CyRevision utilise ses propres dossiers config/data, une API locale dédiée et ne recherche ni n'arrête les autres processus Syncthing." TextWrapping="Wrap" FontSize="11" Foreground="#78D7B7" />
@@ -350,7 +354,7 @@
                         </Border>
 
                         <Border Grid.Column="1" Classes="card">
-                            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                            <Grid RowDefinitions="Auto,Auto,110,*,Auto">
                                 <StackPanel>
                                     <TextBlock Text="Admission sécurisée des pairs" FontSize="17" FontWeight="SemiBold" />
                                     <TextBlock Text="Échanges signés, invitation à usage unique et code de vérification." TextWrapping="Wrap" FontSize="11" Classes="muted" />
@@ -360,14 +364,63 @@
                                     <TextBox Grid.Column="1" Text="{Binding PeerVerificationCode}" PlaceholderText="Code" />
                                     <Button Grid.Column="2" Classes="primary" Content="Créer une invitation (24 h)" Click="OnCreateInvitationClick" HorizontalAlignment="Left" />
                                 </Grid>
-                                <TextBox Grid.Row="2" Text="{Binding PeerExchangeText}" AcceptsReturn="True" TextWrapping="Wrap"
+                                <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <ListBox ItemsSource="{Binding PeerMembers}" SelectedItem="{Binding SelectedPeerMember}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid ColumnDefinitions="*,Auto,Auto" Margin="5" ColumnSpacing="10">
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Role}" Classes="muted" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding DeviceIdShort}" FontFamily="Consolas" Classes="muted" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <Button Grid.Column="1" Classes="danger" Content="Révoquer" Click="OnRevokePeerClick" VerticalAlignment="Top" />
+                                </Grid>
+                                <TextBox Grid.Row="3" Text="{Binding PeerExchangeText}" AcceptsReturn="True" TextWrapping="Wrap"
                                          FontFamily="Cascadia Mono,Consolas" FontSize="11" PlaceholderText="Collez ici une invitation, une demande ou un certificat…"
                                          ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                                <WrapPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
+                                <WrapPanel Grid.Row="4" Orientation="Horizontal" Margin="0,8,0,0">
                                     <Button Classes="secondary" Content="Préparer la demande" Click="OnPrepareJoinRequestClick" Margin="0,3,7,3" />
                                     <Button Classes="secondary" Content="Approuver la demande" Click="OnApproveJoinRequestClick" Margin="0,3,7,3" />
                                     <Button Classes="primary" Content="Importer le certificat" Click="OnImportMembershipGrantClick" Margin="0,3,7,3" />
                                 </WrapPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Diff assets">
+                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.1*,1*" ColumnSpacing="14">
+                        <Border Classes="card">
+                            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="9">
+                                <StackPanel>
+                                    <TextBlock Text="Comparateur hors moteur" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Textures, OBJ, texte, binaire et inspection simplifiée .uasset/.umap." FontSize="11" Classes="muted" />
+                                </StackPanel>
+                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBox Text="{Binding AssetBaselinePath}" IsReadOnly="True" PlaceholderText="Fichier de référence" />
+                                    <Button Grid.Column="1" Classes="secondary" Content="Référence…" Click="OnPickAssetBaselineClick" />
+                                </Grid>
+                                <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                                    <TextBox Text="{Binding AssetCandidatePath}" IsReadOnly="True" PlaceholderText="Fichier candidat" />
+                                    <Button Grid.Column="1" Classes="secondary" Content="Candidat…" Click="OnPickAssetCandidateClick" />
+                                    <Button Grid.Column="2" Classes="primary" Content="Comparer" Click="OnCompareAssetsClick" />
+                                    <Button Grid.Column="3" Classes="secondary" Content="Sélection Git ↔ HEAD" Click="OnCompareSelectedToHeadClick" />
+                                </Grid>
+                                <TextBox Grid.Row="3" Text="{Binding AssetDiffReport}" IsReadOnly="True" AcceptsReturn="True"
+                                         FontFamily="Cascadia Mono,Consolas" FontSize="11" TextWrapping="Wrap"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                            </Grid>
+                        </Border>
+                        <Border Grid.Column="1" Classes="card">
+                            <Grid RowDefinitions="Auto,*,Auto">
+                                <TextBlock Text="Aperçu / heatmap" FontSize="17" FontWeight="SemiBold" />
+                                <Border Grid.Row="1" Margin="0,12" Background="#0B1222" CornerRadius="8" ClipToBounds="True">
+                                    <Image Source="{Binding AssetDiffPreview}" Stretch="Uniform" />
+                                </Border>
+                                <TextBlock Grid.Row="2" Text="Les Blueprints et assets Unreal sont comparés sans l'éditeur par structure binaire et symboles détectables. Le plugin Unreal ajoutera ensuite un graphe visuel complet." TextWrapping="Wrap" FontSize="11" Classes="muted" />
                             </Grid>
                         </Border>
                     </Grid>

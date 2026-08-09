@@ -8,6 +8,7 @@ public sealed record SyncthingProfile(
     string ExchangeDirectory,
     Uri ApiEndpoint,
     string ApiKey,
+    int ListenPort,
     string FolderId)
 {
     public SyncthingIsolationOptions ToIsolationOptions(bool enabled = true) => new(
@@ -17,6 +18,7 @@ public sealed record SyncthingProfile(
         ExchangeDirectory,
         ApiEndpoint,
         ApiKey,
+        ListenPort,
         enabled);
 }
 

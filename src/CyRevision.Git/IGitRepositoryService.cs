@@ -44,7 +44,18 @@ public interface IGitRepositoryService
         string branchName,
         CancellationToken cancellationToken = default);
 
+    Task CreateBranchFromAsync(
+        string repositoryPath,
+        string branchName,
+        string startPoint,
+        CancellationToken cancellationToken = default);
+
     Task CheckoutBranchAsync(
+        string repositoryPath,
+        string branchName,
+        CancellationToken cancellationToken = default);
+
+    Task MergeBranchAsync(
         string repositoryPath,
         string branchName,
         CancellationToken cancellationToken = default);
@@ -59,6 +70,13 @@ public interface IGitRepositoryService
         string repositoryPath,
         string relativePath,
         string revision,
+        CancellationToken cancellationToken = default);
+
+    Task ExportFileFromRevisionAsync(
+        string repositoryPath,
+        string relativePath,
+        string revision,
+        string destinationPath,
         CancellationToken cancellationToken = default);
 
     Task AddOrUpdateRemoteAsync(
@@ -87,4 +105,3 @@ public interface IGitRepositoryService
         string repositoryPath,
         CancellationToken cancellationToken = default);
 }
-

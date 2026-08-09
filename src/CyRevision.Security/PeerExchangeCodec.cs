@@ -54,6 +54,20 @@ public static class PeerExchangeCodec
         }
     }
 
+    public static bool VerifySignature(DeviceIdentity identity, ReadOnlySpan<byte> payload, string signature)
+    {
+        try
+        {
+            using ECDsa publicKey = ECDsa.Create();
+            publicKey.ImportSubjectPublicKeyInfo(Convert.FromBase64String(identity.SigningPublicKey), out _);
+            return publicKey.VerifyData(payload, Convert.FromBase64String(signature), HashAlgorithmName.SHA256);
+        }
+        catch (Exception exception) when (exception is FormatException or CryptographicException)
+        {
+            return false;
+        }
+    }
+
     private static byte[] BuildCertificatePayload(MembershipCertificate certificate) =>
         Encoding.UTF8.GetBytes(string.Join('\n',
             certificate.ProjectId.ToString("N"),

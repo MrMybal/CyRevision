@@ -1,0 +1,18 @@
+services:
+  cyrevision-server:
+    build:
+      context: ..
+      dockerfile: src/CyRevision.Server/Dockerfile
+    container_name: cyrevision-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      CYREVISION_SERVER_TOKEN: ${CYREVISION_SERVER_TOKEN:?Définissez CYREVISION_SERVER_TOKEN dans deploy/.env}
+      CyRevision__DataDirectory: /var/lib/cyrevision
+      CyRevision__ProjectsDirectory: /var/lib/cyrevision/projects
+    volumes:
+      - cyrevision-data:/var/lib/cyrevision
+
+volumes:
+  cyrevision-data:

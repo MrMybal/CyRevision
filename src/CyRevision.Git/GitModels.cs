@@ -37,7 +37,8 @@ public sealed record GitRevision(
 public sealed record GitBranch(
     string Name,
     string ShortCommitHash,
-    bool IsCurrent);
+    bool IsCurrent,
+    bool IsRemote = false);
 
 public sealed record GitToolAvailability(
     bool GitAvailable,
@@ -46,4 +47,3 @@ public sealed record GitToolAvailability(
     string? LfsVersion);
 
 public sealed record LfsTrackedPattern(string Pattern, string SourceFile);
-
