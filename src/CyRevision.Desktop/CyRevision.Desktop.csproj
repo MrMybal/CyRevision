@@ -27,4 +27,8 @@
     <ProjectReference Include="..\CyRevision.Sync\CyRevision.Sync.csproj" />
     <ProjectReference Include="..\CyRevision.Vpn\CyRevision.Vpn.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Localization\Locales\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

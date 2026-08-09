@@ -4,6 +4,7 @@ using Avalonia.Media.Imaging;
 using CyRevision.Backup;
 using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
+using CyRevision.Desktop.Localization;
 using CyRevision.Diff;
 using CyRevision.Git;
 using CyRevision.Security;
@@ -24,6 +25,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly WireGuardKeyService _wireGuardKeyService;
     private readonly WireGuardConfigService _wireGuardConfiguration;
     private readonly ManagedWireGuardEngine _wireGuardEngine;
+    private readonly LocalizationService _localization;
     private readonly string? _initialProjectPath;
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
@@ -60,6 +62,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private Bitmap? _assetDiffPreview;
     private PeerMemberViewModel? _selectedPeerMember;
     private string _reservationSummary = "Aucune réservation souple active.";
+    private string _gitGraphSummary = "Analyse optionnelle non lancée.";
+    private string _gitGraphCommitLimit = "250";
+    private string _gitGraphFileLimit = "80";
+    private bool _gitGraphIncludeAllBranches = true;
+    private IReadOnlyList<GitGraphCommit> _gitGraphCommits = [];
+    private IReadOnlyList<GitFileActivity> _gitFileActivities = [];
+    private IReadOnlyList<GitFileRelation> _gitFileRelations = [];
     private VpnProjectProfile? _currentVpnProfile;
     private string _vpnState = "VPN non configuré";
     private string _vpnDetails = "WireGuard reste indépendant de Git et de Sync.";
@@ -73,6 +82,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private VpnNodeCapabilities _selectedVpnCapability = VpnNodeCapabilities.GeneralAccess;
     private VpnNodeCapabilities _selectedVpnInvitationCapability = VpnNodeCapabilities.GeneralAccess;
     private VpnPeerViewModel? _selectedVpnPeer;
+    private LanguageOption? _selectedLanguage;
 
     public MainWindowViewModel(
         IProjectCatalog projectCatalog,
@@ -85,6 +95,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         WireGuardKeyService wireGuardKeyService,
         WireGuardConfigService wireGuardConfiguration,
         ManagedWireGuardEngine wireGuardEngine,
+        LocalizationService localization,
         string? initialProjectPath = null)
     {
         _projectCatalog = projectCatalog;
@@ -97,6 +108,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _wireGuardKeyService = wireGuardKeyService;
         _wireGuardConfiguration = wireGuardConfiguration;
         _wireGuardEngine = wireGuardEngine;
+        _localization = localization;
+        _selectedLanguage = localization.Languages.FirstOrDefault(language =>
+            string.Equals(language.Code, localization.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase));
         _initialProjectPath = initialProjectPath;
     }
 
@@ -116,6 +130,24 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<AdvisoryReservationViewModel> AdvisoryReservations { get; } = [];
 
+    public IReadOnlyList<GitGraphCommit> GitGraphCommits
+    {
+        get => _gitGraphCommits;
+        private set => SetProperty(ref _gitGraphCommits, value);
+    }
+
+    public IReadOnlyList<GitFileActivity> GitFileActivities
+    {
+        get => _gitFileActivities;
+        private set => SetProperty(ref _gitFileActivities, value);
+    }
+
+    public IReadOnlyList<GitFileRelation> GitFileRelations
+    {
+        get => _gitFileRelations;
+        private set => SetProperty(ref _gitFileRelations, value);
+    }
+
     public ObservableCollection<VpnPeerViewModel> VpnPeers { get; } = [];
 
     public IReadOnlyList<RetentionMode> RetentionModes { get; } = Enum.GetValues<RetentionMode>();
@@ -126,6 +158,20 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public IReadOnlyList<VpnNodeCapabilities> VpnCapabilities { get; } =
         Enum.GetValues<VpnNodeCapabilities>().Where(value => value != VpnNodeCapabilities.None).ToArray();
+
+    public IReadOnlyList<LanguageOption> Languages => _localization.Languages;
+
+    public LanguageOption? SelectedLanguage
+    {
+        get => _selectedLanguage;
+        set
+        {
+            if (SetProperty(ref _selectedLanguage, value) && value is not null)
+            {
+                _localization.SetLanguage(value.Code);
+            }
+        }
+    }
 
     public ProjectItemViewModel? SelectedProject
     {
@@ -341,6 +387,30 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _reservationSummary;
         private set => SetProperty(ref _reservationSummary, value);
+    }
+
+    public string GitGraphSummary
+    {
+        get => _gitGraphSummary;
+        private set => SetProperty(ref _gitGraphSummary, value);
+    }
+
+    public string GitGraphCommitLimit
+    {
+        get => _gitGraphCommitLimit;
+        set => SetProperty(ref _gitGraphCommitLimit, value);
+    }
+
+    public string GitGraphFileLimit
+    {
+        get => _gitGraphFileLimit;
+        set => SetProperty(ref _gitGraphFileLimit, value);
+    }
+
+    public bool GitGraphIncludeAllBranches
+    {
+        get => _gitGraphIncludeAllBranches;
+        set => SetProperty(ref _gitGraphIncludeAllBranches, value);
     }
 
     public string VpnState
@@ -563,6 +633,51 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "Actualisation des réservations souples…",
         LoadAdvisoryReservationsCoreAsync,
         "Réservations souples actualisées");
+
+    public async Task AnalyzeGitGraphsAsync()
+    {
+        if (SelectedProject is null || !SelectedProject.Definition.Features.GitEnabled)
+        {
+            StatusMessage = "Sélectionnez un projet utilisant Git pour construire les graphes";
+            return;
+        }
+
+        if (!int.TryParse(GitGraphCommitLimit, out int commitLimit) || commitLimit is < 10 or > 1000)
+        {
+            StatusMessage = "Le nombre de commits doit être compris entre 10 et 1000";
+            return;
+        }
+
+        if (!int.TryParse(GitGraphFileLimit, out int fileLimit) || fileLimit is < 10 or > 150)
+        {
+            StatusMessage = "Le nombre de fichiers doit être compris entre 10 et 150";
+            return;
+        }
+
+        await RunOperationAsync("Construction des graphes Git…", async () =>
+        {
+            Task<IReadOnlyList<GitGraphCommit>> commitsTask = _gitService.GetCommitGraphAsync(
+                SelectedProject.RootPath,
+                commitLimit,
+                GitGraphIncludeAllBranches);
+            Task<GitFileActivityGraph> filesTask = _gitService.GetFileActivityGraphAsync(
+                SelectedProject.RootPath,
+                commitLimit,
+                fileLimit,
+                GitGraphIncludeAllBranches);
+            await Task.WhenAll(commitsTask, filesTask);
+            IReadOnlyList<GitGraphCommit> commits = await commitsTask;
+            GitFileActivityGraph files = await filesTask;
+            GitGraphCommits = commits.ToArray();
+            GitFileActivities = files.Files.ToArray();
+            GitFileRelations = files.Relations.ToArray();
+            int mergeCount = commits.Count(commit => commit.IsMerge);
+            int binaryFiles = files.Files.Count(file => file.BinaryChangeCount > 0);
+            GitGraphSummary = $"{commits.Count} commits · {mergeCount} merges · " +
+                              $"{files.TotalFileCount} fichiers analysés · {binaryFiles} binaires · " +
+                              $"{files.Relations.Count} relations affichées";
+        }, "Graphes Git construits — analyse en lecture seule");
+    }
 
     public async Task RemoveExpiredAdvisoryReservationsAsync()
     {
@@ -1382,6 +1497,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         LoadBackupSettings(updated);
         SelectedPreset = ProjectPresets.All.FirstOrDefault(preset =>
             preset.Features == updated.Features && preset.Retention.Mode == updated.Retention.Mode);
+        ClearGitGraphView();
         try
         {
             await _projectCatalog.UpsertAsync(updated);
@@ -2132,6 +2248,15 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _currentVpnProfile = null;
         ClearVpnView();
         DiffText = "Sélectionnez un projet Git.";
+        ClearGitGraphView();
+    }
+
+    private void ClearGitGraphView()
+    {
+        GitGraphCommits = [];
+        GitFileActivities = [];
+        GitFileRelations = [];
+        GitGraphSummary = "Analyse optionnelle non lancée.";
     }
 
     private static void ReplaceCollection<T>(ObservableCollection<T> destination, IEnumerable<T> source)

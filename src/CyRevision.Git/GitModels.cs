@@ -47,3 +47,47 @@ public sealed record GitToolAvailability(
     string? LfsVersion);
 
 public sealed record LfsTrackedPattern(string Pattern, string SourceFile);
+
+public sealed record GitGraphCommit(
+    string Hash,
+    string ShortHash,
+    IReadOnlyList<string> ParentHashes,
+    string AuthorName,
+    DateTimeOffset AuthoredAt,
+    string Subject,
+    string Decorations)
+{
+    public bool IsMerge => ParentHashes.Count > 1;
+}
+
+public enum GitFileKind
+{
+    Code,
+    UnrealAsset,
+    Texture,
+    Model,
+    Audio,
+    Document,
+    Configuration,
+    Other
+}
+
+public sealed record GitFileActivity(
+    string Path,
+    GitFileKind Kind,
+    int ChangeCount,
+    long AddedLines,
+    long DeletedLines,
+    int BinaryChangeCount,
+    DateTimeOffset LastChangedAt);
+
+public sealed record GitFileRelation(
+    string SourcePath,
+    string TargetPath,
+    int CoChangeCount);
+
+public sealed record GitFileActivityGraph(
+    IReadOnlyList<GitFileActivity> Files,
+    IReadOnlyList<GitFileRelation> Relations,
+    int AnalyzedCommitCount,
+    int TotalFileCount);

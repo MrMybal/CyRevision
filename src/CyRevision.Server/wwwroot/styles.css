@@ -35,6 +35,9 @@ button.danger { color: var(--danger); background: #341d2a; }
 .server-health { color: var(--muted); font-size: .85rem; }
 .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--success); margin-right: 8px; box-shadow: 0 0 0 5px #64d2ac1b; }
 .topbar #logout { justify-self: end; }
+.topbar-actions { justify-self: end; display: flex; align-items: center; gap: 10px; }
+.topbar-actions select, .login-language select { padding: 8px 10px; }
+.login-language { position: absolute; top: 24px; right: 24px; }
 .content { width: min(1280px, calc(100% - 36px)); margin: 0 auto; padding: 46px 0 72px; }
 .hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 28px; margin-bottom: 28px; }
 .hero h1 { font-size: clamp(2.2rem, 5vw, 3.8rem); letter-spacing: -.05em; margin: 0; }

@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:controls="using:CyRevision.Desktop.Controls"
         mc:Ignorable="d"
         d:DesignWidth="1440"
         d:DesignHeight="900"
@@ -63,6 +64,15 @@
                     <TextBlock Text="{Binding RepositoryPath}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <ComboBox Width="126"
+                              ItemsSource="{Binding Languages}"
+                              SelectedItem="{Binding SelectedLanguage}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding NativeName}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
                     <Button Classes="secondary" Content="Ajouter un dossier" Click="OnAddFolderClick" />
                     <Button Classes="secondary" Content="Ouvrir un dépôt" Click="OnAddExistingClick" />
                     <Button Classes="primary" Content="Créer un dépôt" Click="OnCreateGitClick" />
@@ -239,6 +249,74 @@
                                 <Button Classes="secondary" Content="Enregistrer origin" Click="OnSaveRemoteClick" HorizontalAlignment="Left" />
                             </StackPanel>
                         </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Graphes Git">
+                    <Grid Margin="0,14,0,0" RowDefinitions="Auto,*" RowSpacing="12">
+                        <Border Classes="card" Padding="15">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Visualisations alternatives de l'historique" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding GitGraphSummary}" Classes="muted" TextWrapping="Wrap" />
+                                    <TextBlock Text="Analyse locale et strictement en lecture seule. Aucun commit, index ou fichier n'est modifié."
+                                               FontSize="10" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <TextBlock Text="Commits" VerticalAlignment="Center" Classes="muted" FontSize="11" />
+                                    <TextBox Text="{Binding GitGraphCommitLimit}" Width="62" />
+                                    <TextBlock Text="Fichiers" VerticalAlignment="Center" Classes="muted" FontSize="11" />
+                                    <TextBox Text="{Binding GitGraphFileLimit}" Width="56" />
+                                    <CheckBox Content="Toutes les branches" IsChecked="{Binding GitGraphIncludeAllBranches}" VerticalAlignment="Center" />
+                                    <Button Classes="primary" Content="Analyser le dépôt" Click="OnAnalyzeGitGraphsClick" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <TabControl Grid.Row="1">
+                            <TabItem Header="Réseau de commits">
+                                <Border Margin="0,10,0,0" Classes="card" Padding="5">
+                                    <controls:GitCommitGraphView Commits="{Binding GitGraphCommits}" />
+                                </Border>
+                            </TabItem>
+
+                            <TabItem Header="Relations entre fichiers">
+                                <Grid Margin="0,10,0,0" ColumnDefinitions="*,390" ColumnSpacing="12">
+                                    <Border Classes="card" Padding="5">
+                                        <Grid RowDefinitions="Auto,*">
+                                            <WrapPanel Margin="10,6,10,3" Orientation="Horizontal">
+                                                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,0"><Border Width="9" Height="9" CornerRadius="5" Background="#55A7F3" VerticalAlignment="Center" /><TextBlock Text="Code" FontSize="10" Classes="muted" /></StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,0"><Border Width="9" Height="9" CornerRadius="5" Background="#A477D4" VerticalAlignment="Center" /><TextBlock Text="Unreal" FontSize="10" Classes="muted" /></StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,0"><Border Width="9" Height="9" CornerRadius="5" Background="#E56B91" VerticalAlignment="Center" /><TextBlock Text="Textures" FontSize="10" Classes="muted" /></StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,0"><Border Width="9" Height="9" CornerRadius="5" Background="#E5A94D" VerticalAlignment="Center" /><TextBlock Text="3D" FontSize="10" Classes="muted" /></StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,0"><Border Width="9" Height="9" CornerRadius="5" Background="#36C5A1" VerticalAlignment="Center" /><TextBlock Text="Audio" FontSize="10" Classes="muted" /></StackPanel>
+                                                <TextBlock Text="Taille = quantité de modifications · lien = fichiers modifiés ensemble" FontSize="10" Classes="muted" />
+                                            </WrapPanel>
+                                            <controls:GitFileRelationGraphView Grid.Row="1"
+                                                                                  Files="{Binding GitFileActivities}"
+                                                                                  Relations="{Binding GitFileRelations}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Grid.Column="1" Classes="card" Padding="12">
+                                        <Grid RowDefinitions="Auto,*">
+                                            <StackPanel>
+                                                <TextBlock Text="Fichiers les plus actifs" FontSize="15" FontWeight="SemiBold" />
+                                                <TextBlock Text="Cliquez ou survolez un nœud pour le détail." FontSize="10" Classes="muted" />
+                                            </StackPanel>
+                                            <DataGrid Grid.Row="1" Margin="0,10,0,0" ItemsSource="{Binding GitFileActivities}"
+                                                      AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                                      Background="Transparent" BorderThickness="0">
+                                                <DataGrid.Columns>
+                                                    <DataGridTextColumn Header="Fichier" Binding="{Binding Path}" Width="*" />
+                                                    <DataGridTextColumn Header="Modif." Binding="{Binding ChangeCount}" Width="72" />
+                                                    <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="92" />
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </TabItem>
+                        </TabControl>
                     </Grid>
                 </TabItem>
 

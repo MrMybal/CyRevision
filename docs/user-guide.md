@@ -12,6 +12,8 @@ L’onglet **Modifications** indexe ou retire les fichiers de l’index et crée
 
 Le remote `origin` est facultatif : il peut pointer vers GitHub, GitLab, Forgejo, SSH, un chemin réseau ou un autre dépôt local. Les boutons Fetch/Pull/Push restent inactifs en pratique tant qu’aucun remote n’est configuré.
 
+L’onglet **Git graphs** ajoute deux visualisations locales optionnelles : un réseau nodal des commits et une carte des relations entre fichiers modifiés ensemble. Vous pouvez limiter le nombre de commits et de fichiers, ainsi que choisir d’inclure toutes les branches. L’analyse est strictement en lecture seule et ne lance aucun fetch. Voir [git-visualizations.md](git-visualizations.md).
+
 Dans **Git LFS**, ajoutez par exemple :
 
 ```text

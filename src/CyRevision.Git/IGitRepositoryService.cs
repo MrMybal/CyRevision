@@ -35,6 +35,19 @@ public interface IGitRepositoryService
         int maximumCount = 200,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<GitGraphCommit>> GetCommitGraphAsync(
+        string repositoryPath,
+        int maximumCount = 250,
+        bool includeAllBranches = true,
+        CancellationToken cancellationToken = default);
+
+    Task<GitFileActivityGraph> GetFileActivityGraphAsync(
+        string repositoryPath,
+        int maximumCommitCount = 250,
+        int maximumFileCount = 80,
+        bool includeAllBranches = true,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<GitBranch>> GetBranchesAsync(
         string repositoryPath,
         CancellationToken cancellationToken = default);

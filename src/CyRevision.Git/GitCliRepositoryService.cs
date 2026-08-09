@@ -202,6 +202,196 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         return revisions;
     }
 
+    public async Task<IReadOnlyList<GitGraphCommit>> GetCommitGraphAsync(
+        string repositoryPath,
+        int maximumCount = 250,
+        bool includeAllBranches = true,
+        CancellationToken cancellationToken = default)
+    {
+        if (maximumCount is < 1 or > 5000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCount));
+        }
+
+        List<string> arguments = ["log"];
+        if (includeAllBranches)
+        {
+            arguments.Add("--all");
+        }
+
+        arguments.AddRange([
+            "--date-order",
+            $"--max-count={maximumCount}",
+            "--date=iso-strict",
+            "--decorate=short",
+            "--pretty=format:%H%x1f%h%x1f%P%x1f%an%x1f%aI%x1f%s%x1f%D%x1e"
+        ]);
+        ProcessResult result = await RunGitResultAsync(repositoryPath, arguments, cancellationToken).ConfigureAwait(false);
+        if (!result.Succeeded && result.StandardError.Contains("does not have any commits", StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        EnsureSuccess(result, "Unable to read the Git commit graph.");
+        List<GitGraphCommit> commits = [];
+        foreach (string entry in result.StandardOutput.Split('\x1e', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] fields = entry.Trim().Split('\x1f');
+            if (fields.Length != 7 ||
+                !DateTimeOffset.TryParse(fields[4], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset authoredAt))
+            {
+                continue;
+            }
+
+            commits.Add(new GitGraphCommit(
+                fields[0],
+                fields[1],
+                fields[2].Split(' ', StringSplitOptions.RemoveEmptyEntries),
+                fields[3],
+                authoredAt,
+                fields[5],
+                fields[6]));
+        }
+
+        return commits;
+    }
+
+    public async Task<GitFileActivityGraph> GetFileActivityGraphAsync(
+        string repositoryPath,
+        int maximumCommitCount = 250,
+        int maximumFileCount = 80,
+        bool includeAllBranches = true,
+        CancellationToken cancellationToken = default)
+    {
+        if (maximumCommitCount is < 1 or > 5000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCommitCount));
+        }
+
+        if (maximumFileCount is < 5 or > 250)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumFileCount));
+        }
+
+        List<string> arguments = ["-c", "core.quotepath=false", "log"];
+        if (includeAllBranches)
+        {
+            arguments.Add("--all");
+        }
+
+        arguments.AddRange([
+            "--date-order",
+            $"--max-count={maximumCommitCount}",
+            "--date=iso-strict",
+            "--pretty=format:%x1e%H%x1f%aI",
+            "--numstat"
+        ]);
+        ProcessResult result = await RunGitResultAsync(repositoryPath, arguments, cancellationToken).ConfigureAwait(false);
+        if (!result.Succeeded && result.StandardError.Contains("does not have any commits", StringComparison.OrdinalIgnoreCase))
+        {
+            return new GitFileActivityGraph([], [], 0, 0);
+        }
+
+        EnsureSuccess(result, "Unable to analyze Git file activity.");
+        Dictionary<string, MutableFileActivity> activities = new(StringComparer.Ordinal);
+        List<HashSet<string>> commitFiles = [];
+        int commitCount = 0;
+        foreach (string rawEntry in result.StandardOutput.Split('\x1e', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string entry = rawEntry.TrimStart('\r', '\n');
+            int lineBreak = entry.IndexOfAny(['\r', '\n']);
+            string header = lineBreak < 0 ? entry : entry[..lineBreak];
+            string[] headerFields = header.Split('\x1f');
+            if (headerFields.Length != 2 ||
+                !DateTimeOffset.TryParse(headerFields[1], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset changedAt))
+            {
+                continue;
+            }
+
+            commitCount++;
+            HashSet<string> pathsInCommit = new(StringComparer.Ordinal);
+            if (lineBreak >= 0)
+            {
+                foreach (string line in entry[(lineBreak + 1)..].Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string[] fields = line.Split('\t', 3);
+                    if (fields.Length != 3 || string.IsNullOrWhiteSpace(fields[2]))
+                    {
+                        continue;
+                    }
+
+                    string path = NormalizeHistoryPath(fields[2]);
+                    if (string.IsNullOrWhiteSpace(path))
+                    {
+                        continue;
+                    }
+
+                    pathsInCommit.Add(path);
+                    if (!activities.TryGetValue(path, out MutableFileActivity? activity))
+                    {
+                        activity = new MutableFileActivity(path, ClassifyFile(path));
+                        activities.Add(path, activity);
+                    }
+
+                    activity.ChangeCount++;
+                    activity.LastChangedAt = activity.LastChangedAt > changedAt ? activity.LastChangedAt : changedAt;
+                    if (fields[0] == "-" || fields[1] == "-")
+                    {
+                        activity.BinaryChangeCount++;
+                    }
+                    else
+                    {
+                        if (long.TryParse(fields[0], NumberStyles.None, CultureInfo.InvariantCulture, out long additions))
+                        {
+                            activity.AddedLines += additions;
+                        }
+
+                        if (long.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out long deletions))
+                        {
+                            activity.DeletedLines += deletions;
+                        }
+                    }
+                }
+            }
+
+            commitFiles.Add(pathsInCommit);
+        }
+
+        GitFileActivity[] files = activities.Values
+            .OrderByDescending(activity => activity.ChangeCount)
+            .ThenByDescending(activity => activity.AddedLines + activity.DeletedLines)
+            .ThenBy(activity => activity.Path, StringComparer.OrdinalIgnoreCase)
+            .Take(maximumFileCount)
+            .Select(activity => activity.ToRecord())
+            .ToArray();
+        HashSet<string> selectedPaths = files.Select(file => file.Path).ToHashSet(StringComparer.Ordinal);
+        Dictionary<(string Source, string Target), int> relations = new();
+        foreach (HashSet<string> changedPaths in commitFiles)
+        {
+            string[] selected = changedPaths.Where(selectedPaths.Contains)
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .Take(40)
+                .ToArray();
+            for (int left = 0; left < selected.Length; left++)
+            {
+                for (int right = left + 1; right < selected.Length; right++)
+                {
+                    (string, string) key = (selected[left], selected[right]);
+                    relations[key] = relations.GetValueOrDefault(key) + 1;
+                }
+            }
+        }
+
+        GitFileRelation[] graphRelations = relations
+            .OrderByDescending(pair => pair.Value)
+            .ThenBy(pair => pair.Key.Source, StringComparer.Ordinal)
+            .ThenBy(pair => pair.Key.Target, StringComparer.Ordinal)
+            .Take(300)
+            .Select(pair => new GitFileRelation(pair.Key.Source, pair.Key.Target, pair.Value))
+            .ToArray();
+        return new GitFileActivityGraph(files, graphRelations, commitCount, activities.Count);
+    }
+
     public async Task<IReadOnlyList<GitBranch>> GetBranchesAsync(
         string repositoryPath,
         CancellationToken cancellationToken = default)
@@ -534,6 +724,64 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         int ahead = match.Groups["ahead"].Success ? int.Parse(match.Groups["ahead"].Value, CultureInfo.InvariantCulture) : 0;
         int behind = match.Groups["behind"].Success ? int.Parse(match.Groups["behind"].Value, CultureInfo.InvariantCulture) : 0;
         return (ahead, behind);
+    }
+
+    private static string NormalizeHistoryPath(string value)
+    {
+        string path = value.Trim().Trim('"').Replace('\\', '/');
+        int arrow = path.IndexOf(" => ", StringComparison.Ordinal);
+        if (arrow < 0)
+        {
+            return path;
+        }
+
+        int openBrace = path.LastIndexOf('{', arrow);
+        int closeBrace = path.IndexOf('}', arrow);
+        if (openBrace >= 0 && closeBrace > arrow)
+        {
+            string replacement = path[(arrow + 4)..closeBrace];
+            return path[..openBrace] + replacement + path[(closeBrace + 1)..];
+        }
+
+        return path[(arrow + 4)..];
+    }
+
+    private static GitFileKind ClassifyFile(string path)
+    {
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+        return extension switch
+        {
+            ".cs" or ".cpp" or ".c" or ".h" or ".hpp" or ".inl" or ".py" or ".js" or ".ts" or
+                ".tsx" or ".jsx" or ".java" or ".kt" or ".rs" or ".go" or ".shader" or ".usf" or ".ush" or
+                ".axaml" or ".html" or ".css" or ".scss" or ".ps1" or ".sh" => GitFileKind.Code,
+            ".uasset" or ".umap" => GitFileKind.UnrealAsset,
+            ".png" or ".jpg" or ".jpeg" or ".tga" or ".bmp" or ".exr" or ".hdr" or ".dds" or ".tif" or ".tiff" => GitFileKind.Texture,
+            ".fbx" or ".obj" or ".gltf" or ".glb" or ".usd" or ".usda" or ".usdc" or ".blend" => GitFileKind.Model,
+            ".wav" or ".mp3" or ".ogg" or ".flac" or ".aiff" => GitFileKind.Audio,
+            ".md" or ".txt" or ".pdf" or ".doc" or ".docx" or ".rtf" => GitFileKind.Document,
+            ".json" or ".xml" or ".yaml" or ".yml" or ".ini" or ".toml" or ".config" or ".csproj" or ".sln" => GitFileKind.Configuration,
+            _ => GitFileKind.Other
+        };
+    }
+
+    private sealed class MutableFileActivity(string path, GitFileKind kind)
+    {
+        public string Path { get; } = path;
+        public GitFileKind Kind { get; } = kind;
+        public int ChangeCount { get; set; }
+        public long AddedLines { get; set; }
+        public long DeletedLines { get; set; }
+        public int BinaryChangeCount { get; set; }
+        public DateTimeOffset LastChangedAt { get; set; }
+
+        public GitFileActivity ToRecord() => new(
+            Path,
+            Kind,
+            ChangeCount,
+            AddedLines,
+            DeletedLines,
+            BinaryChangeCount,
+            LastChangedAt);
     }
 
     private static void EnsurePaths(IReadOnlyCollection<string> paths)
