@@ -301,5 +301,11 @@
   "Versions": "Versions",
   "Répliquer les backups": "Replicate backups",
   "Plan calculé localement — aucun transfert lancé.": "Plan calculated locally — no transfer started.",
-  "Sélectionner l'emplacement de l'archive froide": "Select the cold archive location"
+  "Sélectionner l'emplacement de l'archive froide": "Select the cold archive location",
+  "Documentation": "Documentation",
+  "Aide": "Help",
+  "Guide hors ligne": "Offline guide",
+  "Disponible sans navigateur ni connexion réseau.": "Available without a browser or network connection.",
+  "Rechercher dans la documentation…": "Search the documentation…",
+  "Cette documentation est livrée avec CyRevision et reste accessible hors ligne.": "This documentation is bundled with CyRevision and remains available offline."
 }

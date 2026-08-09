@@ -1,5 +1,9 @@
 # CyRevision
 
+<p align="center">
+  <img src="src/CyRevision.Desktop/Assets/Branding/cyrevision-logo-concept.png" alt="CyRevision logo" width="420">
+</p>
+
 **English** · [Français](README.fr.md)
 
 CyRevision is a revision control, synchronization, and backup client designed for large projects, especially Unreal Engine productions. It does not require GitHub: Git and Git LFS remain local, while optional peer-to-peer synchronization transports verified transactions between authorized devices.
@@ -23,6 +27,7 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 - Optional Unreal Editor plugin for opening CyRevision and publishing non-blocking advisory asset reservations.
 - Optional WireGuard integration with guided setup, isolated tunnels, VPN-only peers, and Unreal Swarm/CI/service profiles.
 - Extensible localization: English is the default, French is included, and additional JSON catalogs can be added to the desktop client and web dashboard.
+- Searchable offline documentation bundled with the desktop application in English and French.
 
 ## Open in Rider
 

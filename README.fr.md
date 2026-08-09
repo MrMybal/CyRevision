@@ -1,5 +1,9 @@
 # CyRevision
 
+<p align="center">
+  <img src="src/CyRevision.Desktop/Assets/Branding/cyrevision-logo-concept.png" alt="Logo CyRevision" width="420">
+</p>
+
 [English](README.md) · **Français**
 
 CyRevision est un client de révision, synchronisation et sauvegarde pensé pour les projets lourds, notamment Unreal Engine. Il fonctionne sans GitHub : Git et Git LFS restent locaux, tandis que la synchronisation P2P optionnelle transporte des transactions sûres entre appareils autorisés.
@@ -23,6 +27,7 @@ CyRevision est un client de révision, synchronisation et sauvegarde pensé pour
 - Plugin Unreal Editor optionnel avec ouverture de CyRevision et réservations souples non bloquantes des assets.
 - WireGuard optionnel avec configuration guidée, tunnels isolés, pairs VPN-only et profils Unreal Swarm/CI/services.
 - Localisation extensible : anglais par défaut, français inclus et catalogues JSON supplémentaires pour le client et le dashboard web.
+- Documentation hors ligne consultable et recherchable directement dans l'application en anglais et en français.
 
 ## Ouvrir dans Rider
 

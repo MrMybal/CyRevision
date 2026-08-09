@@ -8,6 +8,7 @@
         d:DesignHeight="900"
         x:Class="CyRevision.Desktop.MainWindow"
         Title="CyRevision"
+        Icon="/Assets/Branding/cyrevision-icon-master.png"
         Width="1440"
         Height="900"
         MinWidth="1120"
@@ -54,8 +55,8 @@
         <Border Grid.Row="0" Grid.ColumnSpan="2" Background="#10172A" BorderBrush="#252E45" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="252,*,Auto" Margin="18,0">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
-                    <Border Width="34" Height="34" CornerRadius="9" Background="#6D5EF5">
-                        <TextBlock Text="C" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="19" FontWeight="Bold" />
+                    <Border Width="36" Height="36" CornerRadius="9" ClipToBounds="True" Background="#07142E">
+                        <Image Source="/Assets/Branding/cyrevision-icon-master.png" Stretch="UniformToFill" />
                     </Border>
                     <TextBlock Text="CyRevision" VerticalAlignment="Center" FontSize="19" FontWeight="SemiBold" />
                 </StackPanel>
@@ -898,6 +899,56 @@
                                 </Border>
                                 <TextBlock Grid.Row="2" Text="Les Blueprints et assets Unreal sont comparés sans l'éditeur par structure binaire et symboles détectables. Le plugin Unreal ajoutera ensuite un graphe visuel complet." TextWrapping="Wrap" FontSize="11" Classes="muted" />
                             </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Aide">
+                    <Grid Margin="0,14,0,0" ColumnDefinitions="340,*" ColumnSpacing="14">
+                        <Border Classes="card">
+                            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10">
+                                <StackPanel>
+                                    <TextBlock Text="Guide hors ligne" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock Text="Disponible sans navigateur ni connexion réseau."
+                                               FontSize="11" Classes="muted" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <TextBox Grid.Row="1" Text="{Binding DocumentationSearch}"
+                                         PlaceholderText="Rechercher dans la documentation…" />
+                                <ListBox Grid.Row="2" ItemsSource="{Binding DocumentationTopics}"
+                                         SelectedItem="{Binding SelectedDocumentationTopic}"
+                                         Background="Transparent" BorderThickness="0">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="7,6" Spacing="3">
+                                                <TextBlock Text="{Binding Category}" FontSize="10" Foreground="#78D7B7" />
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding Summary}" FontSize="10" Classes="muted"
+                                                           TextWrapping="Wrap" MaxHeight="44" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="1" Classes="card">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel MaxWidth="860" HorizontalAlignment="Left" Spacing="11" Margin="4">
+                                    <TextBlock Text="{Binding SelectedDocumentationTopic.Category}"
+                                               FontSize="11" Foreground="#78D7B7" />
+                                    <TextBlock Text="{Binding SelectedDocumentationTopic.Title}"
+                                               FontSize="25" FontWeight="Bold" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding SelectedDocumentationTopic.Summary}"
+                                               FontSize="13" Foreground="#B8C1D8" TextWrapping="Wrap" />
+                                    <Border Height="1" Background="#29324A" Margin="0,5,0,7" />
+                                    <TextBlock Text="{Binding SelectedDocumentationTopic.Body}"
+                                               FontSize="12" LineHeight="20" TextWrapping="Wrap" />
+                                    <Border Background="#10241F" CornerRadius="8" Padding="12" Margin="0,12,0,0">
+                                        <TextBlock Text="Cette documentation est livrée avec CyRevision et reste accessible hors ligne."
+                                                   FontSize="11" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
                         </Border>
                     </Grid>
                 </TabItem>
