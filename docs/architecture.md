@@ -11,10 +11,13 @@
 | `CyRevision.Backup` | Objets dédupliqués, manifestes et restauration |
 | `CyRevision.Security` | Identités ECDSA, invitations, certificats et révocation |
 | `CyRevision.Diff` | Comparaisons d’assets sans moteur |
+| `CyRevision.Vpn` | Profils WireGuard, clés, configuration, tunnel possédé et admission VPN |
 | `CyRevision.Server` | Pair Linux, API, ordonnanceurs et dashboard web |
 | `CyRevisionUnreal` | Menus Content Browser, fenêtre de présence et pont vers le client |
 
 Les modules sont activés par des drapeaux indépendants. Git ne dépend pas de Sync ; Sync ne dépend pas de Git ; Backup peut être utilisé seul.
+
+Le VPN est lui aussi indépendant des modes projet. Il transporte du trafic IP générique et ne donne par lui-même aucun droit Git ou Syncthing. Le MVP adopte une étoile autour du nœud invitant, adaptée à un serveur, une CI ou un coordinateur Swarm permanent.
 
 ## Git + Sync
 

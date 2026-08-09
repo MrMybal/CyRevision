@@ -3,7 +3,7 @@ WORKDIR /app
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git git-lfs syncthing \
+    && apt-get install -y --no-install-recommends ca-certificates git git-lfs syncthing wireguard-tools \
     && git lfs install --system \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --home-dir /home/cyrevision cyrevision \

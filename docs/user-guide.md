@@ -48,6 +48,14 @@ Le propriétaire colle la demande et clique **Approuver**. Le nouvel appareil im
 
 Le propriétaire peut sélectionner un membre actif et cliquer **Révoquer**. Les fichiers déjà copiés sur cet appareil ne peuvent évidemment pas être effacés à distance.
 
+## VPN WireGuard
+
+Le VPN ne dépend pas du mode choisi dans **Projet**. Dans **VPN WireGuard**, cliquez **Détecter et configurer automatiquement** : CyRevision utilise l'installation officielle existante, génère les clés du projet et prépare une interface `cyrev-*` séparée de vos autres tunnels.
+
+Indiquez un endpoint public `hôte:port` sur le nœud qui reçoit les connexions, choisissez sa fonction puis créez une invitation VPN. Le nouvel appareil configure WireGuard localement, colle l'invitation et renvoie la réponse signée ; le propriétaire l'accepte explicitement. Un pair VPN-only ne reçoit aucun accès Git ou Sync.
+
+Pour Unreal Swarm, utilisez de préférence un coordinateur Windows permanent comme nœud invitant. CyRevision affiche son IP VPN ; renseignez-la dans `CoordinatorRemotingHost` et autorisez TCP 8008/8009. Le guide complet se trouve dans [wireguard-vpn.md](wireguard-vpn.md).
+
 ## Sauvegardes
 
 Dans **Sauvegardes**, choisissez un dossier local, NAS ou volume monté, puis la stratégie :

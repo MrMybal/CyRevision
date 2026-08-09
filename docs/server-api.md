@@ -25,5 +25,10 @@ Principales routes :
 - `POST /api/v1/projects/{id}/peers/membership`
 - `GET /api/v1/projects/{id}/peers`
 - `DELETE /api/v1/projects/{id}/peers/{deviceId}`
+- `POST /api/v1/projects/{id}/vpn/configure`
+- `GET /api/v1/projects/{id}/vpn/profile|status`
+- `POST /api/v1/projects/{id}/vpn/start|stop`
+- `POST /api/v1/projects/{id}/vpn/invitations|join|accept`
+- `DELETE /api/v1/projects/{id}/vpn/peers/{peerId}`
 
 Le dashboard embarqué utilise la même API. Le token reste dans `sessionStorage` et disparaît à la fermeture de l’onglet.

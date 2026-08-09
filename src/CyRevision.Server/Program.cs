@@ -8,8 +8,12 @@ using CyRevision.Git;
 using CyRevision.Security;
 using CyRevision.Server;
 using CyRevision.Sync;
+using CyRevision.Vpn;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
+builder.Logging.AddDebug();
 ServerOptions options = ServerOptions.Create(builder.Configuration, builder.Environment);
 options.EnsureDirectories();
 
@@ -18,6 +22,12 @@ builder.Services.AddSingleton<IProjectCatalog>(_ => new JsonProjectCatalog(optio
 builder.Services.AddSingleton<IGitRepositoryService, GitCliRepositoryService>();
 builder.Services.AddSingleton<IGitPeerExchangeService, GitPeerExchangeService>();
 builder.Services.AddSingleton<ISyncthingProfileStore>(_ => new JsonSyncthingProfileStore(options.SyncthingDirectory));
+builder.Services.AddSingleton<IVpnProfileStore>(_ => new JsonVpnProfileStore(options.VpnDirectory));
+builder.Services.AddSingleton<WireGuardKeyService>();
+builder.Services.AddSingleton(_ => new WireGuardConfigService(options.VpnDirectory));
+builder.Services.AddSingleton(provider => new ManagedWireGuardEngine(
+    options.VpnDirectory,
+    provider.GetRequiredService<WireGuardConfigService>()));
 builder.Services.AddSingleton<ServerRuntime>();
 builder.Services.AddHostedService<BackupSchedulerService>();
 builder.Services.AddHostedService<GitExchangeSchedulerService>();
@@ -85,6 +95,9 @@ app.MapGet("/api/v1/capabilities", () => Results.Ok(new
     signedGitBundles = true,
     peerSync = true,
     backup = true,
+    wireGuardVpn = true,
+    vpnOnlyPeers = true,
+    unrealSwarmPreset = true,
     presets = ProjectPresets.All.Select(preset => new { preset.Kind, preset.Name, preset.Description })
 }));
 
@@ -166,6 +179,71 @@ app.MapGet("/api/v1/projects/{projectId:guid}/sync/status", async (
     ServerRuntime runtime,
     CancellationToken cancellationToken) =>
     Results.Ok(await runtime.GetSyncStatusAsync(projectId, cancellationToken)));
+
+app.MapPost("/api/v1/projects/{projectId:guid}/vpn/configure", async (
+    Guid projectId,
+    ConfigureServerVpnRequest request,
+    ServerRuntime runtime,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await runtime.ConfigureVpnAsync(projectId, request, cancellationToken)));
+
+app.MapGet("/api/v1/projects/{projectId:guid}/vpn/profile", async (
+    Guid projectId,
+    ServerRuntime runtime,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await runtime.GetVpnProfileAsync(projectId, cancellationToken)));
+
+app.MapGet("/api/v1/projects/{projectId:guid}/vpn/status", async (
+    Guid projectId,
+    ServerRuntime runtime,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await runtime.GetVpnStatusAsync(projectId, cancellationToken)));
+
+app.MapPost("/api/v1/projects/{projectId:guid}/vpn/start", async (
+    Guid projectId,
+    ServerRuntime runtime,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await runtime.StartVpnAsync(projectId, cancellationToken)));
+
+app.MapPost("/api/v1/projects/{projectId:guid}/vpn/stop", async (
+    Guid projectId,
+    ServerRuntime runtime,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await runtime.StopVpnAsync(projectId, cancellationToken)));
+
+app.MapPost("/api/v1/projects/{projectId:guid}/vpn/invitations", async (
+    Guid projectId,
+    CreateVpnInvitationRequest request,
+    ServerRuntime runtime,
+    CancellationToken cancellationToken) =>
+{
+    SignedVpnInvitation invitation = await runtime.CreateVpnInvitationAsync(projectId, request.Capabilities, cancellationToken);
+    return Results.Ok(new { exchangeText = VpnPeerExchangeCodec.ExportInvitation(invitation), invitation.Invitation.ExpiresAt });
+});
+
+app.MapPost("/api/v1/projects/{projectId:guid}/vpn/join", async (
+    Guid projectId,
+    VpnPeerExchangeRequest request,
+    ServerRuntime runtime,
+    CancellationToken cancellationToken) =>
+    Results.Ok(new { exchangeText = await runtime.JoinVpnInvitationAsync(projectId, request.ExchangeText, request.Capabilities, cancellationToken) }));
+
+app.MapPost("/api/v1/projects/{projectId:guid}/vpn/accept", async (
+    Guid projectId,
+    PeerExchangeRequest request,
+    ServerRuntime runtime,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await runtime.AcceptVpnResponseAsync(projectId, request.ExchangeText, cancellationToken)));
+
+app.MapDelete("/api/v1/projects/{projectId:guid}/vpn/peers/{peerId:guid}", async (
+    Guid projectId,
+    Guid peerId,
+    ServerRuntime runtime,
+    CancellationToken cancellationToken) =>
+{
+    await runtime.RemoveVpnPeerAsync(projectId, peerId, cancellationToken);
+    return Results.NoContent();
+});
 
 app.MapPost("/api/v1/projects/{projectId:guid}/peers/invitations", async (
     Guid projectId,

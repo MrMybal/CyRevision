@@ -7,6 +7,7 @@
 - altération d’un bundle Git ou d’un objet LFS ;
 - transaction publiée par un rôle en lecture seule ;
 - prise de contrôle de l’installation Syncthing personnelle ;
+- arrêt ou modification accidentelle d'un tunnel WireGuard personnel ;
 - traversée de chemin lors d’une restauration ou d’un import.
 
 ## Contrôles
@@ -22,6 +23,9 @@
 - API Syncthing sur loopback et clé distincte par projet ;
 - arrêt limité à l’objet `Process` lancé par CyRevision ;
 - token Bearer pour l’API Linux.
+- interface WireGuard dédiée `cyrev-*`, marqueur de propriété obligatoire avant arrêt et refus des collisions ;
+- invitations VPN ECDSA limitées dans le temps, adresse et capacités signées, acceptation explicite par le propriétaire ;
+- aucune route Internet complète créée par défaut et clé privée masquée dans l'interface ;
 
 ## Responsabilités d'exploitation
 

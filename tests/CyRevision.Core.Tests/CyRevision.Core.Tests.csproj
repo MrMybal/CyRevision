@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\src\CyRevision.Git\CyRevision.Git.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Security\CyRevision.Security.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Sync\CyRevision.Sync.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Vpn\CyRevision.Vpn.csproj" />
   </ItemGroup>
 
 </Project>
