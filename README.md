@@ -1,39 +1,43 @@
 # CyRevision
 
-CyRevision est un client de révision, synchronisation et sauvegarde pensé pour les projets lourds, notamment Unreal Engine. Il fonctionne sans GitHub : Git et Git LFS restent locaux, tandis que la synchronisation P2P optionnelle transporte des transactions sûres entre appareils autorisés.
+**English** · [Français](README.fr.md)
 
-## Ce qui fonctionne
+CyRevision is a revision control, synchronization, and backup client designed for large projects, especially Unreal Engine productions. It does not require GitHub: Git and Git LFS remain local, while optional peer-to-peer synchronization transports verified transactions between authorized devices.
 
-- application desktop native Windows/Linux/macOS avec Avalonia ;
-- catalogue de projets et cinq modes : **Git**, **Git + Sync**, **Sync**, **Sync + versions**, **Backup** ;
-- Git local : statut, index, commits, explorateur interactif, comparaison A ↔ B, historique par fichier, branches, merge, remotes et Git LFS ;
-- Time Machine LFS : chronologie des objets, emplacements local/pair/archive, demande signée à la demande, reprise des transferts, aperçu des textures, export et restauration confirmée ;
-- visualisations Git optionnelles : commits, co-modifications, activité d'équipe et dépendances Unreal simplifiées hors moteur ;
-- Git P2P intelligent : bundles et inventaires signés, priorités LFS paramétrables, transferts reprenables et objets vérifiés par SHA-256, sans synchroniser le `.git` actif ;
-- Syncthing optionnel avec profil, identité, base, API loopback et port distincts pour chaque projet ;
-- invitations à usage unique, code transmis séparément, certificats ECDSA, rôles et révocation ;
-- snapshots dédupliqués par SHA-256, restauration, rétention et copie non destructive vers une archive froide ;
-- plan de synchronisation intelligent et paramétrable, sans démarrage implicite de Syncthing ;
-- diff hors moteur : texte, texture + heatmap, OBJ + superposition 3D, binaire et inspection simplifiée `.uasset`/`.umap` ;
-- serveur Linux optionnel avec API, planification des backups, échange Git et tableau de bord web protégé ;
-- plugin Unreal Editor optionnel avec ouverture du client et réservations souples non bloquantes des assets.
-- VPN WireGuard optionnel intégré : setup, clés, tunnel isolé, pairs VPN-only et profils Unreal Swarm/CI/services ;
-- interface multilingue : anglais par défaut, français inclus et catalogues JSON extensibles sur le client et le dashboard web ;
+> CyRevision is currently under active development. The core workflows are functional, but production hardening and large-scale multi-device testing are still in progress.
 
-## Ouvrir dans Rider
+## Current capabilities
 
-Ouvrez simplement `CyRevision.sln` dans JetBrains Rider. Le projet cible actuellement **.NET 8**, disponible sur la machine de développement. Une migration vers .NET 10 LTS pourra être faite lorsque tous les environnements ciblés l’auront installé.
+- Native Avalonia desktop application for Windows, Linux, and macOS.
+- Five project modes: **Git**, **Git + Sync**, **Sync**, **Sync + Versions**, and **Backup**.
+- Local Git workflows: status, staging, commits, branches, merges, remotes, Git LFS, an interactive history explorer, A ↔ B comparisons, and per-file history.
+- LFS Time Machine with object history, local/peer/archive availability, signed on-demand requests, resumable transfers, texture previews, export, and confirmed restore operations.
+- Optional Git visualizations for commit history, co-change relations, team activity, and simplified engine-independent Unreal dependencies.
+- Intelligent peer-to-peer Git exchange using signed bundles and inventories, configurable LFS priorities, resumable transfers, and SHA-256 verification without synchronizing the active `.git` directory.
+- Optional Syncthing integration with a dedicated profile, identity, database, loopback API, and port for every CyRevision project.
+- Secure peer admission with single-use invitations, out-of-band verification codes, ECDSA certificates, roles, and revocation.
+- SHA-256 deduplicated snapshots with restore, retention policies, and non-destructive cold-archive copies.
+- Configurable smart synchronization planning without implicitly starting Syncthing.
+- Engine-independent comparisons for text, textures and heatmaps, OBJ geometry, binary files, and simplified `.uasset`/`.umap` inspection.
+- Optional Linux server with an API, scheduled backups, scheduled Git exchange, and a protected web dashboard.
+- Optional Unreal Editor plugin for opening CyRevision and publishing non-blocking advisory asset reservations.
+- Optional WireGuard integration with guided setup, isolated tunnels, VPN-only peers, and Unreal Swarm/CI/service profiles.
+- Extensible localization: English is the default, French is included, and additional JSON catalogs can be added to the desktop client and web dashboard.
 
-Prérequis :
+## Open in Rider
 
-- .NET SDK 8 ou plus récent ;
-- Git ;
-- Git LFS ;
-- Syncthing uniquement si le mode Sync est utilisé ;
-- WireGuard uniquement si le mode VPN est utilisé ;
-- plugin Avalonia pour la prévisualisation XAML dans Rider, recommandé mais non obligatoire.
+Open `CyRevision.sln` in JetBrains Rider. The solution currently targets **.NET 8**. A future migration to .NET 10 LTS can be considered once all supported environments provide it.
 
-## Compiler et lancer
+### Requirements
+
+- .NET SDK 8 or newer.
+- Git.
+- Git LFS.
+- Syncthing only when a Sync mode is enabled.
+- WireGuard only when the VPN module is enabled.
+- The Avalonia plugin for Rider is recommended for XAML previews but is not required.
+
+## Build and run
 
 ```powershell
 dotnet restore CyRevision.sln
@@ -42,35 +46,41 @@ dotnet test CyRevision.sln
 dotnet run --project src/CyRevision.Desktop/CyRevision.Desktop.csproj
 ```
 
-Publication Windows :
+Publish on Windows:
 
 ```powershell
 ./scripts/publish.ps1
 ```
 
-Publication Linux :
+Publish on Linux:
 
 ```bash
 ./scripts/publish.sh
 ```
 
-## Règle de sécurité Syncthing
+## Syncthing safety rule
 
-CyRevision ne recherche, ne configure et n’arrête jamais une installation Syncthing déjà active. Un processus n’est lancé qu’après activation de Sync et sélection explicite de l’exécutable. Seule la référence du processus créé par CyRevision peut être arrêtée.
+CyRevision never discovers, configures, or stops an existing personal Syncthing installation. It starts a process only after Sync has been enabled and a Syncthing executable has been selected explicitly. CyRevision can stop only the exact child process instance it created.
 
-Pour Git + Sync, le dossier partagé contient des bundles Git signés, des certificats et des objets LFS immuables. Le working tree et `.git` restent locaux. En mode Sync sans Git, Syncthing partage directement le dossier choisi.
+In **Git + Sync** mode, the shared directory contains signed Git bundles, membership certificates, signed LFS inventories, and immutable content-addressed LFS objects. The working tree and active `.git` directory remain local. In **Sync without Git** mode, Syncthing shares the selected project directory directly.
 
 ## Documentation
 
-- [Guide utilisateur](docs/user-guide.md)
+Detailed documentation is currently available in French while its English translation is being prepared:
+
+- [User guide](docs/user-guide.md)
 - [Architecture](docs/architecture.md)
-- [Sécurité](docs/security.md)
-- [Serveur Linux](docs/linux-server.md)
-- [Diff hors moteur](docs/asset-diff.md)
-- [API serveur](docs/server-api.md)
-- [VPN WireGuard](docs/wireguard-vpn.md)
-- [Visualisations Git](docs/git-visualizations.md)
-- [Explorateur Git et Time Machine LFS](docs/git-explorer-lfs-time-machine.md)
-- [Synchronisation intelligente et archive froide](docs/smart-sync-and-cold-archive.md)
-- [Localisation](docs/localization.md)
-- [Pont Unreal](plugins/CyRevisionUnreal/README.md)
+- [Security](docs/security.md)
+- [Optional Linux server](docs/linux-server.md)
+- [Engine-independent asset diff](docs/asset-diff.md)
+- [Server API](docs/server-api.md)
+- [WireGuard VPN](docs/wireguard-vpn.md)
+- [Git visualizations](docs/git-visualizations.md)
+- [Git explorer and LFS Time Machine](docs/git-explorer-lfs-time-machine.md)
+- [Smart synchronization and cold archive](docs/smart-sync-and-cold-archive.md)
+- [Localization](docs/localization.md)
+- [Unreal Editor bridge](plugins/CyRevisionUnreal/README.md)
+
+## License
+
+CyRevision is licensed under the [GNU Affero General Public License v3.0](LICENSE).
