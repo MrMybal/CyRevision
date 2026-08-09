@@ -177,3 +177,4 @@ jobs:
             gh release create "$RELEASE_TAG" "${files[@]}" \
               --title "CyRevision $RELEASE_TAG" \
               --generate-notes
+          fi
