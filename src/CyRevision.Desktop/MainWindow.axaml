@@ -205,16 +205,93 @@
                 </TabItem>
 
                 <TabItem Header="Historique">
-                    <Border Margin="0,14,0,0" Classes="card">
-                        <DataGrid ItemsSource="{Binding History}" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Révision" Binding="{Binding ShortHash}" Width="90" />
-                                <DataGridTextColumn Header="Description" Binding="{Binding Subject}" Width="*" />
-                                <DataGridTextColumn Header="Auteur" Binding="{Binding AuthorName}" Width="160" />
-                                <DataGridTextColumn Header="Date" Binding="{Binding AuthoredAt}" Width="190" />
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </Border>
+                    <Grid Margin="0,14,0,0" RowDefinitions="Auto,*" RowSpacing="10">
+                        <Border Classes="card" Padding="13">
+                            <Grid ColumnDefinitions="*,Auto,250,Auto" ColumnSpacing="10">
+                                <TextBox Text="{Binding ExplorerSearch}" PlaceholderText="Rechercher par message, auteur ou hash…" />
+                                <TextBlock Grid.Column="1" Text="Comparer avec" Classes="muted" VerticalAlignment="Center" />
+                                <ComboBox Grid.Column="2" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedComparisonRevision}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock>
+                                                <TextBlock.Inlines>
+                                                    <Run Text="{Binding ShortHash}" />
+                                                    <Run Text="  " />
+                                                    <Run Text="{Binding Subject}" />
+                                                </TextBlock.Inlines>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <Button Grid.Column="3" Classes="primary" Content="Comparer A ↔ B" Click="OnCompareExplorerCommitsClick" />
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="310,6,*,6,390">
+                            <Border Classes="card" Padding="10">
+                                <Grid RowDefinitions="Auto,*">
+                                    <StackPanel Margin="7,4,7,9">
+                                        <TextBlock Text="Chronologie" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="Cliquez sur une révision pour l'inspecter." FontSize="10" Classes="muted" />
+                                    </StackPanel>
+                                    <DataGrid Grid.Row="1" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedExplorerRevision}"
+                                              AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                              Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Révision" Binding="{Binding ShortHash}" Width="78" />
+                                            <DataGridTextColumn Header="Description" Binding="{Binding Subject}" Width="*" />
+                                            <DataGridTextColumn Header="Auteur" Binding="{Binding AuthorName}" Width="110" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+                            <GridSplitter Grid.Column="1" Width="6" Margin="1,14" ResizeDirection="Columns" Background="#34415D" Cursor="SizeWestEast" />
+
+                            <Border Grid.Column="2" Classes="card" Padding="10">
+                                <Grid RowDefinitions="Auto,*,Auto,150">
+                                    <StackPanel Margin="7,4,7,9">
+                                        <TextBlock Text="Fichiers de la révision" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding ExplorerSummary}" FontSize="10" Classes="muted" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <DataGrid Grid.Row="1" ItemsSource="{Binding ExplorerFiles}" SelectedItem="{Binding SelectedExplorerFile}"
+                                              AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                              Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="État" Binding="{Binding Kind}" Width="78" />
+                                            <DataGridTextColumn Header="Fichier" Binding="{Binding Path}" Width="*" />
+                                            <DataGridTextColumn Header="Variation" Binding="{Binding ChangeSummary}" Width="92" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="7,8,7,5">
+                                        <TextBlock Text="Historique du fichier" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Exporter cette version…" Click="OnExportExplorerFileClick" />
+                                    </Grid>
+                                    <DataGrid Grid.Row="3" ItemsSource="{Binding ExplorerFileHistory}" AutoGenerateColumns="False"
+                                              IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Révision" Binding="{Binding Revision.ShortHash}" Width="76" />
+                                            <DataGridTextColumn Header="Description" Binding="{Binding Revision.Subject}" Width="*" />
+                                            <DataGridTextColumn Header="Date" Binding="{Binding Revision.AuthoredAt}" Width="128" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+                            <GridSplitter Grid.Column="3" Width="6" Margin="1,14" ResizeDirection="Columns" Background="#34415D" Cursor="SizeWestEast" />
+
+                            <Border Grid.Column="4" Classes="card" Padding="12">
+                                <Grid RowDefinitions="Auto,*">
+                                    <StackPanel Margin="4,2,4,9">
+                                        <TextBlock Text="Diff ciblé" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="Lecture seule · aucun checkout" FontSize="10" Foreground="#78D7B7" />
+                                    </StackPanel>
+                                    <TextBox Grid.Row="1" Text="{Binding ExplorerDiff}" IsReadOnly="True" AcceptsReturn="True"
+                                             FontFamily="Cascadia Mono,Consolas" FontSize="11" TextWrapping="NoWrap"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
                 </TabItem>
 
                 <TabItem Header="Branches">
@@ -276,7 +353,7 @@
                         <TabControl Grid.Row="1">
                             <TabItem Header="Réseau de commits">
                                 <Border Margin="0,10,0,0" Classes="card" Padding="5">
-                                    <controls:GitCommitGraphView Commits="{Binding GitGraphCommits}" />
+                                    <controls:GitCommitGraphView Commits="{Binding GitGraphCommits}" CommitSelected="OnGraphCommitSelected" />
                                 </Border>
                             </TabItem>
 
@@ -318,16 +395,98 @@
                                     </Border>
                                 </Grid>
                             </TabItem>
+
+                            <TabItem Header="Activité d'équipe">
+                                <Grid Margin="0,10,0,0" RowDefinitions="Auto,220,*" RowSpacing="10">
+                                    <Border Classes="card" Padding="13">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Vue d'activité Git" FontSize="16" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding GitInsightsSummary}" Classes="muted" TextWrapping="Wrap" />
+                                            <TextBlock Text="Données calculées localement depuis les commits — aucun suivi utilisateur en arrière-plan."
+                                                       FontSize="10" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Classes="card" Padding="5">
+                                        <controls:GitActivityTimelineView Activity="{Binding GitDailyActivity}" />
+                                    </Border>
+                                    <Grid Grid.Row="2" ColumnDefinitions="1.15*,1*" ColumnSpacing="10">
+                                        <Border Classes="card" Padding="10">
+                                            <Grid RowDefinitions="Auto,*">
+                                                <TextBlock Text="Contributeurs" FontSize="15" FontWeight="SemiBold" Margin="6" />
+                                                <DataGrid Grid.Row="1" ItemsSource="{Binding GitContributors}" AutoGenerateColumns="False"
+                                                          IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                    <DataGrid.Columns>
+                                                        <DataGridTextColumn Header="Auteur" Binding="{Binding AuthorName}" Width="*" />
+                                                        <DataGridTextColumn Header="Commits" Binding="{Binding CommitCount}" Width="72" />
+                                                        <DataGridTextColumn Header="Fichiers" Binding="{Binding FilesTouched}" Width="70" />
+                                                        <DataGridTextColumn Header="Lignes" Binding="{Binding LineSummary}" Width="110" />
+                                                        <DataGridTextColumn Header="Dernière activité" Binding="{Binding LastActiveAt}" Width="145" />
+                                                    </DataGrid.Columns>
+                                                </DataGrid>
+                                            </Grid>
+                                        </Border>
+                                        <Border Grid.Column="1" Classes="card" Padding="10">
+                                            <Grid RowDefinitions="Auto,*">
+                                                <TextBlock Text="Points chauds" FontSize="15" FontWeight="SemiBold" Margin="6" />
+                                                <DataGrid Grid.Row="1" ItemsSource="{Binding GitHotFiles}" AutoGenerateColumns="False"
+                                                          IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                    <DataGrid.Columns>
+                                                        <DataGridTextColumn Header="Fichier" Binding="{Binding Path}" Width="*" />
+                                                        <DataGridTextColumn Header="Modif." Binding="{Binding ChangeCount}" Width="70" />
+                                                        <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="92" />
+                                                    </DataGrid.Columns>
+                                                </DataGrid>
+                                            </Grid>
+                                        </Border>
+                                    </Grid>
+                                </Grid>
+                            </TabItem>
+
+                            <TabItem Header="Dépendances Unreal">
+                                <Grid Margin="0,10,0,0" ColumnDefinitions="*,6,350">
+                                    <Border Classes="card" Padding="5">
+                                        <Grid RowDefinitions="Auto,*">
+                                            <StackPanel Margin="10,7,10,5" Spacing="3">
+                                                <TextBlock Text="Graphe des dépendances Unreal hors moteur" FontSize="16" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding UnrealDependencySummary}" Classes="muted" TextWrapping="Wrap" />
+                                                <TextBlock Text="Analyse simplifiée des références /Game détectables dans les .uasset et .umap présents localement."
+                                                           FontSize="10" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <controls:GitFileRelationGraphView Grid.Row="1"
+                                                                                  Files="{Binding UnrealDependencyFiles}"
+                                                                                  Relations="{Binding UnrealDependencyRelations}" />
+                                        </Grid>
+                                    </Border>
+                                    <GridSplitter Grid.Column="1" Width="6" Margin="1,16" ResizeDirection="Columns"
+                                                  Background="#34415D" Cursor="SizeWestEast" />
+                                    <Border Grid.Column="2" Classes="card" Padding="10" Margin="10,0,0,0">
+                                        <Grid RowDefinitions="Auto,*">
+                                            <StackPanel Margin="6,3,6,8">
+                                                <TextBlock Text="Assets inspectés" FontSize="15" FontWeight="SemiBold" />
+                                                <TextBlock Text="Dépendances sortantes / références entrantes" FontSize="10" Classes="muted" />
+                                            </StackPanel>
+                                            <DataGrid Grid.Row="1" ItemsSource="{Binding UnrealAssets}" AutoGenerateColumns="False"
+                                                      IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                <DataGrid.Columns>
+                                                    <DataGridTextColumn Header="Asset" Binding="{Binding Path}" Width="*" />
+                                                    <DataGridTextColumn Header="Type" Binding="{Binding AssetType}" Width="95" />
+                                                    <DataGridTextColumn Header="Relations" Binding="{Binding RelationSummary}" Width="90" />
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </TabItem>
                         </TabControl>
                     </Grid>
                 </TabItem>
 
                 <TabItem Header="Git LFS">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.2*,1*" ColumnSpacing="14">
-                        <Border Classes="card">
-                            <Grid RowDefinitions="Auto,*">
-                                <TextBlock Text="Motifs suivis par Git LFS" FontSize="16" FontWeight="SemiBold" />
-                                <ListBox Grid.Row="1" Margin="0,12,0,0" ItemsSource="{Binding LfsPatterns}">
+                    <Grid Margin="0,14,0,0" ColumnDefinitions="320,*,390" ColumnSpacing="12">
+                        <Border Classes="card" Padding="12">
+                            <Grid RowDefinitions="Auto,150,Auto,*">
+                                <TextBlock Text="Motifs suivis par Git LFS" FontSize="16" FontWeight="SemiBold" Margin="5" />
+                                <ListBox Grid.Row="1" Margin="0,7" ItemsSource="{Binding LfsPatterns}">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <Grid ColumnDefinitions="*,Auto" Margin="6">
@@ -337,15 +496,73 @@
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
+                                <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="7" Margin="0,4,0,10">
+                                    <TextBox Text="{Binding LfsPattern}" PlaceholderText="*.uasset" />
+                                    <Button Grid.Column="1" Classes="secondary" Content="Ajouter" Click="OnTrackLfsClick" />
+                                </Grid>
+                                <Grid Grid.Row="3" RowDefinitions="Auto,*">
+                                    <StackPanel Margin="5,0,5,7">
+                                        <TextBlock Text="Fichiers versionnés" FontWeight="SemiBold" />
+                                        <TextBlock Text="Objets présents dans HEAD" FontSize="10" Classes="muted" />
+                                    </StackPanel>
+                                    <ListBox Grid.Row="1" ItemsSource="{Binding LfsFiles}" SelectedItem="{Binding SelectedLfsFile}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="6">
+                                                    <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Availability}" Foreground="#78D7B7" FontSize="10" />
+                                                    <TextBlock Grid.Row="1" Text="{Binding Kind}" Classes="muted" FontSize="10" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SizeText}" Classes="muted" FontSize="10" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
                             </Grid>
                         </Border>
-                        <Border Grid.Column="1" Classes="card">
-                            <StackPanel Spacing="10">
-                                <TextBlock Text="Ajouter un motif" FontSize="16" FontWeight="SemiBold" />
-                                <TextBox Text="{Binding LfsPattern}" PlaceholderText="*.uasset" />
-                                <Button Classes="primary" Content="Suivre avec Git LFS" Click="OnTrackLfsClick" HorizontalAlignment="Left" />
-                                <TextBlock Text="Les changements de .gitattributes seront automatiquement placés dans l'index." TextWrapping="Wrap" FontSize="11" Classes="muted" />
-                            </StackPanel>
+                        <Border Grid.Column="1" Classes="card" Padding="12">
+                            <Grid RowDefinitions="Auto,*">
+                                <StackPanel Margin="5,2,5,9">
+                                    <TextBlock Text="Time Machine LFS" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding LfsTimelineSummary}" FontSize="10" Classes="muted" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <DataGrid Grid.Row="1" ItemsSource="{Binding LfsVersions}" SelectedItem="{Binding SelectedLfsVersion}"
+                                          AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                          Background="Transparent" BorderThickness="0">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Révision" Binding="{Binding Revision.ShortHash}" Width="76" />
+                                        <DataGridTextColumn Header="Description" Binding="{Binding Revision.Subject}" Width="*" />
+                                        <DataGridTextColumn Header="Taille" Binding="{Binding SizeText}" Width="78" />
+                                        <DataGridTextColumn Header="Stockage" Binding="{Binding Availability}" Width="76" />
+                                        <DataGridTextColumn Header="Date" Binding="{Binding Revision.AuthoredAt}" Width="135" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+                        <Border Grid.Column="2" Classes="card" Padding="14">
+                            <Grid RowDefinitions="Auto,*,Auto,Auto">
+                                <StackPanel>
+                                    <TextBlock Text="Aperçu de la version" FontSize="16" FontWeight="SemiBold" />
+                                    <TextBlock Text="Textures affichées sans ouvrir Unreal" FontSize="10" Foreground="#78D7B7" />
+                                </StackPanel>
+                                <Border Grid.Row="1" Margin="0,12" Background="#0E1526" BorderBrush="#303A55" BorderThickness="1" CornerRadius="9">
+                                    <Grid>
+                                        <TextBlock Text="Aperçu disponible pour PNG, JPEG, TIFF, BMP et WebP"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                                                   MaxWidth="250" TextWrapping="Wrap" Classes="muted" />
+                                        <Image Source="{Binding LfsPreview}" Stretch="Uniform" Margin="8" />
+                                    </Grid>
+                                </Border>
+                                <StackPanel Grid.Row="2" Spacing="5" Margin="0,0,0,12">
+                                    <TextBlock Text="• Local : l'objet peut être prévisualisé, exporté ou restauré immédiatement." TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                    <TextBlock Text="• Missing : CyRevision ne télécharge rien automatiquement." TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                    <TextBlock Text="• La restauration modifie seulement le fichier de travail et ne l'indexe pas." TextWrapping="Wrap" FontSize="10" Foreground="#E5A94D" />
+                                </StackPanel>
+                                <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="secondary" Content="Exporter…" Click="OnExportLfsVersionClick" />
+                                    <Button Classes="danger" Content="Restaurer dans le projet…" Click="OnRestoreLfsVersionClick" />
+                                </StackPanel>
+                            </Grid>
                         </Border>
                     </Grid>
                 </TabItem>
@@ -400,6 +617,23 @@
                                             <TextBox Text="{Binding RetentionBudgetGb}" PlaceholderText="illimité" />
                                         </StackPanel>
                                     </Grid>
+                                    <Border Height="1" Background="#29324A" Margin="0,6" />
+                                    <TextBlock Text="Archive froide des anciens snapshots" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock Text="Copie vers un disque, NAS ou stockage monté moins cher. Le stockage actif n'est jamais supprimé automatiquement."
+                                               TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <TextBox Text="{Binding ColdArchivePath}" IsReadOnly="True" PlaceholderText="Archive froide facultative" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Choisir…" Click="OnPickColdArchiveClick" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="150,*,Auto" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Text="Archiver après (jours)" FontSize="10" Classes="muted" />
+                                            <TextBox Text="{Binding ColdArchiveAfterDays}" PlaceholderText="180" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding ColdArchiveStatus}" VerticalAlignment="Center"
+                                                   TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                        <Button Grid.Column="2" Classes="secondary" Content="Archiver maintenant" Click="OnArchiveOldBackupsClick" VerticalAlignment="Bottom" />
+                                    </Grid>
                                     <Button Classes="primary" Content="Enregistrer la stratégie" Click="OnSaveBackupSettingsClick" HorizontalAlignment="Left" Margin="0,7,0,0" />
                                     <TextBlock Text="La restauration refuse d'écraser des fichiers existants afin de protéger le projet courant." TextWrapping="Wrap" FontSize="11" Classes="muted" />
                                 </StackPanel>
@@ -430,6 +664,28 @@
                                 <Border Background="#10241F" CornerRadius="8" Padding="11" Margin="0,8,0,0">
                                     <TextBlock Text="CyRevision utilise ses propres dossiers config/data, une API locale dédiée et ne recherche ni n'arrête les autres processus Syncthing." TextWrapping="Wrap" FontSize="11" Foreground="#78D7B7" />
                                 </Border>
+                                <Border Height="1" Background="#29324A" Margin="0,5" />
+                                <TextBlock Text="Plan de synchronisation intelligent" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding SmartSyncPlanSummary}" TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                <Grid ColumnDefinitions="*,90,Auto" ColumnSpacing="7">
+                                    <ComboBox ItemsSource="{Binding LfsHistoryModes}" SelectedItem="{Binding SelectedLfsHistoryMode}" />
+                                    <TextBox Grid.Column="1" Text="{Binding SmartSyncRecentVersionCount}" PlaceholderText="Versions" />
+                                    <CheckBox Grid.Column="2" Content="Répliquer les backups" IsChecked="{Binding SmartSyncReplicateBackups}" VerticalAlignment="Center" />
+                                </Grid>
+                                <ListBox ItemsSource="{Binding SmartSyncPlanItems}" MaxHeight="210">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="5">
+                                                <TextBlock Text="{Binding Content}" FontWeight="SemiBold" />
+                                                <Border Grid.Column="1" Background="#242C47" CornerRadius="5" Padding="6,2">
+                                                    <TextBlock Text="{Binding Priority}" FontSize="9" Foreground="#B8C1D8" />
+                                                </Border>
+                                                <TextBlock Grid.Row="1" Text="{Binding Strategy}" FontSize="10" Classes="muted" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SizeText}" FontSize="10" Classes="muted" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </StackPanel>
                         </Border>
 

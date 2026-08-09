@@ -58,6 +58,37 @@ public sealed class FileSystemBackupServiceTests : IDisposable
         await Assert.ThrowsAsync<KeyNotFoundException>(() => service.GetManifestAsync(oldSnapshot.SnapshotId));
     }
 
+    [Fact]
+    public async Task ColdArchiveCopiesOldSnapshotsAndDeduplicatedObjectsWithoutDeletingSource()
+    {
+        string source = Path.Combine(_root, "archive-source");
+        string store = Path.Combine(_root, "active-store");
+        string archive = Path.Combine(_root, "cold-store");
+        Directory.CreateDirectory(source);
+        string file = Path.Combine(source, "asset.bin");
+        Guid projectId = Guid.NewGuid();
+        FileSystemBackupService service = new(new BackupStoreOptions(store));
+        await File.WriteAllTextAsync(file, "first");
+        BackupSnapshot first = await service.CreateSnapshotAsync(projectId, source, RetentionPolicy.KeepForever);
+        await File.WriteAllTextAsync(file, "second");
+        await service.CreateSnapshotAsync(projectId, source, RetentionPolicy.KeepForever);
+        await Task.Delay(20);
+
+        ColdArchiveResult result = await new FileSystemColdArchiveService().ArchiveEligibleAsync(
+            projectId,
+            store,
+            new ColdArchivePolicy(archive, TimeSpan.FromMilliseconds(1), MinimumRecentSnapshots: 0));
+
+        Assert.Equal(2, result.ArchivedSnapshots);
+        Assert.True(result.CopiedObjects >= 2);
+        Assert.Equal(2, (await service.GetSnapshotsAsync(projectId)).Count);
+        FileSystemBackupService archivedService = new(new BackupStoreOptions(archive));
+        Assert.Equal(2, (await archivedService.GetSnapshotsAsync(projectId)).Count);
+        string restore = Path.Combine(_root, "cold-restore");
+        await archivedService.RestoreSnapshotAsync(first.SnapshotId, restore);
+        Assert.Equal("first", await File.ReadAllTextAsync(Path.Combine(restore, "asset.bin")));
+    }
+
     public void Dispose()
     {
         if (!Directory.Exists(_root))

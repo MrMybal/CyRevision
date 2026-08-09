@@ -11,7 +11,9 @@ public sealed record ProjectDefinition(
     string? StandardRemoteUrl = null,
     DateTimeOffset? CreatedAt = null,
     DateTimeOffset? LastOpenedAt = null,
-    string? BackupStorePath = null)
+    string? BackupStorePath = null,
+    string? ColdArchivePath = null,
+    int? ColdArchiveAfterDays = null)
 {
     public void Validate()
     {
@@ -42,6 +44,16 @@ public sealed record ProjectDefinition(
         if (!string.IsNullOrWhiteSpace(BackupStorePath) && !Path.IsPathFullyQualified(BackupStorePath))
         {
             throw new InvalidOperationException("The backup store path must be absolute.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(ColdArchivePath) && !Path.IsPathFullyQualified(ColdArchivePath))
+        {
+            throw new InvalidOperationException("The cold archive path must be absolute.");
+        }
+
+        if (ColdArchiveAfterDays is <= 0)
+        {
+            throw new InvalidOperationException("The cold archive age must be greater than zero.");
         }
     }
 }

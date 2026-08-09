@@ -56,6 +56,124 @@ public sealed partial class AssetDiffService : IAssetDiffService
         return await CompareBinaryAsync(baseline, candidate, AssetDiffKind.Binary, cancellationToken);
     }
 
+    public async Task<UnrealDependencyGraph> ScanUnrealDependenciesAsync(
+        string projectRoot,
+        int maximumAssetCount = 500,
+        CancellationToken cancellationToken = default)
+    {
+        if (maximumAssetCount is < 10 or > 5000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumAssetCount));
+        }
+
+        string root = Path.GetFullPath(projectRoot);
+        string contentRoot = Path.Combine(root, "Content");
+        if (!Directory.Exists(contentRoot))
+        {
+            return new UnrealDependencyGraph([], [], 0, 0, 0);
+        }
+
+        string[] allAssets = Directory.EnumerateFiles(contentRoot, "*", SearchOption.AllDirectories)
+            .Where(path => Path.GetExtension(path) is ".uasset" or ".umap")
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        string[] inspectedAssets = allAssets.Take(maximumAssetCount).ToArray();
+        Dictionary<string, string> packagePaths = inspectedAssets.ToDictionary(
+            path => GetUnrealPackageName(contentRoot, path),
+            path => Path.GetRelativePath(root, path).Replace('\\', '/'),
+            StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, HashSet<string>> outgoing = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, int> incoming = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> assetTypes = new(StringComparer.OrdinalIgnoreCase);
+        List<UnrealAssetDependency> dependencies = [];
+        int unresolvedReferences = 0;
+
+        foreach (string assetPath in inspectedAssets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string relativePath = Path.GetRelativePath(root, assetPath).Replace('\\', '/');
+            (HashSet<string> References, string AssetType) inspection = await InspectUnrealReferencesAsync(
+                assetPath,
+                cancellationToken);
+            assetTypes[relativePath] = inspection.AssetType;
+            HashSet<string> resolvedTargets = new(StringComparer.OrdinalIgnoreCase);
+            outgoing[relativePath] = resolvedTargets;
+            foreach (string packageReference in inspection.References)
+            {
+                if (!packagePaths.TryGetValue(packageReference, out string? targetPath))
+                {
+                    unresolvedReferences++;
+                    continue;
+                }
+
+                if (string.Equals(relativePath, targetPath, StringComparison.OrdinalIgnoreCase) ||
+                    !resolvedTargets.Add(targetPath))
+                {
+                    continue;
+                }
+
+                incoming[targetPath] = incoming.GetValueOrDefault(targetPath) + 1;
+                dependencies.Add(new UnrealAssetDependency(relativePath, targetPath, packageReference));
+            }
+        }
+
+        UnrealAssetNode[] nodes = inspectedAssets.Select(path =>
+        {
+            string relativePath = Path.GetRelativePath(root, path).Replace('\\', '/');
+            return new UnrealAssetNode(
+                relativePath,
+                GetUnrealPackageName(contentRoot, path),
+                assetTypes.GetValueOrDefault(relativePath, Path.GetExtension(path) == ".umap" ? "World" : "Asset"),
+                new FileInfo(path).Length,
+                outgoing.GetValueOrDefault(relativePath)?.Count ?? 0,
+                incoming.GetValueOrDefault(relativePath));
+        }).ToArray();
+        return new UnrealDependencyGraph(
+            nodes,
+            dependencies,
+            allAssets.Length,
+            inspectedAssets.Length,
+            unresolvedReferences);
+    }
+
+    private static async Task<(HashSet<string> References, string AssetType)> InspectUnrealReferencesAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        FileInfo file = new(path);
+        int length = (int)Math.Min(file.Length, 8 * 1024 * 1024);
+        byte[] buffer = new byte[length];
+        await using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 128, true);
+        int read = await stream.ReadAsync(buffer.AsMemory(0, length), cancellationToken);
+        string ascii = Encoding.ASCII.GetString(buffer, 0, read);
+        string unicode = Encoding.Unicode.GetString(buffer, 0, read - read % 2);
+        HashSet<string> references = UnrealPackageReferenceRegex().Matches(ascii)
+            .Concat(UnrealPackageReferenceRegex().Matches(unicode))
+            .Select(match => NormalizeUnrealPackageReference(match.Value))
+            .Where(value => value.StartsWith("/Game/", StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        string[] typeHints = ["Blueprint", "Texture2D", "StaticMesh", "SkeletalMesh", "MaterialInstance", "Material", "World", "Niagara", "SoundWave"];
+        string assetType = typeHints.FirstOrDefault(type =>
+            ascii.Contains(type, StringComparison.OrdinalIgnoreCase) ||
+            unicode.Contains(type, StringComparison.OrdinalIgnoreCase))
+            ?? (Path.GetExtension(path) == ".umap" ? "World" : "Asset");
+        return (references, assetType);
+    }
+
+    private static string GetUnrealPackageName(string contentRoot, string assetPath)
+    {
+        string relative = Path.GetRelativePath(contentRoot, assetPath).Replace('\\', '/');
+        return "/Game/" + relative[..^Path.GetExtension(relative).Length];
+    }
+
+    private static string NormalizeUnrealPackageReference(string value)
+    {
+        string reference = value.TrimEnd('\0', '\'', '"', ',', ';', ')', ']', '}');
+        int lastSlash = reference.LastIndexOf('/');
+        int objectSeparator = reference.IndexOf('.', Math.Max(0, lastSlash));
+        return objectSeparator > lastSlash ? reference[..objectSeparator] : reference;
+    }
+
     private static async Task<AssetDiffResult> CompareTexturesAsync(
         string baseline,
         string candidate,
@@ -422,6 +540,9 @@ public sealed partial class AssetDiffService : IAssetDiffService
 
     [GeneratedRegex("[A-Za-z_][A-Za-z0-9_./:-]{3,127}", RegexOptions.CultureInvariant)]
     private static partial Regex AsciiSymbolRegex();
+
+    [GeneratedRegex(@"/(?:Game|Engine)/[A-Za-z0-9_./-]+", RegexOptions.CultureInvariant)]
+    private static partial Regex UnrealPackageReferenceRegex();
 
     private sealed record ObjStatistics(int Vertices, int Faces, int TextureCoordinates, int Normals, string Bounds);
     private sealed record ObjGeometry(IReadOnlyList<Vector3> Points, IReadOnlyList<int[]> Faces, ObjStatistics Statistics);

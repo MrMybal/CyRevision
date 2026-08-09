@@ -60,6 +60,36 @@ public sealed class AssetDiffServiceTests : IDisposable
         Assert.Contains("Blueprint", result.Metrics["Types probables"], StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task UnrealDependencyScannerResolvesLocalGameAssetsWithoutEngine()
+    {
+        string content = Path.Combine(_root, "Content");
+        string characters = Path.Combine(content, "Characters");
+        string maps = Path.Combine(content, "Maps");
+        Directory.CreateDirectory(characters);
+        Directory.CreateDirectory(maps);
+        await File.WriteAllBytesAsync(
+            Path.Combine(characters, "Hero.uasset"),
+            "Blueprint /Game/Characters/Hero /Game/Characters/HeroMaterial.HeroMaterial"u8.ToArray());
+        await File.WriteAllBytesAsync(
+            Path.Combine(characters, "HeroMaterial.uasset"),
+            "Material /Game/Textures/MissingTexture"u8.ToArray());
+        await File.WriteAllBytesAsync(
+            Path.Combine(maps, "Arena.umap"),
+            "World /Game/Characters/Hero.Hero_C"u8.ToArray());
+
+        UnrealDependencyGraph graph = await new AssetDiffService().ScanUnrealDependenciesAsync(_root);
+
+        Assert.Equal(3, graph.TotalAssetCount);
+        Assert.Equal(3, graph.InspectedAssetCount);
+        Assert.Equal(2, graph.Dependencies.Count);
+        Assert.True(graph.UnresolvedReferenceCount >= 1);
+        UnrealAssetNode hero = Assert.Single(graph.Assets.Where(asset => asset.Path == "Content/Characters/Hero.uasset"));
+        Assert.Equal("Blueprint", hero.AssetType);
+        Assert.Equal(1, hero.DependencyCount);
+        Assert.Equal(1, hero.ReferencedByCount);
+    }
+
     public void Dispose()
     {
         if (!Directory.Exists(_root)) return;

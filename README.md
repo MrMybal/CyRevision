@@ -6,12 +6,14 @@ CyRevision est un client de révision, synchronisation et sauvegarde pensé pour
 
 - application desktop native Windows/Linux/macOS avec Avalonia ;
 - catalogue de projets et cinq modes : **Git**, **Git + Sync**, **Sync**, **Sync + versions**, **Backup** ;
-- Git local : statut, index, commits, historique, branches, merge, remotes et Git LFS ;
-- visualisations Git optionnelles : graphe nodal des commits et relations de co-modification entre fichiers ;
+- Git local : statut, index, commits, explorateur interactif, comparaison A ↔ B, historique par fichier, branches, merge, remotes et Git LFS ;
+- Time Machine LFS : chronologie des objets, disponibilité locale, aperçu des textures, export et restauration confirmée ;
+- visualisations Git optionnelles : commits, co-modifications, activité d'équipe et dépendances Unreal simplifiées hors moteur ;
 - Git P2P intelligent : bundles immuables signés et objets LFS vérifiés, sans synchroniser le `.git` actif ;
 - Syncthing optionnel avec profil, identité, base, API loopback et port distincts pour chaque projet ;
 - invitations à usage unique, code transmis séparément, certificats ECDSA, rôles et révocation ;
-- snapshots dédupliqués par SHA-256, restauration et rétention par âge, nombre, budget ou conservation permanente ;
+- snapshots dédupliqués par SHA-256, restauration, rétention et copie non destructive vers une archive froide ;
+- plan de synchronisation intelligent et paramétrable, sans démarrage implicite de Syncthing ;
 - diff hors moteur : texte, texture + heatmap, OBJ + superposition 3D, binaire et inspection simplifiée `.uasset`/`.umap` ;
 - serveur Linux optionnel avec API, planification des backups, échange Git et tableau de bord web protégé ;
 - plugin Unreal Editor optionnel avec ouverture du client et réservations souples non bloquantes des assets.
@@ -68,5 +70,7 @@ Pour Git + Sync, le dossier partagé contient des bundles Git signés, des certi
 - [API serveur](docs/server-api.md)
 - [VPN WireGuard](docs/wireguard-vpn.md)
 - [Visualisations Git](docs/git-visualizations.md)
+- [Explorateur Git et Time Machine LFS](docs/git-explorer-lfs-time-machine.md)
+- [Synchronisation intelligente et archive froide](docs/smart-sync-and-cold-archive.md)
 - [Localisation](docs/localization.md)
 - [Pont Unreal](plugins/CyRevisionUnreal/README.md)

@@ -67,6 +67,80 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
             relation.CoChangeCount == 2 &&
             new[] { relation.SourcePath, relation.TargetPath }.Contains("README.md") &&
             new[] { relation.SourcePath, relation.TargetPath }.Contains("asset.bin"));
+
+        GitRepositoryInsights insights = await service.GetRepositoryInsightsAsync(_temporaryDirectory);
+        Assert.Equal(5, insights.CommitCount);
+        Assert.Equal(1, insights.MergeCount);
+        Assert.Single(insights.Contributors);
+        Assert.Equal(3, insights.FileCount);
+        Assert.NotEmpty(insights.DailyActivity);
+        Assert.Contains(insights.HotFiles, file => file.Path == "README.md");
+
+        GitCommitDetails details = await service.GetCommitDetailsAsync(_temporaryDirectory, "HEAD^1");
+        Assert.Equal("Update documentation on main", details.Revision.Subject);
+        Assert.Contains(details.Files, file => file.Path == "README.md" && file.AddedLines > 0);
+
+        GitCommitComparison comparison = await service.CompareCommitsAsync(_temporaryDirectory, "HEAD^1", "HEAD");
+        Assert.Contains(comparison.Files, file => file.Path == "GraphSample.cs");
+        Assert.Contains("GraphSample", await service.GetComparisonDiffAsync(_temporaryDirectory, "HEAD^1", "HEAD"));
+
+        IReadOnlyList<GitFileRevision> readmeHistory = await service.GetFileHistoryAsync(
+            _temporaryDirectory,
+            "README.md");
+        Assert.Equal(3, readmeHistory.Count);
+        Assert.Equal("Update documentation on main", readmeHistory[0].Revision.Subject);
+    }
+
+    [Fact]
+    public async Task LfsTimeMachineFindsExportsAndRestoresLocalVersions()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable || !tools.LfsAvailable)
+        {
+            return;
+        }
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        await service.TrackLfsPatternAsync(_temporaryDirectory, "*.uasset");
+        string assetPath = Path.Combine(_temporaryDirectory, "Content", "Hero.uasset");
+        Directory.CreateDirectory(Path.GetDirectoryName(assetPath)!);
+        byte[] firstVersion = Enumerable.Range(0, 4096).Select(index => (byte)(index % 251)).ToArray();
+        byte[] secondVersion = Enumerable.Range(0, 6144).Select(index => (byte)((index * 7) % 253)).ToArray();
+        await File.WriteAllBytesAsync(assetPath, firstVersion);
+        await service.CreateRevisionAsync(
+            _temporaryDirectory,
+            "Add hero asset",
+            [".gitattributes", "Content/Hero.uasset"]);
+        await File.WriteAllBytesAsync(assetPath, secondVersion);
+        await service.CreateRevisionAsync(_temporaryDirectory, "Update hero asset", ["Content/Hero.uasset"]);
+
+        IReadOnlyList<LfsTrackedFile> trackedFiles = await service.GetLfsTrackedFilesAsync(_temporaryDirectory);
+        LfsTrackedFile tracked = Assert.Single(trackedFiles);
+        Assert.Equal("Content/Hero.uasset", tracked.Path);
+        Assert.True(tracked.IsAvailableLocally);
+        Assert.Equal(secondVersion.LongLength, tracked.Pointer.Size);
+
+        IReadOnlyList<LfsFileVersion> versions = await service.GetLfsFileVersionsAsync(
+            _temporaryDirectory,
+            tracked.Path);
+        Assert.Equal(2, versions.Count);
+        Assert.All(versions, version => Assert.True(version.IsAvailableLocally));
+        Assert.True(versions[0].IsCurrent);
+        Assert.Equal(firstVersion.LongLength, versions[1].Pointer.Size);
+
+        GitCommitDetails latest = await service.GetCommitDetailsAsync(_temporaryDirectory, "HEAD");
+        GitCommitFileChange changedAsset = Assert.Single(latest.Files);
+        Assert.True(changedAsset.IsLfsObject);
+        Assert.Equal(secondVersion.LongLength, changedAsset.LfsPointer!.Size);
+
+        string exportPath = Path.Combine(_temporaryDirectory, "exports", "Hero-old.uasset");
+        await service.ExportLfsFileVersionAsync(_temporaryDirectory, versions[1], exportPath);
+        Assert.Equal(firstVersion, await File.ReadAllBytesAsync(exportPath));
+
+        await service.RestoreLfsFileVersionAsync(_temporaryDirectory, versions[1]);
+        Assert.Equal(firstVersion, await File.ReadAllBytesAsync(assetPath));
     }
 
     public void Dispose()

@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using CyRevision.Desktop.Controls;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.ViewModels;
 
@@ -10,6 +11,7 @@ public partial class MainWindow : Window
 {
     private MainWindowViewModel _viewModel = null!;
     private UiLocalizer? _uiLocalizer;
+    private LocalizationService? _localization;
 
     public MainWindow()
     {
@@ -20,6 +22,7 @@ public partial class MainWindow : Window
     {
         _viewModel = viewModel;
         DataContext = viewModel;
+        _localization = localization;
         _uiLocalizer = new UiLocalizer(this, localization);
         Opened += OnOpened;
         Closed += (_, _) => _uiLocalizer?.Dispose();
@@ -66,6 +69,23 @@ public partial class MainWindow : Window
     private async void OnAnalyzeGitGraphsClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.AnalyzeGitGraphsAsync();
 
+    private async void OnGraphCommitSelected(object? sender, GitCommitSelectedEventArgs e) =>
+        await _viewModel.SelectExplorerCommitAsync(e.Commit.Hash);
+
+    private async void OnCompareExplorerCommitsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CompareExplorerCommitsAsync();
+
+    private async void OnExportExplorerFileClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickSaveFileAsync(
+            _viewModel.SelectedExplorerFile?.Path,
+            "Exporter cette version");
+        if (path is not null)
+        {
+            await _viewModel.ExportSelectedExplorerFileAsync(path);
+        }
+    }
+
     private async void OnStageAllClick(object? sender, RoutedEventArgs e) => await _viewModel.StageAllAsync();
 
     private async void OnUnstageAllClick(object? sender, RoutedEventArgs e) => await _viewModel.UnstageAllAsync();
@@ -91,6 +111,33 @@ public partial class MainWindow : Window
 
     private async void OnTrackLfsClick(object? sender, RoutedEventArgs e) => await _viewModel.TrackLfsPatternAsync();
 
+    private async void OnExportLfsVersionClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickSaveFileAsync(
+            _viewModel.SelectedLfsVersion?.Path,
+            "Exporter la version LFS");
+        if (path is not null)
+        {
+            await _viewModel.ExportSelectedLfsVersionAsync(path);
+        }
+    }
+
+    private async void OnRestoreLfsVersionClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedLfsVersion is null)
+        {
+            return;
+        }
+
+        string title = Translate("Confirmer la restauration");
+        string message = Translate(
+            "Cette action remplace le fichier de travail par la version sélectionnée. Aucun commit ni indexation ne sera créé automatiquement.");
+        if (await ShowConfirmationAsync(title, message))
+        {
+            await _viewModel.RestoreSelectedLfsVersionAsync();
+        }
+    }
+
     private async void OnPickBackupStoreClick(object? sender, RoutedEventArgs e)
     {
         string? path = await PickFolderAsync("Sélectionner l'emplacement des sauvegardes");
@@ -102,6 +149,18 @@ public partial class MainWindow : Window
 
     private async void OnSaveBackupSettingsClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SaveBackupSettingsAsync();
+
+    private async void OnPickColdArchiveClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync(Translate("Sélectionner l'emplacement de l'archive froide"));
+        if (path is not null)
+        {
+            _viewModel.SetColdArchivePath(path);
+        }
+    }
+
+    private async void OnArchiveOldBackupsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ArchiveOldBackupsAsync();
 
     private async void OnCreateBackupClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CreateBackupAsync();
@@ -224,4 +283,66 @@ public partial class MainWindow : Window
 
         return files.Count == 0 ? null : files[0].TryGetLocalPath();
     }
+
+    private async Task<string?> PickSaveFileAsync(string? sourcePath, string title)
+    {
+        IStorageFile? file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = Translate(title),
+            SuggestedFileName = string.IsNullOrWhiteSpace(sourcePath) ? "revision.bin" : Path.GetFileName(sourcePath),
+            ShowOverwritePrompt = true
+        });
+        return file?.TryGetLocalPath();
+    }
+
+    private async Task<bool> ShowConfirmationAsync(string title, string message)
+    {
+        TextBlock description = new()
+        {
+            Text = message,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            MaxWidth = 470,
+            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#DDE3F0"))
+        };
+        Button cancel = new()
+        {
+            Content = Translate("Annuler"),
+            Padding = new Avalonia.Thickness(16, 9),
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#202941"))
+        };
+        Button confirm = new()
+        {
+            Content = Translate("Restaurer"),
+            Padding = new Avalonia.Thickness(16, 9),
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#8A3E51")),
+            Foreground = Avalonia.Media.Brushes.White
+        };
+        StackPanel buttons = new()
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Spacing = 9,
+            Children = { cancel, confirm }
+        };
+        Window dialog = new()
+        {
+            Title = title,
+            Width = 540,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#10172A")),
+            Content = new StackPanel
+            {
+                Margin = new Avalonia.Thickness(24),
+                Spacing = 20,
+                Children = { description, buttons }
+            }
+        };
+        cancel.Click += (_, _) => dialog.Close(false);
+        confirm.Click += (_, _) => dialog.Close(true);
+        return await dialog.ShowDialog<bool>(this);
+    }
+
+    private string Translate(string source) => _localization?.Translate(source) ?? source;
 }
