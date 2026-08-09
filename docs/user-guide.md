@@ -65,3 +65,15 @@ Restaurez d’abord vers un dossier vide et vérifiez le contenu avant de rempla
 ## Diff assets
 
 Choisissez deux fichiers ou sélectionnez un changement Git puis **Sélection Git ↔ HEAD**. Les textures produisent une heatmap ; les OBJ une vue filaire cyan/magenta ; les `.uasset` et `.umap` donnent un rapport binaire et les symboles/types détectables hors moteur.
+
+## Réservations souples Unreal
+
+Après installation du plugin `CyRevisionUnreal`, sélectionnez un ou plusieurs assets dans le Content Browser puis ouvrez le menu contextuel **CyRevision** :
+
+- **Signaler : je travaille dessus** indique votre présence ;
+- **Libérer mon signalement** retire uniquement vos marqueurs ;
+- **Voir les réservations souples** ouvre la fenêtre récapitulative dans Unreal.
+
+Le signalement n'effectue ni checkout, ni changement de permission, ni verrou Git LFS. Si quelqu'un travaille déjà sur l'asset, Unreal affiche son nom mais permet de continuer. Le marqueur est renouvelé chaque minute et expire après 30 minutes par défaut si l'éditeur est fermé ou ne peut plus actualiser la présence.
+
+Le client externe montre les mêmes informations dans **Travail en cours**. En Git + Sync, elles circulent dans la zone d'échange, hors de Git. En Sync seul, elles circulent sous `.cyrevision/presence`. Quand Sync est arrêté, la fonction reste utilisable localement et les marqueurs partiront au prochain démarrage de Sync.

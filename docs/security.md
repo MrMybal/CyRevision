@@ -23,7 +23,7 @@
 - arrêt limité à l’objet `Process` lancé par CyRevision ;
 - token Bearer pour l’API Linux.
 
-## Responsabilités d’exploitation
+## Responsabilités d'exploitation
 
 - utilisez TLS devant le serveur web dès qu’il n’est plus strictement local ;
 - protégez `/var/lib/cyrevision`, les clés et le token serveur par les permissions du système ;
@@ -31,5 +31,7 @@
 - révoquez rapidement une machine perdue ;
 - considérez qu’un ancien membre conserve les données déjà reçues ;
 - chiffrez les volumes de backup sensibles au repos.
+
+Les réservations souples sont volontairement informatives. Elles ne servent jamais de contrôle d'accès et n'autorisent ou n'interdisent aucune écriture. Leur transport bénéficie de l'admission des pairs Syncthing, mais un membre disposant de l'écriture sur la zone d'échange peut modifier un marqueur ou son nom affiché. Les décisions de sécurité restent fondées sur les certificats, rôles et signatures des transactions Git, pas sur la présence Unreal.
 
 Le rôle limite l’acceptation des transactions Git. En Sync de fichiers sans Git, un client modifié peut ignorer sa configuration locale `receiveonly`; utilisez un propriétaire en `sendonly`, des backups et une segmentation réseau lorsqu’une garantie plus forte est nécessaire.

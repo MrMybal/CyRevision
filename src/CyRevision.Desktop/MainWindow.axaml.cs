@@ -145,6 +145,12 @@ public partial class MainWindow : Window
     private async void OnRevokePeerClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RevokeSelectedPeerAsync();
 
+    private async void OnRefreshAdvisoryReservationsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshAdvisoryReservationsAsync();
+
+    private async void OnCleanExpiredAdvisoryReservationsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RemoveExpiredAdvisoryReservationsAsync();
+
     private async void OnPickAssetBaselineClick(object? sender, RoutedEventArgs e)
     {
         string? path = await PickFileAsync("Choisir l'asset de référence");

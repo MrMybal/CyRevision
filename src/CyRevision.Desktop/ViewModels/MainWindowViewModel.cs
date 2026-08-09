@@ -54,6 +54,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _assetDiffReport = "Choisissez deux fichiers, ou comparez une modification Git à HEAD.";
     private Bitmap? _assetDiffPreview;
     private PeerMemberViewModel? _selectedPeerMember;
+    private string _reservationSummary = "Aucune réservation souple active.";
 
     public MainWindowViewModel(
         IProjectCatalog projectCatalog,
@@ -86,6 +87,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<BackupSnapshotViewModel> Backups { get; } = [];
 
     public ObservableCollection<PeerMemberViewModel> PeerMembers { get; } = [];
+
+    public ObservableCollection<AdvisoryReservationViewModel> AdvisoryReservations { get; } = [];
 
     public IReadOnlyList<RetentionMode> RetentionModes { get; } = Enum.GetValues<RetentionMode>();
 
@@ -303,6 +306,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         set => SetProperty(ref _selectedPeerMember, value);
     }
 
+    public string ReservationSummary
+    {
+        get => _reservationSummary;
+        private set => SetProperty(ref _reservationSummary, value);
+    }
+
     public async Task InitializeAsync()
     {
         await RunOperationAsync("Chargement des projets…", async () =>
@@ -316,6 +325,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             Projects.Clear();
             foreach (ProjectDefinition definition in definitions.OrderByDescending(project => project.LastOpenedAt))
             {
+                if (Projects.Any(project => ProjectPathsEqual(project.RootPath, definition.RootPath)))
+                {
+                    continue;
+                }
                 Projects.Add(new ProjectItemViewModel(definition));
             }
 
@@ -323,7 +336,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             {
                 string fullPath = Path.GetFullPath(_initialProjectPath);
                 ProjectItemViewModel? known = Projects.FirstOrDefault(project =>
-                    string.Equals(project.RootPath, fullPath, StringComparison.OrdinalIgnoreCase));
+                    ProjectPathsEqual(project.RootPath, fullPath));
                 if (known is null)
                 {
                     if (Directory.Exists(Path.Combine(fullPath, ".git")))
@@ -390,7 +403,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         await RunOperationAsync("Ajout du dossier…", async () =>
         {
             ProjectItemViewModel? existing = Projects.FirstOrDefault(project =>
-                string.Equals(project.RootPath, fullPath, StringComparison.OrdinalIgnoreCase));
+                ProjectPathsEqual(project.RootPath, fullPath));
             DateTimeOffset now = DateTimeOffset.UtcNow;
             ProjectPreset preset = ProjectPresets.All.Single(item => item.Kind == ProjectPresetKind.SyncOnly);
             ProjectDefinition definition = new(
@@ -430,7 +443,33 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, "Projet retiré du catalogue — aucun fichier supprimé");
     }
 
-    public Task RefreshAsync() => RunOperationAsync("Actualisation…", RefreshCoreAsync, "Dépôt actualisé");
+    public Task RefreshAsync() => RunOperationAsync("Actualisation…", async () =>
+    {
+        await RefreshCoreAsync();
+        await LoadAdvisoryReservationsCoreAsync();
+    }, "Dépôt et réservations actualisés");
+
+    public Task RefreshAdvisoryReservationsAsync() => RunOperationAsync(
+        "Actualisation des réservations souples…",
+        LoadAdvisoryReservationsCoreAsync,
+        "Réservations souples actualisées");
+
+    public async Task RemoveExpiredAdvisoryReservationsAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Nettoyage des réservations expirées…", async () =>
+        {
+            int removed = await GetAdvisoryReservationStore(SelectedProject.Definition).RemoveExpiredAsync();
+            await LoadAdvisoryReservationsCoreAsync();
+            ReservationSummary = removed == 0
+                ? "Aucune réservation expirée à nettoyer."
+                : $"{removed} réservation(s) expirée(s) supprimée(s).";
+        }, "Nettoyage terminé");
+    }
 
     public async Task StageAllAsync()
     {
@@ -759,6 +798,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await RefreshCoreAsync();
             await LoadBackupsCoreAsync();
             await LoadSyncProfileCoreAsync();
+            await LoadAdvisoryReservationsCoreAsync();
         }, $"Mode « {preset.Name} » appliqué");
     }
 
@@ -1069,6 +1109,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await RefreshCoreAsync();
             await LoadBackupsCoreAsync();
             await LoadSyncProfileCoreAsync();
+            await LoadAdvisoryReservationsCoreAsync();
             StatusMessage = "Dépôt chargé";
         }
         catch (Exception exception)
@@ -1411,6 +1452,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             ? Path.Combine(_applicationPaths.DataDirectory, "git-exchange", definition.Id.ToString("N"))
             : definition.RootPath;
 
+    private string ResolveAdvisoryPresenceDirectory(ProjectDefinition definition) =>
+        definition.Features.GitEnabled
+            ? Path.Combine(ResolveSyncExchangeDirectory(definition), "presence")
+            : Path.Combine(definition.RootPath, ".cyrevision", "presence");
+
     private void UpdateSyncStatus(SyncEngineStatus status)
     {
         SyncState = status.State switch
@@ -1481,6 +1527,34 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         ReplaceCollection(Backups, snapshots.Select(snapshot => new BackupSnapshotViewModel(snapshot)));
         SelectedBackup = Backups.FirstOrDefault();
     }
+
+    private async Task LoadAdvisoryReservationsCoreAsync()
+    {
+        if (SelectedProject is null)
+        {
+            AdvisoryReservations.Clear();
+            ReservationSummary = "Aucun projet sélectionné.";
+            return;
+        }
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        IReadOnlyList<AdvisoryReservation> reservations = await GetAdvisoryReservationStore(
+                SelectedProject.Definition)
+            .GetAllAsync(includeExpired: true);
+        ReplaceCollection(
+            AdvisoryReservations,
+            reservations.Select(reservation => new AdvisoryReservationViewModel(reservation, now)));
+        int activeCount = AdvisoryReservations.Count(reservation => !reservation.IsExpired);
+        int expiredCount = AdvisoryReservations.Count - activeCount;
+        ReservationSummary = activeCount == 0
+            ? expiredCount == 0
+                ? "Aucune réservation souple : tous les assets restent libres."
+                : $"Aucune réservation active · {expiredCount} expirée(s) à nettoyer."
+            : $"{activeCount} asset(s) signalé(s) en cours · {expiredCount} expirée(s) · aucun verrou bloquant.";
+    }
+
+    private IAdvisoryReservationStore GetAdvisoryReservationStore(ProjectDefinition definition) =>
+        new JsonAdvisoryReservationStore(definition.Id, ResolveAdvisoryPresenceDirectory(definition));
 
     private async Task<ProjectDefinition> EnsureBackupConfiguredAsync()
     {
@@ -1555,7 +1629,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         await _projectCatalog.UpsertAsync(definition);
         ProjectItemViewModel? existing = Projects.FirstOrDefault(project => project.Id == definition.Id) ??
                                          Projects.FirstOrDefault(project =>
-                                             string.Equals(project.RootPath, definition.RootPath, StringComparison.OrdinalIgnoreCase));
+                                             ProjectPathsEqual(project.RootPath, definition.RootPath));
         if (existing is null)
         {
             existing = new ProjectItemViewModel(definition);
@@ -1572,7 +1646,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private ProjectDefinition CreateGitProject(string rootPath)
     {
         ProjectItemViewModel? existing = Projects.FirstOrDefault(project =>
-            string.Equals(project.RootPath, rootPath, StringComparison.OrdinalIgnoreCase));
+            ProjectPathsEqual(project.RootPath, rootPath));
         DateTimeOffset now = DateTimeOffset.UtcNow;
         return new ProjectDefinition(
             existing?.Id ?? Guid.NewGuid(),
@@ -1599,6 +1673,18 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await operation(SelectedProject.RootPath, CancellationToken.None);
             await RefreshCoreAsync();
         }, successMessage);
+    }
+
+    private static bool ProjectPathsEqual(string left, string right)
+    {
+        string normalizedLeft = Path.GetFullPath(left)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string normalizedRight = Path.GetFullPath(right)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return string.Equals(
+            normalizedLeft,
+            normalizedRight,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     }
 
     private async Task RunOperationAsync(string progressMessage, Func<Task> operation, string successMessage)
@@ -1644,6 +1730,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         SyncDetails = "Aucun projet sélectionné.";
         PeerMembers.Clear();
         SelectedPeerMember = null;
+        AdvisoryReservations.Clear();
+        ReservationSummary = "Aucun projet sélectionné.";
         DiffText = "Sélectionnez un projet Git.";
     }
 

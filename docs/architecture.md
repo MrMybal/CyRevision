@@ -12,6 +12,7 @@
 | `CyRevision.Security` | Identités ECDSA, invitations, certificats et révocation |
 | `CyRevision.Diff` | Comparaisons d’assets sans moteur |
 | `CyRevision.Server` | Pair Linux, API, ordonnanceurs et dashboard web |
+| `CyRevisionUnreal` | Menus Content Browser, fenêtre de présence et pont vers le client |
 
 Les modules sont activés par des drapeaux indépendants. Git ne dépend pas de Sync ; Sync ne dépend pas de Git ; Backup peut être utilisé seul.
 
@@ -32,7 +33,13 @@ Les rôles `ReadOnly`, `Backup` et `EncryptedArchive` ne sont pas autorisés à 
 
 ## Sync sans Git
 
-Le dossier de travail est directement géré par Syncthing. Si Backup est actif, CyRevision crée en parallèle des snapshots externes et configure la conservation simple de Syncthing. Pour les données sensibles, la sécurité d’accès au système d’exploitation et au réseau reste indispensable.
+Le dossier de travail est directement géré par Syncthing. Si Backup est actif, CyRevision crée en parallèle des snapshots externes et configure la conservation simple de Syncthing. Pour les données sensibles, la sécurité d'accès au système d'exploitation et au réseau reste indispensable.
+
+## Réservations souples
+
+Une réservation souple est un marqueur de présence, jamais un verrou. Le plugin écrit un fichier JSON indépendant par couple utilisateur/asset dans `presence/reservations`. Cette granularité évite le fichier central concurrent et permet à plusieurs personnes de signaler le même asset.
+
+Le marqueur contient le projet, le package Unreal, le chemin relatif, l'utilisateur, la machine et trois dates UTC. Unreal renouvelle les marqueurs de l'utilisateur chaque minute. Après expiration ils restent visibles comme obsolètes jusqu'au nettoyage, sans bloquer le travail. En Git + Sync, `presence` réside dans la zone d'échange hors dépôt ; en Sync sans Git, il réside dans `.cyrevision/presence` au sein du dossier partagé.
 
 ## Instance Syncthing isolée
 
@@ -58,5 +65,5 @@ Un snapshot contient un manifeste JSON trié et des références vers des objets
 ## Limites assumées
 
 - un graphe Blueprint parfaitement fidèle nécessite le plugin Unreal et les sérialiseurs du moteur ; le client externe fournit une analyse structurale simplifiée ;
-- le bridge Unreal actuel lance le client externe, le fournisseur Source Control natif viendra dans un module séparé ;
+- le plugin Unreal fournit le pont externe et la présence non bloquante ; un fournisseur Source Control natif complet reste un module séparé ;
 - la direction `ReadOnly` du mode Sync sans Git repose aussi sur la configuration du client Syncthing distant ; Git, lui, vérifie le rôle cryptographiquement lors de l’import.

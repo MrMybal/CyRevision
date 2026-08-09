@@ -8,8 +8,13 @@ public class CyRevisionEditor : ModuleRules
         PublicDependencyModuleNames.AddRange(new[] { "Core" });
         PrivateDependencyModuleNames.AddRange(new[]
         {
+            "ApplicationCore",
+            "AssetRegistry",
+            "ContentBrowser",
             "CoreUObject",
             "Engine",
+            "InputCore",
+            "Json",
             "Projects",
             "Slate",
             "SlateCore",
