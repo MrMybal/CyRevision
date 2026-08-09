@@ -24,6 +24,9 @@ public interface ISyncEngine
 
     Task PauseAsync(CancellationToken cancellationToken = default);
 
+    Task ResumeAsync(CancellationToken cancellationToken = default);
+
+    Task<SyncEngineStatus> RefreshStatusAsync(CancellationToken cancellationToken = default);
+
     Task StopOwnedInstanceAsync(CancellationToken cancellationToken = default);
 }
-

@@ -45,6 +45,15 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnAddFolderClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Sélectionner un dossier à synchroniser ou sauvegarder");
+        if (path is not null)
+        {
+            await _viewModel.AddFolderProjectAsync(path);
+        }
+    }
+
     private async void OnRemoveProjectClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RemoveSelectedProjectAsync();
 
@@ -72,6 +81,62 @@ public partial class MainWindow : Window
 
     private async void OnTrackLfsClick(object? sender, RoutedEventArgs e) => await _viewModel.TrackLfsPatternAsync();
 
+    private async void OnPickBackupStoreClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Sélectionner l'emplacement des sauvegardes");
+        if (path is not null)
+        {
+            await _viewModel.SetBackupStoreAsync(path);
+        }
+    }
+
+    private async void OnSaveBackupSettingsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveBackupSettingsAsync();
+
+    private async void OnCreateBackupClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CreateBackupAsync();
+
+    private async void OnRestoreBackupClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Restaurer le snapshot dans un dossier vide");
+        if (path is not null)
+        {
+            await _viewModel.RestoreSelectedBackupAsync(path);
+        }
+    }
+
+    private async void OnApplyPresetClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ApplySelectedPresetAsync();
+
+    private async void OnPickSyncthingClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFileAsync("Sélectionner l'exécutable Syncthing dédié");
+        if (path is not null)
+        {
+            await _viewModel.SetSyncthingExecutableAsync(path);
+        }
+    }
+
+    private async void OnStartSyncClick(object? sender, RoutedEventArgs e) => await _viewModel.StartSyncAsync();
+
+    private async void OnPauseSyncClick(object? sender, RoutedEventArgs e) => await _viewModel.PauseSyncAsync();
+
+    private async void OnResumeSyncClick(object? sender, RoutedEventArgs e) => await _viewModel.ResumeSyncAsync();
+
+    private async void OnStopSyncClick(object? sender, RoutedEventArgs e) => await _viewModel.StopSyncAsync();
+
+    private async void OnCreateInvitationClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CreatePeerInvitationAsync();
+
+    private async void OnPrepareJoinRequestClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.PreparePeerJoinRequestAsync();
+
+    private async void OnApproveJoinRequestClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ApprovePeerJoinRequestAsync();
+
+    private async void OnImportMembershipGrantClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ImportMembershipGrantAsync();
+
     private async Task<string?> PickFolderAsync(string title)
     {
         IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -81,5 +146,16 @@ public partial class MainWindow : Window
         });
 
         return folders.Count == 0 ? null : folders[0].TryGetLocalPath();
+    }
+
+    private async Task<string?> PickFileAsync(string title)
+    {
+        IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false
+        });
+
+        return files.Count == 0 ? null : files[0].TryGetLocalPath();
     }
 }

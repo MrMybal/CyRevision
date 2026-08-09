@@ -21,8 +21,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\CyRevision.Backup\CyRevision.Backup.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Core\CyRevision.Core.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Git\CyRevision.Git.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Security\CyRevision.Security.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Sync\CyRevision.Sync.csproj" />
   </ItemGroup>
 
 </Project>
