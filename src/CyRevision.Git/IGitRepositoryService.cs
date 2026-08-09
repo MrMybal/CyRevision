@@ -48,6 +48,42 @@ public interface IGitRepositoryService
         bool includeAllBranches = true,
         CancellationToken cancellationToken = default);
 
+    Task<GitRepositoryInsights> GetRepositoryInsightsAsync(
+        string repositoryPath,
+        int maximumCommitCount = 500,
+        bool includeAllBranches = true,
+        CancellationToken cancellationToken = default);
+
+    Task<GitCommitDetails> GetCommitDetailsAsync(
+        string repositoryPath,
+        string revision,
+        CancellationToken cancellationToken = default);
+
+    Task<GitCommitComparison> CompareCommitsAsync(
+        string repositoryPath,
+        string fromRevision,
+        string toRevision,
+        CancellationToken cancellationToken = default);
+
+    Task<string> GetCommitDiffAsync(
+        string repositoryPath,
+        string revision,
+        string? relativePath = null,
+        CancellationToken cancellationToken = default);
+
+    Task<string> GetComparisonDiffAsync(
+        string repositoryPath,
+        string fromRevision,
+        string toRevision,
+        string? relativePath = null,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<GitFileRevision>> GetFileHistoryAsync(
+        string repositoryPath,
+        string relativePath,
+        int maximumCount = 200,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<GitBranch>> GetBranchesAsync(
         string repositoryPath,
         CancellationToken cancellationToken = default);
@@ -116,5 +152,26 @@ public interface IGitRepositoryService
 
     Task<IReadOnlyList<LfsTrackedPattern>> GetLfsPatternsAsync(
         string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<LfsTrackedFile>> GetLfsTrackedFilesAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<LfsFileVersion>> GetLfsFileVersionsAsync(
+        string repositoryPath,
+        string relativePath,
+        int maximumCount = 200,
+        CancellationToken cancellationToken = default);
+
+    Task ExportLfsFileVersionAsync(
+        string repositoryPath,
+        LfsFileVersion version,
+        string destinationPath,
+        CancellationToken cancellationToken = default);
+
+    Task RestoreLfsFileVersionAsync(
+        string repositoryPath,
+        LfsFileVersion version,
         CancellationToken cancellationToken = default);
 }

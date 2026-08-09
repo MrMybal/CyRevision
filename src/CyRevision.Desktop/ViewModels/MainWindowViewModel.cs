@@ -42,6 +42,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _lfsPattern = "*.uasset";
     private string _remoteUrl = string.Empty;
     private string _backupStorePath = string.Empty;
+    private string _coldArchivePath = string.Empty;
+    private string _coldArchiveAfterDays = "180";
+    private string _coldArchiveStatus = "Archive froide facultative — aucune suppression automatique.";
     private RetentionMode _selectedRetentionMode = RetentionMode.Timeline;
     private string _retentionVersions = "30";
     private string _retentionDays = "90";
@@ -69,6 +72,31 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private IReadOnlyList<GitGraphCommit> _gitGraphCommits = [];
     private IReadOnlyList<GitFileActivity> _gitFileActivities = [];
     private IReadOnlyList<GitFileRelation> _gitFileRelations = [];
+    private IReadOnlyList<GitContributorActivity> _gitContributors = [];
+    private IReadOnlyList<GitDailyActivity> _gitDailyActivity = [];
+    private IReadOnlyList<GitFileActivity> _gitHotFiles = [];
+    private string _gitInsightsSummary = "Analyse d'activité non lancée.";
+    private IReadOnlyList<GitFileActivity> _unrealDependencyFiles = [];
+    private IReadOnlyList<GitFileRelation> _unrealDependencyRelations = [];
+    private IReadOnlyList<UnrealAssetNode> _unrealAssets = [];
+    private string _unrealDependencySummary = "Analyse Unreal hors moteur non lancée.";
+    private IReadOnlyList<GitRevision> _allExplorerRevisions = [];
+    private GitRevision? _selectedExplorerRevision;
+    private GitRevision? _selectedComparisonRevision;
+    private GitCommitFileChange? _selectedExplorerFile;
+    private string _explorerSearch = string.Empty;
+    private string _explorerSummary = "Sélectionnez une révision pour l'inspecter.";
+    private string _explorerDiff = "Le diff de la révision apparaîtra ici.";
+    private string? _comparisonFromHash;
+    private string? _comparisonToHash;
+    private LfsTrackedFile? _selectedLfsFile;
+    private LfsFileVersion? _selectedLfsVersion;
+    private string _lfsTimelineSummary = "Sélectionnez un fichier LFS pour afficher ses versions.";
+    private Bitmap? _lfsPreview;
+    private LfsHistoryTransferMode _selectedLfsHistoryMode = LfsHistoryTransferMode.OnDemand;
+    private string _smartSyncRecentVersionCount = "3";
+    private bool _smartSyncReplicateBackups;
+    private string _smartSyncPlanSummary = "Plan calculé localement — aucun transfert lancé.";
     private VpnProjectProfile? _currentVpnProfile;
     private string _vpnState = "VPN non configuré";
     private string _vpnDetails = "WireGuard reste indépendant de Git et de Sync.";
@@ -124,6 +152,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<LfsTrackedPattern> LfsPatterns { get; } = [];
 
+    public ObservableCollection<GitCommitFileChange> ExplorerFiles { get; } = [];
+
+    public ObservableCollection<GitFileRevision> ExplorerFileHistory { get; } = [];
+
+    public ObservableCollection<LfsTrackedFile> LfsFiles { get; } = [];
+
+    public ObservableCollection<LfsFileVersion> LfsVersions { get; } = [];
+
+    public ObservableCollection<SmartSyncPlanItem> SmartSyncPlanItems { get; } = [];
+
     public ObservableCollection<BackupSnapshotViewModel> Backups { get; } = [];
 
     public ObservableCollection<PeerMemberViewModel> PeerMembers { get; } = [];
@@ -148,6 +186,198 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         private set => SetProperty(ref _gitFileRelations, value);
     }
 
+    public IReadOnlyList<GitContributorActivity> GitContributors
+    {
+        get => _gitContributors;
+        private set => SetProperty(ref _gitContributors, value);
+    }
+
+    public IReadOnlyList<GitDailyActivity> GitDailyActivity
+    {
+        get => _gitDailyActivity;
+        private set => SetProperty(ref _gitDailyActivity, value);
+    }
+
+    public IReadOnlyList<GitFileActivity> GitHotFiles
+    {
+        get => _gitHotFiles;
+        private set => SetProperty(ref _gitHotFiles, value);
+    }
+
+    public string GitInsightsSummary
+    {
+        get => _gitInsightsSummary;
+        private set => SetProperty(ref _gitInsightsSummary, value);
+    }
+
+    public IReadOnlyList<GitFileActivity> UnrealDependencyFiles
+    {
+        get => _unrealDependencyFiles;
+        private set => SetProperty(ref _unrealDependencyFiles, value);
+    }
+
+    public IReadOnlyList<GitFileRelation> UnrealDependencyRelations
+    {
+        get => _unrealDependencyRelations;
+        private set => SetProperty(ref _unrealDependencyRelations, value);
+    }
+
+    public IReadOnlyList<UnrealAssetNode> UnrealAssets
+    {
+        get => _unrealAssets;
+        private set => SetProperty(ref _unrealAssets, value);
+    }
+
+    public string UnrealDependencySummary
+    {
+        get => _unrealDependencySummary;
+        private set => SetProperty(ref _unrealDependencySummary, value);
+    }
+
+    public GitRevision? SelectedExplorerRevision
+    {
+        get => _selectedExplorerRevision;
+        set
+        {
+            if (SetProperty(ref _selectedExplorerRevision, value) && value is not null)
+            {
+                if (SelectedComparisonRevision is null || SelectedComparisonRevision.Hash == value.Hash)
+                {
+                    SelectedComparisonRevision = History.FirstOrDefault(revision => revision.Hash != value.Hash);
+                }
+
+                _ = LoadExplorerRevisionAsync(value);
+            }
+        }
+    }
+
+    public GitRevision? SelectedComparisonRevision
+    {
+        get => _selectedComparisonRevision;
+        set => SetProperty(ref _selectedComparisonRevision, value);
+    }
+
+    public GitCommitFileChange? SelectedExplorerFile
+    {
+        get => _selectedExplorerFile;
+        set
+        {
+            if (SetProperty(ref _selectedExplorerFile, value))
+            {
+                _ = LoadExplorerFileAsync(value);
+            }
+        }
+    }
+
+    public string ExplorerSearch
+    {
+        get => _explorerSearch;
+        set
+        {
+            if (SetProperty(ref _explorerSearch, value))
+            {
+                ApplyExplorerFilter();
+            }
+        }
+    }
+
+    public string ExplorerSummary
+    {
+        get => _explorerSummary;
+        private set => SetProperty(ref _explorerSummary, value);
+    }
+
+    public string ExplorerDiff
+    {
+        get => _explorerDiff;
+        private set => SetProperty(ref _explorerDiff, value);
+    }
+
+    public LfsTrackedFile? SelectedLfsFile
+    {
+        get => _selectedLfsFile;
+        set
+        {
+            if (SetProperty(ref _selectedLfsFile, value))
+            {
+                _ = LoadLfsTimelineAsync(value);
+            }
+        }
+    }
+
+    public LfsFileVersion? SelectedLfsVersion
+    {
+        get => _selectedLfsVersion;
+        set
+        {
+            if (SetProperty(ref _selectedLfsVersion, value))
+            {
+                LoadLfsPreview(value);
+            }
+        }
+    }
+
+    public string LfsTimelineSummary
+    {
+        get => _lfsTimelineSummary;
+        private set => SetProperty(ref _lfsTimelineSummary, value);
+    }
+
+    public Bitmap? LfsPreview
+    {
+        get => _lfsPreview;
+        private set
+        {
+            Bitmap? previous = _lfsPreview;
+            if (SetProperty(ref _lfsPreview, value))
+            {
+                previous?.Dispose();
+            }
+        }
+    }
+
+    public LfsHistoryTransferMode SelectedLfsHistoryMode
+    {
+        get => _selectedLfsHistoryMode;
+        set
+        {
+            if (SetProperty(ref _selectedLfsHistoryMode, value))
+            {
+                UpdateSmartSyncPlan();
+            }
+        }
+    }
+
+    public string SmartSyncRecentVersionCount
+    {
+        get => _smartSyncRecentVersionCount;
+        set
+        {
+            if (SetProperty(ref _smartSyncRecentVersionCount, value))
+            {
+                UpdateSmartSyncPlan();
+            }
+        }
+    }
+
+    public bool SmartSyncReplicateBackups
+    {
+        get => _smartSyncReplicateBackups;
+        set
+        {
+            if (SetProperty(ref _smartSyncReplicateBackups, value))
+            {
+                UpdateSmartSyncPlan();
+            }
+        }
+    }
+
+    public string SmartSyncPlanSummary
+    {
+        get => _smartSyncPlanSummary;
+        private set => SetProperty(ref _smartSyncPlanSummary, value);
+    }
+
     public ObservableCollection<VpnPeerViewModel> VpnPeers { get; } = [];
 
     public IReadOnlyList<RetentionMode> RetentionModes { get; } = Enum.GetValues<RetentionMode>();
@@ -160,6 +390,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         Enum.GetValues<VpnNodeCapabilities>().Where(value => value != VpnNodeCapabilities.None).ToArray();
 
     public IReadOnlyList<LanguageOption> Languages => _localization.Languages;
+
+    public IReadOnlyList<LfsHistoryTransferMode> LfsHistoryModes { get; } = Enum.GetValues<LfsHistoryTransferMode>();
 
     public LanguageOption? SelectedLanguage
     {
@@ -278,6 +510,24 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _backupStorePath;
         private set => SetProperty(ref _backupStorePath, value);
+    }
+
+    public string ColdArchivePath
+    {
+        get => _coldArchivePath;
+        private set => SetProperty(ref _coldArchivePath, value);
+    }
+
+    public string ColdArchiveAfterDays
+    {
+        get => _coldArchiveAfterDays;
+        set => SetProperty(ref _coldArchiveAfterDays, value);
+    }
+
+    public string ColdArchiveStatus
+    {
+        get => _coldArchiveStatus;
+        private set => SetProperty(ref _coldArchiveStatus, value);
     }
 
     public RetentionMode SelectedRetentionMode
@@ -665,18 +915,159 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 commitLimit,
                 fileLimit,
                 GitGraphIncludeAllBranches);
-            await Task.WhenAll(commitsTask, filesTask);
+            Task<GitRepositoryInsights> insightsTask = _gitService.GetRepositoryInsightsAsync(
+                SelectedProject.RootPath,
+                Math.Min(1000, Math.Max(commitLimit, 500)),
+                GitGraphIncludeAllBranches);
+            Task<UnrealDependencyGraph> unrealTask = _assetDiffService.ScanUnrealDependenciesAsync(
+                SelectedProject.RootPath,
+                Math.Min(1000, Math.Max(fileLimit * 5, 100)));
+            await Task.WhenAll(commitsTask, filesTask, insightsTask, unrealTask);
             IReadOnlyList<GitGraphCommit> commits = await commitsTask;
             GitFileActivityGraph files = await filesTask;
+            GitRepositoryInsights insights = await insightsTask;
+            UnrealDependencyGraph unreal = await unrealTask;
             GitGraphCommits = commits.ToArray();
             GitFileActivities = files.Files.ToArray();
             GitFileRelations = files.Relations.ToArray();
+            GitContributors = insights.Contributors.ToArray();
+            GitDailyActivity = insights.DailyActivity.ToArray();
+            GitHotFiles = insights.HotFiles.ToArray();
+            GitInsightsSummary = $"{insights.CommitCount} commits · {insights.ContributorCount} contributeur(s) · " +
+                                 $"{insights.FileCount} fichier(s) · +{insights.AddedLines} / -{insights.DeletedLines} · " +
+                                 $"{insights.BinaryChanges} changement(s) binaire(s)";
+            UnrealAssets = unreal.Assets.ToArray();
+            UnrealDependencyFiles = unreal.Assets.Select(asset => new GitFileActivity(
+                asset.Path,
+                GitFileKind.UnrealAsset,
+                Math.Max(1, asset.DependencyCount + asset.ReferencedByCount),
+                0,
+                0,
+                1,
+                DateTimeOffset.MinValue)).ToArray();
+            UnrealDependencyRelations = unreal.Dependencies.Select(dependency => new GitFileRelation(
+                dependency.SourcePath,
+                dependency.TargetPath,
+                1)).ToArray();
+            UnrealDependencySummary = $"{unreal.InspectedAssetCount} / {unreal.TotalAssetCount} asset(s) inspecté(s) · " +
+                                      $"{unreal.Dependencies.Count} dépendance(s) résolue(s) · " +
+                                      $"{unreal.UnresolvedReferenceCount} référence(s) externe(s) ou non résolue(s)";
             int mergeCount = commits.Count(commit => commit.IsMerge);
             int binaryFiles = files.Files.Count(file => file.BinaryChangeCount > 0);
             GitGraphSummary = $"{commits.Count} commits · {mergeCount} merges · " +
                               $"{files.TotalFileCount} fichiers analysés · {binaryFiles} binaires · " +
                               $"{files.Relations.Count} relations analysées";
         }, "Graphes Git construits — analyse en lecture seule");
+    }
+
+    public Task SelectExplorerCommitAsync(string commitHash)
+    {
+        if (string.IsNullOrWhiteSpace(commitHash))
+        {
+            return Task.CompletedTask;
+        }
+
+        GitRevision? revision = _allExplorerRevisions.FirstOrDefault(item => item.Hash == commitHash);
+        if (revision is not null)
+        {
+            SelectedExplorerRevision = revision;
+            return Task.CompletedTask;
+        }
+
+        return SelectExplorerCommitCoreAsync(commitHash);
+    }
+
+    public async Task CompareExplorerCommitsAsync()
+    {
+        if (SelectedProject is null || SelectedExplorerRevision is null || SelectedComparisonRevision is null)
+        {
+            StatusMessage = "Sélectionnez deux révisions à comparer";
+            return;
+        }
+
+        GitRevision target = SelectedExplorerRevision;
+        GitRevision baseline = SelectedComparisonRevision;
+        await RunOperationAsync("Comparaison des révisions…", async () =>
+        {
+            GitCommitComparison comparison = await _gitService.CompareCommitsAsync(
+                SelectedProject.RootPath,
+                baseline.Hash,
+                target.Hash);
+            _comparisonFromHash = baseline.Hash;
+            _comparisonToHash = target.Hash;
+            ReplaceCollection(ExplorerFiles, comparison.Files);
+            ExplorerFileHistory.Clear();
+            ExplorerSummary = $"{baseline.ShortHash} ↔ {target.ShortHash} · {comparison.Files.Count} fichier(s) · " +
+                              $"+{comparison.AddedLines} / -{comparison.DeletedLines} · {comparison.BinaryFileCount} binaire(s)";
+            ExplorerDiff = await _gitService.GetComparisonDiffAsync(
+                SelectedProject.RootPath,
+                baseline.Hash,
+                target.Hash);
+            SelectedExplorerFile = ExplorerFiles.FirstOrDefault();
+        }, "Comparaison prête — aucune donnée modifiée");
+    }
+
+    public async Task ExportSelectedExplorerFileAsync(string destinationPath)
+    {
+        if (SelectedProject is null || SelectedExplorerRevision is null || SelectedExplorerFile is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Export de la version…", async () =>
+        {
+            if (SelectedExplorerFile.LfsPointer is not null)
+            {
+                IReadOnlyList<LfsFileVersion> versions = await _gitService.GetLfsFileVersionsAsync(
+                    SelectedProject.RootPath,
+                    SelectedExplorerFile.Path);
+                LfsFileVersion? version = versions.FirstOrDefault(item =>
+                    item.Pointer.OidSha256 == SelectedExplorerFile.LfsPointer.OidSha256);
+                if (version is null)
+                {
+                    throw new InvalidOperationException("Cette version LFS n'est pas disponible dans la chronologie locale.");
+                }
+
+                await _gitService.ExportLfsFileVersionAsync(SelectedProject.RootPath, version, destinationPath);
+            }
+            else
+            {
+                await _gitService.ExportFileFromRevisionAsync(
+                    SelectedProject.RootPath,
+                    SelectedExplorerFile.Path,
+                    SelectedExplorerRevision.Hash,
+                    destinationPath);
+            }
+        }, "Version exportée sans modifier le projet");
+    }
+
+    public async Task ExportSelectedLfsVersionAsync(string destinationPath)
+    {
+        if (SelectedProject is null || SelectedLfsVersion is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Export de l'objet LFS…", () => _gitService.ExportLfsFileVersionAsync(
+            SelectedProject.RootPath,
+            SelectedLfsVersion,
+            destinationPath), "Version LFS exportée");
+    }
+
+    public async Task RestoreSelectedLfsVersionAsync()
+    {
+        if (SelectedProject is null || SelectedLfsVersion is null)
+        {
+            return;
+        }
+
+        LfsFileVersion version = SelectedLfsVersion;
+        await RunOperationAsync("Restauration de la version LFS…", async () =>
+        {
+            await _gitService.RestoreLfsFileVersionAsync(SelectedProject.RootPath, version);
+            await RefreshCoreAsync();
+            SelectedLfsFile = LfsFiles.FirstOrDefault(file => file.Path == version.Path);
+        }, "Ancienne version restaurée dans le dossier de travail — non indexée");
     }
 
     public async Task RemoveExpiredAdvisoryReservationsAsync()
@@ -877,6 +1268,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         await SaveBackupSettingsAsync();
     }
 
+    public void SetColdArchivePath(string path)
+    {
+        ColdArchivePath = Path.GetFullPath(path);
+        ColdArchiveStatus = "Emplacement choisi — enregistrez la stratégie avant l'archivage.";
+    }
+
     public async Task SaveBackupSettingsAsync()
     {
         if (SelectedProject is null)
@@ -893,7 +1290,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             {
                 Features = features,
                 Retention = retention,
-                BackupStorePath = storePath
+                BackupStorePath = storePath,
+                ColdArchivePath = string.IsNullOrWhiteSpace(ColdArchivePath) ? null : Path.GetFullPath(ColdArchivePath),
+                ColdArchiveAfterDays = string.IsNullOrWhiteSpace(ColdArchivePath)
+                    ? null
+                    : int.TryParse(ColdArchiveAfterDays, out int archiveDays) && archiveDays > 0
+                        ? archiveDays
+                        : 180
             };
             updated.Validate();
             await _projectCatalog.UpsertAsync(updated);
@@ -902,6 +1305,28 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await GetBackupService(updated).ApplyRetentionAsync(updated.Id, retention);
             await LoadBackupsCoreAsync();
         }, "Stratégie de sauvegarde enregistrée");
+    }
+
+    public async Task ArchiveOldBackupsAsync()
+    {
+        if (SelectedProject is null || string.IsNullOrWhiteSpace(ColdArchivePath))
+        {
+            StatusMessage = "Choisissez et enregistrez un emplacement d'archive froide";
+            return;
+        }
+
+        int days = int.TryParse(ColdArchiveAfterDays, out int parsedDays) && parsedDays > 0 ? parsedDays : 180;
+        await RunOperationAsync("Archivage des anciens snapshots…", async () =>
+        {
+            ColdArchiveResult result = await new FileSystemColdArchiveService().ArchiveEligibleAsync(
+                SelectedProject.Id,
+                ResolveBackupStorePath(SelectedProject.Definition),
+                new ColdArchivePolicy(Path.GetFullPath(ColdArchivePath), TimeSpan.FromDays(days)));
+            ColdArchiveStatus = result.EligibleSnapshots == 0
+                ? "Aucun snapshot ancien n'est éligible. Les cinq plus récents restent dans le stockage actif."
+                : $"{result.ArchivedSnapshots} snapshot(s) copié(s) · {result.ExistingSnapshots} déjà présent(s) · " +
+                  $"{result.CopiedObjects} objet(s) ajouté(s) à l'archive";
+        }, "Archivage froid terminé — le stockage actif est conservé");
     }
 
     public async Task CreateBackupAsync()
@@ -1542,6 +1967,216 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private async Task SelectExplorerCommitCoreAsync(string commitHash)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        try
+        {
+            GitCommitDetails details = await _gitService.GetCommitDetailsAsync(SelectedProject.RootPath, commitHash);
+            _allExplorerRevisions = _allExplorerRevisions.Append(details.Revision).ToArray();
+            SelectedExplorerRevision = details.Revision;
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = exception.Message;
+        }
+    }
+
+    private async Task LoadExplorerRevisionAsync(GitRevision revision)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        _comparisonFromHash = null;
+        _comparisonToHash = null;
+        try
+        {
+            GitCommitDetails details = await _gitService.GetCommitDetailsAsync(
+                SelectedProject.RootPath,
+                revision.Hash);
+            if (SelectedExplorerRevision?.Hash != revision.Hash)
+            {
+                return;
+            }
+
+            ReplaceCollection(ExplorerFiles, details.Files);
+            ExplorerSummary = $"{details.Revision.ShortHash} · {details.Revision.Subject} · " +
+                              $"{details.Files.Count} fichier(s) · +{details.AddedLines} / -{details.DeletedLines} · " +
+                              $"{details.BinaryFileCount} binaire(s)";
+            ExplorerDiff = await _gitService.GetCommitDiffAsync(SelectedProject.RootPath, revision.Hash);
+            SelectedExplorerFile = ExplorerFiles.FirstOrDefault();
+        }
+        catch (Exception exception)
+        {
+            ExplorerSummary = exception.Message;
+            ExplorerFiles.Clear();
+            ExplorerFileHistory.Clear();
+            ExplorerDiff = exception.Message;
+        }
+    }
+
+    private async Task LoadExplorerFileAsync(GitCommitFileChange? file)
+    {
+        if (SelectedProject is null || SelectedExplorerRevision is null || file is null)
+        {
+            ExplorerFileHistory.Clear();
+            return;
+        }
+
+        string revisionHash = SelectedExplorerRevision.Hash;
+        try
+        {
+            Task<IReadOnlyList<GitFileRevision>> historyTask = _gitService.GetFileHistoryAsync(
+                SelectedProject.RootPath,
+                file.Path,
+                100);
+            Task<string> diffTask = _comparisonFromHash is not null && _comparisonToHash is not null
+                ? _gitService.GetComparisonDiffAsync(
+                    SelectedProject.RootPath,
+                    _comparisonFromHash,
+                    _comparisonToHash,
+                    file.Path)
+                : _gitService.GetCommitDiffAsync(SelectedProject.RootPath, revisionHash, file.Path);
+            await Task.WhenAll(historyTask, diffTask);
+            if (SelectedExplorerFile?.Path != file.Path)
+            {
+                return;
+            }
+
+            ReplaceCollection(ExplorerFileHistory, await historyTask);
+            string diff = await diffTask;
+            ExplorerDiff = string.IsNullOrWhiteSpace(diff)
+                ? file.IsLfsObject
+                    ? "Objet Git LFS : utilisez la Time Machine pour prévisualiser ou exporter cette version."
+                    : "Aucun diff textuel disponible pour ce fichier."
+                : diff;
+        }
+        catch (Exception exception)
+        {
+            ExplorerDiff = exception.Message;
+        }
+    }
+
+    private void ApplyExplorerFilter()
+    {
+        string query = ExplorerSearch.Trim();
+        IEnumerable<GitRevision> filtered = _allExplorerRevisions;
+        if (query.Length > 0)
+        {
+            filtered = filtered.Where(revision =>
+                revision.Hash.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                revision.Subject.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                revision.AuthorName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                revision.AuthorEmail.Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        ReplaceCollection(History, filtered);
+    }
+
+    private void UpdateSmartSyncPlan()
+    {
+        if (SelectedProject is null)
+        {
+            SmartSyncPlanItems.Clear();
+            SmartSyncPlanSummary = "Aucun projet sélectionné.";
+            return;
+        }
+
+        int recentCount = int.TryParse(SmartSyncRecentVersionCount, out int parsedRecent)
+            ? Math.Clamp(parsedRecent, 1, 100)
+            : 3;
+        SmartSyncInventory inventory = new(
+            _allExplorerRevisions.Count,
+            Changes.Count,
+            LfsFiles.Count(file => file.IsAvailableLocally),
+            LfsFiles.Where(file => file.IsAvailableLocally).Sum(file => file.Pointer.Size),
+            LfsFiles.Count(file => !file.IsAvailableLocally),
+            LfsVersions.Skip(1).Count(version => version.IsAvailableLocally),
+            LfsVersions.Skip(1).Where(version => version.IsAvailableLocally).Sum(version => version.Pointer.Size),
+            Backups.Count);
+        SmartSyncPlan plan = new SmartSyncPlanner().Build(
+            SelectedProject.Definition.Features,
+            inventory,
+            new SmartSyncPolicy(SelectedLfsHistoryMode, recentCount, SmartSyncReplicateBackups));
+        ReplaceCollection(SmartSyncPlanItems, plan.Items);
+        SmartSyncPlanSummary = $"{plan.ImmediateItemCount} élément(s) prioritaire(s) · " +
+                               $"{plan.DeferredItemCount} différé(s) / à la demande · aucun transfert automatique";
+    }
+
+    private async Task LoadLfsTimelineAsync(LfsTrackedFile? file)
+    {
+        LfsPreview = null;
+        LfsVersions.Clear();
+        SelectedLfsVersion = null;
+        if (SelectedProject is null || file is null)
+        {
+            LfsTimelineSummary = "Sélectionnez un fichier LFS pour afficher ses versions.";
+            return;
+        }
+
+        LfsTimelineSummary = "Lecture de l'historique LFS…";
+        try
+        {
+            IReadOnlyList<LfsFileVersion> versions = await _gitService.GetLfsFileVersionsAsync(
+                SelectedProject.RootPath,
+                file.Path,
+                200);
+            if (SelectedLfsFile?.Path != file.Path)
+            {
+                return;
+            }
+
+            ReplaceCollection(LfsVersions, versions);
+            int localCount = versions.Count(version => version.IsAvailableLocally);
+            LfsTimelineSummary = $"{versions.Count} version(s) unique(s) · {localCount} locale(s) · " +
+                                 $"{versions.Count - localCount} manquante(s)";
+            SelectedLfsVersion = LfsVersions.FirstOrDefault();
+            UpdateSmartSyncPlan();
+        }
+        catch (Exception exception)
+        {
+            LfsTimelineSummary = exception.Message;
+        }
+    }
+
+    private void LoadLfsPreview(LfsFileVersion? version)
+    {
+        LfsPreview = null;
+        if (version is null)
+        {
+            return;
+        }
+
+        string shortOid = version.Pointer.OidSha256[..Math.Min(12, version.Pointer.OidSha256.Length)];
+        LfsTimelineSummary = $"{version.Revision.ShortHash} · {version.Revision.Subject} · " +
+                             $"{version.SizeText} · {version.Availability} · {shortOid}…";
+        if (!version.IsAvailableLocally || string.IsNullOrWhiteSpace(version.LocalObjectPath))
+        {
+            return;
+        }
+
+        string extension = Path.GetExtension(version.Path).ToLowerInvariant();
+        if (extension is not (".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".tif" or ".tiff" or ".webp"))
+        {
+            return;
+        }
+
+        try
+        {
+            LfsPreview = new Bitmap(version.LocalObjectPath);
+        }
+        catch
+        {
+            LfsPreview = null;
+        }
+    }
+
     private async Task RefreshCoreAsync()
     {
         if (SelectedProject is null)
@@ -1558,6 +2193,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             History.Clear();
             Branches.Clear();
             LfsPatterns.Clear();
+            ExplorerFiles.Clear();
+            ExplorerFileHistory.Clear();
+            LfsFiles.Clear();
+            LfsVersions.Clear();
+            _allExplorerRevisions = [];
+            SelectedExplorerRevision = null;
+            SelectedLfsFile = null;
             SelectedBranch = null;
             SelectedChange = null;
             DiffText = "Git est désactivé pour ce projet.";
@@ -1569,7 +2211,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         Task<IReadOnlyList<GitRevision>> historyTask = _gitService.GetHistoryAsync(rootPath);
         Task<IReadOnlyList<GitBranch>> branchesTask = _gitService.GetBranchesAsync(rootPath);
         Task<IReadOnlyList<LfsTrackedPattern>> lfsTask = _gitService.GetLfsPatternsAsync(rootPath);
-        await Task.WhenAll(statusTask, historyTask, branchesTask, lfsTask);
+        Task<IReadOnlyList<LfsTrackedFile>> lfsFilesTask = _gitService.GetLfsTrackedFilesAsync(rootPath);
+        await Task.WhenAll(statusTask, historyTask, branchesTask, lfsTask, lfsFilesTask);
 
         GitRepositoryStatus status = await statusTask;
         CurrentBranch = status.IsDetachedHead ? $"HEAD {status.CurrentBranch}" : status.CurrentBranch;
@@ -1577,11 +2220,34 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         ChangeSummary = $"{status.Changes.Count} modification(s) · ↑{status.AheadBy} ↓{status.BehindBy}";
 
         ReplaceCollection(Changes, status.Changes.Select(change => new GitChangeViewModel(change)));
-        ReplaceCollection(History, await historyTask);
+        _allExplorerRevisions = (await historyTask).ToArray();
+        ApplyExplorerFilter();
         ReplaceCollection(Branches, await branchesTask);
         ReplaceCollection(LfsPatterns, await lfsTask);
+        ReplaceCollection(LfsFiles, await lfsFilesTask);
         SelectedBranch = Branches.FirstOrDefault(branch => branch.IsCurrent);
         SelectedChange = Changes.FirstOrDefault();
+        GitRevision? firstRevision = History.FirstOrDefault();
+        if (firstRevision is not null && SelectedExplorerRevision?.Hash == firstRevision.Hash)
+        {
+            _ = LoadExplorerRevisionAsync(firstRevision);
+        }
+        else
+        {
+            SelectedExplorerRevision = firstRevision;
+        }
+
+        LfsTrackedFile? selectedLfsFile = LfsFiles.FirstOrDefault(file => file.Path == SelectedLfsFile?.Path)
+                                              ?? LfsFiles.FirstOrDefault();
+        if (selectedLfsFile is not null && SelectedLfsFile?.Path == selectedLfsFile.Path)
+        {
+            _ = LoadLfsTimelineAsync(selectedLfsFile);
+        }
+        else
+        {
+            SelectedLfsFile = selectedLfsFile;
+        }
+        UpdateSmartSyncPlan();
     }
 
     private async Task LoadSyncProfileCoreAsync()
@@ -2039,6 +2705,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             .GetSnapshotsAsync(SelectedProject.Id);
         ReplaceCollection(Backups, snapshots.Select(snapshot => new BackupSnapshotViewModel(snapshot)));
         SelectedBackup = Backups.FirstOrDefault();
+        UpdateSmartSyncPlan();
     }
 
     private async Task LoadAdvisoryReservationsCoreAsync()
@@ -2127,6 +2794,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private void LoadBackupSettings(ProjectDefinition definition)
     {
         BackupStorePath = definition.BackupStorePath ?? string.Empty;
+        ColdArchivePath = definition.ColdArchivePath ?? string.Empty;
+        ColdArchiveAfterDays = definition.ColdArchiveAfterDays?.ToString() ?? "180";
+        ColdArchiveStatus = string.IsNullOrWhiteSpace(definition.ColdArchivePath)
+            ? "Archive froide facultative — aucune suppression automatique."
+            : "Archive froide configurée — les snapshots actifs ne sont jamais supprimés par l'archivage.";
         SelectedRetentionMode = definition.Retention.Mode;
         RetentionVersions = definition.Retention.MaxVersionsPerFile?.ToString() ?? "30";
         RetentionDays = definition.Retention.MaximumAge is { } age
@@ -2233,9 +2905,28 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         History.Clear();
         Branches.Clear();
         LfsPatterns.Clear();
+        ExplorerFiles.Clear();
+        ExplorerFileHistory.Clear();
+        LfsFiles.Clear();
+        LfsVersions.Clear();
+        SmartSyncPlanItems.Clear();
+        SmartSyncPlanSummary = "Aucun projet sélectionné.";
+        _allExplorerRevisions = [];
+        SelectedExplorerRevision = null;
+        SelectedComparisonRevision = null;
+        SelectedExplorerFile = null;
+        SelectedLfsFile = null;
+        SelectedLfsVersion = null;
+        ExplorerSummary = "Sélectionnez une révision pour l'inspecter.";
+        ExplorerDiff = "Le diff de la révision apparaîtra ici.";
+        LfsTimelineSummary = "Sélectionnez un fichier LFS pour afficher ses versions.";
+        LfsPreview = null;
         Backups.Clear();
         SelectedBackup = null;
         BackupStorePath = string.Empty;
+        ColdArchivePath = string.Empty;
+        ColdArchiveAfterDays = "180";
+        ColdArchiveStatus = "Archive froide facultative — aucune suppression automatique.";
         SelectedPreset = null;
         _currentSyncProfile = null;
         SyncthingExecutablePath = string.Empty;
@@ -2256,6 +2947,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         GitGraphCommits = [];
         GitFileActivities = [];
         GitFileRelations = [];
+        GitContributors = [];
+        GitDailyActivity = [];
+        GitHotFiles = [];
+        GitInsightsSummary = "Analyse d'activité non lancée.";
+        UnrealDependencyFiles = [];
+        UnrealDependencyRelations = [];
+        UnrealAssets = [];
+        UnrealDependencySummary = "Analyse Unreal hors moteur non lancée.";
         GitGraphSummary = "Analyse optionnelle non lancée.";
     }
 
@@ -2272,5 +2971,6 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         await StopSyncCoreAsync();
         AssetDiffPreview = null;
+        LfsPreview = null;
     }
 }

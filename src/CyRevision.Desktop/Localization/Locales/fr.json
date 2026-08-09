@@ -1,3 +1,29 @@
 {
-  "$name": "Français"
+  "$name": "Français",
+  "$patterns": {
+    "^Keep the (\\d+) most recent versions$": "Conserver les $1 versions les plus récentes"
+  },
+  "Git revisions and refs": "Révisions et références Git",
+  "Signed peer exchange": "Échange signé entre pairs",
+  "Local only": "Local uniquement",
+  "Current working state": "État de travail actuel",
+  "Continuous current-state sync": "Synchronisation continue de l'état actuel",
+  "Current LFS objects": "Objets LFS actuels",
+  "Eager peer replication": "Réplication prioritaire entre pairs",
+  "Local inventory": "Inventaire local",
+  "Missing current LFS objects": "Objets LFS actuels manquants",
+  "Authorized peer or archive request": "Demande à un pair autorisé ou à l'archive",
+  "Historical LFS objects": "Objets LFS historiques",
+  "Replicate every available version": "Répliquer toutes les versions disponibles",
+  "Fetch only when previewed, exported, or restored": "Récupérer seulement lors d'un aperçu, export ou restauration",
+  "Backup snapshots": "Snapshots de sauvegarde",
+  "Replicate to backup peer": "Répliquer vers un pair de sauvegarde",
+  "Cold archive / local store": "Archive froide / stockage local",
+  "Critical": "Critique",
+  "High": "Haute",
+  "Normal": "Normale",
+  "Archive": "Archive",
+  "OnDemand": "À la demande",
+  "RecentVersions": "Versions récentes",
+  "Everything": "Tout"
 }

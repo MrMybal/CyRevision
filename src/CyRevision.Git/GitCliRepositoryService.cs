@@ -392,6 +392,307 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         return new GitFileActivityGraph(files, graphRelations, commitCount, activities.Count);
     }
 
+    public async Task<GitRepositoryInsights> GetRepositoryInsightsAsync(
+        string repositoryPath,
+        int maximumCommitCount = 500,
+        bool includeAllBranches = true,
+        CancellationToken cancellationToken = default)
+    {
+        if (maximumCommitCount is < 1 or > 5000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCommitCount));
+        }
+
+        List<string> arguments = ["-c", "core.quotepath=false", "log"];
+        if (includeAllBranches)
+        {
+            arguments.Add("--all");
+        }
+
+        arguments.AddRange([
+            "--date-order",
+            $"--max-count={maximumCommitCount}",
+            "--date=iso-strict",
+            "--pretty=format:%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%aI",
+            "--numstat"
+        ]);
+        ProcessResult result = await RunGitResultAsync(repositoryPath, arguments, cancellationToken).ConfigureAwait(false);
+        if (!result.Succeeded && result.StandardError.Contains("does not have any commits", StringComparison.OrdinalIgnoreCase))
+        {
+            return new GitRepositoryInsights(0, 0, 0, 0, 0, 0, 0, [], [], []);
+        }
+
+        EnsureSuccess(result, "Unable to analyze repository activity.");
+        Dictionary<(string Name, string Email), MutableContributorActivity> contributors = new();
+        Dictionary<DateOnly, MutableDailyActivity> days = new();
+        HashSet<string> allFiles = new(StringComparer.Ordinal);
+        int commitCount = 0;
+        int mergeCount = 0;
+        long totalAdded = 0;
+        long totalDeleted = 0;
+        int binaryChanges = 0;
+        foreach (string rawEntry in result.StandardOutput.Split('\x1e', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string entry = rawEntry.TrimStart('\r', '\n');
+            int lineBreak = entry.IndexOfAny(['\r', '\n']);
+            string header = lineBreak < 0 ? entry : entry[..lineBreak];
+            string[] fields = header.Split('\x1f');
+            if (fields.Length != 5 ||
+                !DateTimeOffset.TryParse(fields[4], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset authoredAt))
+            {
+                continue;
+            }
+
+            commitCount++;
+            if (fields[1].Split(' ', StringSplitOptions.RemoveEmptyEntries).Length > 1)
+            {
+                mergeCount++;
+            }
+
+            (string Name, string Email) contributorKey = (fields[2], fields[3]);
+            if (!contributors.TryGetValue(contributorKey, out MutableContributorActivity? contributor))
+            {
+                contributor = new MutableContributorActivity(fields[2], fields[3]);
+                contributors[contributorKey] = contributor;
+            }
+
+            contributor.CommitCount++;
+            contributor.LastActiveAt = contributor.LastActiveAt > authoredAt ? contributor.LastActiveAt : authoredAt;
+            DateOnly dayKey = DateOnly.FromDateTime(authoredAt.LocalDateTime);
+            if (!days.TryGetValue(dayKey, out MutableDailyActivity? day))
+            {
+                day = new MutableDailyActivity(dayKey);
+                days[dayKey] = day;
+            }
+
+            day.CommitCount++;
+            if (lineBreak < 0)
+            {
+                continue;
+            }
+
+            foreach (string line in entry[(lineBreak + 1)..].Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] stat = line.Split('\t', 3);
+                if (stat.Length != 3)
+                {
+                    continue;
+                }
+
+                string path = NormalizeHistoryPath(stat[2]);
+                contributor.Files.Add(path);
+                day.Files.Add(path);
+                allFiles.Add(path);
+                if (stat[0] == "-" || stat[1] == "-")
+                {
+                    contributor.BinaryChanges++;
+                    binaryChanges++;
+                    continue;
+                }
+
+                long added = long.TryParse(stat[0], NumberStyles.None, CultureInfo.InvariantCulture, out long parsedAdded)
+                    ? parsedAdded
+                    : 0;
+                long deleted = long.TryParse(stat[1], NumberStyles.None, CultureInfo.InvariantCulture, out long parsedDeleted)
+                    ? parsedDeleted
+                    : 0;
+                contributor.AddedLines += added;
+                contributor.DeletedLines += deleted;
+                day.AddedLines += added;
+                day.DeletedLines += deleted;
+                totalAdded += added;
+                totalDeleted += deleted;
+            }
+        }
+
+        GitFileActivityGraph fileActivity = await GetFileActivityGraphAsync(
+                repositoryPath,
+                maximumCommitCount,
+                30,
+                includeAllBranches,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new GitRepositoryInsights(
+            commitCount,
+            mergeCount,
+            contributors.Count,
+            allFiles.Count,
+            totalAdded,
+            totalDeleted,
+            binaryChanges,
+            contributors.Values
+                .OrderByDescending(value => value.CommitCount)
+                .ThenBy(value => value.AuthorName, StringComparer.OrdinalIgnoreCase)
+                .Select(value => value.ToRecord())
+                .ToArray(),
+            days.Values.OrderBy(value => value.Day).Select(value => value.ToRecord()).ToArray(),
+            fileActivity.Files.Take(20).ToArray());
+    }
+
+    public async Task<GitCommitDetails> GetCommitDetailsAsync(
+        string repositoryPath,
+        string revision,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(revision);
+        ProcessResult headerResult = await RunGitResultAsync(
+                repositoryPath,
+                [
+                    "show", "-s", "--date=iso-strict",
+                    "--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%P%x1f%B",
+                    revision
+                ],
+                cancellationToken)
+            .ConfigureAwait(false);
+        EnsureSuccess(headerResult, "Unable to inspect the Git revision.");
+
+        string[] fields = headerResult.StandardOutput.TrimEnd().Split('\x1f', 8);
+        if (fields.Length != 8 ||
+            !DateTimeOffset.TryParse(fields[4], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset authoredAt))
+        {
+            throw new GitOperationException("Git returned an invalid revision description.");
+        }
+
+        GitRevision parsedRevision = new(fields[0], fields[1], fields[2], fields[3], authoredAt, fields[5]);
+        IReadOnlyList<GitCommitFileChange> files = await GetRevisionChangesAsync(
+                repositoryPath,
+                revision,
+                null,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new GitCommitDetails(
+            parsedRevision,
+            fields[6].Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            fields[7].Trim(),
+            files,
+            files.Where(file => !file.IsBinary).Sum(file => file.AddedLines ?? 0),
+            files.Where(file => !file.IsBinary).Sum(file => file.DeletedLines ?? 0),
+            files.Count(file => file.IsBinary));
+    }
+
+    public async Task<GitCommitComparison> CompareCommitsAsync(
+        string repositoryPath,
+        string fromRevision,
+        string toRevision,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(fromRevision);
+        ValidateReferenceName(toRevision);
+        IReadOnlyList<GitCommitFileChange> files = await GetRevisionChangesAsync(
+                repositoryPath,
+                fromRevision,
+                toRevision,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new GitCommitComparison(
+            fromRevision,
+            toRevision,
+            files,
+            files.Where(file => !file.IsBinary).Sum(file => file.AddedLines ?? 0),
+            files.Where(file => !file.IsBinary).Sum(file => file.DeletedLines ?? 0),
+            files.Count(file => file.IsBinary));
+    }
+
+    public Task<string> GetCommitDiffAsync(
+        string repositoryPath,
+        string revision,
+        string? relativePath = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(revision);
+        List<string> arguments = ["show", "--format=", "--no-ext-diff", "--no-color", revision];
+        if (!string.IsNullOrWhiteSpace(relativePath))
+        {
+            arguments.Add("--");
+            arguments.Add(relativePath);
+        }
+
+        return RunGitAsync(repositoryPath, arguments, cancellationToken);
+    }
+
+    public Task<string> GetComparisonDiffAsync(
+        string repositoryPath,
+        string fromRevision,
+        string toRevision,
+        string? relativePath = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(fromRevision);
+        ValidateReferenceName(toRevision);
+        List<string> arguments = ["diff", "--no-ext-diff", "--no-color", fromRevision, toRevision];
+        if (!string.IsNullOrWhiteSpace(relativePath))
+        {
+            arguments.Add("--");
+            arguments.Add(relativePath);
+        }
+
+        return RunGitAsync(repositoryPath, arguments, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<GitFileRevision>> GetFileHistoryAsync(
+        string repositoryPath,
+        string relativePath,
+        int maximumCount = 200,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+        if (maximumCount is < 1 or > 1000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCount));
+        }
+
+        ProcessResult result = await RunGitResultAsync(
+                repositoryPath,
+                [
+                    "-c", "core.quotepath=false", "log", "--follow", $"--max-count={maximumCount}",
+                    "--date=iso-strict", "--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1e",
+                    "--", relativePath
+                ],
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.Succeeded && result.StandardError.Contains("does not have any commits", StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        EnsureSuccess(result, "Unable to read the file history.");
+        List<GitFileRevision> history = [];
+        foreach (string entry in result.StandardOutput.Split('\x1e', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] fields = entry.Trim().Split('\x1f');
+            if (fields.Length != 6 ||
+                !DateTimeOffset.TryParse(fields[4], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset authoredAt))
+            {
+                continue;
+            }
+
+            GitRevision itemRevision = new(fields[0], fields[1], fields[2], fields[3], authoredAt, fields[5]);
+            IReadOnlyList<GitCommitFileChange> changes = await GetRevisionChangesAsync(
+                    repositoryPath,
+                    fields[0],
+                    null,
+                    cancellationToken,
+                    relativePath)
+                .ConfigureAwait(false);
+            GitCommitFileChange? change = changes.FirstOrDefault();
+            if (change is null)
+            {
+                continue;
+            }
+
+            history.Add(new GitFileRevision(
+                itemRevision,
+                change.Path,
+                change.Kind,
+                change.AddedLines,
+                change.DeletedLines,
+                change.IsBinary,
+                change.LfsPointer));
+        }
+
+        return history;
+    }
+
     public async Task<IReadOnlyList<GitBranch>> GetBranchesAsync(
         string repositoryPath,
         CancellationToken cancellationToken = default)
@@ -600,6 +901,141 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             .ToArray();
     }
 
+    public async Task<IReadOnlyList<LfsTrackedFile>> GetLfsTrackedFilesAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default)
+    {
+        ProcessResult result = await RunGitResultAsync(
+                repositoryPath,
+                ["lfs", "ls-files", "--long"],
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.Succeeded)
+        {
+            return [];
+        }
+
+        string gitCommonDirectory = await GetGitCommonDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        List<LfsTrackedFile> files = [];
+        foreach (string line in result.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            Match match = LfsListLineRegex().Match(line.Trim());
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            string path = match.Groups["path"].Value.Trim();
+            LfsPointerInfo? pointer = await TryReadLfsPointerAtRevisionAsync(
+                    repositoryPath,
+                    "HEAD",
+                    path,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (pointer is null)
+            {
+                continue;
+            }
+
+            string objectPath = GetLfsObjectPath(gitCommonDirectory, pointer.OidSha256);
+            files.Add(new LfsTrackedFile(
+                path,
+                ClassifyFile(path),
+                pointer,
+                File.Exists(objectPath),
+                File.Exists(objectPath) ? objectPath : null));
+        }
+
+        return files.OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    public async Task<IReadOnlyList<LfsFileVersion>> GetLfsFileVersionsAsync(
+        string repositoryPath,
+        string relativePath,
+        int maximumCount = 200,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<GitFileRevision> history = await GetFileHistoryAsync(
+                repositoryPath,
+                relativePath,
+                maximumCount,
+                cancellationToken)
+            .ConfigureAwait(false);
+        string gitCommonDirectory = await GetGitCommonDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        List<LfsFileVersion> versions = [];
+        HashSet<string> seenObjects = new(StringComparer.OrdinalIgnoreCase);
+        foreach (GitFileRevision entry in history)
+        {
+            LfsPointerInfo? pointer = entry.LfsPointer ?? await TryReadLfsPointerAtRevisionAsync(
+                    repositoryPath,
+                    entry.Revision.Hash,
+                    relativePath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (pointer is null || !seenObjects.Add(pointer.OidSha256))
+            {
+                continue;
+            }
+
+            string objectPath = GetLfsObjectPath(gitCommonDirectory, pointer.OidSha256);
+            bool isAvailable = File.Exists(objectPath);
+            versions.Add(new LfsFileVersion(
+                relativePath,
+                entry.Revision,
+                pointer,
+                isAvailable,
+                isAvailable ? objectPath : null,
+                versions.Count == 0));
+        }
+
+        return versions;
+    }
+
+    public async Task ExportLfsFileVersionAsync(
+        string repositoryPath,
+        LfsFileVersion version,
+        string destinationPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+        string? sourcePath = version.LocalObjectPath;
+        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+        {
+            string commonDirectory = await GetGitCommonDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+            sourcePath = GetLfsObjectPath(commonDirectory, version.Pointer.OidSha256);
+        }
+
+        if (!File.Exists(sourcePath))
+        {
+            throw new GitOperationException(
+                "This LFS object is not stored locally. Retrieve it from an authorized peer or archive before exporting it.");
+        }
+
+        string fullDestination = Path.GetFullPath(destinationPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullDestination)!);
+        await using FileStream source = new(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
+        await using FileStream destination = new(fullDestination, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+        await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RestoreLfsFileVersionAsync(
+        string repositoryPath,
+        LfsFileVersion version,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        string root = Path.GetFullPath(repositoryPath);
+        string destination = Path.GetFullPath(Path.Combine(root, version.Path));
+        string relative = Path.GetRelativePath(root, destination);
+        if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
+        {
+            throw new GitOperationException("The LFS path is outside the repository.");
+        }
+
+        await ExportLfsFileVersionAsync(repositoryPath, version, destination, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<HashSet<string>> GetLfsFileNamesAsync(string repositoryPath, CancellationToken cancellationToken)
     {
         ProcessResult result = await RunGitResultAsync(
@@ -614,6 +1050,164 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
                 .ToHashSet(StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
+
+    private async Task<IReadOnlyList<GitCommitFileChange>> GetRevisionChangesAsync(
+        string repositoryPath,
+        string firstRevision,
+        string? secondRevision,
+        CancellationToken cancellationToken,
+        string? relativePath = null)
+    {
+        List<string> statusArguments = ["-c", "core.quotepath=false"];
+        List<string> statArguments = ["-c", "core.quotepath=false"];
+        if (secondRevision is null)
+        {
+            statusArguments.AddRange(["diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "-M", firstRevision]);
+            statArguments.AddRange(["diff-tree", "--root", "--no-commit-id", "--numstat", "-r", "-M", firstRevision]);
+        }
+        else
+        {
+            statusArguments.AddRange(["diff", "--name-status", "-M", firstRevision, secondRevision]);
+            statArguments.AddRange(["diff", "--numstat", "-M", firstRevision, secondRevision]);
+        }
+
+        if (!string.IsNullOrWhiteSpace(relativePath))
+        {
+            statusArguments.AddRange(["--", relativePath]);
+            statArguments.AddRange(["--", relativePath]);
+        }
+
+        Task<ProcessResult> statusTask = RunGitResultAsync(repositoryPath, statusArguments, cancellationToken);
+        Task<ProcessResult> statTask = RunGitResultAsync(repositoryPath, statArguments, cancellationToken);
+        await Task.WhenAll(statusTask, statTask).ConfigureAwait(false);
+        ProcessResult statusResult = await statusTask.ConfigureAwait(false);
+        ProcessResult statResult = await statTask.ConfigureAwait(false);
+        EnsureSuccess(statusResult, "Unable to read changed file states.");
+        EnsureSuccess(statResult, "Unable to read changed file statistics.");
+
+        Dictionary<string, MutableRevisionChange> changes = new(StringComparer.Ordinal);
+        foreach (string line in statusResult.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] fields = line.Split('\t');
+            if (fields.Length < 2)
+            {
+                continue;
+            }
+
+            string code = fields[0];
+            string path = NormalizeHistoryPath(fields[^1]);
+            string? originalPath = code.StartsWith('R') && fields.Length >= 3
+                ? NormalizeHistoryPath(fields[1])
+                : null;
+            changes[path] = new MutableRevisionChange(
+                path,
+                code[0] switch
+                {
+                    'A' => GitChangeKind.Added,
+                    'D' => GitChangeKind.Deleted,
+                    'R' => GitChangeKind.Renamed,
+                    'U' => GitChangeKind.Conflicted,
+                    _ => GitChangeKind.Modified
+                },
+                originalPath);
+        }
+
+        foreach (string line in statResult.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] fields = line.Split('\t', 3);
+            if (fields.Length != 3)
+            {
+                continue;
+            }
+
+            string path = NormalizeHistoryPath(fields[2]);
+            if (!changes.TryGetValue(path, out MutableRevisionChange? change))
+            {
+                change = new MutableRevisionChange(path, GitChangeKind.Modified, null);
+                changes[path] = change;
+            }
+
+            if (fields[0] == "-" || fields[1] == "-")
+            {
+                change.IsBinary = true;
+            }
+            else
+            {
+                change.AddedLines = long.TryParse(fields[0], NumberStyles.None, CultureInfo.InvariantCulture, out long added)
+                    ? added
+                    : 0;
+                change.DeletedLines = long.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out long deleted)
+                    ? deleted
+                    : 0;
+            }
+        }
+
+        string contentRevision = secondRevision ?? firstRevision;
+        List<GitCommitFileChange> result = [];
+        foreach (MutableRevisionChange change in changes.Values.OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            LfsPointerInfo? pointer = change.Kind == GitChangeKind.Deleted
+                ? null
+                : await TryReadLfsPointerAtRevisionAsync(
+                        repositoryPath,
+                        contentRevision,
+                        change.Path,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            result.Add(new GitCommitFileChange(
+                change.Path,
+                change.Kind,
+                change.AddedLines,
+                change.DeletedLines,
+                change.IsBinary,
+                change.OriginalPath,
+                pointer));
+        }
+
+        return result;
+    }
+
+    private async Task<LfsPointerInfo?> TryReadLfsPointerAtRevisionAsync(
+        string repositoryPath,
+        string revision,
+        string relativePath,
+        CancellationToken cancellationToken)
+    {
+        string gitPath = relativePath.Replace('\\', '/').TrimStart('/');
+        ProcessResult result = await RunGitResultAsync(
+                repositoryPath,
+                ["show", $"{revision}:{gitPath}"],
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.Succeeded || result.StandardOutput.Length > 1024)
+        {
+            return null;
+        }
+
+        Match match = LfsPointerRegex().Match(result.StandardOutput.Replace("\r", string.Empty, StringComparison.Ordinal));
+        if (!match.Success ||
+            !long.TryParse(match.Groups["size"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out long size))
+        {
+            return null;
+        }
+
+        return new LfsPointerInfo(match.Groups["oid"].Value.ToLowerInvariant(), size);
+    }
+
+    private async Task<string> GetGitCommonDirectoryAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken)
+    {
+        string value = (await RunGitAsync(
+                repositoryPath,
+                ["rev-parse", "--git-common-dir"],
+                cancellationToken)
+            .ConfigureAwait(false)).Trim();
+        return Path.GetFullPath(Path.IsPathRooted(value) ? value : Path.Combine(repositoryPath, value));
+    }
+
+    private static string GetLfsObjectPath(string gitCommonDirectory, string oid) =>
+        Path.Combine(gitCommonDirectory, "lfs", "objects", oid[..2], oid.Substring(2, 2), oid);
 
     private async Task<string> RunGitAsync(
         string workingDirectory,
@@ -784,6 +1378,49 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             LastChangedAt);
     }
 
+    private sealed class MutableRevisionChange(string path, GitChangeKind kind, string? originalPath)
+    {
+        public string Path { get; } = path;
+        public GitChangeKind Kind { get; } = kind;
+        public string? OriginalPath { get; } = originalPath;
+        public long? AddedLines { get; set; }
+        public long? DeletedLines { get; set; }
+        public bool IsBinary { get; set; }
+    }
+
+    private sealed class MutableContributorActivity(string authorName, string authorEmail)
+    {
+        public string AuthorName { get; } = authorName;
+        public string AuthorEmail { get; } = authorEmail;
+        public int CommitCount { get; set; }
+        public HashSet<string> Files { get; } = new(StringComparer.Ordinal);
+        public long AddedLines { get; set; }
+        public long DeletedLines { get; set; }
+        public int BinaryChanges { get; set; }
+        public DateTimeOffset LastActiveAt { get; set; }
+
+        public GitContributorActivity ToRecord() => new(
+            AuthorName,
+            AuthorEmail,
+            CommitCount,
+            Files.Count,
+            AddedLines,
+            DeletedLines,
+            BinaryChanges,
+            LastActiveAt);
+    }
+
+    private sealed class MutableDailyActivity(DateOnly day)
+    {
+        public DateOnly Day { get; } = day;
+        public int CommitCount { get; set; }
+        public HashSet<string> Files { get; } = new(StringComparer.Ordinal);
+        public long AddedLines { get; set; }
+        public long DeletedLines { get; set; }
+
+        public GitDailyActivity ToRecord() => new(Day, CommitCount, Files.Count, AddedLines, DeletedLines);
+    }
+
     private static void EnsurePaths(IReadOnlyCollection<string> paths)
     {
         if (paths.Count == 0 || paths.Any(string.IsNullOrWhiteSpace))
@@ -803,4 +1440,10 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
 
     [GeneratedRegex(@"(?:ahead (?<ahead>\d+))|(?:behind (?<behind>\d+))", RegexOptions.CultureInvariant)]
     private static partial Regex AheadBehindRegex();
+
+    [GeneratedRegex(@"^(?<oid>[0-9a-fA-F]{64})\s+[-*]\s+(?<path>.+)$", RegexOptions.CultureInvariant)]
+    private static partial Regex LfsListLineRegex();
+
+    [GeneratedRegex(@"^version https://git-lfs\.github\.com/spec/v1\noid sha256:(?<oid>[0-9a-fA-F]{64})\nsize (?<size>\d+)\n?$", RegexOptions.CultureInvariant)]
+    private static partial Regex LfsPointerRegex();
 }

@@ -91,3 +91,133 @@ public sealed record GitFileActivityGraph(
     IReadOnlyList<GitFileRelation> Relations,
     int AnalyzedCommitCount,
     int TotalFileCount);
+
+public sealed record LfsPointerInfo(string OidSha256, long Size);
+
+public sealed record GitCommitFileChange(
+    string Path,
+    GitChangeKind Kind,
+    long? AddedLines,
+    long? DeletedLines,
+    bool IsBinary,
+    string? OriginalPath = null,
+    LfsPointerInfo? LfsPointer = null)
+{
+    public string ChangeSummary => IsBinary
+        ? "Binary"
+        : $"+{AddedLines ?? 0} / -{DeletedLines ?? 0}";
+
+    public bool IsLfsObject => LfsPointer is not null;
+}
+
+public sealed record GitCommitDetails(
+    GitRevision Revision,
+    IReadOnlyList<string> ParentHashes,
+    string Body,
+    IReadOnlyList<GitCommitFileChange> Files,
+    long AddedLines,
+    long DeletedLines,
+    int BinaryFileCount);
+
+public sealed record GitCommitComparison(
+    string FromRevision,
+    string ToRevision,
+    IReadOnlyList<GitCommitFileChange> Files,
+    long AddedLines,
+    long DeletedLines,
+    int BinaryFileCount);
+
+public sealed record GitFileRevision(
+    GitRevision Revision,
+    string Path,
+    GitChangeKind Kind,
+    long? AddedLines,
+    long? DeletedLines,
+    bool IsBinary,
+    LfsPointerInfo? LfsPointer = null);
+
+public sealed record LfsTrackedFile(
+    string Path,
+    GitFileKind Kind,
+    LfsPointerInfo Pointer,
+    bool IsAvailableLocally,
+    string? LocalObjectPath)
+{
+    public string Availability => IsAvailableLocally ? "Local" : "Missing";
+    public string SizeText => FormatSize(Pointer.Size);
+
+    private static string FormatSize(long size)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double value = size;
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.#} {units[unit]}";
+    }
+}
+
+public sealed record LfsFileVersion(
+    string Path,
+    GitRevision Revision,
+    LfsPointerInfo Pointer,
+    bool IsAvailableLocally,
+    string? LocalObjectPath,
+    bool IsCurrent)
+{
+    public string Availability => IsAvailableLocally ? "Local" : "Missing";
+    public string SizeText => LfsTrackedFileSizeFormatter.Format(Pointer.Size);
+
+    private static class LfsTrackedFileSizeFormatter
+    {
+        public static string Format(long size)
+        {
+            string[] units = ["B", "KB", "MB", "GB", "TB"];
+            double value = size;
+            int unit = 0;
+            while (value >= 1024 && unit < units.Length - 1)
+            {
+                value /= 1024;
+                unit++;
+            }
+
+            return $"{value:0.#} {units[unit]}";
+        }
+    }
+}
+
+public sealed record GitContributorActivity(
+    string AuthorName,
+    string AuthorEmail,
+    int CommitCount,
+    int FilesTouched,
+    long AddedLines,
+    long DeletedLines,
+    int BinaryChanges,
+    DateTimeOffset LastActiveAt)
+{
+    public string LineSummary => $"+{AddedLines} / -{DeletedLines}";
+}
+
+public sealed record GitDailyActivity(
+    DateOnly Day,
+    int CommitCount,
+    int FilesTouched,
+    long AddedLines,
+    long DeletedLines);
+
+public sealed record GitRepositoryInsights(
+    int CommitCount,
+    int MergeCount,
+    int ContributorCount,
+    int FileCount,
+    long AddedLines,
+    long DeletedLines,
+    int BinaryChanges,
+    IReadOnlyList<GitContributorActivity> Contributors,
+    IReadOnlyList<GitDailyActivity> DailyActivity,
+    IReadOnlyList<GitFileActivity> HotFiles);

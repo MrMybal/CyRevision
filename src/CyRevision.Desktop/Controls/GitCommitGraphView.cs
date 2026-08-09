@@ -19,6 +19,10 @@ public sealed class GitCommitGraphView : UserControl
 
     private readonly Canvas _canvas = new() { Background = new SolidColorBrush(Color.Parse("#0F1729")) };
     private readonly GraphViewport _viewport;
+    private readonly Dictionary<string, Border> _nodes = new(StringComparer.Ordinal);
+    private string? _selectedHash;
+
+    public event EventHandler<GitCommitSelectedEventArgs>? CommitSelected;
 
     public GitCommitGraphView()
     {
@@ -45,6 +49,7 @@ public sealed class GitCommitGraphView : UserControl
     private void Rebuild()
     {
         _canvas.Children.Clear();
+        _nodes.Clear();
         GitGraphCommit[] commits = Commits?.Take(300).ToArray() ?? [];
         if (commits.Length == 0)
         {
@@ -129,15 +134,17 @@ public sealed class GitCommitGraphView : UserControl
             Color laneColor = LaneColors[position.Lane % LaneColors.Length];
             bool isHead = commit.Decorations.Contains("HEAD", StringComparison.OrdinalIgnoreCase);
             Border node = CreateNode(commit, laneColor, isHead, nodeWidth, nodeHeight);
+            _nodes[commit.Hash] = node;
             Canvas.SetLeft(node, position.X);
             Canvas.SetTop(node, position.Y);
             _canvas.Children.Add(node);
         }
 
+        ApplySelection();
         _viewport.ResetView();
     }
 
-    private static Border CreateNode(
+    private Border CreateNode(
         GitGraphCommit commit,
         Color laneColor,
         bool isHead,
@@ -178,10 +185,22 @@ public sealed class GitCommitGraphView : UserControl
             $"Références : {(string.IsNullOrWhiteSpace(commit.Decorations) ? "aucune" : commit.Decorations)}");
         node.PointerPressed += (_, _) =>
         {
-            node.Background = new SolidColorBrush(Color.Parse("#2D2858"));
-            node.BorderThickness = new Thickness(2.5);
+            _selectedHash = commit.Hash;
+            ApplySelection();
+            CommitSelected?.Invoke(this, new GitCommitSelectedEventArgs(commit));
         };
         return node;
+    }
+
+    private void ApplySelection()
+    {
+        foreach ((string hash, Border node) in _nodes)
+        {
+            bool selected = string.Equals(hash, _selectedHash, StringComparison.Ordinal);
+            node.Background = new SolidColorBrush(Color.Parse(selected ? "#35306B" : "#1A2740"));
+            node.BorderThickness = new Thickness(selected ? 2.8 : 1.2);
+            node.Opacity = selected || _selectedHash is null ? 1 : 0.76;
+        }
     }
 
     private void AddEmptyMessage(string message)
@@ -222,4 +241,9 @@ public sealed class GitCommitGraphView : UserControl
     }
 
     private readonly record struct NodePosition(double X, double Y, int Lane);
+}
+
+public sealed class GitCommitSelectedEventArgs(GitGraphCommit commit) : EventArgs
+{
+    public GitGraphCommit Commit { get; } = commit;
 }

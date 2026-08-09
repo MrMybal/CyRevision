@@ -1,6 +1,6 @@
 # Visualisations Git alternatives
 
-L’onglet **Git graphs** propose deux vues facultatives et strictement en lecture seule. L’analyse ne modifie ni le working tree, ni l’index, ni les commits.
+L’onglet **Git graphs** propose quatre vues facultatives et strictement en lecture seule. L’analyse ne modifie ni le working tree, ni l’index, ni les commits.
 
 ## Réseau de commits
 
@@ -24,3 +24,11 @@ La vue aide notamment à repérer :
 - les modifications dispersées dans un commit.
 
 Les limites de commits et de fichiers sont réglables dans l’interface. L’option **All branches** inclut les branches locales et les références connues ; la désactiver limite l’analyse à l’historique courant. Le calcul est local et n’exécute aucun fetch.
+
+## Activité d'équipe
+
+La chronologie agrège les commits et le volume de lignes modifiées par jour. Les tables indiquent les contributeurs, les fichiers touchés et les points chauds. Les données proviennent uniquement des auteurs et commits déjà présents dans le dépôt : CyRevision n'installe aucun suivi utilisateur et n'envoie aucune télémétrie.
+
+## Dépendances Unreal hors moteur
+
+CyRevision inspecte les chaînes de références `/Game/...` détectables dans les `.uasset` et `.umap` disponibles localement. Le graphe distingue les dépendances sortantes et les références entrantes. Cette lecture simplifiée fonctionne sans lancer Unreal et reste complémentaire du futur plugin, qui pourra fournir les dépendances résolues par l'Asset Registry et les graphes Blueprint complets.
