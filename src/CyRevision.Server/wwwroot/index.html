@@ -1,25 +1,26 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1020">
   <title>CyRevision Server</title>
-  <meta name="description" content="Administration du pair Linux optionnel CyRevision">
+  <meta name="description" content="Administration of the optional CyRevision Linux peer">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main>
     <section id="login" class="login-shell" aria-labelledby="login-title">
       <div class="brand-mark" aria-hidden="true">C</div>
-      <p class="eyebrow">PAIR LINUX OPTIONNEL</p>
+      <div class="login-language"><select data-language-picker aria-label="Interface language"><option value="en">English</option><option value="fr">Français</option></select></div>
+      <p class="eyebrow" data-i18n="login.eyebrow">OPTIONAL LINUX PEER</p>
       <h1 id="login-title">CyRevision Server</h1>
-      <p class="lede">Pilotez vos projets, sauvegardes et échanges privés depuis votre propre machine.</p>
+      <p class="lede" data-i18n="login.lede">Manage your projects, backups, and private exchanges from your own machine.</p>
       <form id="login-form" class="login-card">
-        <label for="token">Jeton d’administration</label>
+        <label for="token" data-i18n="login.token">Administration token</label>
         <div class="input-action">
-          <input id="token" name="token" type="password" autocomplete="current-password" required placeholder="Jeton généré sur le serveur">
-          <button type="submit" class="primary">Se connecter</button>
+          <input id="token" name="token" type="password" autocomplete="current-password" required placeholder="Token generated on the server" data-i18n-placeholder="login.tokenPlaceholder">
+          <button type="submit" class="primary" data-i18n="login.connect">Sign in</button>
         </div>
         <p id="login-error" class="error" role="alert"></p>
       </form>
@@ -31,53 +32,56 @@
           <div class="brand-mark small" aria-hidden="true">C</div>
           <div><p class="eyebrow">CYREVISION</p><strong>Server Console</strong></div>
         </div>
-        <div class="server-health"><span class="pulse" aria-hidden="true"></span><span>Serveur actif</span></div>
-        <button id="logout" class="ghost">Déconnexion</button>
+        <div class="server-health"><span class="pulse" aria-hidden="true"></span><span data-i18n="dashboard.serverActive">Server active</span></div>
+        <div class="topbar-actions">
+          <select data-language-picker aria-label="Interface language"><option value="en">English</option><option value="fr">Français</option></select>
+          <button id="logout" class="ghost" data-i18n="dashboard.logout">Sign out</button>
+        </div>
       </header>
 
       <div class="content">
         <section class="hero">
           <div>
-            <p class="eyebrow">VOTRE INFRASTRUCTURE, VOS DONNÉES</p>
-            <h1 id="page-title">Vue d’ensemble</h1>
-            <p>Le serveur conserve les sauvegardes et peut agir comme pair disponible en continu. Il reste facultatif pour tous les clients.</p>
+            <p class="eyebrow" data-i18n="dashboard.eyebrow">YOUR INFRASTRUCTURE, YOUR DATA</p>
+            <h1 id="page-title" data-i18n="dashboard.overview">Overview</h1>
+            <p data-i18n="dashboard.description">The server stores backups and can act as an always-available peer. It remains optional for every client.</p>
           </div>
-          <button id="refresh" class="primary">Actualiser</button>
+          <button id="refresh" class="primary" data-i18n="common.refresh">Refresh</button>
         </section>
 
-        <section class="metrics" aria-label="Indicateurs">
-          <article><span>Projets</span><strong id="project-count">0</strong></article>
-          <article><span>Git local</span><strong id="git-count">0</strong></article>
-          <article><span>Sync activable</span><strong id="sync-count">0</strong></article>
-          <article><span>Backups actifs</span><strong id="backup-count">0</strong></article>
+        <section class="metrics" aria-label="Metrics">
+          <article><span data-i18n="metrics.projects">Projects</span><strong id="project-count">0</strong></article>
+          <article><span data-i18n="metrics.localGit">Local Git</span><strong id="git-count">0</strong></article>
+          <article><span data-i18n="metrics.syncReady">Sync enabled</span><strong id="sync-count">0</strong></article>
+          <article><span data-i18n="metrics.activeBackups">Active backups</span><strong id="backup-count">0</strong></article>
         </section>
 
         <section class="panel create-panel" aria-labelledby="create-title">
-          <div><p class="eyebrow">NOUVEAU</p><h2 id="create-title">Créer un projet serveur</h2></div>
+          <div><p class="eyebrow" data-i18n="project.new">NEW</p><h2 id="create-title" data-i18n="project.createTitle">Create a server project</h2></div>
           <form id="create-project" class="create-form">
-            <label class="sr-only" for="project-name">Nom du projet</label>
-            <input id="project-name" required placeholder="Nom du projet">
-            <label class="sr-only" for="project-preset">Mode du projet</label>
+            <label class="sr-only" for="project-name" data-i18n="project.name">Project name</label>
+            <input id="project-name" required placeholder="Project name" data-i18n-placeholder="project.name">
+            <label class="sr-only" for="project-preset" data-i18n="project.mode">Project mode</label>
             <select id="project-preset">
               <option value="GitWithPeerSync">Git + Sync</option>
-              <option value="GitOnly">Git uniquement</option>
-              <option value="SyncWithVersions">Sync + versions</option>
-              <option value="SyncOnly">Sync uniquement</option>
-              <option value="BackupOnly">Backup uniquement</option>
+              <option value="GitOnly" data-i18n="preset.gitOnly">Git only</option>
+              <option value="SyncWithVersions" data-i18n="preset.syncVersions">Sync + versions</option>
+              <option value="SyncOnly" data-i18n="preset.syncOnly">Sync only</option>
+              <option value="BackupOnly" data-i18n="preset.backupOnly">Backup only</option>
             </select>
-            <button type="submit" class="primary">Créer</button>
+            <button type="submit" class="primary" data-i18n="common.create">Create</button>
           </form>
         </section>
 
         <section class="panel" aria-labelledby="projects-title">
           <div class="panel-heading">
-            <div><p class="eyebrow">CATALOGUE</p><h2 id="projects-title">Projets gérés</h2></div>
-            <p id="activity" role="status">Prêt</p>
+            <div><p class="eyebrow" data-i18n="project.catalog">CATALOG</p><h2 id="projects-title" data-i18n="project.managed">Managed projects</h2></div>
+            <p id="activity" role="status" data-i18n="common.ready">Ready</p>
           </div>
           <div id="project-list" class="project-list"></div>
           <div id="empty-state" class="empty-state">
-            <strong>Aucun projet pour le moment</strong>
-            <span>Créez votre premier dépôt ou dossier synchronisé ci-dessus.</span>
+            <strong data-i18n="project.empty">No projects yet</strong>
+            <span data-i18n="project.emptyHint">Create your first repository or synchronized folder above.</span>
           </div>
         </section>
       </div>
@@ -91,8 +95,8 @@
       <div class="badges"></div>
       <div class="project-actions">
         <button class="ghost backup-action">Snapshot</button>
-        <button class="ghost history-action">Historique</button>
-        <button class="danger remove-action">Retirer</button>
+        <button class="ghost history-action">History</button>
+        <button class="danger remove-action">Remove</button>
       </div>
       <div class="project-detail hidden"></div>
     </article>

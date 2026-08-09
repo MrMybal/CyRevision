@@ -7,6 +7,7 @@ CyRevision est un client de révision, synchronisation et sauvegarde pensé pour
 - application desktop native Windows/Linux/macOS avec Avalonia ;
 - catalogue de projets et cinq modes : **Git**, **Git + Sync**, **Sync**, **Sync + versions**, **Backup** ;
 - Git local : statut, index, commits, historique, branches, merge, remotes et Git LFS ;
+- visualisations Git optionnelles : graphe nodal des commits et relations de co-modification entre fichiers ;
 - Git P2P intelligent : bundles immuables signés et objets LFS vérifiés, sans synchroniser le `.git` actif ;
 - Syncthing optionnel avec profil, identité, base, API loopback et port distincts pour chaque projet ;
 - invitations à usage unique, code transmis séparément, certificats ECDSA, rôles et révocation ;
@@ -15,6 +16,7 @@ CyRevision est un client de révision, synchronisation et sauvegarde pensé pour
 - serveur Linux optionnel avec API, planification des backups, échange Git et tableau de bord web protégé ;
 - plugin Unreal Editor optionnel avec ouverture du client et réservations souples non bloquantes des assets.
 - VPN WireGuard optionnel intégré : setup, clés, tunnel isolé, pairs VPN-only et profils Unreal Swarm/CI/services ;
+- interface multilingue : anglais par défaut, français inclus et catalogues JSON extensibles sur le client et le dashboard web ;
 
 ## Ouvrir dans Rider
 
@@ -65,4 +67,6 @@ Pour Git + Sync, le dossier partagé contient des bundles Git signés, des certi
 - [Diff hors moteur](docs/asset-diff.md)
 - [API serveur](docs/server-api.md)
 - [VPN WireGuard](docs/wireguard-vpn.md)
+- [Visualisations Git](docs/git-visualizations.md)
+- [Localisation](docs/localization.md)
 - [Pont Unreal](plugins/CyRevisionUnreal/README.md)

@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.ViewModels;
 
 namespace CyRevision.Desktop;
@@ -8,17 +9,20 @@ namespace CyRevision.Desktop;
 public partial class MainWindow : Window
 {
     private MainWindowViewModel _viewModel = null!;
+    private UiLocalizer? _uiLocalizer;
 
     public MainWindow()
     {
         InitializeComponent();
     }
 
-    public MainWindow(MainWindowViewModel viewModel) : this()
+    public MainWindow(MainWindowViewModel viewModel, LocalizationService localization) : this()
     {
         _viewModel = viewModel;
         DataContext = viewModel;
+        _uiLocalizer = new UiLocalizer(this, localization);
         Opened += OnOpened;
+        Closed += (_, _) => _uiLocalizer?.Dispose();
     }
 
     private async void OnOpened(object? sender, EventArgs e)
@@ -58,6 +62,9 @@ public partial class MainWindow : Window
         await _viewModel.RemoveSelectedProjectAsync();
 
     private async void OnRefreshClick(object? sender, RoutedEventArgs e) => await _viewModel.RefreshAsync();
+
+    private async void OnAnalyzeGitGraphsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.AnalyzeGitGraphsAsync();
 
     private async void OnStageAllClick(object? sender, RoutedEventArgs e) => await _viewModel.StageAllAsync();
 
