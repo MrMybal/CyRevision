@@ -22,3 +22,4 @@
 - Time Machine enrichie avec les emplacements local, pair autorisé et archive froide.
 - identité visuelle CyRevision intégrée au client, au serveur web et au plugin Unreal ;
 - documentation locale recherchable, livrée avec l'application en anglais et en français.
+- installateurs autonomes Windows, Linux et macOS, archives portables, sommes SHA-256 et workflow GitHub Releases multiplateforme reproductible.

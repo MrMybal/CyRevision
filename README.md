@@ -57,6 +57,14 @@ Publish on Windows:
 ./scripts/publish.ps1
 ```
 
+Build a self-contained Windows installer and portable release locally:
+
+```powershell
+./scripts/build-release.cmd 0.1.0
+```
+
+Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).
+
 Publish on Linux:
 
 ```bash
@@ -84,6 +92,7 @@ Detailed documentation is currently available in French while its English transl
 - [Git explorer and LFS Time Machine](docs/git-explorer-lfs-time-machine.md)
 - [Smart synchronization and cold archive](docs/smart-sync-and-cold-archive.md)
 - [Localization](docs/localization.md)
+- [Creating a multiplatform release](docs/releasing.md)
 - [Unreal Editor bridge](plugins/CyRevisionUnreal/README.md)
 
 ## License
