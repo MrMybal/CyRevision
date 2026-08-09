@@ -1,0 +1,27 @@
+bin/
+obj/
+.idea/
+.vs/
+*.user
+*.suo
+*.userprefs
+TestResults/
+coverage/
+artifacts/
+publish/
+AvaloniaUI/
+
+# Runtime data must never be committed.
+.cyrevision/
+*.db
+*.db-shm
+*.db-wal
+*.pid
+*.log
+
+# Secrets and local configuration.
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+secrets/
