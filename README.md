@@ -13,7 +13,7 @@ CyRevision est un client de révision, synchronisation et sauvegarde pensé pour
 - snapshots dédupliqués par SHA-256, restauration et rétention par âge, nombre, budget ou conservation permanente ;
 - diff hors moteur : texte, texture + heatmap, OBJ + superposition 3D, binaire et inspection simplifiée `.uasset`/`.umap` ;
 - serveur Linux optionnel avec API, planification des backups, échange Git et tableau de bord web protégé ;
-- pont Unreal Editor optionnel pour ouvrir directement le projet dans CyRevision.
+- plugin Unreal Editor optionnel avec ouverture du client et réservations souples non bloquantes des assets.
 
 ## Ouvrir dans Rider
 

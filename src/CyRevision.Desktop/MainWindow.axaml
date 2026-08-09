@@ -391,6 +391,48 @@
                     </Grid>
                 </TabItem>
 
+                <TabItem Header="Travail en cours">
+                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.45*,0.75*" ColumnSpacing="14">
+                        <Border Classes="card">
+                            <Grid RowDefinitions="Auto,*">
+                                <StackPanel>
+                                    <TextBlock Text="Réservations souples des assets" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Présence informative partagée par CyRevision, sans checkout ni verrou LFS."
+                                               FontSize="11" Classes="muted" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <DataGrid Grid.Row="1" Margin="0,12,0,0"
+                                          ItemsSource="{Binding AdvisoryReservations}"
+                                          AutoGenerateColumns="False" IsReadOnly="True"
+                                          GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Asset" Binding="{Binding Asset}" Width="1.7*" />
+                                        <DataGridTextColumn Header="Personne" Binding="{Binding Owner}" Width="1*" />
+                                        <DataGridTextColumn Header="Machine" Binding="{Binding Machine}" Width="1*" />
+                                        <DataGridTextColumn Header="Actualisé" Binding="{Binding UpdatedAt}" Width="155" />
+                                        <DataGridTextColumn Header="État" Binding="{Binding State}" Width="85" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="1" Classes="card">
+                            <StackPanel Spacing="11">
+                                <TextBlock Text="Mode non bloquant" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding ReservationSummary}" TextWrapping="Wrap" Foreground="#78D7B7" />
+                                <Border Height="1" Background="#29324A" Margin="0,4" />
+                                <TextBlock Text="• Le fichier reste modifiable par tout le monde." TextWrapping="Wrap" />
+                                <TextBlock Text="• Aucun checkout Unreal n'est déclenché." TextWrapping="Wrap" />
+                                <TextBlock Text="• Aucun verrou Git LFS n'est créé." TextWrapping="Wrap" />
+                                <TextBlock Text="• Le plugin renouvelle automatiquement le signalement pendant le travail." TextWrapping="Wrap" />
+                                <TextBlock Text="• Après un crash ou un oubli, le signalement passe automatiquement à Expirée." TextWrapping="Wrap" />
+                                <Border Height="1" Background="#29324A" Margin="0,4" />
+                                <Button Classes="primary" Content="Actualiser" Click="OnRefreshAdvisoryReservationsClick" HorizontalAlignment="Left" />
+                                <Button Classes="secondary" Content="Nettoyer les expirées" Click="OnCleanExpiredAdvisoryReservationsClick" HorizontalAlignment="Left" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
                 <TabItem Header="Diff assets">
                     <Grid Margin="0,14,0,0" ColumnDefinitions="1.1*,1*" ColumnSpacing="14">
                         <Border Classes="card">
