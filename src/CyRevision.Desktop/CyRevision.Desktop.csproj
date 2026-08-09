@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\CyRevision.Backup\CyRevision.Backup.csproj" />
     <ProjectReference Include="..\CyRevision.Core\CyRevision.Core.csproj" />
+    <ProjectReference Include="..\CyRevision.Diff\CyRevision.Diff.csproj" />
     <ProjectReference Include="..\CyRevision.Git\CyRevision.Git.csproj" />
     <ProjectReference Include="..\CyRevision.Security\CyRevision.Security.csproj" />
     <ProjectReference Include="..\CyRevision.Sync\CyRevision.Sync.csproj" />

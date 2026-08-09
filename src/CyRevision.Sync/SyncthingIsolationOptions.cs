@@ -9,6 +9,7 @@ public sealed record SyncthingIsolationOptions(
     string ExchangeDirectory,
     Uri ApiEndpoint,
     string ApiKey,
+    int ListenPort,
     bool Enabled = true)
 {
     public void Validate()
@@ -38,6 +39,16 @@ public sealed record SyncthingIsolationOptions(
         if (Enabled && string.IsNullOrWhiteSpace(ApiKey))
         {
             throw new InvalidOperationException("A dedicated Syncthing API key is required.");
+        }
+
+        if (Enabled && ListenPort is <= 0 or > 65535)
+        {
+            throw new InvalidOperationException("A dedicated Syncthing transport port is required.");
+        }
+
+        if (ApiEndpoint.Port == ListenPort)
+        {
+            throw new InvalidOperationException("Syncthing API and transport ports must be different.");
         }
     }
 

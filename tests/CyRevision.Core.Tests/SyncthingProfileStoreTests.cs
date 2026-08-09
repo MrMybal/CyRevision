@@ -22,6 +22,8 @@ public sealed class SyncthingProfileStoreTests : IDisposable
         Assert.NotNull(loaded);
         Assert.Equal(created.ApiEndpoint, updated.ApiEndpoint);
         Assert.Equal(created.ApiKey, updated.ApiKey);
+        Assert.Equal(created.ListenPort, updated.ListenPort);
+        Assert.NotEqual(created.ApiEndpoint.Port, created.ListenPort);
         Assert.Equal(created, loaded);
         created.ToIsolationOptions().Validate();
         Assert.NotEqual(Path.GetFullPath(exchange), Path.GetFullPath(created.ConfigurationDirectory));

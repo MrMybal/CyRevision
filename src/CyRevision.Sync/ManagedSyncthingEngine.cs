@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Xml.Linq;
 
 namespace CyRevision.Sync;
 
@@ -48,6 +49,7 @@ public sealed class ManagedSyncthingEngine : ISyncEngine, IAsyncDisposable
             Directory.CreateDirectory(_options.ConfigurationDirectory);
             Directory.CreateDirectory(_options.DataDirectory);
             Directory.CreateDirectory(_options.ExchangeDirectory);
+            await EnsureDedicatedConfigurationAsync(cancellationToken);
             _status = new SyncEngineStatus(SyncEngineState.Starting, 0, 0, "Démarrage de l'instance Syncthing CyRevision…");
 
             ProcessStartInfo startInfo = CreateStartInfo();
@@ -68,6 +70,15 @@ public sealed class ManagedSyncthingEngine : ISyncEngine, IAsyncDisposable
         }
         catch (Exception exception)
         {
+            if (_ownedProcess is { HasExited: false } failedProcess)
+            {
+                failedProcess.Kill(entireProcessTree: true);
+                await failedProcess.WaitForExitAsync(CancellationToken.None);
+            }
+
+            CleanupOwnedProcess();
+            _apiClient?.Dispose();
+            _apiClient = null;
             _status = new SyncEngineStatus(SyncEngineState.Faulted, 0, 0, exception.Message);
             throw;
         }
@@ -209,14 +220,112 @@ public sealed class ManagedSyncthingEngine : ISyncEngine, IAsyncDisposable
         info.ArgumentList.Add("--no-browser");
         info.ArgumentList.Add("--no-restart");
         info.ArgumentList.Add("--no-upgrade");
-        info.ArgumentList.Add("--no-default-folder");
-        info.ArgumentList.Add("--logfile=" + Path.GetFullPath(_options.LogPath));
         if (OperatingSystem.IsWindows())
         {
             info.ArgumentList.Add("--no-console");
         }
 
         return info;
+    }
+
+    private async Task EnsureDedicatedConfigurationAsync(CancellationToken cancellationToken)
+    {
+        string configPath = Path.Combine(_options.ConfigurationDirectory, "config.xml");
+        if (!File.Exists(configPath))
+        {
+            ProcessResult generation = await RunSyncthingUtilityAsync(
+                ["generate", "--config=" + Path.GetFullPath(_options.ConfigurationDirectory)],
+                cancellationToken);
+            if (!generation.Succeeded)
+            {
+                generation = await RunSyncthingUtilityAsync(
+                    ["--generate=" + Path.GetFullPath(_options.ConfigurationDirectory)],
+                    cancellationToken);
+            }
+
+            if (!generation.Succeeded || !File.Exists(configPath))
+            {
+                throw new InvalidOperationException("Syncthing n'a pas pu générer sa configuration CyRevision dédiée : " + generation.Error.Trim());
+            }
+        }
+
+        XDocument document = XDocument.Load(configPath, LoadOptions.PreserveWhitespace);
+        XElement root = document.Root ?? throw new InvalidDataException("La configuration Syncthing générée est vide.");
+        XNamespace xmlNamespace = root.Name.Namespace;
+        root.Elements(xmlNamespace + "folder").Remove();
+
+        XElement options = root.Element(xmlNamespace + "options")
+                           ?? throw new InvalidDataException("La configuration Syncthing ne contient pas la section options.");
+        options.Elements(xmlNamespace + "listenAddress").Remove();
+        options.AddFirst(
+            new XElement(xmlNamespace + "listenAddress", $"tcp://0.0.0.0:{_options.ListenPort}"),
+            new XElement(xmlNamespace + "listenAddress", $"quic://0.0.0.0:{_options.ListenPort}"));
+
+        XElement? gui = root.Element(xmlNamespace + "gui");
+        if (gui is not null)
+        {
+            SetElementValue(gui, xmlNamespace + "address", $"127.0.0.1:{_options.ApiEndpoint.Port}");
+            SetElementValue(gui, xmlNamespace + "apikey", _options.ApiKey);
+        }
+
+        string temporaryPath = configPath + ".cyrevision.tmp";
+        document.Save(temporaryPath);
+        File.Move(temporaryPath, configPath, true);
+    }
+
+    private async Task<ProcessResult> RunSyncthingUtilityAsync(
+        IReadOnlyCollection<string> arguments,
+        CancellationToken cancellationToken)
+    {
+        ProcessStartInfo info = new()
+        {
+            FileName = Path.GetFullPath(_options.ExecutablePath),
+            WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(_options.ExecutablePath))!,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        foreach (string argument in arguments)
+        {
+            info.ArgumentList.Add(argument);
+        }
+
+        using Process process = new() { StartInfo = info };
+        if (!process.Start())
+        {
+            return new ProcessResult(false, "Le processus de configuration Syncthing n'a pas démarré.");
+        }
+
+        Task<string> output = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+            return new ProcessResult(process.ExitCode == 0, (await error) + Environment.NewLine + (await output));
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            throw;
+        }
+    }
+
+    private static void SetElementValue(XElement parent, XName name, string value)
+    {
+        XElement? element = parent.Element(name);
+        if (element is null)
+        {
+            parent.Add(new XElement(name, value));
+        }
+        else
+        {
+            element.Value = value;
+        }
     }
 
     private async Task WaitUntilHealthyAsync(CancellationToken cancellationToken)
@@ -287,4 +396,6 @@ public sealed class ManagedSyncthingEngine : ISyncEngine, IAsyncDisposable
         string markerPath = Path.Combine(_options.DataDirectory, "owned-process.txt");
         File.Delete(markerPath);
     }
+
+    private sealed record ProcessResult(bool Succeeded, string Error);
 }

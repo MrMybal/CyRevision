@@ -36,7 +36,7 @@ public sealed class JsonPeerAdmissionService : IPeerAdmissionService
         byte[] tokenBytes = RandomNumberGenerator.GetBytes(32);
         string token = Base64UrlEncode(tokenBytes);
         string tokenHash = HashToken(token);
-        string verificationCode = CreateVerificationCode(tokenBytes);
+        string verificationCode = RandomNumberGenerator.GetInt32(1_000_000).ToString("D6");
         PeerInvitation invitation = new(
             Guid.NewGuid(),
             projectId,
@@ -49,7 +49,10 @@ public sealed class JsonPeerAdmissionService : IPeerAdmissionService
         try
         {
             Directory.CreateDirectory(InvitationsPath);
-            await WriteJsonAtomicallyAsync(GetInvitationPath(invitation.InvitationId), invitation, cancellationToken);
+            await WriteJsonAtomicallyAsync(
+                GetInvitationPath(invitation.InvitationId),
+                new StoredInvitation(invitation, HashToken(verificationCode)),
+                cancellationToken);
         }
         finally
         {
@@ -70,30 +73,20 @@ public sealed class JsonPeerAdmissionService : IPeerAdmissionService
         try
         {
             string invitationPath = GetInvitationPath(invitation.InvitationId);
-            PeerInvitation stored = await ReadJsonAsync<PeerInvitation>(invitationPath, cancellationToken)
-                                    ?? throw new InvalidOperationException("The invitation is unknown or already used.");
-            if (stored != invitation || stored.ExpiresAt <= DateTimeOffset.UtcNow)
+            StoredInvitation stored = await ReadJsonAsync<StoredInvitation>(invitationPath, cancellationToken)
+                                      ?? throw new InvalidOperationException("The invitation is unknown or already used.");
+            if (stored.Invitation != invitation || stored.Invitation.ExpiresAt <= DateTimeOffset.UtcNow)
             {
                 throw new InvalidOperationException("The invitation is invalid or expired.");
             }
 
-            byte[] tokenBytes;
-            try
-            {
-                tokenBytes = Base64UrlDecode(oneTimeToken);
-            }
-            catch (FormatException)
-            {
-                throw new UnauthorizedAccessException("The invitation token is invalid.");
-            }
-
-            if (!FixedTimeEquals(stored.OneTimeTokenHash, HashToken(oneTimeToken)) ||
-                !FixedTimeEquals(CreateVerificationCode(tokenBytes), verificationCode.Trim()))
+            if (!FixedTimeEquals(stored.Invitation.OneTimeTokenHash, HashToken(oneTimeToken)) ||
+                !FixedTimeEquals(stored.VerificationCodeHash, HashToken(verificationCode.Trim())))
             {
                 throw new UnauthorizedAccessException("The invitation token or verification code is invalid.");
             }
 
-            List<MembershipCertificate> members = await ReadMembersAsync(stored.ProjectId, cancellationToken);
+            List<MembershipCertificate> members = await ReadMembersAsync(stored.Invitation.ProjectId, cancellationToken);
             if (members.Any(member => member.Device.DeviceId == device.DeviceId ||
                                       string.Equals(member.Device.SyncthingDeviceId, device.SyncthingDeviceId, StringComparison.Ordinal)))
             {
@@ -102,16 +95,21 @@ public sealed class JsonPeerAdmissionService : IPeerAdmissionService
 
             long nextEpoch = members.Count == 0 ? 1 : members.Max(member => member.MembershipEpoch) + 1;
             DateTimeOffset issuedAt = DateTimeOffset.UtcNow;
-            byte[] payload = BuildCertificatePayload(stored.ProjectId, device, stored.Role, nextEpoch, issuedAt);
-            MembershipCertificate certificate = new(
-                stored.ProjectId,
+            byte[] payload = BuildCertificatePayload(
+                stored.Invitation.ProjectId,
                 device,
-                stored.Role,
+                stored.Invitation.Role,
+                nextEpoch,
+                issuedAt);
+            MembershipCertificate certificate = new(
+                stored.Invitation.ProjectId,
+                device,
+                stored.Invitation.Role,
                 nextEpoch,
                 issuedAt,
                 _administratorIdentity.Sign(payload));
             members.Add(certificate);
-            await WriteJsonAtomicallyAsync(GetMembersPath(stored.ProjectId), members, cancellationToken);
+            await WriteJsonAtomicallyAsync(GetMembersPath(stored.Invitation.ProjectId), members, cancellationToken);
             File.Delete(invitationPath);
             return certificate;
         }
@@ -193,13 +191,6 @@ public sealed class JsonPeerAdmissionService : IPeerAdmissionService
     private static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 
-    private static string CreateVerificationCode(byte[] token)
-    {
-        byte[] hash = SHA256.HashData(token);
-        uint value = BitConverter.ToUInt32(hash, 0) % 1_000_000;
-        return value.ToString("D6");
-    }
-
     private static bool FixedTimeEquals(string left, string right)
     {
         byte[] leftBytes = Encoding.UTF8.GetBytes(left);
@@ -209,13 +200,6 @@ public sealed class JsonPeerAdmissionService : IPeerAdmissionService
 
     private static string Base64UrlEncode(byte[] data) =>
         Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-    private static byte[] Base64UrlDecode(string value)
-    {
-        string base64 = value.Replace('-', '+').Replace('_', '/');
-        base64 += new string('=', (4 - base64.Length % 4) % 4);
-        return Convert.FromBase64String(base64);
-    }
 
     private static async Task<T?> ReadJsonAsync<T>(string path, CancellationToken cancellationToken)
     {
@@ -245,4 +229,6 @@ public sealed class JsonPeerAdmissionService : IPeerAdmissionService
             File.Delete(temporaryPath);
         }
     }
+
+    private sealed record StoredInvitation(PeerInvitation Invitation, string VerificationCodeHash);
 }

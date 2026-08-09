@@ -14,7 +14,8 @@ public sealed class SyncthingIsolationOptionsTests
             Path.Combine(root, "data"),
             Path.Combine(root, "exchange"),
             new Uri("http://127.0.0.1:18384"),
-            "dedicated-api-key");
+            "dedicated-api-key",
+            22091);
 
         options.Validate();
     }
@@ -29,7 +30,8 @@ public sealed class SyncthingIsolationOptionsTests
             Path.Combine(root, "managed", "data"),
             Path.Combine(root, "exchange"),
             new Uri("http://127.0.0.1:18384"),
-            "key");
+            "key",
+            22091);
         SyncthingIsolationOptions remoteApi = overlap with
         {
             ConfigurationDirectory = Path.Combine(root, "config"),

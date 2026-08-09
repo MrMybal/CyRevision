@@ -1,0 +1,24 @@
+[Unit]
+Description=CyRevision optional Linux peer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cyrevision
+Group=cyrevision
+WorkingDirectory=/opt/cyrevision
+ExecStart=/usr/bin/dotnet /opt/cyrevision/CyRevision.Server.dll
+Environment=ASPNETCORE_URLS=http://127.0.0.1:8080
+Environment=CyRevision__DataDirectory=/var/lib/cyrevision
+Environment=CyRevision__ProjectsDirectory=/var/lib/cyrevision/projects
+EnvironmentFile=-/etc/cyrevision/server.env
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/cyrevision
+
+[Install]
+WantedBy=multi-user.target

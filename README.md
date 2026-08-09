@@ -1,41 +1,65 @@
 # CyRevision
 
-CyRevision is a modular desktop client for Git, Git LFS, peer-to-peer synchronization and configurable backups. Git, synchronization and backups are independent capabilities: a project can enable any useful combination without requiring GitHub or a permanent server.
+CyRevision est un client de révision, synchronisation et sauvegarde pensé pour les projets lourds, notamment Unreal Engine. Il fonctionne sans GitHub : Git et Git LFS restent locaux, tandis que la synchronisation P2P optionnelle transporte des transactions sûres entre appareils autorisés.
 
-## Solution layout
+## Ce qui fonctionne
 
-- `CyRevision.Desktop`: cross-platform Avalonia desktop application.
-- `CyRevision.Core`: project profiles, feature flags and retention rules.
-- `CyRevision.Git`: contracts for complete Git and Git LFS management.
-- `CyRevision.Sync`: peer synchronization contracts and Syncthing isolation policy.
-- `CyRevision.Backup`: snapshot and retention contracts.
-- `CyRevision.Security`: project membership, device identity and peer admission.
-- `CyRevision.Server`: optional headless Linux peer and administration API.
-- `CyRevision.Core.Tests`: domain tests.
+- application desktop native Windows/Linux/macOS avec Avalonia ;
+- catalogue de projets et cinq modes : **Git**, **Git + Sync**, **Sync**, **Sync + versions**, **Backup** ;
+- Git local : statut, index, commits, historique, branches, merge, remotes et Git LFS ;
+- Git P2P intelligent : bundles immuables signés et objets LFS vérifiés, sans synchroniser le `.git` actif ;
+- Syncthing optionnel avec profil, identité, base, API loopback et port distincts pour chaque projet ;
+- invitations à usage unique, code transmis séparément, certificats ECDSA, rôles et révocation ;
+- snapshots dédupliqués par SHA-256, restauration et rétention par âge, nombre, budget ou conservation permanente ;
+- diff hors moteur : texte, texture + heatmap, OBJ + superposition 3D, binaire et inspection simplifiée `.uasset`/`.umap` ;
+- serveur Linux optionnel avec API, planification des backups, échange Git et tableau de bord web protégé ;
+- pont Unreal Editor optionnel pour ouvrir directement le projet dans CyRevision.
 
-## Requirements
+## Ouvrir dans Rider
 
-- .NET SDK 8.0 or later. The repository currently targets `net8.0` because it is available on the development machine; moving to .NET 10 LTS is planned before the first release.
-- JetBrains Rider with the Avalonia plugin is recommended for XAML previewing.
-- Git and Git LFS.
+Ouvrez simplement `CyRevision.sln` dans JetBrains Rider. Le projet cible actuellement **.NET 8**, disponible sur la machine de développement. Une migration vers .NET 10 LTS pourra être faite lorsque tous les environnements ciblés l’auront installé.
 
-## Run
+Prérequis :
+
+- .NET SDK 8 ou plus récent ;
+- Git ;
+- Git LFS ;
+- Syncthing uniquement si le mode Sync est utilisé ;
+- plugin Avalonia pour la prévisualisation XAML dans Rider, recommandé mais non obligatoire.
+
+## Compiler et lancer
 
 ```powershell
 dotnet restore CyRevision.sln
 dotnet build CyRevision.sln
+dotnet test CyRevision.sln
 dotnet run --project src/CyRevision.Desktop/CyRevision.Desktop.csproj
 ```
 
-Run the optional server:
+Publication Windows :
 
 ```powershell
-dotnet run --project src/CyRevision.Server/CyRevision.Server.csproj
+./scripts/publish.ps1
 ```
 
-## Safety rule
+Publication Linux :
 
-CyRevision never controls an existing Syncthing installation. When peer synchronization is enabled, it will start a dedicated instance with separate configuration, database, identity, ports and exchange directories. If no project has synchronization enabled, that instance is not started.
+```bash
+./scripts/publish.sh
+```
 
-See [docs/architecture.md](docs/architecture.md) for the initial architecture decisions.
+## Règle de sécurité Syncthing
 
+CyRevision ne recherche, ne configure et n’arrête jamais une installation Syncthing déjà active. Un processus n’est lancé qu’après activation de Sync et sélection explicite de l’exécutable. Seule la référence du processus créé par CyRevision peut être arrêtée.
+
+Pour Git + Sync, le dossier partagé contient des bundles Git signés, des certificats et des objets LFS immuables. Le working tree et `.git` restent locaux. En mode Sync sans Git, Syncthing partage directement le dossier choisi.
+
+## Documentation
+
+- [Guide utilisateur](docs/user-guide.md)
+- [Architecture](docs/architecture.md)
+- [Sécurité](docs/security.md)
+- [Serveur Linux](docs/linux-server.md)
+- [Diff hors moteur](docs/asset-diff.md)
+- [API serveur](docs/server-api.md)
+- [Pont Unreal](plugins/CyRevisionUnreal/README.md)

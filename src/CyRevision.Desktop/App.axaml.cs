@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
 using CyRevision.Desktop.ViewModels;
+using CyRevision.Diff;
 using CyRevision.Git;
 using CyRevision.Sync;
 
@@ -23,17 +24,44 @@ public partial class App : Application
             ApplicationPaths paths = ApplicationPaths.CreateDefault();
             JsonProjectCatalog catalog = new(paths.ProjectCatalogPath);
             GitCliRepositoryService gitService = new();
+            GitPeerExchangeService gitExchange = new();
+            AssetDiffService assetDiff = new();
             JsonSyncthingProfileStore syncProfiles = new(paths.ManagedSyncthingDirectory);
-            MainWindowViewModel viewModel = new(catalog, gitService, paths, syncProfiles);
+            string? initialProjectPath = ReadProjectArgument(desktop.Args);
+            MainWindowViewModel viewModel = new(catalog, gitService, paths, syncProfiles, gitExchange, assetDiff, initialProjectPath);
 
             desktop.MainWindow = new MainWindow(viewModel);
             desktop.Exit += (_, _) =>
             {
-                viewModel.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                Task.Run(async () => await viewModel.DisposeAsync()).GetAwaiter().GetResult();
                 catalog.Dispose();
             };
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static string? ReadProjectArgument(string[]? arguments)
+    {
+        if (arguments is null)
+        {
+            return null;
+        }
+
+        for (int index = 0; index < arguments.Length; index++)
+        {
+            string argument = arguments[index];
+            if (argument.StartsWith("--project=", StringComparison.OrdinalIgnoreCase))
+            {
+                return argument["--project=".Length..].Trim('"');
+            }
+
+            if (string.Equals(argument, "--project", StringComparison.OrdinalIgnoreCase) && index + 1 < arguments.Length)
+            {
+                return arguments[index + 1].Trim('"');
+            }
+        }
+
+        return null;
     }
 }

@@ -1,7 +1,10 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
+using Avalonia.Media.Imaging;
 using CyRevision.Backup;
 using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
+using CyRevision.Diff;
 using CyRevision.Git;
 using CyRevision.Security;
 using CyRevision.Sync;
@@ -14,6 +17,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly IGitRepositoryService _gitService;
     private readonly ApplicationPaths _applicationPaths;
     private readonly ISyncthingProfileStore _syncthingProfileStore;
+    private readonly IGitPeerExchangeService _gitPeerExchangeService;
+    private readonly IAssetDiffService _assetDiffService;
+    private readonly string? _initialProjectPath;
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
     private GitBranch? _selectedBranch;
@@ -43,17 +49,28 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _peerExchangeText = string.Empty;
     private PeerRole _selectedPeerRole = PeerRole.Contributor;
     private string _peerVerificationCode = string.Empty;
+    private string _assetBaselinePath = string.Empty;
+    private string _assetCandidatePath = string.Empty;
+    private string _assetDiffReport = "Choisissez deux fichiers, ou comparez une modification Git à HEAD.";
+    private Bitmap? _assetDiffPreview;
+    private PeerMemberViewModel? _selectedPeerMember;
 
     public MainWindowViewModel(
         IProjectCatalog projectCatalog,
         IGitRepositoryService gitService,
         ApplicationPaths applicationPaths,
-        ISyncthingProfileStore syncthingProfileStore)
+        ISyncthingProfileStore syncthingProfileStore,
+        IGitPeerExchangeService gitPeerExchangeService,
+        IAssetDiffService assetDiffService,
+        string? initialProjectPath = null)
     {
         _projectCatalog = projectCatalog;
         _gitService = gitService;
         _applicationPaths = applicationPaths;
         _syncthingProfileStore = syncthingProfileStore;
+        _gitPeerExchangeService = gitPeerExchangeService;
+        _assetDiffService = assetDiffService;
+        _initialProjectPath = initialProjectPath;
     }
 
     public ObservableCollection<ProjectItemViewModel> Projects { get; } = [];
@@ -67,6 +84,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<LfsTrackedPattern> LfsPatterns { get; } = [];
 
     public ObservableCollection<BackupSnapshotViewModel> Backups { get; } = [];
+
+    public ObservableCollection<PeerMemberViewModel> PeerMembers { get; } = [];
 
     public IReadOnlyList<RetentionMode> RetentionModes { get; } = Enum.GetValues<RetentionMode>();
 
@@ -247,6 +266,43 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         set => SetProperty(ref _peerVerificationCode, value);
     }
 
+    public string AssetBaselinePath
+    {
+        get => _assetBaselinePath;
+        private set => SetProperty(ref _assetBaselinePath, value);
+    }
+
+    public string AssetCandidatePath
+    {
+        get => _assetCandidatePath;
+        private set => SetProperty(ref _assetCandidatePath, value);
+    }
+
+    public string AssetDiffReport
+    {
+        get => _assetDiffReport;
+        private set => SetProperty(ref _assetDiffReport, value);
+    }
+
+    public Bitmap? AssetDiffPreview
+    {
+        get => _assetDiffPreview;
+        private set
+        {
+            Bitmap? previous = _assetDiffPreview;
+            if (SetProperty(ref _assetDiffPreview, value))
+            {
+                previous?.Dispose();
+            }
+        }
+    }
+
+    public PeerMemberViewModel? SelectedPeerMember
+    {
+        get => _selectedPeerMember;
+        set => SetProperty(ref _selectedPeerMember, value);
+    }
+
     public async Task InitializeAsync()
     {
         await RunOperationAsync("Chargement des projets…", async () =>
@@ -263,7 +319,43 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 Projects.Add(new ProjectItemViewModel(definition));
             }
 
-            if (Projects.Count > 0)
+            if (!string.IsNullOrWhiteSpace(_initialProjectPath) && Directory.Exists(_initialProjectPath))
+            {
+                string fullPath = Path.GetFullPath(_initialProjectPath);
+                ProjectItemViewModel? known = Projects.FirstOrDefault(project =>
+                    string.Equals(project.RootPath, fullPath, StringComparison.OrdinalIgnoreCase));
+                if (known is null)
+                {
+                    if (Directory.Exists(Path.Combine(fullPath, ".git")))
+                    {
+                        GitRepositoryStatus repository = await _gitService.GetStatusAsync(fullPath);
+                        ProjectDefinition definition = CreateGitProject(repository.RootPath);
+                        await _projectCatalog.UpsertAsync(definition);
+                        known = new ProjectItemViewModel(definition);
+                        Projects.Insert(0, known);
+                    }
+                    else
+                    {
+                        ProjectPreset preset = ProjectPresets.All.Single(item => item.Kind == ProjectPresetKind.SyncOnly);
+                        DateTimeOffset now = DateTimeOffset.UtcNow;
+                        ProjectDefinition definition = new(
+                            Guid.NewGuid(),
+                            new DirectoryInfo(fullPath).Name,
+                            fullPath,
+                            preset.Features,
+                            preset.Retention,
+                            CreatedAt: now,
+                            LastOpenedAt: now);
+                        await _projectCatalog.UpsertAsync(definition);
+                        known = new ProjectItemViewModel(definition);
+                        Projects.Insert(0, known);
+                    }
+                }
+
+                SelectedProject = known;
+            }
+
+            if (SelectedProject is null && Projects.Count > 0)
             {
                 SelectedProject = Projects[0];
             }
@@ -407,6 +499,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             await _gitService.CreateRevisionAsync(SelectedProject.RootPath, message, paths);
             CommitMessage = string.Empty;
+            if (_syncEngine is not null && SelectedProject.Definition.Features.PeerSyncEnabled)
+            {
+                await ExchangeGitCoreAsync();
+            }
             await RefreshCoreAsync();
         }, "Révision créée");
     }
@@ -435,9 +531,39 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         string branchName = SelectedBranch.Name;
         await RunOperationAsync("Changement de branche…", async () =>
         {
-            await _gitService.CheckoutBranchAsync(SelectedProject.RootPath, branchName);
+            if (SelectedBranch.IsRemote)
+            {
+                string localBranchName = "peer-" + SelectedBranch.ShortCommitHash;
+                if (Branches.Any(branch => !branch.IsRemote && string.Equals(branch.Name, localBranchName, StringComparison.Ordinal)))
+                {
+                    await _gitService.CheckoutBranchAsync(SelectedProject.RootPath, localBranchName);
+                }
+                else
+                {
+                    await _gitService.CreateBranchFromAsync(SelectedProject.RootPath, localBranchName, branchName);
+                }
+            }
+            else
+            {
+                await _gitService.CheckoutBranchAsync(SelectedProject.RootPath, branchName);
+            }
             await RefreshCoreAsync();
         }, $"Branche {branchName} active");
+    }
+
+    public async Task MergeSelectedBranchAsync()
+    {
+        if (SelectedProject is null || SelectedBranch is null || SelectedBranch.IsCurrent)
+        {
+            return;
+        }
+
+        string branchName = SelectedBranch.Name;
+        await RunOperationAsync("Intégration de la branche…", async () =>
+        {
+            await _gitService.MergeBranchAsync(SelectedProject.RootPath, branchName);
+            await RefreshCoreAsync();
+        }, $"Branche {branchName} intégrée");
     }
 
     public Task FetchAsync() => RunGitNetworkOperationAsync("Récupération des références…", _gitService.FetchAsync, "Fetch terminé");
@@ -550,6 +676,58 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, $"Snapshot restauré dans {destinationDirectory}");
     }
 
+    public void SetAssetBaseline(string path) => AssetBaselinePath = Path.GetFullPath(path);
+
+    public void SetAssetCandidate(string path) => AssetCandidatePath = Path.GetFullPath(path);
+
+    public async Task CompareAssetsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(AssetBaselinePath) || string.IsNullOrWhiteSpace(AssetCandidatePath))
+        {
+            StatusMessage = "Sélectionnez les deux fichiers à comparer";
+            return;
+        }
+
+        await RunOperationAsync("Analyse des assets hors moteur…", async () =>
+        {
+            AssetDiffResult result = await _assetDiffService.CompareAsync(
+                AssetBaselinePath,
+                AssetCandidatePath,
+                GetDiffArtifactDirectory());
+            ApplyAssetDiffResult(result);
+        }, "Comparaison terminée");
+    }
+
+    public async Task CompareSelectedChangeToHeadAsync()
+    {
+        if (SelectedProject is null || SelectedChange is null || !SelectedProject.Definition.Features.GitEnabled)
+        {
+            StatusMessage = "Sélectionnez une modification Git à comparer";
+            return;
+        }
+
+        await RunOperationAsync("Extraction de la version HEAD…", async () =>
+        {
+            string artifactDirectory = GetDiffArtifactDirectory();
+            Directory.CreateDirectory(artifactDirectory);
+            string extension = Path.GetExtension(SelectedChange.Path);
+            string baselinePath = Path.Combine(artifactDirectory, $"head-{Guid.NewGuid():N}{extension}");
+            await _gitService.ExportFileFromRevisionAsync(
+                SelectedProject.RootPath,
+                SelectedChange.Path,
+                "HEAD",
+                baselinePath);
+            string candidatePath = Path.Combine(SelectedProject.RootPath, SelectedChange.Path.Replace('/', Path.DirectorySeparatorChar));
+            AssetBaselinePath = baselinePath;
+            AssetCandidatePath = candidatePath;
+            AssetDiffResult result = await _assetDiffService.CompareAsync(
+                baselinePath,
+                candidatePath,
+                artifactDirectory);
+            ApplyAssetDiffResult(result);
+        }, "Comparaison avec HEAD terminée");
+    }
+
     public async Task ApplySelectedPresetAsync()
     {
         if (SelectedProject is null || SelectedPreset is null)
@@ -596,7 +774,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             _currentSyncProfile = await _syncthingProfileStore.CreateOrUpdateAsync(
                 SelectedProject.Id,
                 executablePath,
-                SelectedProject.RootPath);
+                ResolveSyncExchangeDirectory(SelectedProject.Definition));
             SyncthingExecutablePath = _currentSyncProfile.ExecutablePath;
             SyncState = "Sync prêt";
             SyncDetails = $"API locale isolée : {_currentSyncProfile.ApiEndpoint}";
@@ -624,6 +802,15 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
         await RunOperationAsync("Démarrage du moteur Sync isolé…", async () =>
         {
+            string desiredExchangePath = ResolveSyncExchangeDirectory(SelectedProject.Definition);
+            if (!string.Equals(_currentSyncProfile.ExchangeDirectory, desiredExchangePath, StringComparison.OrdinalIgnoreCase))
+            {
+                _currentSyncProfile = await _syncthingProfileStore.CreateOrUpdateAsync(
+                    SelectedProject.Id,
+                    _currentSyncProfile.ExecutablePath,
+                    desiredExchangePath);
+            }
+
             if (_syncEngineProjectId != SelectedProject.Id)
             {
                 await StopSyncCoreAsync();
@@ -633,6 +820,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             _syncEngineProjectId = SelectedProject.Id;
             await _syncEngine.StartAsync();
             await ConfigureCurrentSyncFolderAsync();
+            await ExchangeGitCoreAsync();
+            await LoadPeerMembersCoreAsync();
             UpdateSyncStatus(_syncEngine.Status);
         }, "Synchronisation CyRevision active");
     }
@@ -668,6 +857,15 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public async Task StopSyncAsync()
     {
         await RunOperationAsync("Arrêt de l'instance Sync CyRevision…", StopSyncCoreAsync, "Instance Sync CyRevision arrêtée");
+    }
+
+    public async Task ExchangeGitAsync()
+    {
+        await RunOperationAsync("Échange des transactions Git signées…", async () =>
+        {
+            await ExchangeGitCoreAsync();
+            await RefreshCoreAsync();
+        }, "Transactions Git publiées et branches des pairs actualisées");
     }
 
     public async Task CreatePeerInvitationAsync()
@@ -759,10 +957,18 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 request.Device.SyncthingDeviceId,
                 request.Device.DisplayName));
             await ConfigureCurrentSyncFolderAsync();
-            PeerExchangeText = PeerExchangeCodec.ExportMembershipGrant(new PeerMembershipGrant(
+            PeerMembershipGrant grant = new(
                 request.InvitationOffer.Invitation.InvitationId,
                 certificate,
-                ownerIdentity.Identity));
+                ownerIdentity.Identity);
+            string sharedGrantPath = Path.Combine(
+                profile.ExchangeDirectory,
+                "members",
+                certificate.Device.DeviceId.ToString("N") + ".json");
+            Directory.CreateDirectory(Path.GetDirectoryName(sharedGrantPath)!);
+            await File.WriteAllTextAsync(sharedGrantPath, PeerExchangeCodec.ExportMembershipGrant(grant));
+            PeerExchangeText = PeerExchangeCodec.ExportMembershipGrant(grant);
+            await LoadPeerMembersCoreAsync();
         }, "Pair approuvé, signé et ajouté à Syncthing");
     }
 
@@ -812,6 +1018,29 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await api.PutFolderAsync(CreateFolderConfiguration(profile, [grant.IssuerIdentity.SyncthingDeviceId]));
             File.Delete(pendingPath);
         }, "Certificat valide et propriétaire ajouté à Syncthing");
+    }
+
+    public async Task RevokeSelectedPeerAsync()
+    {
+        if (SelectedPeerMember is null ||
+            !TryGetRunningSyncContext(out ProjectDefinition? project, out SyncthingProfile? profile, out ManagedSyncthingEngine? engine))
+        {
+            StatusMessage = "Sélectionnez un pair actif à révoquer";
+            return;
+        }
+
+        PeerMemberViewModel selected = SelectedPeerMember;
+        await RunOperationAsync("Révocation du pair…", async () =>
+        {
+            using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(project!, engine!.DeviceId);
+            JsonPeerAdmissionService admission = CreateAdmissionService(project!.Id, identity);
+            await admission.RevokeDeviceAsync(project.Id, selected.DeviceId);
+            File.Delete(Path.Combine(profile!.ExchangeDirectory, "members", selected.DeviceId.ToString("N") + ".json"));
+            using SyncthingApiClient api = new(profile.ApiEndpoint, profile.ApiKey);
+            await api.DeleteDeviceAsync(selected.Certificate.Device.SyncthingDeviceId);
+            await ConfigureCurrentSyncFolderAsync();
+            await LoadPeerMembersCoreAsync();
+        }, $"Pair {selected.DisplayName} révoqué");
     }
 
     private async Task LoadSelectedProjectAsync()
@@ -980,6 +1209,118 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         await api.PutFolderAsync(CreateFolderConfiguration(_currentSyncProfile, deviceIds));
     }
 
+    private async Task LoadPeerMembersCoreAsync()
+    {
+        if (SelectedProject is null || _syncEngine is null || string.IsNullOrWhiteSpace(_syncEngine.DeviceId))
+        {
+            PeerMembers.Clear();
+            SelectedPeerMember = null;
+            return;
+        }
+
+        using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(
+            SelectedProject.Definition,
+            _syncEngine.DeviceId);
+        JsonPeerAdmissionService admission = CreateAdmissionService(SelectedProject.Id, identity);
+        IReadOnlyList<MembershipCertificate> members = await admission.GetMembersAsync(SelectedProject.Id);
+        ReplaceCollection(
+            PeerMembers,
+            members.Where(admission.VerifyCertificate)
+                .OrderBy(member => member.Device.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                .Select(member => new PeerMemberViewModel(member)));
+        SelectedPeerMember = PeerMembers.FirstOrDefault();
+    }
+
+    private async Task ExchangeGitCoreAsync()
+    {
+        if (SelectedProject is null ||
+            !SelectedProject.Definition.Features.GitEnabled ||
+            _currentSyncProfile is null ||
+            _syncEngine is null ||
+            _syncEngine.Status.State is not (SyncEngineState.Running or SyncEngineState.Paused))
+        {
+            return;
+        }
+
+        using FileDeviceIdentityStore localIdentity = await OpenLocalDeviceIdentityAsync(
+            SelectedProject.Definition,
+            _syncEngine.DeviceId);
+        IReadOnlyCollection<DeviceIdentity> authorizedDevices = await GetAuthorizedExchangeDevicesAsync(
+            SelectedProject.Definition,
+            _currentSyncProfile,
+            localIdentity);
+        Guid? exported = await _gitPeerExchangeService.ExportAsync(
+            SelectedProject.Id,
+            SelectedProject.RootPath,
+            _currentSyncProfile.ExchangeDirectory,
+            localIdentity);
+        GitPeerExchangeResult imported = await _gitPeerExchangeService.ImportAsync(
+            SelectedProject.Id,
+            SelectedProject.RootPath,
+            _currentSyncProfile.ExchangeDirectory,
+            Path.Combine(_applicationPaths.DataDirectory, "git-exchange-state", SelectedProject.Id.ToString("N")),
+            authorizedDevices,
+            localIdentity.Identity.DeviceId);
+        SyncDetails = $"Transaction {(exported is null ? "non créée" : exported.Value.ToString("N")[..8])} · " +
+                      $"{imported.ImportedTransactions} transaction(s) reçue(s) · " +
+                      $"{imported.ImportedLfsObjects} objet(s) LFS importé(s)";
+    }
+
+    private async Task<IReadOnlyCollection<DeviceIdentity>> GetAuthorizedExchangeDevicesAsync(
+        ProjectDefinition project,
+        SyncthingProfile profile,
+        IDeviceIdentityStore localIdentity)
+    {
+        Dictionary<Guid, DeviceIdentity> devices = new()
+        {
+            [localIdentity.Identity.DeviceId] = localIdentity.Identity
+        };
+        JsonPeerAdmissionService admission = CreateAdmissionService(project.Id, localIdentity);
+        foreach (MembershipCertificate member in (await admission.GetMembersAsync(project.Id))
+                     .Where(member => admission.VerifyCertificate(member) && CanWriteGit(member.Role)))
+        {
+            devices[member.Device.DeviceId] = member.Device;
+        }
+
+        string localGrantPath = Path.Combine(GetProjectSecurityPath(project.Id), "membership-grant.json");
+        if (File.Exists(localGrantPath))
+        {
+            PeerMembershipGrant localGrant = PeerExchangeCodec.ImportMembershipGrant(await File.ReadAllTextAsync(localGrantPath));
+            if (PeerExchangeCodec.VerifyGrant(localGrant))
+            {
+                devices[localGrant.IssuerIdentity.DeviceId] = localGrant.IssuerIdentity;
+            }
+        }
+
+        string sharedMembersPath = Path.Combine(profile.ExchangeDirectory, "members");
+        if (Directory.Exists(sharedMembersPath))
+        {
+            foreach (string grantPath in Directory.EnumerateFiles(sharedMembersPath, "*.json", SearchOption.TopDirectoryOnly))
+            {
+                try
+                {
+                    PeerMembershipGrant grant = PeerExchangeCodec.ImportMembershipGrant(await File.ReadAllTextAsync(grantPath));
+                    bool correctProject = grant.Certificate.ProjectId == project.Id;
+                    bool knownIssuer = devices.TryGetValue(grant.IssuerIdentity.DeviceId, out DeviceIdentity? issuer) &&
+                                       string.Equals(issuer.SigningPublicKey, grant.IssuerIdentity.SigningPublicKey, StringComparison.Ordinal);
+                    if (correctProject && knownIssuer && CanWriteGit(grant.Certificate.Role) && PeerExchangeCodec.VerifyGrant(grant))
+                    {
+                        devices[grant.Certificate.Device.DeviceId] = grant.Certificate.Device;
+                    }
+                }
+                catch (Exception exception) when (exception is IOException or JsonException or InvalidDataException)
+                {
+                    // Incomplete files are ignored until Syncthing finishes transferring them.
+                }
+            }
+        }
+
+        return devices.Values.ToArray();
+    }
+
+    private static bool CanWriteGit(PeerRole role) =>
+        role is PeerRole.Owner or PeerRole.Administrator or PeerRole.Contributor;
+
     private SyncthingFolderConfiguration CreateFolderConfiguration(
         SyncthingProfile profile,
         IReadOnlyCollection<string> deviceIds)
@@ -1007,7 +1348,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         return new SyncthingFolderConfiguration(
             profile.FolderId,
             definition.Name,
-            definition.RootPath,
+            profile.ExchangeDirectory,
             deviceIds.ToArray(),
             folderType,
             versioningType,
@@ -1029,6 +1370,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             ? "Sync prêt — arrêté"
             : "Sync désactivé";
         SyncDetails = "Seule l'instance possédée par CyRevision a été arrêtée.";
+        PeerMembers.Clear();
+        SelectedPeerMember = null;
     }
 
     private bool TryGetRunningSyncContext(
@@ -1063,6 +1406,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string GetProjectSecurityPath(Guid projectId) =>
         Path.Combine(_applicationPaths.DataDirectory, "security", "projects", projectId.ToString("N"));
 
+    private string ResolveSyncExchangeDirectory(ProjectDefinition definition) =>
+        definition.Features.GitEnabled
+            ? Path.Combine(_applicationPaths.DataDirectory, "git-exchange", definition.Id.ToString("N"))
+            : definition.RootPath;
+
     private void UpdateSyncStatus(SyncEngineStatus status)
     {
         SyncState = status.State switch
@@ -1090,6 +1438,31 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
 
         return $"{value:0.#} {units[unit]}";
+    }
+
+    private string GetDiffArtifactDirectory() =>
+        Path.Combine(
+            _applicationPaths.CacheDirectory,
+            "diffs",
+            SelectedProject?.Id.ToString("N") ?? "external");
+
+    private void ApplyAssetDiffResult(AssetDiffResult result)
+    {
+        List<string> report = [
+            result.Summary,
+            string.Empty,
+            .. result.Metrics.Select(metric => $"{metric.Key} : {metric.Value}")
+        ];
+        if (result.Details.Count > 0)
+        {
+            report.Add(string.Empty);
+            report.AddRange(result.Details.Take(200));
+        }
+
+        AssetDiffReport = string.Join(Environment.NewLine, report);
+        AssetDiffPreview = result.PreviewImagePath is not null && File.Exists(result.PreviewImagePath)
+            ? new Bitmap(result.PreviewImagePath)
+            : null;
     }
 
     private async Task LoadBackupsCoreAsync()
@@ -1269,6 +1642,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         SyncthingExecutablePath = string.Empty;
         SyncState = "Sync désactivé";
         SyncDetails = "Aucun projet sélectionné.";
+        PeerMembers.Clear();
+        SelectedPeerMember = null;
         DiffText = "Sélectionnez un projet Git.";
     }
 
@@ -1284,5 +1659,6 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopSyncCoreAsync();
+        AssetDiffPreview = null;
     }
 }

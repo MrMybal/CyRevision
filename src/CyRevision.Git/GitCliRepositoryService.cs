@@ -208,7 +208,7 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
     {
         string output = await RunGitAsync(
                 repositoryPath,
-                ["for-each-ref", "--format=%(refname:short)%00%(objectname:short)%00%(HEAD)", "refs/heads"],
+            ["for-each-ref", "--format=%(refname:short)%00%(objectname:short)%00%(HEAD)%00%(refname)", "refs/heads", "refs/remotes/cyrevision"],
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -216,9 +216,13 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         foreach (string line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
             string[] fields = line.Split('\0');
-            if (fields.Length == 3)
+            if (fields.Length == 4)
             {
-                branches.Add(new GitBranch(fields[0], fields[1], fields[2] == "*"));
+                branches.Add(new GitBranch(
+                    fields[0],
+                    fields[1],
+                    fields[2] == "*",
+                    fields[3].StartsWith("refs/remotes/", StringComparison.Ordinal)));
             }
         }
 
@@ -234,6 +238,17 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         return RunGitWithoutOutputAsync(repositoryPath, ["switch", "-c", branchName], cancellationToken);
     }
 
+    public Task CreateBranchFromAsync(
+        string repositoryPath,
+        string branchName,
+        string startPoint,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(branchName);
+        ValidateReferenceName(startPoint);
+        return RunGitWithoutOutputAsync(repositoryPath, ["switch", "-c", branchName, startPoint], cancellationToken);
+    }
+
     public Task CheckoutBranchAsync(
         string repositoryPath,
         string branchName,
@@ -241,6 +256,15 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
     {
         ValidateReferenceName(branchName);
         return RunGitWithoutOutputAsync(repositoryPath, ["switch", branchName], cancellationToken);
+    }
+
+    public Task MergeBranchAsync(
+        string repositoryPath,
+        string branchName,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(branchName);
+        return RunGitWithoutOutputAsync(repositoryPath, ["merge", "--no-edit", branchName], cancellationToken);
     }
 
     public Task<string> GetDiffAsync(
@@ -276,6 +300,29 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             repositoryPath,
             ["restore", $"--source={revision}", "--worktree", "--", relativePath],
             cancellationToken);
+    }
+
+    public async Task ExportFileFromRevisionAsync(
+        string repositoryPath,
+        string relativePath,
+        string revision,
+        string destinationPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+        ValidateReferenceName(revision);
+        string gitPath = relativePath.Replace('\\', '/').TrimStart('/');
+        ProcessResult result = await _processRunner.RunToFileAsync(
+            "git",
+            ["show", $"{revision}:{gitPath}"],
+            repositoryPath,
+            destinationPath,
+            cancellationToken);
+        if (!result.Succeeded)
+        {
+            File.Delete(destinationPath);
+            throw new GitOperationException(result.StandardError.Trim());
+        }
     }
 
     public async Task AddOrUpdateRemoteAsync(
@@ -509,4 +556,3 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
     [GeneratedRegex(@"(?:ahead (?<ahead>\d+))|(?:behind (?<behind>\d+))", RegexOptions.CultureInvariant)]
     private static partial Regex AheadBehindRegex();
 }
-

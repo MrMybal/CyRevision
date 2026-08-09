@@ -71,6 +71,9 @@ public partial class MainWindow : Window
     private async void OnCheckoutBranchClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CheckoutSelectedBranchAsync();
 
+    private async void OnMergeBranchClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.MergeSelectedBranchAsync();
+
     private async void OnFetchClick(object? sender, RoutedEventArgs e) => await _viewModel.FetchAsync();
 
     private async void OnPullClick(object? sender, RoutedEventArgs e) => await _viewModel.PullAsync();
@@ -125,6 +128,8 @@ public partial class MainWindow : Window
 
     private async void OnStopSyncClick(object? sender, RoutedEventArgs e) => await _viewModel.StopSyncAsync();
 
+    private async void OnExchangeGitClick(object? sender, RoutedEventArgs e) => await _viewModel.ExchangeGitAsync();
+
     private async void OnCreateInvitationClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CreatePeerInvitationAsync();
 
@@ -136,6 +141,32 @@ public partial class MainWindow : Window
 
     private async void OnImportMembershipGrantClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.ImportMembershipGrantAsync();
+
+    private async void OnRevokePeerClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RevokeSelectedPeerAsync();
+
+    private async void OnPickAssetBaselineClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFileAsync("Choisir l'asset de référence");
+        if (path is not null)
+        {
+            _viewModel.SetAssetBaseline(path);
+        }
+    }
+
+    private async void OnPickAssetCandidateClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFileAsync("Choisir l'asset candidat");
+        if (path is not null)
+        {
+            _viewModel.SetAssetCandidate(path);
+        }
+    }
+
+    private async void OnCompareAssetsClick(object? sender, RoutedEventArgs e) => await _viewModel.CompareAssetsAsync();
+
+    private async void OnCompareSelectedToHeadClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CompareSelectedChangeToHeadAsync();
 
     private async Task<string?> PickFolderAsync(string title)
     {

@@ -1,0 +1,18 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "CyRevision Bridge",
+  "Description": "Ouvre le projet Unreal courant dans le client CyRevision externe.",
+  "Category": "Source Control",
+  "CreatedBy": "CyRevision",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Modules": [
+    {
+      "Name": "CyRevisionEditor",
+      "Type": "Editor",
+      "LoadingPhase": "PostEngineInit"
+    }
+  ]
+}
