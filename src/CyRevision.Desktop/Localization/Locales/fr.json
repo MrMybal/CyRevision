@@ -1,7 +1,8 @@
 {
   "$name": "Français",
   "$patterns": {
-    "^Keep the (\\d+) most recent versions$": "Conserver les $1 versions les plus récentes"
+    "^Keep the (\\d+) most recent versions$": "Conserver les $1 versions les plus récentes",
+    "^Peer: (.+)$": "Pair : $1"
   },
   "Git revisions and refs": "Révisions et références Git",
   "Signed peer exchange": "Échange signé entre pairs",

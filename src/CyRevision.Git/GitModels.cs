@@ -167,9 +167,35 @@ public sealed record LfsFileVersion(
     LfsPointerInfo Pointer,
     bool IsAvailableLocally,
     string? LocalObjectPath,
-    bool IsCurrent)
+    bool IsCurrent,
+    IReadOnlyList<LfsObjectLocation>? KnownLocations = null)
 {
-    public string Availability => IsAvailableLocally ? "Local" : "Missing";
+    public string Availability
+    {
+        get
+        {
+            List<string> locations = [];
+            if (IsAvailableLocally)
+            {
+                locations.Add("Local");
+            }
+
+            if (KnownLocations is not null)
+            {
+                locations.AddRange(KnownLocations.Select(location => location.Kind switch
+                {
+                    LfsStorageKind.Archive => "Archive",
+                    _ => $"Peer: {location.DisplayName}"
+                }));
+            }
+
+            return locations.Count == 0 ? "Missing" : string.Join(" · ", locations.Distinct(StringComparer.OrdinalIgnoreCase));
+        }
+    }
+
+    public bool HasPeerCopy => KnownLocations?.Any(location => location.Kind == LfsStorageKind.Peer) == true;
+    public bool HasArchiveCopy => KnownLocations?.Any(location => location.Kind == LfsStorageKind.Archive) == true;
+    public bool CanRequestFromPeer => !IsAvailableLocally && HasPeerCopy;
     public string SizeText => LfsTrackedFileSizeFormatter.Format(Pointer.Size);
 
     private static class LfsTrackedFileSizeFormatter

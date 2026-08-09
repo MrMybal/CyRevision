@@ -97,6 +97,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _smartSyncRecentVersionCount = "3";
     private bool _smartSyncReplicateBackups;
     private string _smartSyncPlanSummary = "Plan calculé localement — aucun transfert lancé.";
+    private string _peerLfsTransferSummary = "Aucun inventaire de pair vérifié pour le moment.";
     private VpnProjectProfile? _currentVpnProfile;
     private string _vpnState = "VPN non configuré";
     private string _vpnDetails = "WireGuard reste indépendant de Git et de Sync.";
@@ -313,9 +314,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             if (SetProperty(ref _selectedLfsVersion, value))
             {
                 LoadLfsPreview(value);
+                OnPropertyChanged(nameof(CanRequestSelectedLfsVersion));
             }
         }
     }
+
+    public bool CanRequestSelectedLfsVersion => SelectedLfsVersion?.CanRequestFromPeer == true;
 
     public string LfsTimelineSummary
     {
@@ -376,6 +380,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _smartSyncPlanSummary;
         private set => SetProperty(ref _smartSyncPlanSummary, value);
+    }
+
+    public string PeerLfsTransferSummary
+    {
+        get => _peerLfsTransferSummary;
+        private set => SetProperty(ref _peerLfsTransferSummary, value);
     }
 
     public ObservableCollection<VpnPeerViewModel> VpnPeers { get; } = [];
@@ -1068,6 +1078,29 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await RefreshCoreAsync();
             SelectedLfsFile = LfsFiles.FirstOrDefault(file => file.Path == version.Path);
         }, "Ancienne version restaurée dans le dossier de travail — non indexée");
+    }
+
+    public async Task RequestSelectedLfsVersionFromPeerAsync()
+    {
+        if (SelectedLfsVersion is null || !SelectedLfsVersion.CanRequestFromPeer ||
+            !TryGetRunningSyncContext(out ProjectDefinition? project, out SyncthingProfile? profile, out ManagedSyncthingEngine? engine))
+        {
+            return;
+        }
+
+        LfsFileVersion version = SelectedLfsVersion;
+        await RunOperationAsync("Création de la demande LFS signée…", async () =>
+        {
+            using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(project!, engine!.DeviceId);
+            Guid requestId = await _gitPeerExchangeService.RequestLfsObjectAsync(
+                project!.Id,
+                profile!.ExchangeDirectory,
+                identity,
+                version.Pointer.OidSha256,
+                $"Time Machine: {version.Path} @ {version.Revision.ShortHash}");
+            PeerLfsTransferSummary = $"Demande {requestId.ToString("N")[..8]} mise en file · " +
+                                     "le pair publiera l'objet lors de son prochain échange";
+        }, "Demande LFS signée prête à être synchronisée");
     }
 
     public async Task RemoveExpiredAdvisoryReservationsAsync()
@@ -2127,15 +2160,48 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 SelectedProject.RootPath,
                 file.Path,
                 200);
+            PeerLfsAvailabilityCache peerAvailability = await _gitPeerExchangeService.GetCachedLfsAvailabilityAsync(
+                GetGitExchangeStatePath(SelectedProject.Id),
+                SelectedProject.Id);
             if (SelectedLfsFile?.Path != file.Path)
             {
                 return;
             }
 
-            ReplaceCollection(LfsVersions, versions);
+            Dictionary<string, PeerLfsObjectAvailability> peerObjects = peerAvailability.Objects.ToDictionary(
+                item => item.OidSha256,
+                StringComparer.OrdinalIgnoreCase);
+            LfsFileVersion[] enrichedVersions = versions.Select(version =>
+            {
+                List<LfsObjectLocation> locations = [];
+                if (peerObjects.TryGetValue(version.Pointer.OidSha256, out PeerLfsObjectAvailability? available))
+                {
+                    locations.AddRange(available.Peers.Select(peer => new LfsObjectLocation(
+                        LfsStorageKind.Peer,
+                        peer.DisplayName,
+                        peer.LastSeenAt,
+                        peer.PublishedToExchange)));
+                }
+
+                LfsObjectLocation? archive = GetColdArchiveLocation(SelectedProject.Definition, version.Pointer.OidSha256);
+                if (archive is not null)
+                {
+                    locations.Add(archive);
+                }
+
+                return version with { KnownLocations = locations };
+            }).ToArray();
+            ReplaceCollection(LfsVersions, enrichedVersions);
             int localCount = versions.Count(version => version.IsAvailableLocally);
+            int peerCount = enrichedVersions.Count(version => version.HasPeerCopy);
+            int archiveCount = enrichedVersions.Count(version => version.HasArchiveCopy);
+            int missingCount = enrichedVersions.Count(version => !version.IsAvailableLocally && !version.HasPeerCopy && !version.HasArchiveCopy);
             LfsTimelineSummary = $"{versions.Count} version(s) unique(s) · {localCount} locale(s) · " +
-                                 $"{versions.Count - localCount} manquante(s)";
+                                 $"{peerCount} chez les pairs · {archiveCount} archivée(s) · {missingCount} inconnue(s)";
+            PeerLfsTransferSummary = peerAvailability.GeneratedAt == DateTimeOffset.MinValue
+                ? "Aucun inventaire de pair vérifié pour le moment."
+                : $"Inventaire vérifié : {peerAvailability.Objects.Count} objet(s) chez les pairs · " +
+                  $"actualisé {peerAvailability.GeneratedAt.LocalDateTime:g}";
             SelectedLfsVersion = LfsVersions.FirstOrDefault();
             UpdateSmartSyncPlan();
         }
@@ -2469,21 +2535,44 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             SelectedProject.Definition,
             _currentSyncProfile,
             localIdentity);
-        Guid? exported = await _gitPeerExchangeService.ExportAsync(
+        GitPeerExchangeOptions options = BuildGitPeerExchangeOptions();
+        GitPeerExportResult exported = await _gitPeerExchangeService.ExportDetailedAsync(
             SelectedProject.Id,
             SelectedProject.RootPath,
             _currentSyncProfile.ExchangeDirectory,
-            localIdentity);
-        GitPeerExchangeResult imported = await _gitPeerExchangeService.ImportAsync(
-            SelectedProject.Id,
-            SelectedProject.RootPath,
-            _currentSyncProfile.ExchangeDirectory,
-            Path.Combine(_applicationPaths.DataDirectory, "git-exchange-state", SelectedProject.Id.ToString("N")),
+            localIdentity,
             authorizedDevices,
-            localIdentity.Identity.DeviceId);
-        SyncDetails = $"Transaction {(exported is null ? "non créée" : exported.Value.ToString("N")[..8])} · " +
+            options);
+        GitPeerExchangeResult imported = await _gitPeerExchangeService.ImportDetailedAsync(
+            SelectedProject.Id,
+            SelectedProject.RootPath,
+            _currentSyncProfile.ExchangeDirectory,
+            GetGitExchangeStatePath(SelectedProject.Id),
+            authorizedDevices,
+            localIdentity.Identity.DeviceId,
+            options);
+        SyncDetails = $"Transaction {(exported.TransactionId is null ? "non créée" : exported.TransactionId.Value.ToString("N")[..8])} · " +
                       $"{imported.ImportedTransactions} transaction(s) reçue(s) · " +
                       $"{imported.ImportedLfsObjects} objet(s) LFS importé(s)";
+        PeerLfsTransferSummary = $"{exported.PublishedLfsObjects} publié(s) · " +
+                                 $"{imported.ImportedLfsObjects} importé(s) · " +
+                                 $"{exported.ResumedLfsObjects + imported.ResumedLfsObjects} repris · " +
+                                 $"{exported.DeferredLfsObjects + imported.DeferredLfsObjects} différé(s) · " +
+                                 $"{imported.AvailablePeerLfsObjects} disponible(s) chez les pairs";
+    }
+
+    private GitPeerExchangeOptions BuildGitPeerExchangeOptions()
+    {
+        int recentCount = int.TryParse(SmartSyncRecentVersionCount, out int parsed)
+            ? Math.Clamp(parsed, 1, 100)
+            : 3;
+        PeerLfsTransferMode mode = SelectedLfsHistoryMode switch
+        {
+            LfsHistoryTransferMode.Everything => PeerLfsTransferMode.AllAvailable,
+            LfsHistoryTransferMode.RecentVersions => PeerLfsTransferMode.CurrentAndRecent,
+            _ => PeerLfsTransferMode.CurrentRevisionOnly
+        };
+        return new GitPeerExchangeOptions(mode, recentCount, 10L * 1024 * 1024 * 1024);
     }
 
     private async Task<IReadOnlyCollection<DeviceIdentity>> GetAuthorizedExchangeDevicesAsync(
@@ -2630,6 +2719,31 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         definition.Features.GitEnabled
             ? Path.Combine(_applicationPaths.DataDirectory, "git-exchange", definition.Id.ToString("N"))
             : definition.RootPath;
+
+    private string GetGitExchangeStatePath(Guid projectId) =>
+        Path.Combine(_applicationPaths.DataDirectory, "git-exchange-state", projectId.ToString("N"));
+
+    private static LfsObjectLocation? GetColdArchiveLocation(ProjectDefinition project, string oidSha256)
+    {
+        if (string.IsNullOrWhiteSpace(project.ColdArchivePath) || oidSha256.Length < 2)
+        {
+            return null;
+        }
+
+        string archiveRoot = Path.GetFullPath(project.ColdArchivePath);
+        string objectPath = Path.Combine(archiveRoot, "objects", oidSha256[..2], oidSha256);
+        if (!File.Exists(objectPath))
+        {
+            return null;
+        }
+
+        string displayName = new DirectoryInfo(archiveRoot).Name;
+        return new LfsObjectLocation(
+            LfsStorageKind.Archive,
+            string.IsNullOrWhiteSpace(displayName) ? archiveRoot : displayName,
+            new DateTimeOffset(File.GetLastWriteTimeUtc(objectPath), TimeSpan.Zero),
+            true);
+    }
 
     private string ResolveAdvisoryPresenceDirectory(ProjectDefinition definition) =>
         definition.Features.GitEnabled

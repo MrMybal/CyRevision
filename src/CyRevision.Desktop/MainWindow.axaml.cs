@@ -122,6 +122,9 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnRequestLfsVersionClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RequestSelectedLfsVersionFromPeerAsync();
+
     private async void OnRestoreLfsVersionClick(object? sender, RoutedEventArgs e)
     {
         if (_viewModel.SelectedLfsVersion is null)

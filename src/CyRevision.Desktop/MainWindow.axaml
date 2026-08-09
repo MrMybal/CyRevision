@@ -533,14 +533,14 @@
                                         <DataGridTextColumn Header="Révision" Binding="{Binding Revision.ShortHash}" Width="76" />
                                         <DataGridTextColumn Header="Description" Binding="{Binding Revision.Subject}" Width="*" />
                                         <DataGridTextColumn Header="Taille" Binding="{Binding SizeText}" Width="78" />
-                                        <DataGridTextColumn Header="Stockage" Binding="{Binding Availability}" Width="76" />
+                                        <DataGridTextColumn Header="Stockage" Binding="{Binding Availability}" Width="155" />
                                         <DataGridTextColumn Header="Date" Binding="{Binding Revision.AuthoredAt}" Width="135" />
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </Grid>
                         </Border>
                         <Border Grid.Column="2" Classes="card" Padding="14">
-                            <Grid RowDefinitions="Auto,*,Auto,Auto">
+                            <Grid RowDefinitions="Auto,*,Auto,Auto,Auto">
                                 <StackPanel>
                                     <TextBlock Text="Aperçu de la version" FontSize="16" FontWeight="SemiBold" />
                                     <TextBlock Text="Textures affichées sans ouvrir Unreal" FontSize="10" Foreground="#78D7B7" />
@@ -555,12 +555,23 @@
                                 </Border>
                                 <StackPanel Grid.Row="2" Spacing="5" Margin="0,0,0,12">
                                     <TextBlock Text="• Local : l'objet peut être prévisualisé, exporté ou restauré immédiatement." TextWrapping="Wrap" FontSize="10" Classes="muted" />
-                                    <TextBlock Text="• Missing : CyRevision ne télécharge rien automatiquement." TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                    <TextBlock Text="• Pair : présence annoncée dans un inventaire signé, sans téléchargement silencieux." TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                    <TextBlock Text="• Archive : copie détectée dans l'archive froide configurée." TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                    <TextBlock Text="• Missing : aucun emplacement vérifié n'est actuellement connu." TextWrapping="Wrap" FontSize="10" Classes="muted" />
                                     <TextBlock Text="• La restauration modifie seulement le fichier de travail et ne l'indexe pas." TextWrapping="Wrap" FontSize="10" Foreground="#E5A94D" />
                                 </StackPanel>
-                                <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
-                                    <Button Classes="secondary" Content="Exporter…" Click="OnExportLfsVersionClick" />
-                                    <Button Classes="danger" Content="Restaurer dans le projet…" Click="OnRestoreLfsVersionClick" />
+                                <TextBlock Grid.Row="3" Text="{Binding PeerLfsTransferSummary}" Margin="0,0,0,9"
+                                           FontSize="10" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                <StackPanel Grid.Row="4" Spacing="7">
+                                    <Button Classes="primary" Content="Demander au pair" Click="OnRequestLfsVersionClick"
+                                            IsEnabled="{Binding CanRequestSelectedLfsVersion}" HorizontalAlignment="Stretch" />
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                        <Button Classes="secondary" Content="Exporter…" Click="OnExportLfsVersionClick"
+                                                IsEnabled="{Binding SelectedLfsVersion.IsAvailableLocally}" />
+                                        <Button Grid.Column="1" Classes="danger" Content="Restaurer dans le projet…"
+                                                Click="OnRestoreLfsVersionClick" IsEnabled="{Binding SelectedLfsVersion.IsAvailableLocally}"
+                                                HorizontalAlignment="Stretch" />
+                                    </Grid>
                                 </StackPanel>
                             </Grid>
                         </Border>
