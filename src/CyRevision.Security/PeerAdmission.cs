@@ -25,6 +25,27 @@ public sealed record PeerInvitation(
     string OneTimeTokenHash,
     Guid IssuedByUserId);
 
+public sealed record PeerInvitationPackage(
+    PeerInvitation Invitation,
+    string OneTimeToken,
+    string VerificationCode,
+    DeviceIdentity IssuerIdentity);
+
+public sealed record PeerInvitationOffer(
+    PeerInvitation Invitation,
+    string OneTimeToken,
+    DeviceIdentity IssuerIdentity);
+
+public sealed record PeerJoinRequest(
+    PeerInvitationOffer InvitationOffer,
+    DeviceIdentity Device,
+    string VerificationCode);
+
+public sealed record PeerMembershipGrant(
+    Guid InvitationId,
+    MembershipCertificate Certificate,
+    DeviceIdentity IssuerIdentity);
+
 public sealed record MembershipCertificate(
     Guid ProjectId,
     DeviceIdentity Device,
@@ -35,7 +56,7 @@ public sealed record MembershipCertificate(
 
 public interface IPeerAdmissionService
 {
-    Task<PeerInvitation> CreateInvitationAsync(
+    Task<PeerInvitationPackage> CreateInvitationAsync(
         Guid projectId,
         PeerRole role,
         TimeSpan lifetime,
@@ -43,10 +64,16 @@ public interface IPeerAdmissionService
 
     Task<MembershipCertificate> ApproveDeviceAsync(
         PeerInvitation invitation,
+        string oneTimeToken,
         DeviceIdentity device,
         string verificationCode,
         CancellationToken cancellationToken = default);
 
     Task RevokeDeviceAsync(Guid projectId, Guid deviceId, CancellationToken cancellationToken = default);
-}
 
+    Task<IReadOnlyList<MembershipCertificate>> GetMembersAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default);
+
+    bool VerifyCertificate(MembershipCertificate certificate);
+}

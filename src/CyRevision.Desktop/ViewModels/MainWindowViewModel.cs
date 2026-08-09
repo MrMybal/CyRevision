@@ -1,17 +1,23 @@
 using System.Collections.ObjectModel;
+using CyRevision.Backup;
 using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
 using CyRevision.Git;
+using CyRevision.Security;
+using CyRevision.Sync;
 
 namespace CyRevision.Desktop.ViewModels;
 
-public sealed class MainWindowViewModel : ObservableObject
+public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly IProjectCatalog _projectCatalog;
     private readonly IGitRepositoryService _gitService;
+    private readonly ApplicationPaths _applicationPaths;
+    private readonly ISyncthingProfileStore _syncthingProfileStore;
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
     private GitBranch? _selectedBranch;
+    private BackupSnapshotViewModel? _selectedBackup;
     private bool _isBusy;
     private string _statusMessage = "Initialisation…";
     private string _toolStatus = "Git : vérification…";
@@ -22,11 +28,32 @@ public sealed class MainWindowViewModel : ObservableObject
     private string _diffText = "Sélectionnez un fichier pour afficher son diff.";
     private string _lfsPattern = "*.uasset";
     private string _remoteUrl = string.Empty;
+    private string _backupStorePath = string.Empty;
+    private RetentionMode _selectedRetentionMode = RetentionMode.Timeline;
+    private string _retentionVersions = "30";
+    private string _retentionDays = "90";
+    private string _retentionBudgetGb = string.Empty;
+    private ProjectPreset? _selectedPreset;
+    private SyncthingProfile? _currentSyncProfile;
+    private ManagedSyncthingEngine? _syncEngine;
+    private Guid? _syncEngineProjectId;
+    private string _syncthingExecutablePath = string.Empty;
+    private string _syncState = "Sync désactivé";
+    private string _syncDetails = "Aucune instance CyRevision n'est lancée.";
+    private string _peerExchangeText = string.Empty;
+    private PeerRole _selectedPeerRole = PeerRole.Contributor;
+    private string _peerVerificationCode = string.Empty;
 
-    public MainWindowViewModel(IProjectCatalog projectCatalog, IGitRepositoryService gitService)
+    public MainWindowViewModel(
+        IProjectCatalog projectCatalog,
+        IGitRepositoryService gitService,
+        ApplicationPaths applicationPaths,
+        ISyncthingProfileStore syncthingProfileStore)
     {
         _projectCatalog = projectCatalog;
         _gitService = gitService;
+        _applicationPaths = applicationPaths;
+        _syncthingProfileStore = syncthingProfileStore;
     }
 
     public ObservableCollection<ProjectItemViewModel> Projects { get; } = [];
@@ -38,6 +65,14 @@ public sealed class MainWindowViewModel : ObservableObject
     public ObservableCollection<GitBranch> Branches { get; } = [];
 
     public ObservableCollection<LfsTrackedPattern> LfsPatterns { get; } = [];
+
+    public ObservableCollection<BackupSnapshotViewModel> Backups { get; } = [];
+
+    public IReadOnlyList<RetentionMode> RetentionModes { get; } = Enum.GetValues<RetentionMode>();
+
+    public IReadOnlyList<ProjectPreset> Presets { get; } = ProjectPresets.All;
+
+    public IReadOnlyList<PeerRole> PeerRoles { get; } = Enum.GetValues<PeerRole>();
 
     public ProjectItemViewModel? SelectedProject
     {
@@ -70,6 +105,12 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         get => _selectedBranch;
         set => SetProperty(ref _selectedBranch, value);
+    }
+
+    public BackupSnapshotViewModel? SelectedBackup
+    {
+        get => _selectedBackup;
+        set => SetProperty(ref _selectedBackup, value);
     }
 
     public bool HasSelectedProject => SelectedProject is not null;
@@ -134,6 +175,78 @@ public sealed class MainWindowViewModel : ObservableObject
         set => SetProperty(ref _remoteUrl, value);
     }
 
+    public string BackupStorePath
+    {
+        get => _backupStorePath;
+        private set => SetProperty(ref _backupStorePath, value);
+    }
+
+    public RetentionMode SelectedRetentionMode
+    {
+        get => _selectedRetentionMode;
+        set => SetProperty(ref _selectedRetentionMode, value);
+    }
+
+    public string RetentionVersions
+    {
+        get => _retentionVersions;
+        set => SetProperty(ref _retentionVersions, value);
+    }
+
+    public string RetentionDays
+    {
+        get => _retentionDays;
+        set => SetProperty(ref _retentionDays, value);
+    }
+
+    public string RetentionBudgetGb
+    {
+        get => _retentionBudgetGb;
+        set => SetProperty(ref _retentionBudgetGb, value);
+    }
+
+    public ProjectPreset? SelectedPreset
+    {
+        get => _selectedPreset;
+        set => SetProperty(ref _selectedPreset, value);
+    }
+
+    public string SyncthingExecutablePath
+    {
+        get => _syncthingExecutablePath;
+        private set => SetProperty(ref _syncthingExecutablePath, value);
+    }
+
+    public string SyncState
+    {
+        get => _syncState;
+        private set => SetProperty(ref _syncState, value);
+    }
+
+    public string SyncDetails
+    {
+        get => _syncDetails;
+        private set => SetProperty(ref _syncDetails, value);
+    }
+
+    public string PeerExchangeText
+    {
+        get => _peerExchangeText;
+        set => SetProperty(ref _peerExchangeText, value);
+    }
+
+    public PeerRole SelectedPeerRole
+    {
+        get => _selectedPeerRole;
+        set => SetProperty(ref _selectedPeerRole, value);
+    }
+
+    public string PeerVerificationCode
+    {
+        get => _peerVerificationCode;
+        set => SetProperty(ref _peerVerificationCode, value);
+    }
+
     public async Task InitializeAsync()
     {
         await RunOperationAsync("Chargement des projets…", async () =>
@@ -177,6 +290,27 @@ public sealed class MainWindowViewModel : ObservableObject
             ProjectDefinition definition = CreateGitProject(fullPath);
             await SaveAndSelectProjectAsync(definition);
         }, "Dépôt Git créé avec Git LFS local");
+    }
+
+    public async Task AddFolderProjectAsync(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        await RunOperationAsync("Ajout du dossier…", async () =>
+        {
+            ProjectItemViewModel? existing = Projects.FirstOrDefault(project =>
+                string.Equals(project.RootPath, fullPath, StringComparison.OrdinalIgnoreCase));
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            ProjectPreset preset = ProjectPresets.All.Single(item => item.Kind == ProjectPresetKind.SyncOnly);
+            ProjectDefinition definition = new(
+                existing?.Id ?? Guid.NewGuid(),
+                new DirectoryInfo(fullPath).Name,
+                fullPath,
+                preset.Features,
+                preset.Retention,
+                CreatedAt: existing?.Definition.CreatedAt ?? now,
+                LastOpenedAt: now);
+            await SaveAndSelectProjectAsync(definition);
+        }, "Dossier ajouté en mode Sync uniquement (moteur arrêté)");
     }
 
     public async Task RemoveSelectedProjectAsync()
@@ -342,21 +476,370 @@ public sealed class MainWindowViewModel : ObservableObject
         }, $"{pattern} est maintenant suivi par Git LFS");
     }
 
+    public async Task SetBackupStoreAsync(string path)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        BackupStorePath = Path.GetFullPath(path);
+        await SaveBackupSettingsAsync();
+    }
+
+    public async Task SaveBackupSettingsAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Enregistrement de la stratégie de sauvegarde…", async () =>
+        {
+            RetentionPolicy retention = BuildRetentionPolicy();
+            string storePath = ResolveBackupStorePath(SelectedProject.Definition);
+            ProjectFeatures features = SelectedProject.Definition.Features with { BackupEnabled = true };
+            ProjectDefinition updated = SelectedProject.Definition with
+            {
+                Features = features,
+                Retention = retention,
+                BackupStorePath = storePath
+            };
+            updated.Validate();
+            await _projectCatalog.UpsertAsync(updated);
+            SelectedProject.Update(updated);
+            BackupStorePath = storePath;
+            await GetBackupService(updated).ApplyRetentionAsync(updated.Id, retention);
+            await LoadBackupsCoreAsync();
+        }, "Stratégie de sauvegarde enregistrée");
+    }
+
+    public async Task CreateBackupAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Création du snapshot…", async () =>
+        {
+            ProjectDefinition definition = await EnsureBackupConfiguredAsync();
+            await GetBackupService(definition).CreateSnapshotAsync(
+                definition.Id,
+                definition.RootPath,
+                definition.Retention);
+            await LoadBackupsCoreAsync();
+        }, "Snapshot créé et dédupliqué");
+    }
+
+    public async Task RestoreSelectedBackupAsync(string destinationDirectory)
+    {
+        if (SelectedProject is null || SelectedBackup is null)
+        {
+            StatusMessage = "Sélectionnez un snapshot à restaurer";
+            return;
+        }
+
+        Guid snapshotId = SelectedBackup.SnapshotId;
+        await RunOperationAsync("Restauration du snapshot…", async () =>
+        {
+            await GetBackupService(SelectedProject.Definition).RestoreSnapshotAsync(
+                snapshotId,
+                destinationDirectory,
+                overwrite: false);
+        }, $"Snapshot restauré dans {destinationDirectory}");
+    }
+
+    public async Task ApplySelectedPresetAsync()
+    {
+        if (SelectedProject is null || SelectedPreset is null)
+        {
+            return;
+        }
+
+        ProjectPreset preset = SelectedPreset;
+        await RunOperationAsync("Application du mode projet…", async () =>
+        {
+            if (preset.Features.GitEnabled && !Directory.Exists(Path.Combine(SelectedProject.RootPath, ".git")))
+            {
+                await _gitService.InitializeAsync(SelectedProject.RootPath);
+            }
+
+            ProjectDefinition updated = SelectedProject.Definition with
+            {
+                Features = preset.Features,
+                Retention = preset.Retention
+            };
+            await _projectCatalog.UpsertAsync(updated);
+            SelectedProject.Update(updated);
+            LoadBackupSettings(updated);
+            if (!preset.Features.PeerSyncEnabled)
+            {
+                await StopSyncCoreAsync();
+            }
+
+            await RefreshCoreAsync();
+            await LoadBackupsCoreAsync();
+            await LoadSyncProfileCoreAsync();
+        }, $"Mode « {preset.Name} » appliqué");
+    }
+
+    public async Task SetSyncthingExecutableAsync(string executablePath)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Configuration de Syncthing…", async () =>
+        {
+            _currentSyncProfile = await _syncthingProfileStore.CreateOrUpdateAsync(
+                SelectedProject.Id,
+                executablePath,
+                SelectedProject.RootPath);
+            SyncthingExecutablePath = _currentSyncProfile.ExecutablePath;
+            SyncState = "Sync prêt";
+            SyncDetails = $"API locale isolée : {_currentSyncProfile.ApiEndpoint}";
+        }, "Exécutable Syncthing configuré pour ce projet");
+    }
+
+    public async Task StartSyncAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        if (!SelectedProject.Definition.Features.PeerSyncEnabled)
+        {
+            StatusMessage = "Choisissez un mode contenant Sync avant de démarrer le moteur";
+            return;
+        }
+
+        if (_currentSyncProfile is null)
+        {
+            StatusMessage = "Sélectionnez d'abord l'exécutable Syncthing dédié";
+            return;
+        }
+
+        await RunOperationAsync("Démarrage du moteur Sync isolé…", async () =>
+        {
+            if (_syncEngineProjectId != SelectedProject.Id)
+            {
+                await StopSyncCoreAsync();
+            }
+
+            _syncEngine ??= new ManagedSyncthingEngine(_currentSyncProfile.ToIsolationOptions());
+            _syncEngineProjectId = SelectedProject.Id;
+            await _syncEngine.StartAsync();
+            await ConfigureCurrentSyncFolderAsync();
+            UpdateSyncStatus(_syncEngine.Status);
+        }, "Synchronisation CyRevision active");
+    }
+
+    public async Task PauseSyncAsync()
+    {
+        if (_syncEngine is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Mise en pause de Sync…", async () =>
+        {
+            await _syncEngine.PauseAsync();
+            UpdateSyncStatus(_syncEngine.Status);
+        }, "Synchronisation en pause");
+    }
+
+    public async Task ResumeSyncAsync()
+    {
+        if (_syncEngine is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Reprise de Sync…", async () =>
+        {
+            await _syncEngine.ResumeAsync();
+            UpdateSyncStatus(_syncEngine.Status);
+        }, "Synchronisation reprise");
+    }
+
+    public async Task StopSyncAsync()
+    {
+        await RunOperationAsync("Arrêt de l'instance Sync CyRevision…", StopSyncCoreAsync, "Instance Sync CyRevision arrêtée");
+    }
+
+    public async Task CreatePeerInvitationAsync()
+    {
+        if (!TryGetRunningSyncContext(out ProjectDefinition? project, out SyncthingProfile? profile, out ManagedSyncthingEngine? engine))
+        {
+            return;
+        }
+
+        await RunOperationAsync("Création de l'invitation sécurisée…", async () =>
+        {
+            using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(project!, engine!.DeviceId);
+            JsonPeerAdmissionService admission = CreateAdmissionService(project!.Id, identity);
+            PeerInvitationPackage package = await admission.CreateInvitationAsync(
+                project.Id,
+                SelectedPeerRole,
+                TimeSpan.FromHours(24));
+            PeerExchangeText = PeerExchangeCodec.ExportInvitation(package);
+            PeerVerificationCode = package.VerificationCode;
+            SyncDetails = $"Invitation {SelectedPeerRole} valable 24 h. Transmettez le code par un autre canal.";
+        }, "Invitation prête à être transmise par un canal sûr");
+    }
+
+    public async Task PreparePeerJoinRequestAsync()
+    {
+        if (!TryGetRunningSyncContext(out ProjectDefinition? project, out _, out ManagedSyncthingEngine? engine))
+        {
+            return;
+        }
+
+        await RunOperationAsync("Préparation de la demande d'adhésion…", async () =>
+        {
+            PeerInvitationOffer offer = PeerExchangeCodec.ImportInvitation(PeerExchangeText);
+            if (offer.Invitation.ProjectId != project!.Id)
+            {
+                throw new InvalidOperationException("Cette invitation concerne un autre projet.");
+            }
+
+            if (string.IsNullOrWhiteSpace(PeerVerificationCode))
+            {
+                throw new InvalidOperationException("Le code de vérification reçu par le second canal est requis.");
+            }
+
+            using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(project, engine!.DeviceId);
+            string pendingPath = Path.Combine(GetProjectSecurityPath(project.Id), "pending-invitation.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(pendingPath)!);
+            await File.WriteAllTextAsync(pendingPath, PeerExchangeCodec.ExportInvitation(new PeerInvitationPackage(
+                offer.Invitation,
+                offer.OneTimeToken,
+                PeerVerificationCode.Trim(),
+                offer.IssuerIdentity)));
+            PeerExchangeText = PeerExchangeCodec.ExportJoinRequest(new PeerJoinRequest(
+                offer,
+                identity.Identity,
+                PeerVerificationCode.Trim()));
+            PeerVerificationCode = string.Empty;
+        }, "Demande d'adhésion prête à renvoyer au propriétaire");
+    }
+
+    public async Task ApprovePeerJoinRequestAsync()
+    {
+        if (!TryGetRunningSyncContext(out ProjectDefinition? project, out SyncthingProfile? profile, out _))
+        {
+            return;
+        }
+
+        await RunOperationAsync("Vérification et approbation du pair…", async () =>
+        {
+            PeerJoinRequest request = PeerExchangeCodec.ImportJoinRequest(PeerExchangeText);
+            if (request.InvitationOffer.Invitation.ProjectId != project!.Id)
+            {
+                throw new InvalidOperationException("Cette demande concerne un autre projet.");
+            }
+
+            using FileDeviceIdentityStore ownerIdentity = await OpenLocalDeviceIdentityAsync(project, request.InvitationOffer.IssuerIdentity.SyncthingDeviceId);
+            if (ownerIdentity.Identity.DeviceId != request.InvitationOffer.IssuerIdentity.DeviceId)
+            {
+                throw new UnauthorizedAccessException("Cette machine n'est pas l'émetteur de l'invitation.");
+            }
+
+            JsonPeerAdmissionService admission = CreateAdmissionService(project.Id, ownerIdentity);
+            MembershipCertificate certificate = await admission.ApproveDeviceAsync(
+                request.InvitationOffer.Invitation,
+                request.InvitationOffer.OneTimeToken,
+                request.Device,
+                request.VerificationCode);
+            using SyncthingApiClient api = new(profile!.ApiEndpoint, profile.ApiKey);
+            await api.PutDeviceAsync(new SyncthingDeviceConfiguration(
+                request.Device.SyncthingDeviceId,
+                request.Device.DisplayName));
+            await ConfigureCurrentSyncFolderAsync();
+            PeerExchangeText = PeerExchangeCodec.ExportMembershipGrant(new PeerMembershipGrant(
+                request.InvitationOffer.Invitation.InvitationId,
+                certificate,
+                ownerIdentity.Identity));
+        }, "Pair approuvé, signé et ajouté à Syncthing");
+    }
+
+    public async Task ImportMembershipGrantAsync()
+    {
+        if (!TryGetRunningSyncContext(out ProjectDefinition? project, out SyncthingProfile? profile, out ManagedSyncthingEngine? engine))
+        {
+            return;
+        }
+
+        await RunOperationAsync("Vérification du certificat d'adhésion…", async () =>
+        {
+            PeerMembershipGrant grant = PeerExchangeCodec.ImportMembershipGrant(PeerExchangeText);
+            string pendingPath = Path.Combine(GetProjectSecurityPath(project!.Id), "pending-invitation.json");
+            if (!File.Exists(pendingPath))
+            {
+                throw new UnauthorizedAccessException("L'invitation d'origine n'est pas disponible sur cet appareil.");
+            }
+
+            PeerInvitationOffer pendingOffer = PeerExchangeCodec.ImportInvitation(await File.ReadAllTextAsync(pendingPath));
+            bool expectedIssuer = pendingOffer.IssuerIdentity.DeviceId == grant.IssuerIdentity.DeviceId &&
+                                  string.Equals(
+                                      pendingOffer.IssuerIdentity.SigningPublicKey,
+                                      grant.IssuerIdentity.SigningPublicKey,
+                                      StringComparison.Ordinal);
+            if (grant.Certificate.ProjectId != project.Id ||
+                grant.InvitationId != pendingOffer.Invitation.InvitationId ||
+                !expectedIssuer ||
+                !PeerExchangeCodec.VerifyGrant(grant))
+            {
+                throw new UnauthorizedAccessException("Le certificat d'adhésion est invalide.");
+            }
+
+            using FileDeviceIdentityStore localIdentity = await OpenLocalDeviceIdentityAsync(project, engine!.DeviceId);
+            if (grant.Certificate.Device.DeviceId != localIdentity.Identity.DeviceId)
+            {
+                throw new UnauthorizedAccessException("Le certificat a été émis pour un autre appareil.");
+            }
+
+            string grantPath = Path.Combine(GetProjectSecurityPath(project.Id), "membership-grant.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(grantPath)!);
+            await File.WriteAllTextAsync(grantPath, PeerExchangeCodec.ExportMembershipGrant(grant));
+            using SyncthingApiClient api = new(profile!.ApiEndpoint, profile.ApiKey);
+            await api.PutDeviceAsync(new SyncthingDeviceConfiguration(
+                grant.IssuerIdentity.SyncthingDeviceId,
+                grant.IssuerIdentity.DisplayName));
+            await api.PutFolderAsync(CreateFolderConfiguration(profile, [grant.IssuerIdentity.SyncthingDeviceId]));
+            File.Delete(pendingPath);
+        }, "Certificat valide et propriétaire ajouté à Syncthing");
+    }
+
     private async Task LoadSelectedProjectAsync()
     {
         if (SelectedProject is null)
         {
+            await StopSyncCoreAsync();
             ClearRepositoryView();
             return;
         }
 
+        if (_syncEngineProjectId is not null && _syncEngineProjectId != SelectedProject.Id)
+        {
+            await StopSyncCoreAsync();
+        }
+
         ProjectDefinition updated = SelectedProject.Definition with { LastOpenedAt = DateTimeOffset.UtcNow };
         SelectedProject.Update(updated);
+        LoadBackupSettings(updated);
+        SelectedPreset = ProjectPresets.All.FirstOrDefault(preset =>
+            preset.Features == updated.Features && preset.Retention.Mode == updated.Retention.Mode);
         try
         {
             await _projectCatalog.UpsertAsync(updated);
             StatusMessage = "Chargement du dépôt…";
             await RefreshCoreAsync();
+            await LoadBackupsCoreAsync();
+            await LoadSyncProfileCoreAsync();
             StatusMessage = "Dépôt chargé";
         }
         catch (Exception exception)
@@ -399,6 +882,21 @@ public sealed class MainWindowViewModel : ObservableObject
             return;
         }
 
+        if (!SelectedProject.Definition.Features.GitEnabled)
+        {
+            RepositoryPath = SelectedProject.RootPath;
+            CurrentBranch = "Mode sans Git";
+            ChangeSummary = "Synchronisation / sauvegarde de fichiers";
+            Changes.Clear();
+            History.Clear();
+            Branches.Clear();
+            LfsPatterns.Clear();
+            SelectedBranch = null;
+            SelectedChange = null;
+            DiffText = "Git est désactivé pour ce projet.";
+            return;
+        }
+
         string rootPath = SelectedProject.RootPath;
         Task<GitRepositoryStatus> statusTask = _gitService.GetStatusAsync(rootPath);
         Task<IReadOnlyList<GitRevision>> historyTask = _gitService.GetHistoryAsync(rootPath);
@@ -417,6 +915,266 @@ public sealed class MainWindowViewModel : ObservableObject
         ReplaceCollection(LfsPatterns, await lfsTask);
         SelectedBranch = Branches.FirstOrDefault(branch => branch.IsCurrent);
         SelectedChange = Changes.FirstOrDefault();
+    }
+
+    private async Task LoadSyncProfileCoreAsync()
+    {
+        if (SelectedProject is null)
+        {
+            _currentSyncProfile = null;
+            SyncthingExecutablePath = string.Empty;
+            SyncState = "Sync désactivé";
+            SyncDetails = "Aucun projet sélectionné.";
+            return;
+        }
+
+        _currentSyncProfile = await _syncthingProfileStore.GetAsync(SelectedProject.Id);
+        SyncthingExecutablePath = _currentSyncProfile?.ExecutablePath ?? string.Empty;
+        if (!SelectedProject.Definition.Features.PeerSyncEnabled)
+        {
+            SyncState = "Sync désactivé";
+            SyncDetails = "Le moteur ne sera pas lancé dans le mode actuel.";
+        }
+        else if (_currentSyncProfile is null)
+        {
+            SyncState = "Sync à configurer";
+            SyncDetails = "Choisissez l'exécutable Syncthing. Aucun processus existant ne sera réutilisé.";
+        }
+        else
+        {
+            SyncState = "Sync prêt — arrêté";
+            SyncDetails = $"Profil isolé sur {_currentSyncProfile.ApiEndpoint}.";
+        }
+    }
+
+    private async Task ConfigureCurrentSyncFolderAsync()
+    {
+        if (SelectedProject is null || _currentSyncProfile is null || _syncEngine is null)
+        {
+            return;
+        }
+
+        HashSet<string> deviceIds = new(StringComparer.Ordinal);
+        string securityPath = GetProjectSecurityPath(SelectedProject.Id);
+        string grantPath = Path.Combine(securityPath, "membership-grant.json");
+        if (File.Exists(grantPath))
+        {
+            PeerMembershipGrant grant = PeerExchangeCodec.ImportMembershipGrant(await File.ReadAllTextAsync(grantPath));
+            if (PeerExchangeCodec.VerifyGrant(grant))
+            {
+                deviceIds.Add(grant.IssuerIdentity.SyncthingDeviceId);
+            }
+        }
+
+        using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(
+            SelectedProject.Definition,
+            _syncEngine.DeviceId);
+        JsonPeerAdmissionService admission = CreateAdmissionService(SelectedProject.Id, identity);
+        IReadOnlyList<MembershipCertificate> members = await admission.GetMembersAsync(SelectedProject.Id);
+        foreach (MembershipCertificate member in members.Where(admission.VerifyCertificate))
+        {
+            deviceIds.Add(member.Device.SyncthingDeviceId);
+        }
+
+        using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
+        await api.PutFolderAsync(CreateFolderConfiguration(_currentSyncProfile, deviceIds));
+    }
+
+    private SyncthingFolderConfiguration CreateFolderConfiguration(
+        SyncthingProfile profile,
+        IReadOnlyCollection<string> deviceIds)
+    {
+        ProjectDefinition definition = SelectedProject?.Definition
+            ?? throw new InvalidOperationException("Aucun projet sélectionné.");
+        string versioningType = definition.Features.BackupEnabled ? "simple" : string.Empty;
+        int? keepVersions = definition.Features.BackupEnabled
+            ? definition.Retention.MaxVersionsPerFile ?? 30
+            : null;
+        int? cleanoutDays = definition.Features.BackupEnabled && definition.Retention.MaximumAge is { } maximumAge
+            ? Math.Max(1, (int)Math.Round(maximumAge.TotalDays))
+            : null;
+        string folderType = "sendreceive";
+        string grantPath = Path.Combine(GetProjectSecurityPath(definition.Id), "membership-grant.json");
+        if (File.Exists(grantPath))
+        {
+            PeerMembershipGrant grant = PeerExchangeCodec.ImportMembershipGrant(File.ReadAllText(grantPath));
+            if (grant.Certificate.Role is PeerRole.ReadOnly or PeerRole.Backup or PeerRole.EncryptedArchive)
+            {
+                folderType = "receiveonly";
+            }
+        }
+
+        return new SyncthingFolderConfiguration(
+            profile.FolderId,
+            definition.Name,
+            definition.RootPath,
+            deviceIds.ToArray(),
+            folderType,
+            versioningType,
+            keepVersions,
+            cleanoutDays);
+    }
+
+    private async Task StopSyncCoreAsync()
+    {
+        ManagedSyncthingEngine? engine = _syncEngine;
+        _syncEngine = null;
+        _syncEngineProjectId = null;
+        if (engine is not null)
+        {
+            await engine.DisposeAsync();
+        }
+
+        SyncState = SelectedProject?.Definition.Features.PeerSyncEnabled == true
+            ? "Sync prêt — arrêté"
+            : "Sync désactivé";
+        SyncDetails = "Seule l'instance possédée par CyRevision a été arrêtée.";
+    }
+
+    private bool TryGetRunningSyncContext(
+        out ProjectDefinition? project,
+        out SyncthingProfile? profile,
+        out ManagedSyncthingEngine? engine)
+    {
+        project = SelectedProject?.Definition;
+        profile = _currentSyncProfile;
+        engine = _syncEngine;
+        if (project is null || profile is null || engine is null ||
+            engine.Status.State is not (SyncEngineState.Running or SyncEngineState.Paused))
+        {
+            StatusMessage = "Démarrez d'abord l'instance Sync CyRevision de ce projet";
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<FileDeviceIdentityStore> OpenLocalDeviceIdentityAsync(
+        ProjectDefinition project,
+        string syncthingDeviceId) =>
+        await FileDeviceIdentityStore.OpenOrCreateAsync(
+            Path.Combine(GetProjectSecurityPath(project.Id), "local-device"),
+            Environment.MachineName,
+            syncthingDeviceId);
+
+    private JsonPeerAdmissionService CreateAdmissionService(Guid projectId, IDeviceIdentityStore identity) =>
+        new(Path.Combine(GetProjectSecurityPath(projectId), "admission"), identity);
+
+    private string GetProjectSecurityPath(Guid projectId) =>
+        Path.Combine(_applicationPaths.DataDirectory, "security", "projects", projectId.ToString("N"));
+
+    private void UpdateSyncStatus(SyncEngineStatus status)
+    {
+        SyncState = status.State switch
+        {
+            SyncEngineState.Running => "Sync actif",
+            SyncEngineState.Paused => "Sync en pause",
+            SyncEngineState.Faulted => "Erreur Sync",
+            SyncEngineState.Starting => "Démarrage Sync",
+            SyncEngineState.Disabled => "Sync désactivé",
+            _ => "Sync arrêté"
+        };
+        SyncDetails = $"{status.ConnectedPeers} pair(s) connecté(s) · {FormatByteSize(status.PendingBytes)} en attente" +
+                      (string.IsNullOrWhiteSpace(status.Message) ? string.Empty : $" · {status.Message}");
+    }
+
+    private static string FormatByteSize(long bytes)
+    {
+        string[] units = ["o", "Ko", "Mo", "Go", "To"];
+        double value = bytes;
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.#} {units[unit]}";
+    }
+
+    private async Task LoadBackupsCoreAsync()
+    {
+        if (SelectedProject is null ||
+            (!SelectedProject.Definition.Features.BackupEnabled &&
+             string.IsNullOrWhiteSpace(SelectedProject.Definition.BackupStorePath)))
+        {
+            Backups.Clear();
+            SelectedBackup = null;
+            return;
+        }
+
+        IReadOnlyList<BackupSnapshot> snapshots = await GetBackupService(SelectedProject.Definition)
+            .GetSnapshotsAsync(SelectedProject.Id);
+        ReplaceCollection(Backups, snapshots.Select(snapshot => new BackupSnapshotViewModel(snapshot)));
+        SelectedBackup = Backups.FirstOrDefault();
+    }
+
+    private async Task<ProjectDefinition> EnsureBackupConfiguredAsync()
+    {
+        if (SelectedProject is null)
+        {
+            throw new InvalidOperationException("Aucun projet sélectionné.");
+        }
+
+        ProjectDefinition definition = SelectedProject.Definition;
+        if (definition.Features.BackupEnabled && !string.IsNullOrWhiteSpace(definition.BackupStorePath))
+        {
+            return definition;
+        }
+
+        RetentionPolicy retention = BuildRetentionPolicy();
+        definition = definition with
+        {
+            Features = definition.Features with { BackupEnabled = true },
+            Retention = retention,
+            BackupStorePath = ResolveBackupStorePath(definition)
+        };
+        await _projectCatalog.UpsertAsync(definition);
+        SelectedProject.Update(definition);
+        BackupStorePath = definition.BackupStorePath!;
+        return definition;
+    }
+
+    private IBackupService GetBackupService(ProjectDefinition definition) =>
+        new FileSystemBackupService(new BackupStoreOptions(ResolveBackupStorePath(definition)));
+
+    private string ResolveBackupStorePath(ProjectDefinition definition) =>
+        string.IsNullOrWhiteSpace(BackupStorePath)
+            ? definition.BackupStorePath ?? Path.Combine(_applicationPaths.BackupDirectory, definition.Id.ToString("N"))
+            : BackupStorePath;
+
+    private RetentionPolicy BuildRetentionPolicy()
+    {
+        int? versions = int.TryParse(RetentionVersions, out int parsedVersions) && parsedVersions > 0
+            ? parsedVersions
+            : null;
+        TimeSpan? maximumAge = int.TryParse(RetentionDays, out int parsedDays) && parsedDays > 0
+            ? TimeSpan.FromDays(parsedDays)
+            : null;
+        long? budget = double.TryParse(RetentionBudgetGb, out double parsedBudget) && parsedBudget > 0
+            ? checked((long)(parsedBudget * 1024 * 1024 * 1024))
+            : null;
+
+        return SelectedRetentionMode switch
+        {
+            RetentionMode.CurrentStateOnly => RetentionPolicy.CurrentStateOnly with { StorageBudgetBytes = budget },
+            RetentionMode.Permanent => RetentionPolicy.KeepForever with { StorageBudgetBytes = budget },
+            RetentionMode.LimitedVersions => new RetentionPolicy(SelectedRetentionMode, versions ?? 30, maximumAge, budget),
+            _ => new RetentionPolicy(SelectedRetentionMode, versions, maximumAge, budget)
+        };
+    }
+
+    private void LoadBackupSettings(ProjectDefinition definition)
+    {
+        BackupStorePath = definition.BackupStorePath ?? string.Empty;
+        SelectedRetentionMode = definition.Retention.Mode;
+        RetentionVersions = definition.Retention.MaxVersionsPerFile?.ToString() ?? "30";
+        RetentionDays = definition.Retention.MaximumAge is { } age
+            ? Math.Max(1, (int)Math.Round(age.TotalDays)).ToString()
+            : "90";
+        RetentionBudgetGb = definition.Retention.StorageBudgetBytes is { } budget
+            ? (budget / 1024d / 1024d / 1024d).ToString("0.##")
+            : string.Empty;
     }
 
     private async Task SaveAndSelectProjectAsync(ProjectDefinition definition)
@@ -503,6 +1261,14 @@ public sealed class MainWindowViewModel : ObservableObject
         History.Clear();
         Branches.Clear();
         LfsPatterns.Clear();
+        Backups.Clear();
+        SelectedBackup = null;
+        BackupStorePath = string.Empty;
+        SelectedPreset = null;
+        _currentSyncProfile = null;
+        SyncthingExecutablePath = string.Empty;
+        SyncState = "Sync désactivé";
+        SyncDetails = "Aucun projet sélectionné.";
         DiffText = "Sélectionnez un projet Git.";
     }
 
@@ -513,5 +1279,10 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             destination.Add(item);
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopSyncCoreAsync();
     }
 }

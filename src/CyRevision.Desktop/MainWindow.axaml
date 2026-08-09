@@ -63,6 +63,7 @@
                     <TextBlock Text="{Binding RepositoryPath}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button Classes="secondary" Content="Ajouter un dossier" Click="OnAddFolderClick" />
                     <Button Classes="secondary" Content="Ouvrir un dépôt" Click="OnAddExistingClick" />
                     <Button Classes="primary" Content="Créer un dépôt" Click="OnCreateGitClick" />
                 </StackPanel>
@@ -94,9 +95,9 @@
                     <StackPanel Spacing="7">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Border Width="8" Height="8" CornerRadius="4" Background="#758098" VerticalAlignment="Center" />
-                            <TextBlock Text="Sync arrêté" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding SyncState}" FontWeight="SemiBold" />
                         </StackPanel>
-                        <TextBlock Text="Aucun moteur Syncthing CyRevision n'est lancé tant que Sync reste désactivé." TextWrapping="Wrap" FontSize="11" Classes="muted" />
+                        <TextBlock Text="{Binding SyncDetails}" TextWrapping="Wrap" FontSize="11" Classes="muted" />
                         <TextBlock Text="Syncthing personnel non géré" FontSize="11" Foreground="#78D7B7" />
                     </StackPanel>
                 </Border>
@@ -118,6 +119,40 @@
             </Grid>
 
             <TabControl Grid.Row="1">
+                <TabItem Header="Projet">
+                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.15*,1*" ColumnSpacing="14">
+                        <Border Classes="card">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Mode de fonctionnement" FontSize="18" FontWeight="SemiBold" />
+                                <TextBlock Text="Chaque module reste indépendant : Git peut fonctionner sans Sync et inversement." TextWrapping="Wrap" Classes="muted" />
+                                <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="4">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Description}" FontSize="11" Classes="muted" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <Button Classes="primary" Content="Appliquer ce mode" Click="OnApplyPresetClick" HorizontalAlignment="Left" />
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="1" Classes="card">
+                            <StackPanel Spacing="9">
+                                <TextBlock Text="Profils disponibles" FontSize="18" FontWeight="SemiBold" />
+                                <TextBlock Text="Git uniquement" FontWeight="SemiBold" />
+                                <TextBlock Text="Git + Sync" FontWeight="SemiBold" />
+                                <TextBlock Text="Sync uniquement" FontWeight="SemiBold" />
+                                <TextBlock Text="Sync + versions" FontWeight="SemiBold" />
+                                <TextBlock Text="Backup uniquement" FontWeight="SemiBold" />
+                                <Border Height="1" Background="#29324A" Margin="0,7" />
+                                <TextBlock Text="Changer de profil ne supprime jamais les données déjà stockées." TextWrapping="Wrap" FontSize="11" Foreground="#78D7B7" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
                 <TabItem Header="Modifications">
                     <Grid Margin="0,14,0,0" ColumnDefinitions="1.05*,1.35*" RowDefinitions="*,Auto" ColumnSpacing="14" RowSpacing="14">
                         <Border Classes="card">
@@ -228,6 +263,112 @@
                                 <Button Classes="primary" Content="Suivre avec Git LFS" Click="OnTrackLfsClick" HorizontalAlignment="Left" />
                                 <TextBlock Text="Les changements de .gitattributes seront automatiquement placés dans l'index." TextWrapping="Wrap" FontSize="11" Classes="muted" />
                             </StackPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Sauvegardes">
+                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.25*,1*" ColumnSpacing="14">
+                        <Border Classes="card">
+                            <Grid RowDefinitions="Auto,*,Auto">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel>
+                                        <TextBlock Text="Snapshots disponibles" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="Les données identiques ne sont stockées qu'une fois." FontSize="11" Classes="muted" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="primary" Content="Sauvegarder maintenant" Click="OnCreateBackupClick" />
+                                </Grid>
+                                <DataGrid Grid.Row="1" Margin="0,12" ItemsSource="{Binding Backups}" SelectedItem="{Binding SelectedBackup}"
+                                          AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                          Background="Transparent" BorderThickness="0">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Date" Binding="{Binding CreatedAt}" Width="*" />
+                                        <DataGridTextColumn Header="ID" Binding="{Binding ShortId}" Width="90" />
+                                        <DataGridTextColumn Header="Taille" Binding="{Binding LogicalSize}" Width="90" />
+                                        <DataGridTextColumn Header="Ajouté" Binding="{Binding StoredSize}" Width="90" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <Button Grid.Row="2" Classes="secondary" Content="Restaurer la sélection dans…" Click="OnRestoreBackupClick" HorizontalAlignment="Left" />
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="1" Classes="card">
+                            <ScrollViewer>
+                                <StackPanel Spacing="9">
+                                    <TextBlock Text="Stockage et conservation" FontSize="16" FontWeight="SemiBold" />
+                                    <TextBlock Text="Emplacement local, volume réseau monté ou dossier NAS" FontSize="11" Classes="muted" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <TextBox Text="{Binding BackupStorePath}" IsReadOnly="True" PlaceholderText="Emplacement par défaut CyRevision" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Choisir…" Click="OnPickBackupStoreClick" />
+                                    </Grid>
+                                    <TextBlock Text="Mode de rétention" Margin="0,7,0,0" />
+                                    <ComboBox ItemsSource="{Binding RetentionModes}" SelectedItem="{Binding SelectedRetentionMode}" />
+                                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Text="Versions max." FontSize="11" Classes="muted" />
+                                            <TextBox Text="{Binding RetentionVersions}" PlaceholderText="30" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="Âge max. (jours)" FontSize="11" Classes="muted" />
+                                            <TextBox Text="{Binding RetentionDays}" PlaceholderText="90" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Budget (Go)" FontSize="11" Classes="muted" />
+                                            <TextBox Text="{Binding RetentionBudgetGb}" PlaceholderText="illimité" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <Button Classes="primary" Content="Enregistrer la stratégie" Click="OnSaveBackupSettingsClick" HorizontalAlignment="Left" Margin="0,7,0,0" />
+                                    <TextBlock Text="La restauration refuse d'écraser des fichiers existants afin de protéger le projet courant." TextWrapping="Wrap" FontSize="11" Classes="muted" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Synchronisation">
+                    <Grid Margin="0,14,0,0" ColumnDefinitions="1*,1.25*" ColumnSpacing="14">
+                        <Border Classes="card">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Instance Syncthing CyRevision" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding SyncState}" FontSize="14" FontWeight="SemiBold" Foreground="#78D7B7" />
+                                <TextBlock Text="{Binding SyncDetails}" TextWrapping="Wrap" Classes="muted" />
+                                <TextBlock Text="Exécutable" Margin="0,7,0,0" />
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBox Text="{Binding SyncthingExecutablePath}" IsReadOnly="True" PlaceholderText="Non configuré" />
+                                    <Button Grid.Column="1" Classes="secondary" Content="Choisir…" Click="OnPickSyncthingClick" />
+                                </Grid>
+                                <WrapPanel Orientation="Horizontal">
+                                    <Button Classes="primary" Content="Démarrer" Click="OnStartSyncClick" Margin="0,4,7,4" />
+                                    <Button Classes="secondary" Content="Pause" Click="OnPauseSyncClick" Margin="0,4,7,4" />
+                                    <Button Classes="secondary" Content="Reprendre" Click="OnResumeSyncClick" Margin="0,4,7,4" />
+                                    <Button Classes="danger" Content="Arrêter" Click="OnStopSyncClick" Margin="0,4,7,4" />
+                                </WrapPanel>
+                                <Border Background="#10241F" CornerRadius="8" Padding="11" Margin="0,8,0,0">
+                                    <TextBlock Text="CyRevision utilise ses propres dossiers config/data, une API locale dédiée et ne recherche ni n'arrête les autres processus Syncthing." TextWrapping="Wrap" FontSize="11" Foreground="#78D7B7" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Column="1" Classes="card">
+                            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                                <StackPanel>
+                                    <TextBlock Text="Admission sécurisée des pairs" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Échanges signés, invitation à usage unique et code de vérification." TextWrapping="Wrap" FontSize="11" Classes="muted" />
+                                </StackPanel>
+                                <Grid Grid.Row="1" ColumnDefinitions="Auto,105,*" ColumnSpacing="8" Margin="0,10,0,8">
+                                    <ComboBox ItemsSource="{Binding PeerRoles}" SelectedItem="{Binding SelectedPeerRole}" MinWidth="145" />
+                                    <TextBox Grid.Column="1" Text="{Binding PeerVerificationCode}" PlaceholderText="Code" />
+                                    <Button Grid.Column="2" Classes="primary" Content="Créer une invitation (24 h)" Click="OnCreateInvitationClick" HorizontalAlignment="Left" />
+                                </Grid>
+                                <TextBox Grid.Row="2" Text="{Binding PeerExchangeText}" AcceptsReturn="True" TextWrapping="Wrap"
+                                         FontFamily="Cascadia Mono,Consolas" FontSize="11" PlaceholderText="Collez ici une invitation, une demande ou un certificat…"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                <WrapPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button Classes="secondary" Content="Préparer la demande" Click="OnPrepareJoinRequestClick" Margin="0,3,7,3" />
+                                    <Button Classes="secondary" Content="Approuver la demande" Click="OnApproveJoinRequestClick" Margin="0,3,7,3" />
+                                    <Button Classes="primary" Content="Importer le certificat" Click="OnImportMembershipGrantClick" Margin="0,3,7,3" />
+                                </WrapPanel>
+                            </Grid>
                         </Border>
                     </Grid>
                 </TabItem>

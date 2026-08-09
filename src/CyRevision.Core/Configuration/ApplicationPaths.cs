@@ -9,6 +9,8 @@ public sealed record ApplicationPaths(
 
     public string ManagedSyncthingDirectory => Path.Combine(DataDirectory, "syncthing");
 
+    public string BackupDirectory => Path.Combine(DataDirectory, "backups");
+
     public static ApplicationPaths CreateDefault()
     {
         string configurationRoot = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -31,4 +33,3 @@ public sealed record ApplicationPaths(
             Path.Combine(dataRoot, "CyRevision", "cache"));
     }
 }
-

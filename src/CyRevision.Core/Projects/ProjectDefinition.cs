@@ -10,7 +10,8 @@ public sealed record ProjectDefinition(
     RetentionPolicy Retention,
     string? StandardRemoteUrl = null,
     DateTimeOffset? CreatedAt = null,
-    DateTimeOffset? LastOpenedAt = null)
+    DateTimeOffset? LastOpenedAt = null,
+    string? BackupStorePath = null)
 {
     public void Validate()
     {
@@ -36,6 +37,11 @@ public sealed record ProjectDefinition(
             !Uri.TryCreate(StandardRemoteUrl, UriKind.Absolute, out _))
         {
             throw new InvalidOperationException("The standard remote URL is invalid.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(BackupStorePath) && !Path.IsPathFullyQualified(BackupStorePath))
+        {
+            throw new InvalidOperationException("The backup store path must be absolute.");
         }
     }
 }
