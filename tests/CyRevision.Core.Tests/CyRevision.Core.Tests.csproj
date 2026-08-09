@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CyRevision.Core\CyRevision.Core.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Git\CyRevision.Git.csproj" />
   </ItemGroup>
 
 </Project>

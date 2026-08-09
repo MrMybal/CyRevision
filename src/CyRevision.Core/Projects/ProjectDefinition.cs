@@ -7,7 +7,10 @@ public sealed record ProjectDefinition(
     string Name,
     string RootPath,
     ProjectFeatures Features,
-    RetentionPolicy Retention)
+    RetentionPolicy Retention,
+    string? StandardRemoteUrl = null,
+    DateTimeOffset? CreatedAt = null,
+    DateTimeOffset? LastOpenedAt = null)
 {
     public void Validate()
     {
@@ -28,6 +31,11 @@ public sealed record ProjectDefinition(
 
         Features.Validate();
         Retention.Validate();
+
+        if (StandardRemoteUrl is not null &&
+            !Uri.TryCreate(StandardRemoteUrl, UriKind.Absolute, out _))
+        {
+            throw new InvalidOperationException("The standard remote URL is invalid.");
+        }
     }
 }
-
