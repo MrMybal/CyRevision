@@ -675,7 +675,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             int binaryFiles = files.Files.Count(file => file.BinaryChangeCount > 0);
             GitGraphSummary = $"{commits.Count} commits · {mergeCount} merges · " +
                               $"{files.TotalFileCount} fichiers analysés · {binaryFiles} binaires · " +
-                              $"{files.Relations.Count} relations affichées";
+                              $"{files.Relations.Count} relations analysées";
         }, "Graphes Git construits — analyse en lecture seule");
     }
 

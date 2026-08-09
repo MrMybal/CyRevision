@@ -6,9 +6,15 @@ L’onglet **Git graphs** propose deux vues facultatives et strictement en lectu
 
 Le graphe nodal affiche les commits, leurs parents et les branches. Les couleurs distinguent les voies de l’historique et les cartes indiquent le hash court, le sujet, l’auteur et la date. Les merges apparaissent avec plusieurs connexions dès que le dépôt en contient.
 
+La navigation est identique dans les deux vues : maintenez le bouton gauche ou central de la souris et glissez pour déplacer le plan, utilisez la molette pour zoomer sous le pointeur, et double-cliquez pour ajuster tout le graphe dans la fenêtre. Les commandes `−`, `+`, **Ajuster** et **100 %** restent disponibles en haut à droite.
+
 ## Relations entre fichiers
 
 Cette vue mesure les fichiers modifiés dans les mêmes commits. Un lien épais signifie que les deux fichiers ont souvent évolué ensemble ; la taille d’un nœud représente son nombre de modifications. La couleur distingue le code, les assets Unreal, les textures, les modèles 3D, l’audio, les documents et la configuration.
+
+Cliquez sur un fichier pour mettre en évidence uniquement ses voisins et leurs liens. Cliquez dans le fond pour retrouver la vue complète. Le séparateur vertical permet aussi d’agrandir le graphe en réduisant la table des fichiers actifs.
+
+Toutes les relations sont analysées et comptées dans le résumé. Pour éviter un mur de lignes, le plan affiche au maximum les 110 relations les plus fortes parmi les fichiers visibles.
 
 La vue aide notamment à repérer :
 

@@ -281,7 +281,7 @@
                             </TabItem>
 
                             <TabItem Header="Relations entre fichiers">
-                                <Grid Margin="0,10,0,0" ColumnDefinitions="*,390" ColumnSpacing="12">
+                                <Grid Margin="0,10,0,0" ColumnDefinitions="*,6,330">
                                     <Border Classes="card" Padding="5">
                                         <Grid RowDefinitions="Auto,*">
                                             <WrapPanel Margin="10,6,10,3" Orientation="Horizontal">
@@ -290,14 +290,16 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,0"><Border Width="9" Height="9" CornerRadius="5" Background="#E56B91" VerticalAlignment="Center" /><TextBlock Text="Textures" FontSize="10" Classes="muted" /></StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,0"><Border Width="9" Height="9" CornerRadius="5" Background="#E5A94D" VerticalAlignment="Center" /><TextBlock Text="3D" FontSize="10" Classes="muted" /></StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,14,0"><Border Width="9" Height="9" CornerRadius="5" Background="#36C5A1" VerticalAlignment="Center" /><TextBlock Text="Audio" FontSize="10" Classes="muted" /></StackPanel>
-                                                <TextBlock Text="Taille = quantité de modifications · lien = fichiers modifiés ensemble" FontSize="10" Classes="muted" />
+                                                <TextBlock Text="Taille = quantité de modifications · lien = fichiers modifiés ensemble · liens les plus forts affichés" FontSize="10" Classes="muted" />
                                             </WrapPanel>
                                             <controls:GitFileRelationGraphView Grid.Row="1"
                                                                                   Files="{Binding GitFileActivities}"
                                                                                   Relations="{Binding GitFileRelations}" />
                                         </Grid>
                                     </Border>
-                                    <Border Grid.Column="1" Classes="card" Padding="12">
+                                    <GridSplitter Grid.Column="1" Width="6" Margin="1,16" ResizeDirection="Columns"
+                                                  Background="#34415D" Cursor="SizeWestEast" />
+                                    <Border Grid.Column="2" Classes="card" Padding="12" Margin="10,0,0,0" MinWidth="220">
                                         <Grid RowDefinitions="Auto,*">
                                             <StackPanel>
                                                 <TextBlock Text="Fichiers les plus actifs" FontSize="15" FontWeight="SemiBold" />

@@ -14,15 +14,21 @@ public sealed class GitFileRelationGraphView : UserControl
     public static readonly StyledProperty<IEnumerable<GitFileRelation>?> RelationsProperty =
         AvaloniaProperty.Register<GitFileRelationGraphView, IEnumerable<GitFileRelation>?>(nameof(Relations));
 
-    private readonly Canvas _canvas = new() { Background = Brushes.Transparent };
+    private readonly Canvas _canvas = new() { Background = new SolidColorBrush(Color.Parse("#0F1729")) };
+    private readonly GraphViewport _viewport;
+    private readonly List<(Line Line, GitFileRelation Relation)> _edgeViews = [];
+    private readonly Dictionary<string, (Border Node, Color Color)> _nodeViews = new(StringComparer.Ordinal);
 
     public GitFileRelationGraphView()
     {
-        Content = new ScrollViewer
+        _viewport = new GraphViewport(_canvas);
+        Content = _viewport;
+        _canvas.PointerPressed += (_, args) =>
         {
-            Content = _canvas,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+            if (ReferenceEquals(args.Source, _canvas))
+            {
+                ClearHighlight();
+            }
         };
         Rebuild();
     }
@@ -51,6 +57,8 @@ public sealed class GitFileRelationGraphView : UserControl
     private void Rebuild()
     {
         _canvas.Children.Clear();
+        _edgeViews.Clear();
+        _nodeViews.Clear();
         GitFileActivity[] files = Files?.Take(80).ToArray() ?? [];
         GitFileRelation[] relations = Relations?.ToArray() ?? [];
         if (files.Length == 0)
@@ -66,9 +74,16 @@ public sealed class GitFileRelationGraphView : UserControl
         Dictionary<string, int> indexes = files
             .Select((file, index) => (file.Path, index))
             .ToDictionary(item => item.Path, item => item.index, StringComparer.Ordinal);
-        Point[] positions = CreateLayout(files, relations, indexes, width, height);
+        GitFileRelation[] visibleRelations = relations
+            .Where(relation => indexes.ContainsKey(relation.SourcePath) && indexes.ContainsKey(relation.TargetPath))
+            .OrderByDescending(relation => relation.CoChangeCount)
+            .ThenBy(relation => relation.SourcePath, StringComparer.Ordinal)
+            .Take(110)
+            .ToArray();
+        Point[] positions = CreateLayout(files, width, height);
+        AddGridBackground(width, height);
 
-        foreach (GitFileRelation relation in relations.OrderBy(item => item.CoChangeCount))
+        foreach (GitFileRelation relation in visibleRelations.OrderBy(item => item.CoChangeCount))
         {
             if (!indexes.TryGetValue(relation.SourcePath, out int sourceIndex) ||
                 !indexes.TryGetValue(relation.TargetPath, out int targetIndex))
@@ -76,44 +91,51 @@ public sealed class GitFileRelationGraphView : UserControl
                 continue;
             }
 
-            double strength = Math.Min(1, 0.18 + Math.Log2(relation.CoChangeCount + 1) * 0.17);
+            double strength = Math.Min(0.68, 0.16 + Math.Log2(relation.CoChangeCount + 1) * 0.12);
             Line edge = new()
             {
                 StartPoint = positions[sourceIndex],
                 EndPoint = positions[targetIndex],
                 Stroke = new SolidColorBrush(Color.Parse("#6D7EA5")) { Opacity = strength },
-                StrokeThickness = 0.8 + Math.Min(4.2, Math.Log2(relation.CoChangeCount + 1))
+                StrokeThickness = 0.8 + Math.Min(3.2, Math.Log2(relation.CoChangeCount + 1) * 0.8),
+                IsHitTestVisible = false
             };
             ToolTip.SetTip(edge, $"Modifiés ensemble {relation.CoChangeCount} fois");
             _canvas.Children.Add(edge);
+            _edgeViews.Add((edge, relation));
         }
 
         int maximumChanges = Math.Max(1, files.Max(file => file.ChangeCount));
         foreach ((GitFileActivity file, int index) in files.Select((file, index) => (file, index)))
         {
             double scale = Math.Log2(file.ChangeCount + 1) / Math.Log2(maximumChanges + 1);
-            double nodeWidth = 118 + 58 * scale;
-            double nodeHeight = 52 + 18 * scale;
+            double nodeWidth = 158 + 64 * scale;
+            double nodeHeight = 68 + 16 * scale;
             Border node = CreateNode(file, nodeWidth, nodeHeight);
             Canvas.SetLeft(node, positions[index].X - nodeWidth / 2);
             Canvas.SetTop(node, positions[index].Y - nodeHeight / 2);
             _canvas.Children.Add(node);
+            _nodeViews[file.Path] = (node, GetKindColor(file.Kind));
         }
+
+        _viewport.ResetView();
     }
 
     private static Point[] CreateLayout(
         IReadOnlyList<GitFileActivity> files,
-        IReadOnlyList<GitFileRelation> relations,
-        IReadOnlyDictionary<string, int> indexes,
         double width,
         double height)
     {
         Point[] positions = new Point[files.Count];
-        Vector[] velocities = new Vector[files.Count];
-        int columns = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(files.Count * width / height)));
+        const double horizontalMargin = 135;
+        const double topMargin = 135;
+        const double bottomMargin = 70;
+        int columns = Math.Min(
+            Math.Max(1, files.Count),
+            Math.Max(1, (int)Math.Floor((width - horizontalMargin * 2) / 220) + 1));
         int rows = (int)Math.Ceiling(files.Count / (double)columns);
-        double horizontalSpacing = (width - 250) / Math.Max(1, columns - 1);
-        double verticalSpacing = (height - 150) / Math.Max(1, rows - 1);
+        double horizontalSpacing = (width - horizontalMargin * 2) / Math.Max(1, columns - 1);
+        double verticalSpacing = (height - topMargin - bottomMargin) / Math.Max(1, rows - 1);
         for (int index = 0; index < files.Count; index++)
         {
             int row = index / columns;
@@ -124,94 +146,43 @@ public sealed class GitFileRelationGraphView : UserControl
             }
 
             positions[index] = new Point(
-                125 + column * horizontalSpacing,
-                75 + row * verticalSpacing);
-        }
-
-        List<(int Source, int Target, int Weight)> edges = relations
-            .Where(relation => indexes.ContainsKey(relation.SourcePath) && indexes.ContainsKey(relation.TargetPath))
-            .Select(relation => (indexes[relation.SourcePath], indexes[relation.TargetPath], relation.CoChangeCount))
-            .ToList();
-        for (int iteration = 0; iteration < 150; iteration++)
-        {
-            for (int left = 0; left < positions.Length; left++)
-            {
-                for (int right = left + 1; right < positions.Length; right++)
-                {
-                    Vector delta = positions[left] - positions[right];
-                    double squared = Math.Max(400, delta.X * delta.X + delta.Y * delta.Y);
-                    double distance = Math.Sqrt(squared);
-                    Vector force = delta / distance * (52000 / squared);
-                    velocities[left] += force;
-                    velocities[right] -= force;
-
-                    double overlapX = 190 - Math.Abs(delta.X);
-                    double overlapY = 88 - Math.Abs(delta.Y);
-                    if (overlapX > 0 && overlapY > 0)
-                    {
-                        if (overlapX / 190 < overlapY / 88)
-                        {
-                            double direction = delta.X >= 0 ? 1 : -1;
-                            Vector collision = new(direction * overlapX * 0.12, 0);
-                            velocities[left] += collision;
-                            velocities[right] -= collision;
-                        }
-                        else
-                        {
-                            double direction = delta.Y >= 0 ? 1 : -1;
-                            Vector collision = new(0, direction * overlapY * 0.16);
-                            velocities[left] += collision;
-                            velocities[right] -= collision;
-                        }
-                    }
-                }
-            }
-
-            foreach ((int source, int target, int weight) in edges)
-            {
-                Vector delta = positions[target] - positions[source];
-                double distance = Math.Max(1, Math.Sqrt(delta.X * delta.X + delta.Y * delta.Y));
-                double desired = 230 - Math.Min(55, weight * 4);
-                Vector force = delta / distance * ((distance - desired) * 0.0018 * Math.Min(3, Math.Sqrt(weight)));
-                velocities[source] += force;
-                velocities[target] -= force;
-            }
-
-            for (int index = 0; index < positions.Length; index++)
-            {
-                Vector centerForce = new(width / 2 - positions[index].X, height / 2 - positions[index].Y);
-                velocities[index] = (velocities[index] + centerForce * 0.00025) * 0.72;
-                double speed = Math.Sqrt(velocities[index].X * velocities[index].X + velocities[index].Y * velocities[index].Y);
-                if (speed > 15)
-                {
-                    velocities[index] = velocities[index] / speed * 15;
-                }
-                Point next = positions[index] + velocities[index];
-                positions[index] = new Point(
-                    Math.Clamp(next.X, 105, width - 105),
-                    Math.Clamp(next.Y, 65, height - 65));
-            }
+                horizontalMargin + column * horizontalSpacing,
+                topMargin + row * verticalSpacing);
         }
 
         return positions;
     }
 
-    private static Border CreateNode(GitFileActivity file, double width, double height)
+    private Border CreateNode(GitFileActivity file, double width, double height)
     {
         TextBlock name = new()
         {
             Text = System.IO.Path.GetFileName(file.Path),
             FontWeight = FontWeight.SemiBold,
-            FontSize = 11,
+            FontSize = 12.5,
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = width - 18,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+        };
+        string? directory = System.IO.Path.GetDirectoryName(file.Path)?.Replace('\\', '/');
+        if (directory?.Length > 30)
+        {
+            directory = "…" + directory[^29..];
+        }
+        TextBlock location = new()
+        {
+            Text = string.IsNullOrWhiteSpace(directory) ? "/" : directory,
+            Foreground = new SolidColorBrush(Color.Parse("#B8C4DA")),
+            FontSize = 9,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxWidth = width - 20,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
         };
         TextBlock count = new()
         {
             Text = $"{file.ChangeCount} modification{(file.ChangeCount > 1 ? "s" : string.Empty)}",
             Foreground = new SolidColorBrush(Color.Parse("#D9DEF0")),
-            FontSize = 9,
+            FontSize = 9.5,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
         };
         Color color = GetKindColor(file.Kind);
@@ -221,10 +192,10 @@ public sealed class GitFileRelationGraphView : UserControl
             Height = height,
             Padding = new Thickness(8, 6),
             CornerRadius = new CornerRadius(height / 2),
-            Background = new SolidColorBrush(color) { Opacity = 0.28 },
+            Background = new SolidColorBrush(color) { Opacity = 0.38 },
             BorderBrush = new SolidColorBrush(color),
-            BorderThickness = new Thickness(1.4),
-            Child = new StackPanel { Spacing = 3, Children = { name, count } }
+            BorderThickness = new Thickness(1.7),
+            Child = new StackPanel { Spacing = 2, Children = { name, location, count } }
         };
         ToolTip.SetTip(node,
             $"{file.Path}\nType : {file.Kind}\nCommits modifiant le fichier : {file.ChangeCount}\n" +
@@ -232,10 +203,71 @@ public sealed class GitFileRelationGraphView : UserControl
             $"Dernière modification : {file.LastChangedAt.LocalDateTime:g}");
         node.PointerPressed += (_, _) =>
         {
-            node.Background = new SolidColorBrush(color) { Opacity = 0.55 };
-            node.BorderThickness = new Thickness(2.5);
+            Highlight(file.Path);
         };
         return node;
+    }
+
+    private void Highlight(string path)
+    {
+        HashSet<string> neighbors = new(StringComparer.Ordinal) { path };
+        foreach ((Line line, GitFileRelation relation) in _edgeViews)
+        {
+            bool connected = string.Equals(relation.SourcePath, path, StringComparison.Ordinal) ||
+                             string.Equals(relation.TargetPath, path, StringComparison.Ordinal);
+            line.Opacity = connected ? 1 : 0.08;
+            if (connected)
+            {
+                neighbors.Add(relation.SourcePath);
+                neighbors.Add(relation.TargetPath);
+            }
+        }
+
+        foreach ((string nodePath, (Border node, Color color)) in _nodeViews)
+        {
+            bool selected = string.Equals(nodePath, path, StringComparison.Ordinal);
+            bool related = neighbors.Contains(nodePath);
+            node.Opacity = related ? 1 : 0.26;
+            node.BorderThickness = new Thickness(selected ? 3 : related ? 2 : 1.2);
+            node.Background = new SolidColorBrush(color) { Opacity = selected ? 0.72 : related ? 0.44 : 0.18 };
+        }
+    }
+
+    private void ClearHighlight()
+    {
+        foreach ((Line line, _) in _edgeViews)
+        {
+            line.Opacity = 1;
+        }
+
+        foreach ((_, (Border node, Color color)) in _nodeViews)
+        {
+            node.Opacity = 1;
+            node.BorderThickness = new Thickness(1.7);
+            node.Background = new SolidColorBrush(color) { Opacity = 0.38 };
+        }
+    }
+
+    private void AddGridBackground(double width, double height)
+    {
+        SolidColorBrush brush = new(Color.Parse("#35425D")) { Opacity = 0.2 };
+        for (double x = 50; x < width; x += 100)
+        {
+            _canvas.Children.Add(new Line
+            {
+                StartPoint = new Point(x, 0), EndPoint = new Point(x, height),
+                Stroke = brush, StrokeThickness = 0.6, IsHitTestVisible = false
+            });
+        }
+
+        for (double y = 50; y < height; y += 100)
+        {
+            _canvas.Children.Add(new Line
+            {
+                StartPoint = new Point(0, y), EndPoint = new Point(width, y),
+                Stroke = brush, StrokeThickness = 0.6, IsHitTestVisible = false
+            });
+        }
     }
 
     public static Color GetKindColor(GitFileKind kind) => kind switch

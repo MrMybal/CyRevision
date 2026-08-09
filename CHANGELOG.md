@@ -12,3 +12,4 @@
 - assistant WireGuard indépendant, pairs VPN-only et profils Swarm/CI/services.
 - graphes de commits et de relations entre fichiers, calculés localement en lecture seule ;
 - interface desktop et dashboard web multilingues, avec anglais par défaut et français inclus.
+- navigation des graphes par grab et zoom, ajustement automatique, disposition lisible et surbrillance des relations.
