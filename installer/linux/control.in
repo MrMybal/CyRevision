@@ -1,0 +1,12 @@
+Package: cyrevision
+Version: @VERSION@
+Section: devel
+Priority: optional
+Architecture: @ARCHITECTURE@
+Installed-Size: @INSTALLED_SIZE@
+Maintainer: CyRevision contributors <noreply@cyrevision.local>
+Homepage: https://github.com/MrMybal/CyRevision
+Depends: libx11-6, libice6, libsm6, libfontconfig1
+Description: Revision control for large creative projects
+ CyRevision combines local Git and Git LFS workflows with optional peer-to-peer
+ synchronization, versioned backups, asset inspection, and Unreal integration.

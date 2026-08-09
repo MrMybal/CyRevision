@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=CyRevision
+Comment=Revision control, synchronization, and backup for large projects
+Exec=cyrevision
+Icon=cyrevision
+Terminal=false
+Categories=Development;RevisionControl;
+Keywords=Git;LFS;Unreal;Sync;Backup;
+StartupNotify=true

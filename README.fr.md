@@ -57,6 +57,14 @@ Publication Windows :
 ./scripts/publish.ps1
 ```
 
+Création locale d'un installateur Windows autonome et d'une archive portable :
+
+```powershell
+./scripts/build-release.cmd 0.1.0
+```
+
+Les paquets Linux (`.deb`) et macOS (`.dmg`) natifs sont construits par le workflow GitHub Actions multiplateforme. Ils peuvent aussi être créés sur leur système natif avec `scripts/build-linux-release.sh` et `scripts/build-macos-release.sh`. Consultez [Créer une release](docs/releasing.md).
+
 Publication Linux :
 
 ```bash
@@ -82,6 +90,7 @@ En mode **Git + Sync**, le dossier partagé contient les bundles Git signés, le
 - [Explorateur Git et Time Machine LFS](docs/git-explorer-lfs-time-machine.md)
 - [Synchronisation intelligente et archive froide](docs/smart-sync-and-cold-archive.md)
 - [Localisation](docs/localization.md)
+- [Créer une release multiplateforme](docs/releasing.md)
 - [Pont Unreal Editor](plugins/CyRevisionUnreal/README.md)
 
 ## Licence

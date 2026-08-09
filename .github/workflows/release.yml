@@ -1,0 +1,179 @@
+name: Build multiplatform release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the v prefix"
+        required: true
+        default: "0.1.0"
+      publish_release:
+        description: "Create or update the GitHub Release"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Resolve release version
+        id: release
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            tag="$GITHUB_REF_NAME"
+          else
+            version="$INPUT_VERSION"
+            tag="v$version"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: $version" >&2
+            exit 2
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  validate:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore, build, and test
+        shell: bash
+        run: |
+          dotnet restore CyRevision.sln
+          dotnet build CyRevision.sln -c Release --no-restore "/p:Version=${{ needs.prepare.outputs.version }}"
+          dotnet test CyRevision.sln -c Release --no-build --no-restore "/p:Version=${{ needs.prepare.outputs.version }}"
+
+  windows:
+    needs: [prepare, validate]
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+      - name: Build Windows installer
+        shell: powershell
+        run: ./scripts/build-release.ps1 -Version '${{ needs.prepare.outputs.version }}' -SkipTests
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CyRevision-${{ needs.prepare.outputs.version }}-win-x64
+          path: |
+            artifacts/release/${{ needs.prepare.outputs.version }}/*.exe
+            artifacts/release/${{ needs.prepare.outputs.version }}/*.zip
+            artifacts/release/${{ needs.prepare.outputs.version }}/SHA256SUMS-win-x64.txt
+          if-no-files-found: error
+
+  linux:
+    needs: [prepare, validate]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [linux-x64, linux-arm64]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build Linux packages
+        shell: bash
+        env:
+          CYREVISION_SKIP_TESTS: "1"
+        run: bash scripts/build-linux-release.sh '${{ needs.prepare.outputs.version }}' '${{ matrix.rid }}'
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CyRevision-${{ needs.prepare.outputs.version }}-${{ matrix.rid }}
+          path: |
+            artifacts/release/${{ needs.prepare.outputs.version }}/*.deb
+            artifacts/release/${{ needs.prepare.outputs.version }}/*.tar.gz
+            artifacts/release/${{ needs.prepare.outputs.version }}/SHA256SUMS-${{ matrix.rid }}.txt
+          if-no-files-found: error
+
+  macos:
+    needs: [prepare, validate]
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [osx-x64, osx-arm64]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build macOS disk image
+        shell: bash
+        env:
+          CYREVISION_SKIP_TESTS: "1"
+        run: bash scripts/build-macos-release.sh '${{ needs.prepare.outputs.version }}' '${{ matrix.rid }}'
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CyRevision-${{ needs.prepare.outputs.version }}-${{ matrix.rid }}
+          path: |
+            artifacts/release/${{ needs.prepare.outputs.version }}/*.dmg
+            artifacts/release/${{ needs.prepare.outputs.version }}/*.zip
+            artifacts/release/${{ needs.prepare.outputs.version }}/SHA256SUMS-${{ matrix.rid }}.txt
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, windows, linux, macos]
+    if: github.ref_type == 'tag' || inputs.publish_release == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: CyRevision-${{ needs.prepare.outputs.version }}-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create unified checksums
+        shell: bash
+        run: |
+          cd release-assets
+          rm -f SHA256SUMS-*.txt
+          sha256sum -- *.exe *.zip *.deb *.tar.gz *.dmg | sort -k2 > SHA256SUMS.txt
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          mapfile -t files < <(find release-assets -maxdepth 1 -type f -print | sort)
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${files[@]}" \
+              --title "CyRevision $RELEASE_TAG" \
+              --generate-notes

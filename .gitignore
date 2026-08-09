@@ -9,6 +9,9 @@ TestResults/
 coverage/
 artifacts/
 publish/
+.tools/
+.dotnet-cli/
+.nuget/
 AvaloniaUI/
 .cyrevision-server/
 .server-test/
