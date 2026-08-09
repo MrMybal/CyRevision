@@ -18,3 +18,5 @@
 - activité d'équipe calculée depuis Git et graphe de dépendances Unreal simplifié, tous deux hors moteur et en lecture seule ;
 - planificateur de synchronisation intelligent séparant métadonnées Git, état courant, objets LFS actuels, historique et backups ;
 - archive froide dédupliquée vers un stockage secondaire, sans suppression automatique du stockage actif.
+- inventaires LFS signés par appareil, réplication prioritaire, demandes à la demande et transferts reprenables avec validation SHA-256 ;
+- Time Machine enrichie avec les emplacements local, pair autorisé et archive froide.

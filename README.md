@@ -7,9 +7,9 @@ CyRevision est un client de révision, synchronisation et sauvegarde pensé pour
 - application desktop native Windows/Linux/macOS avec Avalonia ;
 - catalogue de projets et cinq modes : **Git**, **Git + Sync**, **Sync**, **Sync + versions**, **Backup** ;
 - Git local : statut, index, commits, explorateur interactif, comparaison A ↔ B, historique par fichier, branches, merge, remotes et Git LFS ;
-- Time Machine LFS : chronologie des objets, disponibilité locale, aperçu des textures, export et restauration confirmée ;
+- Time Machine LFS : chronologie des objets, emplacements local/pair/archive, demande signée à la demande, reprise des transferts, aperçu des textures, export et restauration confirmée ;
 - visualisations Git optionnelles : commits, co-modifications, activité d'équipe et dépendances Unreal simplifiées hors moteur ;
-- Git P2P intelligent : bundles immuables signés et objets LFS vérifiés, sans synchroniser le `.git` actif ;
+- Git P2P intelligent : bundles et inventaires signés, priorités LFS paramétrables, transferts reprenables et objets vérifiés par SHA-256, sans synchroniser le `.git` actif ;
 - Syncthing optionnel avec profil, identité, base, API loopback et port distincts pour chaque projet ;
 - invitations à usage unique, code transmis séparément, certificats ECDSA, rôles et révocation ;
 - snapshots dédupliqués par SHA-256, restauration, rétention et copie non destructive vers une archive froide ;

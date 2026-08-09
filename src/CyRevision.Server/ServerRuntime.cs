@@ -473,21 +473,37 @@ public sealed class ServerRuntime : IAsyncDisposable
 
         using FileDeviceIdentityStore identity = await OpenLocalIdentityAsync(project, engine.DeviceId, cancellationToken);
         IReadOnlyCollection<DeviceIdentity> authorized = await GetAuthorizedDevicesAsync(project, profile, identity, cancellationToken);
-        Guid? transaction = await _gitExchange.ExportAsync(
+        int recentVersionCount = Math.Clamp(project.Retention.MaxVersionsPerFile ?? 3, 1, 1000);
+        GitPeerExchangeOptions options = new(
+            project.Features.BackupEnabled
+                ? PeerLfsTransferMode.CurrentAndRecent
+                : PeerLfsTransferMode.CurrentRevisionOnly,
+            recentVersionCount,
+            50L * 1024 * 1024 * 1024);
+        GitPeerExportResult exported = await _gitExchange.ExportDetailedAsync(
             project.Id,
             project.RootPath,
             profile.ExchangeDirectory,
             identity,
+            authorized,
+            options,
             cancellationToken);
-        GitPeerExchangeResult imported = await _gitExchange.ImportAsync(
+        GitPeerExchangeResult imported = await _gitExchange.ImportDetailedAsync(
             project.Id,
             project.RootPath,
             profile.ExchangeDirectory,
             Path.Combine(_options.DataDirectory, "git-exchange-state", project.Id.ToString("N")),
             authorized,
             identity.Identity.DeviceId,
+            options,
             cancellationToken);
-        return imported with { ExportedTransactionId = transaction };
+        return imported with
+        {
+            ExportedTransactionId = exported.TransactionId,
+            PublishedLfsObjects = exported.PublishedLfsObjects,
+            PublishedLfsBytes = exported.PublishedLfsBytes,
+            FulfilledLfsRequests = exported.FulfilledRequests
+        };
     }
 
     public async ValueTask DisposeAsync()

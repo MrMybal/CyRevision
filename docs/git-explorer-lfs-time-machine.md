@@ -13,8 +13,8 @@ La Time Machine liste les fichiers LFS de `HEAD`, puis les objets uniques rencon
 - le commit et sa date ;
 - la taille déclarée par le pointeur LFS ;
 - l'OID SHA-256 ;
-- l'état **Local** ou **Missing**.
+- les emplacements connus : **Local**, **Peer**, **Archive** ou **Missing**.
 
-Les textures locales prises en charge peuvent être prévisualisées sans Unreal. L'export copie l'objet LFS réel, pas son petit fichier pointeur. Une version manquante n'est jamais téléchargée silencieusement : elle doit d'abord être obtenue depuis un pair autorisé ou une archive.
+Les textures locales prises en charge peuvent être prévisualisées sans Unreal. L'export copie l'objet LFS réel, pas son petit fichier pointeur. Une version manquante n'est jamais téléchargée silencieusement. Si un inventaire signé indique qu'un pair autorisé la possède, **Request from peer** crée une demande signée ; le pair la publie à son prochain échange, puis le transfert peut reprendre après une interruption et n'est accepté qu'après vérification SHA-256.
 
 La restauration nécessite une confirmation. Elle remplace uniquement le fichier du working tree ; elle ne crée ni indexation, ni commit, ni échange réseau. Git permet donc de contrôler la modification avant de la conserver ou de l'annuler.
