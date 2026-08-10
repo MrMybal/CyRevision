@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\Branding\cyrevision.ico</ApplicationIcon>
+    <VersionPrefix>0.1.4</VersionPrefix>
   </PropertyGroup>
 
   <ItemGroup>

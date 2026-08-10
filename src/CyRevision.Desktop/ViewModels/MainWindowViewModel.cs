@@ -4,6 +4,7 @@ using Avalonia.Media.Imaging;
 using CyRevision.Backup;
 using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
+using CyRevision.Core.Updates;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.Documentation;
 using CyRevision.Diff;
@@ -28,6 +29,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly ManagedWireGuardEngine _wireGuardEngine;
     private readonly LocalizationService _localization;
     private readonly OfflineDocumentationService _documentationService;
+    private readonly ApplicationUpdateService _updateService;
     private readonly string? _initialProjectPath;
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
@@ -117,6 +119,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private IReadOnlyList<DocumentationTopic> _allDocumentationTopics = [];
     private DocumentationTopic? _selectedDocumentationTopic;
     private string _documentationSearch = string.Empty;
+    private ApplicationUpdateInfo? _availableUpdate;
+    private string _latestApplicationVersion = "—";
+    private string _updateStatus = "Recherche de mise à jour non lancée.";
+    private string _updateReleaseNotes = string.Empty;
+    private bool _hasUpdateAvailable;
+    private bool _isCheckingForUpdates;
+    private bool _isDownloadingUpdate;
+    private double _updateProgress;
 
     public MainWindowViewModel(
         IProjectCatalog projectCatalog,
@@ -131,6 +141,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         ManagedWireGuardEngine wireGuardEngine,
         LocalizationService localization,
         OfflineDocumentationService documentationService,
+        ApplicationUpdateService updateService,
         string? initialProjectPath = null)
     {
         _projectCatalog = projectCatalog;
@@ -145,6 +156,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _wireGuardEngine = wireGuardEngine;
         _localization = localization;
         _documentationService = documentationService;
+        _updateService = updateService;
         _selectedLanguage = localization.Languages.FirstOrDefault(language =>
             string.Equals(language.Code, localization.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase));
         _initialProjectPath = initialProjectPath;
@@ -443,6 +455,77 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         get => _selectedDocumentationTopic;
         set => SetProperty(ref _selectedDocumentationTopic, value);
     }
+
+    public string CurrentApplicationVersion => _updateService.CurrentVersion.ToString();
+
+    public string LatestApplicationVersion
+    {
+        get => _latestApplicationVersion;
+        private set => SetProperty(ref _latestApplicationVersion, value);
+    }
+
+    public string UpdateStatus
+    {
+        get => _updateStatus;
+        private set => SetProperty(ref _updateStatus, value);
+    }
+
+    public string UpdateReleaseNotes
+    {
+        get => _updateReleaseNotes;
+        private set => SetProperty(ref _updateReleaseNotes, value);
+    }
+
+    public bool HasUpdateAvailable
+    {
+        get => _hasUpdateAvailable;
+        private set
+        {
+            if (SetProperty(ref _hasUpdateAvailable, value))
+            {
+                OnPropertyChanged(nameof(CanInstallUpdate));
+            }
+        }
+    }
+
+    public bool IsCheckingForUpdates
+    {
+        get => _isCheckingForUpdates;
+        private set
+        {
+            if (SetProperty(ref _isCheckingForUpdates, value))
+            {
+                OnPropertyChanged(nameof(CanCheckForUpdates));
+                OnPropertyChanged(nameof(CanInstallUpdate));
+            }
+        }
+    }
+
+    public bool IsDownloadingUpdate
+    {
+        get => _isDownloadingUpdate;
+        private set
+        {
+            if (SetProperty(ref _isDownloadingUpdate, value))
+            {
+                OnPropertyChanged(nameof(CanCheckForUpdates));
+                OnPropertyChanged(nameof(CanInstallUpdate));
+            }
+        }
+    }
+
+    public double UpdateProgress
+    {
+        get => _updateProgress;
+        private set => SetProperty(ref _updateProgress, value);
+    }
+
+    public bool CanCheckForUpdates => !IsCheckingForUpdates && !IsDownloadingUpdate;
+
+    public bool CanInstallUpdate =>
+        HasUpdateAvailable && _availableUpdate?.Package is not null && !IsCheckingForUpdates && !IsDownloadingUpdate;
+
+    public string? UpdateReleasePageUrl => _availableUpdate?.ReleasePage.AbsoluteUri;
 
     public ProjectItemViewModel? SelectedProject
     {
@@ -835,6 +918,88 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 SelectedProject = Projects[0];
             }
         }, "Prêt");
+
+        _ = CheckForUpdatesAsync();
+    }
+
+    public async Task CheckForUpdatesAsync()
+    {
+        if (!CanCheckForUpdates)
+        {
+            return;
+        }
+
+        IsCheckingForUpdates = true;
+        UpdateStatus = "Recherche de la dernière release publiée…";
+        try
+        {
+            ApplicationUpdateInfo update = await _updateService.CheckAsync();
+            _availableUpdate = update;
+            LatestApplicationVersion = update.LatestVersion.ToString();
+            HasUpdateAvailable = update.IsUpdateAvailable;
+            UpdateReleaseNotes = update.ReleaseNotes.Trim();
+            OnPropertyChanged(nameof(UpdateReleasePageUrl));
+            OnPropertyChanged(nameof(CanInstallUpdate));
+
+            if (!update.IsUpdateAvailable)
+            {
+                UpdateStatus = $"CyRevision {CurrentApplicationVersion} est à jour.";
+            }
+            else if (update.Package is null)
+            {
+                UpdateStatus = $"Version {LatestApplicationVersion} disponible, mais aucun installateur compatible n'a été publié.";
+            }
+            else
+            {
+                UpdateStatus = $"Version {LatestApplicationVersion} disponible · {update.Package.Name}";
+            }
+        }
+        catch (Exception exception)
+        {
+            _availableUpdate = null;
+            HasUpdateAvailable = false;
+            UpdateStatus = $"Vérification impossible : {exception.Message}";
+            OnPropertyChanged(nameof(UpdateReleasePageUrl));
+        }
+        finally
+        {
+            IsCheckingForUpdates = false;
+        }
+    }
+
+    public async Task<string?> DownloadAvailableUpdateAsync()
+    {
+        if (!CanInstallUpdate || _availableUpdate is null)
+        {
+            return null;
+        }
+
+        IsDownloadingUpdate = true;
+        UpdateProgress = 0;
+        try
+        {
+            Progress<double> progress = new(value =>
+            {
+                UpdateProgress = Math.Round(value * 100, 1);
+                UpdateStatus = $"Téléchargement et vérification… {value:P0}";
+            });
+            string path = await _updateService.DownloadAsync(
+                _availableUpdate,
+                Path.Combine(_applicationPaths.CacheDirectory, "updates"),
+                progress);
+            UpdateProgress = 100;
+            UpdateStatus = "Mise à jour téléchargée et vérifiée par SHA-256. L'installateur va s'ouvrir.";
+            return path;
+        }
+        catch (Exception exception)
+        {
+            UpdateStatus = $"Téléchargement impossible : {exception.Message}";
+            return null;
+        }
+        finally
+        {
+            IsDownloadingUpdate = false;
+        }
     }
 
     public async Task AddExistingRepositoryAsync(string path)
@@ -3146,5 +3311,6 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         await StopSyncCoreAsync();
         AssetDiffPreview = null;
         LfsPreview = null;
+        _updateService.Dispose();
     }
 }

@@ -23,7 +23,13 @@
     "^Inventaire vérifié : (\\d+) objet\\(s\\) chez les pairs · actualisé (.+)$": "Verified inventory: $1 object(s) on peers · updated $2",
     "^Demande (.+) mise en file · le pair publiera l'objet lors de son prochain échange$": "Request $1 queued · the peer will publish the object during its next exchange",
     "^(\\d+) publié\\(s\\) · (\\d+) importé\\(s\\) · (\\d+) repris · (\\d+) différé\\(s\\) · (\\d+) disponible\\(s\\) chez les pairs$": "$1 published · $2 imported · $3 resumed · $4 deferred · $5 available on peers",
-    "^Transaction (.+) · (\\d+) transaction\\(s\\) reçue\\(s\\) · (\\d+) objet\\(s\\) LFS importé\\(s\\)$": "Transaction $1 · $2 transaction(s) received · $3 LFS object(s) imported"
+    "^Transaction (.+) · (\\d+) transaction\\(s\\) reçue\\(s\\) · (\\d+) objet\\(s\\) LFS importé\\(s\\)$": "Transaction $1 · $2 transaction(s) received · $3 LFS object(s) imported",
+    "^CyRevision (.+) est à jour\\.$": "CyRevision $1 is up to date.",
+    "^Version (.+) disponible · (.+)$": "Version $1 available · $2",
+    "^Version (.+) disponible, mais aucun installateur compatible n'a été publié\\.$": "Version $1 is available, but no compatible installer was published.",
+    "^Vérification impossible : (.+)$": "Update check failed: $1",
+    "^Téléchargement impossible : (.+)$": "Download failed: $1",
+    "^Téléchargement et vérification… (.+)$": "Downloading and verifying… $1"
   },
   "PROJETS": "PROJECTS",
   "Ajouter un dossier": "Add folder",
@@ -312,5 +318,14 @@
   "Côte à côte": "Side by side",
   "‹ Précédent": "‹ Previous",
   "Suivant ›": "Next ›",
-  "Aucun diff à afficher.": "No diff to display."
+  "Aucun diff à afficher.": "No diff to display.",
+  "Mises à jour de CyRevision": "CyRevision updates",
+  "Canal stable · uniquement les releases GitHub publiées": "Stable channel · published GitHub Releases only",
+  "Vérifier les mises à jour": "Check for updates",
+  "Télécharger et installer": "Download and install",
+  "Voir la release": "View release",
+  "Version installée": "Installed version",
+  "Recherche de mise à jour non lancée.": "Update check not started.",
+  "Recherche de la dernière release publiée…": "Checking the latest published release…",
+  "Mise à jour téléchargée et vérifiée par SHA-256. L'installateur va s'ouvrir.": "Update downloaded and verified with SHA-256. The installer will now open."
 }

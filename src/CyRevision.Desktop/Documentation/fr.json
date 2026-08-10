@@ -56,6 +56,14 @@
     "keywords": ["unreal", "plugin", "asset", "réservation", "checkout", "verrou", "content browser"]
   },
   {
+    "id": "application-updates",
+    "category": "Application",
+    "title": "Mises à jour des releases stables",
+    "summary": "Vérifier, télécharger et lancer un installateur CyRevision publié depuis l'onglet Aide.",
+    "body": "RELEASES UNIQUEMENT\nLe gestionnaire consulte uniquement la dernière GitHub Release stable de CyRevision. Les commits, branches, brouillons et préversions ne sont jamais proposés comme mises à jour. Les dépôts des projets restent indépendants et ne nécessitent pas GitHub.\n\nVÉRIFICATION\nCyRevision vérifie après le démarrage et le bouton Vérifier les mises à jour reste disponible à tout moment. La version de l'application installée est comparée au tag de la release publiée.\n\nPAQUET DE LA PLATEFORME\nCyRevision sélectionne l'installateur natif : Setup Windows, paquet DEB Linux x64 ou ARM64, ou image DMG macOS x64 ou ARM64. La page de la release reste accessible si aucun paquet compatible n'est présent.\n\nSÉCURITÉ DU TÉLÉCHARGEMENT\nLe paquet est enregistré dans le cache CyRevision. Son SHA-256 doit correspondre au manifeste SHA256SUMS.txt de la release avant que le système soit autorisé à l'ouvrir. L'installation ne démarre jamais silencieusement et aucun git pull du code source n'est effectué.",
+    "keywords": ["mise à jour", "release", "installateur", "version", "sha-256", "github", "stable"]
+  },
+  {
     "id": "troubleshooting",
     "category": "Assistance",
     "title": "Dépannage et sécurité",

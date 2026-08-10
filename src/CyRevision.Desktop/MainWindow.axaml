@@ -929,25 +929,66 @@
                             </Grid>
                         </Border>
 
-                        <Border Grid.Column="1" Classes="card">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <StackPanel MaxWidth="860" HorizontalAlignment="Left" Spacing="11" Margin="4">
-                                    <TextBlock Text="{Binding SelectedDocumentationTopic.Category}"
-                                               FontSize="11" Foreground="#78D7B7" />
-                                    <TextBlock Text="{Binding SelectedDocumentationTopic.Title}"
-                                               FontSize="25" FontWeight="Bold" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding SelectedDocumentationTopic.Summary}"
-                                               FontSize="13" Foreground="#B8C1D8" TextWrapping="Wrap" />
-                                    <Border Height="1" Background="#29324A" Margin="0,5,0,7" />
-                                    <TextBlock Text="{Binding SelectedDocumentationTopic.Body}"
-                                               FontSize="12" LineHeight="20" TextWrapping="Wrap" />
-                                    <Border Background="#10241F" CornerRadius="8" Padding="12" Margin="0,12,0,0">
-                                        <TextBlock Text="Cette documentation est livrée avec CyRevision et reste accessible hors ligne."
-                                                   FontSize="11" Foreground="#78D7B7" TextWrapping="Wrap" />
-                                    </Border>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </Border>
+                        <Grid Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="14">
+                            <Border Classes="card" Padding="16">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="16" RowSpacing="8">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="Mises à jour de CyRevision" FontSize="17" FontWeight="SemiBold" />
+                                        <TextBlock Text="Canal stable · uniquement les releases GitHub publiées"
+                                                   Classes="muted" FontSize="11" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="secondary" Content="Vérifier les mises à jour"
+                                                IsEnabled="{Binding CanCheckForUpdates}"
+                                                Click="OnCheckForUpdatesClick" />
+                                        <Button Classes="primary" Content="Télécharger et installer"
+                                                IsVisible="{Binding HasUpdateAvailable}"
+                                                IsEnabled="{Binding CanInstallUpdate}"
+                                                Click="OnInstallUpdateClick" />
+                                        <Button Classes="secondary" Content="Voir la release"
+                                                IsVisible="{Binding HasUpdateAvailable}"
+                                                Click="OnOpenUpdateReleaseClick" />
+                                    </StackPanel>
+
+                                    <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,Auto,20,*" ColumnSpacing="7">
+                                        <TextBlock Text="Version installée" Classes="muted" FontSize="11" />
+                                        <TextBlock Grid.Column="1" Text="{Binding CurrentApplicationVersion}"
+                                                   Foreground="#78D7B7" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Column="3" Text="{Binding UpdateStatus}"
+                                                   TextWrapping="Wrap" FontSize="11" />
+                                    </Grid>
+
+                                    <Grid Grid.Row="2" Grid.ColumnSpan="2" RowDefinitions="Auto,Auto" RowSpacing="5">
+                                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding UpdateProgress}"
+                                                     Height="5" IsVisible="{Binding IsDownloadingUpdate}" />
+                                        <TextBlock Grid.Row="1" Text="{Binding UpdateReleaseNotes}"
+                                                   IsVisible="{Binding HasUpdateAvailable}"
+                                                   MaxHeight="42" TextTrimming="CharacterEllipsis"
+                                                   Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+
+                            <Border Grid.Row="1" Classes="card">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel MaxWidth="860" HorizontalAlignment="Left" Spacing="11" Margin="4">
+                                        <TextBlock Text="{Binding SelectedDocumentationTopic.Category}"
+                                                   FontSize="11" Foreground="#78D7B7" />
+                                        <TextBlock Text="{Binding SelectedDocumentationTopic.Title}"
+                                                   FontSize="25" FontWeight="Bold" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding SelectedDocumentationTopic.Summary}"
+                                                   FontSize="13" Foreground="#B8C1D8" TextWrapping="Wrap" />
+                                        <Border Height="1" Background="#29324A" Margin="0,5,0,7" />
+                                        <TextBlock Text="{Binding SelectedDocumentationTopic.Body}"
+                                                   FontSize="12" LineHeight="20" TextWrapping="Wrap" />
+                                        <Border Background="#10241F" CornerRadius="8" Padding="12" Margin="0,12,0,0">
+                                            <TextBlock Text="Cette documentation est livrée avec CyRevision et reste accessible hors ligne."
+                                                       FontSize="11" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                        </Border>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </TabItem>
             </TabControl>
