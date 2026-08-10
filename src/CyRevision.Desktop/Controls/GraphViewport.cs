@@ -97,7 +97,7 @@ internal sealed class GraphViewport : UserControl
             IsHitTestVisible = false,
             Child = new TextBlock
             {
-                Text = "Glisser pour déplacer · molette pour zoomer · double-clic pour ajuster",
+                Text = "Glisser pour déplacer · Ctrl + molette pour zoomer · double-clic pour ajuster",
                 FontSize = 9,
                 Foreground = new SolidColorBrush(Color.Parse("#AEB9D1"))
             }
@@ -217,6 +217,11 @@ internal sealed class GraphViewport : UserControl
 
     private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            return;
+        }
+
         if (Math.Abs(e.Delta.Y) < double.Epsilon)
         {
             return;

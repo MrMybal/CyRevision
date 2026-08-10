@@ -72,7 +72,7 @@
   "Ajuster": "Fit",
   "Afficher l'ensemble du graphe": "Fit the whole graph",
   "Revenir à la taille réelle": "Return to actual size",
-  "Glisser pour déplacer · molette pour zoomer · double-clic pour ajuster": "Drag to pan · wheel to zoom · double-click to fit",
+  "Glisser pour déplacer · Ctrl + molette pour zoomer · double-clic pour ajuster": "Drag to pan · Ctrl + wheel to zoom · double-click to fit",
   "Réseau de commits": "Commit network",
   "Relations entre fichiers": "File relations",
   "Textures": "Textures",
