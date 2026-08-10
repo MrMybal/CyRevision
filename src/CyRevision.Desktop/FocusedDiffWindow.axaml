@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:CyRevision.Desktop.Controls"
+        x:Class="CyRevision.Desktop.FocusedDiffWindow"
+        x:CompileBindings="False"
+        Title="Diff ciblé"
+        Icon="/Assets/Branding/cyrevision.ico"
+        Width="1280"
+        Height="820"
+        MinWidth="720"
+        MinHeight="460"
+        Background="#1E1F22"
+        WindowStartupLocation="CenterOwner">
+    <Window.Styles>
+        <Style Selector="Button.secondary">
+            <Setter Property="Background" Value="#393B40" />
+            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="MinHeight" Value="27" />
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="FontSize" Value="11.5" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="46,*">
+        <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="12,0">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Diff ciblé" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding SelectedExplorerFile.Path}" FontSize="9.5" Foreground="#9B9DA3"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <CheckBox x:Name="AlwaysOnTopToggle" Grid.Column="1" Content="Rester au premier plan"
+                          VerticalAlignment="Center" Click="OnAlwaysOnTopClick" />
+                <Button Grid.Column="2" Classes="secondary" Content="Fermer la fenêtre" Click="OnCloseClick"
+                        VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Margin="10" Background="#0B1020" BorderBrush="#393B40"
+                BorderThickness="1" CornerRadius="5" ClipToBounds="True">
+            <controls:CodeDiffView DiffText="{Binding ExplorerDiff}"
+                                   FilePath="{Binding SelectedExplorerFile.Path}" />
+        </Border>
+    </Grid>
+</Window>

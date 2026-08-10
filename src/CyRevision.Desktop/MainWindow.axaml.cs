@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using System.Diagnostics;
@@ -13,6 +14,8 @@ public partial class MainWindow : Window
     private MainWindowViewModel _viewModel = null!;
     private UiLocalizer? _uiLocalizer;
     private LocalizationService? _localization;
+    private FocusedDiffWindow? _focusedDiffWindow;
+    private readonly double[] _historyPanelWeights = [0.9, 1.25, 1.15];
 
     public MainWindow()
     {
@@ -26,13 +29,132 @@ public partial class MainWindow : Window
         _localization = localization;
         _uiLocalizer = new UiLocalizer(this, localization);
         Opened += OnOpened;
-        Closed += (_, _) => _uiLocalizer?.Dispose();
+        Closed += OnClosed;
     }
 
     private async void OnOpened(object? sender, EventArgs e)
     {
         Opened -= OnOpened;
         await _viewModel.InitializeAsync();
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        _focusedDiffWindow?.Close();
+        _focusedDiffWindow = null;
+        _uiLocalizer?.Dispose();
+    }
+
+    private void OnBalancedHistoryLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyHistoryLayout(0.9, 1.25, 1.15);
+
+    private void OnReviewHistoryLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyHistoryLayout(0.72, 1.55, 0.95);
+
+    private void OnDiffFocusedHistoryLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyHistoryLayout(0.55, 0.8, 1.9);
+
+    private void ApplyHistoryLayout(double timelineWeight, double filesWeight, double diffWeight)
+    {
+        _historyPanelWeights[0] = timelineWeight;
+        _historyPanelWeights[1] = filesWeight;
+        _historyPanelWeights[2] = diffWeight;
+        HistoryTimelineToggle.IsChecked = true;
+        HistoryFilesToggle.IsChecked = true;
+        HistoryDiffToggle.IsChecked = true;
+        RefreshHistoryWorkspaceLayout();
+    }
+
+    private void OnHistoryPanelToggleClick(object? sender, RoutedEventArgs e)
+    {
+        CaptureHistoryPanelWeights();
+        if (HistoryTimelineToggle.IsChecked != true &&
+            HistoryFilesToggle.IsChecked != true &&
+            HistoryDiffToggle.IsChecked != true && sender is ToggleButton toggle)
+        {
+            toggle.IsChecked = true;
+        }
+
+        RefreshHistoryWorkspaceLayout();
+    }
+
+    private void CaptureHistoryPanelWeights()
+    {
+        Control[] panels = [HistoryTimelinePanel, HistoryFilesPanel, HistoryDiffPanel];
+        for (int index = 0; index < panels.Length; index++)
+        {
+            if (panels[index].IsVisible && panels[index].Bounds.Width > 1)
+            {
+                _historyPanelWeights[index] = panels[index].Bounds.Width;
+            }
+        }
+    }
+
+    private void RefreshHistoryWorkspaceLayout()
+    {
+        Control[] panels = [HistoryTimelinePanel, HistoryFilesPanel, HistoryDiffPanel];
+        bool[] visible =
+        [
+            HistoryTimelineToggle.IsChecked == true,
+            HistoryFilesToggle.IsChecked == true,
+            HistoryDiffToggle.IsChecked == true
+        ];
+
+        foreach (ColumnDefinition column in HistoryWorkspaceGrid.ColumnDefinitions)
+        {
+            column.Width = new GridLength(0);
+        }
+
+        int visibleIndex = 0;
+        for (int panelIndex = 0; panelIndex < panels.Length; panelIndex++)
+        {
+            Control panel = panels[panelIndex];
+            panel.IsVisible = visible[panelIndex];
+            if (!visible[panelIndex])
+            {
+                continue;
+            }
+
+            int columnIndex = visibleIndex * 2;
+            Grid.SetColumn(panel, columnIndex);
+            HistoryWorkspaceGrid.ColumnDefinitions[columnIndex].Width =
+                new GridLength(Math.Max(0.2, _historyPanelWeights[panelIndex]), GridUnitType.Star);
+            visibleIndex++;
+        }
+
+        ConfigureHistorySplitter(HistorySplitterOne, 1, visibleIndex >= 2);
+        ConfigureHistorySplitter(HistorySplitterTwo, 3, visibleIndex >= 3);
+    }
+
+    private void ConfigureHistorySplitter(GridSplitter splitter, int columnIndex, bool visible)
+    {
+        splitter.IsVisible = visible;
+        Grid.SetColumn(splitter, columnIndex);
+        HistoryWorkspaceGrid.ColumnDefinitions[columnIndex].Width = new GridLength(visible ? 6 : 0);
+    }
+
+    private void OnOpenFocusedDiffWindowClick(object? sender, RoutedEventArgs e)
+    {
+        if (_focusedDiffWindow is not null)
+        {
+            if (_focusedDiffWindow.WindowState == WindowState.Minimized)
+            {
+                _focusedDiffWindow.WindowState = WindowState.Normal;
+            }
+
+            _focusedDiffWindow.Activate();
+            return;
+        }
+
+        if (_localization is null)
+        {
+            return;
+        }
+
+        FocusedDiffWindow window = new(_viewModel, _localization);
+        window.Closed += (_, _) => _focusedDiffWindow = null;
+        _focusedDiffWindow = window;
+        window.Show(this);
     }
 
     private async void OnAddExistingClick(object? sender, RoutedEventArgs e)

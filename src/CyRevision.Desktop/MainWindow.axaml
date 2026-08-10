@@ -74,6 +74,20 @@
             <Setter Property="FontSize" Value="10.5" />
         </Style>
         <Style Selector="CheckBox"><Setter Property="FontSize" Value="11.5" /></Style>
+        <Style Selector="ToggleButton.panelToggle">
+            <Setter Property="Background" Value="#1E1F22" />
+            <Setter Property="Foreground" Value="#AFB1B7" />
+            <Setter Property="BorderBrush" Value="#4B4D52" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="MinHeight" Value="25" />
+            <Setter Property="FontSize" Value="10.5" />
+        </Style>
+        <Style Selector="ToggleButton.panelToggle:checked">
+            <Setter Property="Background" Value="#203D50" />
+            <Setter Property="Foreground" Value="#7DE2CC" />
+            <Setter Property="BorderBrush" Value="#3BAA96" />
+        </Style>
     </Window.Styles>
 
     <Grid RowDefinitions="52,*,28" ColumnDefinitions="226,*">
@@ -234,7 +248,7 @@
                 </TabItem>
 
                 <TabItem Header="Historique">
-                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="7">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,Auto,*" RowSpacing="7">
                         <Border Classes="card" Padding="13">
                             <Grid ColumnDefinitions="*,Auto,250,Auto" ColumnSpacing="10">
                                 <TextBox Text="{Binding ExplorerSearch}" PlaceholderText="Rechercher par message, auteur ou hash…" />
@@ -256,8 +270,31 @@
                             </Grid>
                         </Border>
 
-                        <Grid Grid.Row="1" ColumnDefinitions="310,6,*,6,390">
-                            <Border Classes="card" Padding="10">
+                        <Border Grid.Row="1" Background="#26282B" BorderBrush="#393B40" BorderThickness="1"
+                                CornerRadius="6" Padding="8,6">
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,14,Auto,Auto,Auto,*,Auto" ColumnSpacing="6">
+                                <TextBlock Text="Disposition" FontSize="10.5" Classes="muted" VerticalAlignment="Center" Margin="2,0,4,0" />
+                                <Button Grid.Column="1" Classes="secondary" Content="Équilibrée" Click="OnBalancedHistoryLayoutClick" />
+                                <Button Grid.Column="2" Classes="secondary" Content="Révision" Click="OnReviewHistoryLayoutClick" />
+                                <Button Grid.Column="3" Classes="secondary" Content="Diff étendu" Click="OnDiffFocusedHistoryLayoutClick" />
+
+                                <ToggleButton x:Name="HistoryTimelineToggle" Grid.Column="5" Classes="panelToggle"
+                                              Content="Chronologie" IsChecked="True" Click="OnHistoryPanelToggleClick"
+                                              ToolTip.Tip="Afficher la chronologie" />
+                                <ToggleButton x:Name="HistoryFilesToggle" Grid.Column="6" Classes="panelToggle"
+                                              Content="Fichiers" IsChecked="True" Click="OnHistoryPanelToggleClick"
+                                              ToolTip.Tip="Afficher les fichiers" />
+                                <ToggleButton x:Name="HistoryDiffToggle" Grid.Column="7" Classes="panelToggle"
+                                              Content="Diff ciblé" IsChecked="True" Click="OnHistoryPanelToggleClick"
+                                              ToolTip.Tip="Afficher le diff ciblé" />
+
+                                <Button Grid.Column="9" Classes="secondary" Content="Ouvrir le diff dans une fenêtre ↗"
+                                        Click="OnOpenFocusedDiffWindowClick" ToolTip.Tip="Ouvrir le diff ciblé dans une fenêtre redimensionnable" />
+                            </Grid>
+                        </Border>
+
+                        <Grid x:Name="HistoryWorkspaceGrid" Grid.Row="2" ColumnDefinitions="0.9*,6,1.25*,6,1.15*">
+                            <Border x:Name="HistoryTimelinePanel" Classes="card" Padding="10">
                                 <Grid RowDefinitions="Auto,*">
                                     <StackPanel Margin="7,4,7,9">
                                         <TextBlock Text="Chronologie" FontSize="16" FontWeight="SemiBold" />
@@ -274,9 +311,10 @@
                                     </DataGrid>
                                 </Grid>
                             </Border>
-                            <GridSplitter Grid.Column="1" Width="6" Margin="1,14" ResizeDirection="Columns" Background="#34415D" Cursor="SizeWestEast" />
+                            <GridSplitter x:Name="HistorySplitterOne" Grid.Column="1" Width="6" Margin="1,14"
+                                          ResizeDirection="Columns" Background="#4B4D52" Cursor="SizeWestEast" />
 
-                            <Border Grid.Column="2" Classes="card" Padding="10">
+                            <Border x:Name="HistoryFilesPanel" Grid.Column="2" Classes="card" Padding="10">
                                 <Grid RowDefinitions="Auto,*,Auto,150">
                                     <StackPanel Margin="7,4,7,9">
                                         <TextBlock Text="Fichiers de la révision" FontSize="16" FontWeight="SemiBold" />
@@ -305,14 +343,20 @@
                                     </DataGrid>
                                 </Grid>
                             </Border>
-                            <GridSplitter Grid.Column="3" Width="6" Margin="1,14" ResizeDirection="Columns" Background="#34415D" Cursor="SizeWestEast" />
+                            <GridSplitter x:Name="HistorySplitterTwo" Grid.Column="3" Width="6" Margin="1,14"
+                                          ResizeDirection="Columns" Background="#4B4D52" Cursor="SizeWestEast" />
 
-                            <Border Grid.Column="4" Classes="card" Padding="12">
+                            <Border x:Name="HistoryDiffPanel" Grid.Column="4" Classes="card" Padding="10">
                                 <Grid RowDefinitions="Auto,*">
-                                    <StackPanel Margin="4,2,4,9">
-                                        <TextBlock Text="Diff ciblé" FontSize="16" FontWeight="SemiBold" />
-                                        <TextBlock Text="Lecture seule · aucun checkout" FontSize="10" Foreground="#78D7B7" />
-                                    </StackPanel>
+                                    <Grid Margin="4,2,4,9" ColumnDefinitions="*,Auto">
+                                        <StackPanel>
+                                            <TextBlock Text="Diff ciblé" FontSize="16" FontWeight="SemiBold" />
+                                            <TextBlock Text="Lecture seule · aucun checkout" FontSize="10" Foreground="#78D7B7" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="secondary" Content="Ouvrir ↗"
+                                                Click="OnOpenFocusedDiffWindowClick"
+                                                ToolTip.Tip="Ouvrir le diff ciblé dans une fenêtre redimensionnable" />
+                                    </Grid>
                                     <controls:CodeDiffView Grid.Row="1"
                                                            DiffText="{Binding ExplorerDiff}"
                                                            FilePath="{Binding SelectedExplorerFile.Path}" />
