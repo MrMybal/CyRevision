@@ -8,7 +8,7 @@
 
 CyRevision is a revision control, synchronization, and backup client designed for large projects, especially Unreal Engine productions. It does not require GitHub: Git and Git LFS remain local, while optional peer-to-peer synchronization transports verified transactions between authorized devices.
 
-> CyRevision is currently under active development. The core workflows are functional, but production hardening and large-scale multi-device testing are still in progress.
+> **Alpha software:** CyRevision is under active development. The core workflows are functional, but APIs, storage formats, and user interfaces may still change. Keep independent backups and validate recovery before production use.
 
 ## Current capabilities
 

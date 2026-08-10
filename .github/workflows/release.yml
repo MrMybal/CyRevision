@@ -176,6 +176,6 @@ jobs:
             gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
           else
             gh release create "$RELEASE_TAG" "${files[@]}" \
-              --title "CyRevision $RELEASE_TAG" \
+              --title "CyRevision $RELEASE_TAG — Alpha" \
               --generate-notes
           fi

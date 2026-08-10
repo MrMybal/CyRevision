@@ -7,7 +7,7 @@
         d:DesignWidth="1440"
         d:DesignHeight="900"
         x:Class="CyRevision.Desktop.MainWindow"
-        Title="CyRevision"
+        Title="CyRevision Alpha"
         Icon="/Assets/Branding/cyrevision-icon-master.png"
         Width="1440"
         Height="900"
@@ -59,6 +59,10 @@
                         <Image Source="/Assets/Branding/cyrevision-icon-master.png" Stretch="UniformToFill" />
                     </Border>
                     <TextBlock Text="CyRevision" VerticalAlignment="Center" FontSize="19" FontWeight="SemiBold" />
+                    <Border Background="#49381E" BorderBrush="#A8792C" BorderThickness="1"
+                            CornerRadius="5" Padding="7,2" VerticalAlignment="Center">
+                        <TextBlock Text="ALPHA" Foreground="#FFD479" FontSize="9" FontWeight="Bold" />
+                    </Border>
                 </StackPanel>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock Text="{Binding CurrentBranch}" FontSize="14" FontWeight="SemiBold" />
@@ -950,11 +954,14 @@
                                                 Click="OnOpenUpdateReleaseClick" />
                                     </StackPanel>
 
-                                    <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,Auto,20,*" ColumnSpacing="7">
+                                    <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,Auto,Auto,20,*" ColumnSpacing="7">
                                         <TextBlock Text="Version installée" Classes="muted" FontSize="11" />
                                         <TextBlock Grid.Column="1" Text="{Binding CurrentApplicationVersion}"
                                                    Foreground="#78D7B7" FontWeight="SemiBold" />
-                                        <TextBlock Grid.Column="3" Text="{Binding UpdateStatus}"
+                                        <Border Grid.Column="2" Background="#49381E" CornerRadius="4" Padding="6,1">
+                                            <TextBlock Text="ALPHA" Foreground="#FFD479" FontSize="9" FontWeight="Bold" />
+                                        </Border>
+                                        <TextBlock Grid.Column="4" Text="{Binding UpdateStatus}"
                                                    TextWrapping="Wrap" FontSize="11" />
                                     </Grid>
 
