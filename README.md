@@ -28,6 +28,7 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 - Optional WireGuard integration with guided setup, isolated tunnels, VPN-only peers, and Unreal Swarm/CI/service profiles.
 - Extensible localization: English is the default, French is included, and additional JSON catalogs can be added to the desktop client and web dashboard.
 - Searchable offline documentation bundled with the desktop application in English and French.
+- Built-in stable-release updater with platform package selection and mandatory SHA-256 verification; commits, drafts, and prereleases are ignored.
 
 ## Open in Rider
 

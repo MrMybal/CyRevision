@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using System.Diagnostics;
 using CyRevision.Desktop.Controls;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.ViewModels;
@@ -264,6 +265,40 @@ public partial class MainWindow : Window
 
     private async void OnCompareSelectedToHeadClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CompareSelectedChangeToHeadAsync();
+
+    private async void OnCheckForUpdatesClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CheckForUpdatesAsync();
+
+    private async void OnInstallUpdateClick(object? sender, RoutedEventArgs e)
+    {
+        string? packagePath = await _viewModel.DownloadAvailableUpdateAsync();
+        if (packagePath is null)
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = packagePath,
+            UseShellExecute = true
+        });
+    }
+
+    private void OnOpenUpdateReleaseClick(object? sender, RoutedEventArgs e)
+    {
+        if (!Uri.TryCreate(_viewModel.UpdateReleasePageUrl, UriKind.Absolute, out Uri? releaseUri) ||
+            !releaseUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !releaseUri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = releaseUri.AbsoluteUri,
+            UseShellExecute = true
+        });
+    }
 
     private async Task<string?> PickFolderAsync(string title)
     {

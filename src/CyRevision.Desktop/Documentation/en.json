@@ -56,6 +56,14 @@
     "keywords": ["unreal", "plugin", "asset", "reservation", "checkout", "lock", "content browser"]
   },
   {
+    "id": "application-updates",
+    "category": "Application",
+    "title": "Stable release updates",
+    "summary": "Check, download, verify, and launch a published CyRevision installer from the Help tab.",
+    "body": "RELEASES ONLY\nThe updater reads the latest stable GitHub Release for CyRevision. Commits, branches, drafts, and prereleases are never offered as application updates. Project repositories remain independent and do not require GitHub.\n\nCHECK FOR UPDATES\nCyRevision checks after startup, and Check for updates can be used at any time. The installed assembly version is compared with the published release tag.\n\nPLATFORM PACKAGE\nCyRevision selects the native installer for the current system: Windows Setup, Linux DEB for x64 or ARM64, or macOS DMG for x64 or ARM64. The release page remains available when a compatible package is not present.\n\nDOWNLOAD SAFETY\nThe package is downloaded into the CyRevision cache. Its SHA-256 value must match the release's SHA256SUMS.txt manifest before the operating system is asked to open it. Installation never begins silently and no source-code git pull is performed.",
+    "keywords": ["update", "release", "installer", "version", "sha-256", "github", "stable"]
+  },
+  {
     "id": "troubleshooting",
     "category": "Support",
     "title": "Troubleshooting and safety",
