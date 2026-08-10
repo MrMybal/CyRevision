@@ -188,10 +188,9 @@
                         <Border Grid.Column="1" Classes="card">
                             <Grid RowDefinitions="Auto,*">
                                 <TextBlock Text="Diff" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,10" />
-                                <TextBox Grid.Row="1" Text="{Binding DiffText}" IsReadOnly="True" AcceptsReturn="True"
-                                         FontFamily="Cascadia Mono,Consolas" FontSize="12" TextWrapping="NoWrap"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                         ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                <controls:CodeDiffView Grid.Row="1"
+                                                       DiffText="{Binding DiffText}"
+                                                       FilePath="{Binding SelectedChange.Path}" />
                             </Grid>
                         </Border>
 
@@ -285,10 +284,9 @@
                                         <TextBlock Text="Diff ciblé" FontSize="16" FontWeight="SemiBold" />
                                         <TextBlock Text="Lecture seule · aucun checkout" FontSize="10" Foreground="#78D7B7" />
                                     </StackPanel>
-                                    <TextBox Grid.Row="1" Text="{Binding ExplorerDiff}" IsReadOnly="True" AcceptsReturn="True"
-                                             FontFamily="Cascadia Mono,Consolas" FontSize="11" TextWrapping="NoWrap"
-                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    <controls:CodeDiffView Grid.Row="1"
+                                                           DiffText="{Binding ExplorerDiff}"
+                                                           FilePath="{Binding SelectedExplorerFile.Path}" />
                                 </Grid>
                             </Border>
                         </Grid>
