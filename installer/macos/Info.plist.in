@@ -5,7 +5,7 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>CyRevision</string>
+  <string>CyRevision Alpha</string>
   <key>CFBundleExecutable</key>
   <string>CyRevision.Desktop</string>
   <key>CFBundleIconFile</key>

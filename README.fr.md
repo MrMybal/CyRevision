@@ -8,7 +8,7 @@
 
 CyRevision est un client de révision, synchronisation et sauvegarde pensé pour les projets lourds, notamment Unreal Engine. Il fonctionne sans GitHub : Git et Git LFS restent locaux, tandis que la synchronisation P2P optionnelle transporte des transactions sûres entre appareils autorisés.
 
-> CyRevision est actuellement en développement actif. Les fonctions principales sont opérationnelles, mais le durcissement pour la production et les tests multi-machines à grande échelle sont encore en cours.
+> **Logiciel Alpha :** CyRevision est en développement actif. Les fonctions principales sont opérationnelles, mais les API, formats de stockage et interfaces peuvent encore évoluer. Conservez des sauvegardes indépendantes et validez la restauration avant tout usage en production.
 
 ## Fonctionnalités actuelles
 

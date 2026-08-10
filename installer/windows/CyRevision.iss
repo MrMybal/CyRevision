@@ -17,7 +17,7 @@
 AppId={{7E79EA0B-3AB0-45D7-A1A2-A7585A0604D5}
 AppName=CyRevision
 AppVersion={#AppVersion}
-AppVerName=CyRevision {#AppVersion}
+AppVerName=CyRevision {#AppVersion} Alpha
 AppPublisher=CyRevision
 AppPublisherURL=https://github.com/MrMybal/CyRevision
 AppSupportURL=https://github.com/MrMybal/CyRevision/issues
