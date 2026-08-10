@@ -10,29 +10,36 @@ namespace CyRevision.Desktop.Controls;
 
 internal sealed class GraphViewport : UserControl
 {
-    private const double MinimumZoom = 0.3;
+    private const double MinimumZoom = 0.15;
     private const double MaximumZoom = 2.5;
     private readonly Control _graph;
-    private readonly LayoutTransformControl _layoutTransform;
+    private readonly Canvas _surface;
     private readonly ScrollViewer _scrollViewer;
     private readonly TextBlock _zoomLabel;
     private bool _isPanning;
     private Point _panStart;
     private Vector _panStartOffset;
     private double _zoom = 1;
+    private Vector? _pendingOffset;
+    private bool _offsetUpdateQueued;
 
     public GraphViewport(Control graph)
     {
         _graph = graph;
-        _layoutTransform = new LayoutTransformControl
+        _graph.RenderTransformOrigin = RelativePoint.TopLeft;
+        _graph.RenderTransform = new ScaleTransform(1, 1);
+        _surface = new Canvas
         {
-            Child = graph,
-            LayoutTransform = new ScaleTransform(1, 1)
+            Background = Brushes.Transparent,
+            ClipToBounds = false,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Children = { graph }
         };
         _scrollViewer = new ScrollViewer
         {
-            Content = _layoutTransform,
-            Background = new SolidColorBrush(Color.Parse("#0F1729")),
+            Content = _surface,
+            Background = new SolidColorBrush(Color.Parse("#1E1F22")),
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Cursor = new Cursor(StandardCursorType.Hand)
@@ -42,6 +49,7 @@ internal sealed class GraphViewport : UserControl
         _scrollViewer.PointerReleased += OnPointerReleased;
         _scrollViewer.PointerCaptureLost += OnPointerCaptureLost;
         _scrollViewer.PointerWheelChanged += OnPointerWheelChanged;
+        _graph.SizeChanged += (_, _) => UpdateSurfaceExtent();
 
         _zoomLabel = new TextBlock
         {
@@ -63,14 +71,14 @@ internal sealed class GraphViewport : UserControl
 
         Border tools = new()
         {
-            Background = new SolidColorBrush(Color.Parse("#111A2DDD")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#34415D")),
+            Background = new SolidColorBrush(Color.Parse("#2B2D30EE")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#4B4D52")),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(5),
-            Margin = new Thickness(12),
+            CornerRadius = new CornerRadius(5),
+            Padding = new Thickness(3),
+            Margin = new Thickness(4),
             HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Top,
+            VerticalAlignment = VerticalAlignment.Center,
             Child = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
@@ -80,12 +88,12 @@ internal sealed class GraphViewport : UserControl
         };
         Border hint = new()
         {
-            Background = new SolidColorBrush(Color.Parse("#111A2DBB")),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(8, 4),
-            Margin = new Thickness(12),
+            Background = Brushes.Transparent,
+            CornerRadius = new CornerRadius(0),
+            Padding = new Thickness(7, 0),
+            Margin = new Thickness(4),
             HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top,
+            VerticalAlignment = VerticalAlignment.Center,
             IsHitTestVisible = false,
             Child = new TextBlock
             {
@@ -95,24 +103,43 @@ internal sealed class GraphViewport : UserControl
             }
         };
 
-        Content = new Grid { Children = { _scrollViewer, tools, hint } };
+        Grid toolbar = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Height = 34,
+            Background = new SolidColorBrush(Color.Parse("#2B2D30"))
+        };
+        toolbar.Children.Add(hint);
+        Grid.SetColumn(tools, 1);
+        toolbar.Children.Add(tools);
+
+        Grid root = new() { RowDefinitions = new RowDefinitions("Auto,*") };
+        root.Children.Add(toolbar);
+        Grid.SetRow(_scrollViewer, 1);
+        root.Children.Add(_scrollViewer);
+        Content = root;
+        UpdateSurfaceExtent();
     }
 
     public void ResetView()
     {
+        _pendingOffset = default(Vector);
         SetZoom(1, null);
-        Dispatcher.UIThread.Post(() => _scrollViewer.Offset = default, DispatcherPriority.Background);
+        ScheduleOffsetUpdate();
     }
 
     public void FitToView()
     {
-        double graphWidth = Math.Max(1, _graph.Bounds.Width);
-        double graphHeight = Math.Max(1, _graph.Bounds.Height);
+        (double graphWidth, double graphHeight) = GetGraphSize();
         double viewportWidth = Math.Max(1, _scrollViewer.Viewport.Width - 36);
         double viewportHeight = Math.Max(1, _scrollViewer.Viewport.Height - 36);
         double fit = Math.Min(viewportWidth / graphWidth, viewportHeight / graphHeight);
-        SetZoom(Math.Clamp(fit, MinimumZoom, 1.25), null);
-        Dispatcher.UIThread.Post(() => _scrollViewer.Offset = default, DispatcherPriority.Background);
+        double fittedZoom = Math.Clamp(fit, MinimumZoom, 1.25);
+        SetZoom(fittedZoom, null);
+        _pendingOffset = new Vector(
+            Math.Max(0, graphWidth * fittedZoom - _scrollViewer.Viewport.Width) / 2,
+            Math.Max(0, graphHeight * fittedZoom - _scrollViewer.Viewport.Height) / 2);
+        ScheduleOffsetUpdate();
     }
 
     private static Button CreateToolButton(string content, string toolTip)
@@ -121,13 +148,13 @@ internal sealed class GraphViewport : UserControl
         {
             Content = content,
             MinWidth = content.Length > 2 ? 58 : 28,
-            Height = 28,
-            Padding = new Thickness(7, 2),
+            Height = 24,
+            Padding = new Thickness(6, 1),
             FontSize = 10,
-            Background = new SolidColorBrush(Color.Parse("#202B44")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#3A4968")),
+            Background = new SolidColorBrush(Color.Parse("#393B40")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#55575E")),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6)
+            CornerRadius = new CornerRadius(4)
         };
         ToolTip.SetTip(button, toolTip);
         return button;
@@ -150,7 +177,7 @@ internal sealed class GraphViewport : UserControl
 
         _isPanning = true;
         _panStart = e.GetPosition(_scrollViewer);
-        _panStartOffset = _scrollViewer.Offset;
+        _panStartOffset = _pendingOffset ?? _scrollViewer.Offset;
         e.Pointer.Capture(_scrollViewer);
         _scrollViewer.Cursor = new Cursor(StandardCursorType.SizeAll);
         e.Handled = true;
@@ -195,7 +222,8 @@ internal sealed class GraphViewport : UserControl
             return;
         }
 
-        double factor = Math.Pow(1.14, e.Delta.Y);
+        double wheelStep = Math.Clamp(e.Delta.Y, -1, 1);
+        double factor = Math.Pow(1.12, wheelStep);
         SetZoom(_zoom * factor, e.GetPosition(_scrollViewer));
         e.Handled = true;
     }
@@ -208,16 +236,57 @@ internal sealed class GraphViewport : UserControl
             return;
         }
 
-        Vector oldOffset = _scrollViewer.Offset;
+        Vector oldOffset = _pendingOffset ?? _scrollViewer.Offset;
         Point focus = anchor ?? new Point(_scrollViewer.Viewport.Width / 2, _scrollViewer.Viewport.Height / 2);
         double ratio = newZoom / _zoom;
         Vector desiredOffset = new(
             (oldOffset.X + focus.X) * ratio - focus.X,
             (oldOffset.Y + focus.Y) * ratio - focus.Y);
         _zoom = newZoom;
-        _layoutTransform.LayoutTransform = new ScaleTransform(_zoom, _zoom);
+        _graph.RenderTransform = new ScaleTransform(_zoom, _zoom);
+        UpdateSurfaceExtent();
         _zoomLabel.Text = $"{Math.Round(_zoom * 100):0} %";
-        Dispatcher.UIThread.Post(() => SetOffset(desiredOffset), DispatcherPriority.Background);
+        _pendingOffset = desiredOffset;
+        ScheduleOffsetUpdate();
+    }
+
+    private void UpdateSurfaceExtent()
+    {
+        (double width, double height) = GetGraphSize();
+        _surface.Width = Math.Max(1, width * _zoom);
+        _surface.Height = Math.Max(1, height * _zoom);
+    }
+
+    private (double Width, double Height) GetGraphSize()
+    {
+        double width = !double.IsNaN(_graph.Width) && _graph.Width > 0
+            ? _graph.Width
+            : Math.Max(1, _graph.Bounds.Width);
+        double height = !double.IsNaN(_graph.Height) && _graph.Height > 0
+            ? _graph.Height
+            : Math.Max(1, _graph.Bounds.Height);
+        return (width, height);
+    }
+
+    private void ScheduleOffsetUpdate()
+    {
+        if (_offsetUpdateQueued)
+        {
+            return;
+        }
+
+        _offsetUpdateQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _offsetUpdateQueued = false;
+            if (_pendingOffset is not Vector offset)
+            {
+                return;
+            }
+
+            _pendingOffset = null;
+            SetOffset(offset);
+        }, DispatcherPriority.Background);
     }
 
     private void SetOffset(Vector offset)

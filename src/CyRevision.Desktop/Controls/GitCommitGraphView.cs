@@ -19,7 +19,7 @@ public sealed class GitCommitGraphView : UserControl
 
     private readonly Canvas _canvas = new() { Background = new SolidColorBrush(Color.Parse("#0F1729")) };
     private readonly GraphViewport _viewport;
-    private readonly Dictionary<string, Border> _nodes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CommitRowView> _nodes = new(StringComparer.Ordinal);
     private string? _selectedHash;
 
     public event EventHandler<GitCommitSelectedEventArgs>? CommitSelected;
@@ -57,10 +57,9 @@ public sealed class GitCommitGraphView : UserControl
             return;
         }
 
-        const double nodeWidth = 276;
-        const double nodeHeight = 70;
-        const double horizontalGap = 54;
-        const double verticalGap = 30;
+        const double rowHeight = 31;
+        const double headerHeight = 28;
+        const double laneSpacing = 17;
         Dictionary<string, NodePosition> positions = new(StringComparer.Ordinal);
         List<string?> activeLanes = [];
         int largestLane = 0;
@@ -79,8 +78,8 @@ public sealed class GitCommitGraphView : UserControl
             }
 
             largestLane = Math.Max(largestLane, lane);
-            double x = 26 + lane * (nodeWidth + horizontalGap);
-            double y = 76 + index * (nodeHeight + verticalGap);
+            double x = 24 + lane * laneSpacing;
+            double y = headerHeight + index * rowHeight + rowHeight / 2;
             positions[commit.Hash] = new NodePosition(x, y, lane);
             activeLanes[lane] = commit.ParentHashes.FirstOrDefault();
             foreach (string additionalParent in commit.ParentHashes.Skip(1))
@@ -102,9 +101,31 @@ public sealed class GitCommitGraphView : UserControl
             }
         }
 
-        _canvas.Width = Math.Max(900, 52 + (largestLane + 1) * (nodeWidth + horizontalGap));
-        _canvas.Height = 110 + commits.Length * (nodeHeight + verticalGap);
-        AddGridBackground(_canvas.Width, _canvas.Height);
+        const double canvasWidth = 1540;
+        _canvas.Width = canvasWidth;
+        _canvas.Height = headerHeight + commits.Length * rowHeight;
+        _canvas.Background = new SolidColorBrush(Color.Parse("#1E1F22"));
+        double subjectStart = Math.Max(132, 48 + (largestLane + 1) * laneSpacing);
+        AddColumnHeaders(subjectStart, canvasWidth, headerHeight);
+
+        for (int index = 0; index < commits.Length; index++)
+        {
+            GitGraphCommit commit = commits[index];
+            bool isHead = commit.Decorations.Contains("HEAD", StringComparison.OrdinalIgnoreCase);
+            Border background = new()
+            {
+                Width = canvasWidth,
+                Height = rowHeight,
+                Background = new SolidColorBrush(Color.Parse(isHead
+                    ? "#2D3440"
+                    : index % 2 == 0 ? "#232427" : "#1E1F22")),
+                BorderBrush = new SolidColorBrush(Color.Parse("#303238")),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                IsHitTestVisible = false
+            };
+            Canvas.SetTop(background, headerHeight + index * rowHeight);
+            _canvas.Children.Add(background);
+        }
 
         foreach (GitGraphCommit commit in commits)
         {
@@ -117,96 +138,199 @@ public sealed class GitCommitGraphView : UserControl
                 }
 
                 Color color = LaneColors[source.Lane % LaneColors.Length];
-                Line edge = new()
+                if (source.Lane == parent.Lane)
                 {
-                    StartPoint = new Point(source.X + nodeWidth / 2, source.Y + nodeHeight),
-                    EndPoint = new Point(parent.X + nodeWidth / 2, parent.Y),
-                    Stroke = new SolidColorBrush(color) { Opacity = parent.Lane == source.Lane ? 0.72 : 0.48 },
-                    StrokeThickness = parent.Lane == source.Lane ? 2.2 : 1.6
-                };
-                _canvas.Children.Add(edge);
+                    AddEdgeSegment(source.X, source.Y, parent.X, parent.Y, color, 2);
+                }
+                else
+                {
+                    double bendY = Math.Min(parent.Y - 6, source.Y + rowHeight * 0.58);
+                    AddEdgeSegment(source.X, source.Y, source.X, bendY, color, 1.7);
+                    AddEdgeSegment(source.X, bendY, parent.X, bendY, color, 1.7);
+                    AddEdgeSegment(parent.X, bendY, parent.X, parent.Y, color, 1.7);
+                }
             }
         }
 
-        foreach (GitGraphCommit commit in commits)
+        for (int index = 0; index < commits.Length; index++)
         {
+            GitGraphCommit commit = commits[index];
             NodePosition position = positions[commit.Hash];
             Color laneColor = LaneColors[position.Lane % LaneColors.Length];
             bool isHead = commit.Decorations.Contains("HEAD", StringComparison.OrdinalIgnoreCase);
-            Border node = CreateNode(commit, laneColor, isHead, nodeWidth, nodeHeight);
-            _nodes[commit.Hash] = node;
-            Canvas.SetLeft(node, position.X);
-            Canvas.SetTop(node, position.Y);
-            _canvas.Children.Add(node);
+            AddCommitRow(commit, position, laneColor, isHead, index, subjectStart, canvasWidth, rowHeight, headerHeight);
         }
 
         ApplySelection();
         _viewport.ResetView();
     }
 
-    private Border CreateNode(
+    private void AddCommitRow(
         GitGraphCommit commit,
+        NodePosition position,
         Color laneColor,
         bool isHead,
-        double width,
-        double height)
+        int index,
+        double subjectStart,
+        double canvasWidth,
+        double rowHeight,
+        double headerHeight)
     {
-        TextBlock title = new()
+        Ellipse marker = new()
         {
-            Text = $"{commit.ShortHash}  {commit.Subject}",
-            FontWeight = FontWeight.SemiBold,
-            FontSize = 13,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            MaxWidth = width - 22
+            Width = isHead ? 11 : 9,
+            Height = isHead ? 11 : 9,
+            Fill = new SolidColorBrush(isHead ? Color.Parse("#DDE3F0") : Color.Parse("#2B2D30")),
+            Stroke = new SolidColorBrush(laneColor),
+            StrokeThickness = isHead ? 3 : 2,
+            IsHitTestVisible = false
         };
-        TextBlock details = new()
+        Canvas.SetLeft(marker, position.X - marker.Width / 2);
+        Canvas.SetTop(marker, position.Y - marker.Height / 2);
+        _canvas.Children.Add(marker);
+
+        TextBlock hash = CreateCell(commit.ShortHash, subjectStart, position.Y, 72, "#8CB4FF", 10.5);
+        hash.FontFamily = new FontFamily("Cascadia Mono,Consolas,monospace");
+        _canvas.Children.Add(hash);
+
+        double authorStart = 1100;
+        double dateStart = 1325;
+        TextBlock subject = CreateCell(
+            commit.Subject,
+            subjectStart + 76,
+            position.Y,
+            authorStart - subjectStart - 94,
+            isHead ? "#F2F3F5" : "#D7D8DC",
+            11.5);
+        subject.FontWeight = isHead ? FontWeight.SemiBold : FontWeight.Normal;
+        _canvas.Children.Add(subject);
+
+        if (!string.IsNullOrWhiteSpace(commit.Decorations))
         {
-            Text = $"{commit.AuthorName} · {commit.AuthoredAt.LocalDateTime:g}",
-            Foreground = new SolidColorBrush(Color.Parse("#9DA8BE")),
-            FontSize = 10.5,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            MaxWidth = width - 22
-        };
-        StackPanel content = new() { Spacing = 4, Children = { title, details } };
-        Border node = new()
+            Border decoration = new()
+            {
+                MaxWidth = 190,
+                Height = 20,
+                Background = new SolidColorBrush(Color.Parse("#243C35")),
+                BorderBrush = new SolidColorBrush(Color.Parse("#3C8A76")),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(6, 1),
+                Child = new TextBlock
+                {
+                    Text = commit.Decorations,
+                    Foreground = new SolidColorBrush(Color.Parse("#83D9C2")),
+                    FontSize = 9.5,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                },
+                IsHitTestVisible = false
+            };
+            Canvas.SetLeft(decoration, 900);
+            Canvas.SetTop(decoration, position.Y - 10);
+            _canvas.Children.Add(decoration);
+        }
+
+        _canvas.Children.Add(CreateCell(commit.AuthorName, authorStart, position.Y, 205, "#B4B6BC", 10.5));
+        _canvas.Children.Add(CreateCell(commit.AuthoredAt.LocalDateTime.ToString("g"), dateStart, position.Y, 190, "#9B9DA3", 10.5));
+
+        Border hitTarget = new()
         {
-            Width = width,
-            Height = height,
-            Padding = new Thickness(10, 8),
-            CornerRadius = new CornerRadius(9),
-            Background = new SolidColorBrush(isHead ? Color.Parse("#302A61") : Color.Parse("#1A2740")),
-            BorderBrush = new SolidColorBrush(laneColor),
-            BorderThickness = new Thickness(isHead ? 2.2 : 1.2),
-            Child = content
+            Width = canvasWidth,
+            Height = rowHeight,
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(3, 0, 0, 0)
         };
-        ToolTip.SetTip(node,
+        Canvas.SetTop(hitTarget, headerHeight + index * rowHeight);
+        ToolTip.SetTip(hitTarget,
             $"{commit.Hash}\n{commit.Subject}\nAuteur : {commit.AuthorName}\n" +
             $"Parents : {(commit.ParentHashes.Count == 0 ? "racine" : string.Join(", ", commit.ParentHashes.Select(hash => hash[..Math.Min(8, hash.Length)])))}\n" +
             $"Références : {(string.IsNullOrWhiteSpace(commit.Decorations) ? "aucune" : commit.Decorations)}");
-        node.PointerPressed += (_, _) =>
+        hitTarget.PointerPressed += (_, _) =>
         {
             _selectedHash = commit.Hash;
             ApplySelection();
             CommitSelected?.Invoke(this, new GitCommitSelectedEventArgs(commit));
         };
-        return node;
+        _nodes[commit.Hash] = new CommitRowView(hitTarget, index, isHead);
+        _canvas.Children.Add(hitTarget);
     }
 
     private void ApplySelection()
     {
-        foreach ((string hash, Border node) in _nodes)
+        foreach ((string hash, CommitRowView view) in _nodes)
         {
             bool selected = string.Equals(hash, _selectedHash, StringComparison.Ordinal);
-            node.Background = new SolidColorBrush(Color.Parse(selected ? "#35306B" : "#1A2740"));
-            node.BorderThickness = new Thickness(selected ? 2.8 : 1.2);
-            node.Opacity = selected || _selectedHash is null ? 1 : 0.76;
+            view.HitTarget.Background = new SolidColorBrush(Color.Parse(selected ? "#31415A" : "#00000000"));
+            view.HitTarget.BorderBrush = new SolidColorBrush(Color.Parse(selected ? "#4B8DFF" : "#00000000"));
         }
+    }
+
+    private static TextBlock CreateCell(
+        string text,
+        double x,
+        double centerY,
+        double width,
+        string color,
+        double fontSize)
+    {
+        TextBlock cell = new()
+        {
+            Text = text,
+            Width = width,
+            Height = 22,
+            Foreground = new SolidColorBrush(Color.Parse(color)),
+            FontSize = fontSize,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            IsHitTestVisible = false
+        };
+        Canvas.SetLeft(cell, x);
+        Canvas.SetTop(cell, centerY - 10);
+        return cell;
+    }
+
+    private void AddColumnHeaders(double subjectStart, double width, double height)
+    {
+        Border background = new()
+        {
+            Width = width,
+            Height = height,
+            Background = new SolidColorBrush(Color.Parse("#2B2D30")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#45474D")),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            IsHitTestVisible = false
+        };
+        _canvas.Children.Add(background);
+        _canvas.Children.Add(CreateCell("Graph", 20, height / 2 + 1, 90, "#9B9DA3", 10));
+        _canvas.Children.Add(CreateCell("Commit", subjectStart, height / 2 + 1, 700, "#9B9DA3", 10));
+        _canvas.Children.Add(CreateCell("Auteur", 1100, height / 2 + 1, 205, "#9B9DA3", 10));
+        _canvas.Children.Add(CreateCell("Date", 1325, height / 2 + 1, 190, "#9B9DA3", 10));
+    }
+
+    private void AddEdgeSegment(
+        double startX,
+        double startY,
+        double endX,
+        double endY,
+        Color color,
+        double thickness)
+    {
+        _canvas.Children.Add(new Line
+        {
+            StartPoint = new Point(startX, startY),
+            EndPoint = new Point(endX, endY),
+            Stroke = new SolidColorBrush(color) { Opacity = 0.78 },
+            StrokeThickness = thickness,
+            IsHitTestVisible = false
+        });
     }
 
     private void AddEmptyMessage(string message)
     {
-        _canvas.Width = 900;
-        _canvas.Height = 500;
+        _canvas.Width = 1200;
+        _canvas.Height = 420;
+        _canvas.Background = new SolidColorBrush(Color.Parse("#1E1F22"));
         TextBlock text = new()
         {
             Text = message,
@@ -218,29 +342,9 @@ public sealed class GitCommitGraphView : UserControl
         _canvas.Children.Add(text);
     }
 
-    private void AddGridBackground(double width, double height)
-    {
-        SolidColorBrush brush = new(Color.Parse("#35425D")) { Opacity = 0.22 };
-        for (double x = 40; x < width; x += 100)
-        {
-            _canvas.Children.Add(new Line
-            {
-                StartPoint = new Point(x, 0), EndPoint = new Point(x, height),
-                Stroke = brush, StrokeThickness = 0.6, IsHitTestVisible = false
-            });
-        }
-
-        for (double y = 40; y < height; y += 100)
-        {
-            _canvas.Children.Add(new Line
-            {
-                StartPoint = new Point(0, y), EndPoint = new Point(width, y),
-                Stroke = brush, StrokeThickness = 0.6, IsHitTestVisible = false
-            });
-        }
-    }
-
     private readonly record struct NodePosition(double X, double Y, int Lane);
+
+    private sealed record CommitRowView(Border HitTarget, int Index, bool IsHead);
 }
 
 public sealed class GitCommitSelectedEventArgs(GitGraphCommit commit) : EventArgs

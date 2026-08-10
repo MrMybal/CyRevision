@@ -39,7 +39,11 @@ public sealed class CodeDiffView : UserControl
 
     private readonly CodeDiffParser _parser = new();
     private readonly Grid _root = new();
-    private readonly StackPanel _rowsPanel = new() { Spacing = 0, MinWidth = 960 };
+    private readonly StackPanel _rowsPanel = new()
+    {
+        Spacing = 0,
+        HorizontalAlignment = HorizontalAlignment.Left
+    };
     private readonly ScrollViewer _scrollViewer;
     private readonly TextBlock _summaryText;
     private readonly TextBlock _positionText;
@@ -110,6 +114,7 @@ public sealed class CodeDiffView : UserControl
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };
+        _scrollViewer.SizeChanged += (_, _) => UpdateContentWidth();
         Grid.SetRow(_scrollViewer, 1);
         _root.Children.Add(_scrollViewer);
 
@@ -180,6 +185,7 @@ public sealed class CodeDiffView : UserControl
 
         if (_splitMode)
         {
+            AddSplitHeader();
             foreach (CodeDiffSplitRow row in _parsed.SplitRows.Take(MaximumRenderedLines))
             {
                 AddSplitRow(row);
@@ -209,6 +215,49 @@ public sealed class CodeDiffView : UserControl
         }
 
         UpdateNavigation();
+        UpdateContentWidth();
+    }
+
+    private void AddSplitHeader()
+    {
+        Grid header = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,1,*"),
+            Height = 28,
+            Background = Brush("#17191D")
+        };
+        AddToGrid(header, CreatePaneHeader("Avant", FilePath), 0);
+        AddToGrid(header, new Border { Background = Brush("#4B4D52") }, 1);
+        AddToGrid(header, CreatePaneHeader("Après", FilePath), 2);
+        _rowsPanel.Children.Add(header);
+    }
+
+    private static Border CreatePaneHeader(string label, string? filePath)
+    {
+        Grid content = new() { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 9 };
+        AddToGrid(content, new TextBlock
+        {
+            Text = label,
+            Foreground = Brush("#AFB1B7"),
+            FontSize = 10.5,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        }, 0);
+        AddToGrid(content, new TextBlock
+        {
+            Text = filePath ?? string.Empty,
+            Foreground = MutedBrush,
+            FontSize = 10,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center
+        }, 1);
+        return new Border
+        {
+            BorderBrush = Brush("#303238"),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(9, 0),
+            Child = content
+        };
     }
 
     private void AddUnifiedRow(CodeDiffLine line)
@@ -221,8 +270,9 @@ public sealed class CodeDiffView : UserControl
 
         Grid rowGrid = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("54,54,24,Auto"),
-            MinHeight = 24
+            ColumnDefinitions = new ColumnDefinitions("48,48,20,*"),
+            Height = 22,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
         AddToGrid(rowGrid, CreateLineNumber(line.OldLineNumber), 0);
         AddToGrid(rowGrid, CreateLineNumber(line.NewLineNumber), 1);
@@ -261,8 +311,8 @@ public sealed class CodeDiffView : UserControl
         Grid rowGrid = new()
         {
             ColumnDefinitions = new ColumnDefinitions("*,1,*"),
-            MinHeight = 24,
-            MinWidth = 1100
+            Height = 22,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
         AddToGrid(rowGrid, CreateSplitCell(row.Left, true), 0);
         AddToGrid(rowGrid, new Border { Background = Brush("#34415C") }, 1);
@@ -288,13 +338,14 @@ public sealed class CodeDiffView : UserControl
             return new Border
             {
                 Background = EmptySideBrush,
-                MinHeight = 24
+                Height = 22
             };
         }
 
         Grid cell = new()
         {
-            ColumnDefinitions = new ColumnDefinitions("54,24,Auto")
+            ColumnDefinitions = new ColumnDefinitions("48,20,*"),
+            ClipToBounds = true
         };
         AddToGrid(cell, CreateLineNumber(oldSide ? line.OldLineNumber : line.NewLineNumber), 0);
         AddToGrid(cell, new TextBlock
@@ -316,6 +367,7 @@ public sealed class CodeDiffView : UserControl
         return new Border
         {
             Background = GetBackground(line.Kind),
+            ClipToBounds = true,
             Child = cell
         };
     }
@@ -333,14 +385,14 @@ public sealed class CodeDiffView : UserControl
             Background = line.Kind == CodeDiffLineKind.HunkHeader ? HunkBrush : HeaderBrush,
             BorderBrush = Brush("#26334D"),
             BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(12, 5),
-            MinHeight = 26,
+            Padding = new Thickness(9, 3),
+            MinHeight = 23,
             Child = new TextBlock
             {
                 Text = line.Content,
                 Foreground = foreground,
                 FontFamily = MonospaceFont(),
-                FontSize = 12.5,
+                FontSize = 11.5,
                 TextWrapping = TextWrapping.NoWrap
             }
         };
@@ -365,8 +417,8 @@ public sealed class CodeDiffView : UserControl
             Foreground = LineNumberBrush,
             Background = Brush("#0D1422"),
             FontFamily = MonospaceFont(),
-            FontSize = 11.5,
-            Padding = new Thickness(7, 3),
+            FontSize = 10.5,
+            Padding = new Thickness(6, 2),
             TextAlignment = TextAlignment.Right,
             VerticalAlignment = VerticalAlignment.Stretch
         };
@@ -378,9 +430,10 @@ public sealed class CodeDiffView : UserControl
         {
             Foreground = TextBrush,
             FontFamily = MonospaceFont(),
-            FontSize = 12.5,
-            Padding = new Thickness(6, 3, 16, 3),
+            FontSize = 11.5,
+            Padding = new Thickness(6, 2, 12, 2),
             TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -394,7 +447,36 @@ public sealed class CodeDiffView : UserControl
             block.Text = text;
         }
 
+        ToolTip.SetTip(block, text);
+
         return block;
+    }
+
+    private void UpdateContentWidth()
+    {
+        double viewportWidth = _scrollViewer.Viewport.Width;
+        if (viewportWidth <= 1)
+        {
+            viewportWidth = _scrollViewer.Bounds.Width;
+        }
+
+        if (viewportWidth <= 1)
+        {
+            return;
+        }
+
+        double availableWidth = Math.Max(640, viewportWidth - 2);
+        if (_splitMode)
+        {
+            _rowsPanel.Width = availableWidth;
+            return;
+        }
+
+        int longestLine = _parsed.Lines.Count == 0
+            ? 0
+            : _parsed.Lines.Max(line => line.Content.Length);
+        double codeWidth = Math.Min(4200, 130 + longestLine * 7.1);
+        _rowsPanel.Width = Math.Max(availableWidth, codeWidth);
     }
 
     private void NavigateChange(int direction)

@@ -9,67 +9,92 @@
         x:Class="CyRevision.Desktop.MainWindow"
         Title="CyRevision Alpha"
         Icon="/Assets/Branding/cyrevision-icon-master.png"
-        Width="1440"
+        Width="1480"
         Height="900"
-        MinWidth="1120"
-        MinHeight="720"
+        MinWidth="1024"
+        MinHeight="680"
         x:CompileBindings="False"
-        Background="#0B1020">
+        Background="#1E1F22">
 
     <Window.Styles>
         <Style Selector="Button.primary">
-            <Setter Property="Background" Value="#6D5EF5" />
+            <Setter Property="Background" Value="#3574F0" />
             <Setter Property="Foreground" Value="White" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="16,9" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="12,6" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="Button.secondary">
-            <Setter Property="Background" Value="#202941" />
-            <Setter Property="Foreground" Value="#E7EAF2" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="13,8" />
+            <Setter Property="Background" Value="#393B40" />
+            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="10,6" />
         </Style>
         <Style Selector="Button.danger">
-            <Setter Property="Background" Value="#3B2029" />
+            <Setter Property="Background" Value="#4A2930" />
             <Setter Property="Foreground" Value="#FF9BAB" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="11,7" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="9,5" />
         </Style>
-        <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#8D96AC" /></Style>
+        <Style Selector="Button">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="MinHeight" Value="27" />
+        </Style>
+        <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#9B9DA3" /></Style>
         <Style Selector="Border.card">
-            <Setter Property="Background" Value="#141B2D" />
-            <Setter Property="BorderBrush" Value="#29324A" />
+            <Setter Property="Background" Value="#26282B" />
+            <Setter Property="BorderBrush" Value="#393B40" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="11" />
-            <Setter Property="Padding" Value="18" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="12" />
         </Style>
         <Style Selector="TextBox">
-            <Setter Property="CornerRadius" Value="7" />
-            <Setter Property="Background" Value="#101729" />
-            <Setter Property="BorderBrush" Value="#303A55" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Background" Value="#1E1F22" />
+            <Setter Property="BorderBrush" Value="#4B4D52" />
+            <Setter Property="Padding" Value="7,4" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="MinHeight" Value="27" />
         </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="MinHeight" Value="27" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Padding" Value="7,3" />
+        </Style>
+        <Style Selector="TabItem">
+            <Setter Property="Padding" Value="9,5" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="DataGridRow">
+            <Setter Property="MinHeight" Value="27" />
+            <Setter Property="FontSize" Value="11.5" />
+        </Style>
+        <Style Selector="DataGridColumnHeader">
+            <Setter Property="Height" Value="27" />
+            <Setter Property="FontSize" Value="10.5" />
+        </Style>
+        <Style Selector="CheckBox"><Setter Property="FontSize" Value="11.5" /></Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="64,*,40" ColumnDefinitions="270,*">
-        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="#10172A" BorderBrush="#252E45" BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="252,*,Auto" Margin="18,0">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
-                    <Border Width="36" Height="36" CornerRadius="9" ClipToBounds="True" Background="#07142E">
+    <Grid RowDefinitions="52,*,28" ColumnDefinitions="226,*">
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="208,*,Auto" Margin="12,0">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Border Width="30" Height="30" CornerRadius="6" ClipToBounds="True" Background="#17191D">
                         <Image Source="/Assets/Branding/cyrevision-icon-master.png" Stretch="UniformToFill" />
                     </Border>
-                    <TextBlock Text="CyRevision" VerticalAlignment="Center" FontSize="19" FontWeight="SemiBold" />
+                    <TextBlock Text="CyRevision" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" />
                     <Border Background="#49381E" BorderBrush="#A8792C" BorderThickness="1"
-                            CornerRadius="5" Padding="7,2" VerticalAlignment="Center">
-                        <TextBlock Text="ALPHA" Foreground="#FFD479" FontSize="9" FontWeight="Bold" />
+                            CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
+                        <TextBlock Text="ALPHA" Foreground="#FFD479" FontSize="8" FontWeight="Bold" />
                     </Border>
                 </StackPanel>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding CurrentBranch}" FontSize="14" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding RepositoryPath}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding CurrentBranch}" FontSize="12" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding RepositoryPath}" FontSize="9.5" Classes="muted" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <ComboBox Width="126"
+                    <ComboBox Width="112"
                               ItemsSource="{Binding Languages}"
                               SelectedItem="{Binding SelectedLanguage}">
                         <ComboBox.ItemTemplate>
@@ -85,9 +110,9 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="0" Background="#10172A" BorderBrush="#252E45" BorderThickness="0,0,1,0">
-            <Grid RowDefinitions="Auto,*,Auto" Margin="14,18">
-                <Grid ColumnDefinitions="*,Auto" Margin="8,0,4,10">
+        <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="0" Background="#25272A" BorderBrush="#393B40" BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto,*,Auto" Margin="10,12">
+                <Grid ColumnDefinitions="*,Auto" Margin="5,0,2,7">
                     <TextBlock Text="PROJETS" FontSize="10" FontWeight="Bold" Classes="muted" VerticalAlignment="Center" />
                     <Button Grid.Column="1" Classes="danger" Content="Retirer" Click="OnRemoveProjectClick" IsEnabled="{Binding HasSelectedProject}" />
                 </Grid>
@@ -119,11 +144,11 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Grid.Column="1" Margin="24,18" RowDefinitions="Auto,*">
-            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+        <Grid Grid.Row="1" Grid.Column="1" Margin="14,10" RowDefinitions="Auto,*">
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
                 <StackPanel>
-                    <TextBlock Text="{Binding ChangeSummary}" FontSize="22" FontWeight="Bold" />
-                    <TextBlock Text="{Binding ToolStatus}" FontSize="11" Classes="muted" />
+                    <TextBlock Text="{Binding ChangeSummary}" FontSize="18" FontWeight="Bold" />
+                    <TextBlock Text="{Binding ToolStatus}" FontSize="9.5" Classes="muted" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
                     <Button Classes="secondary" Content="Actualiser" Click="OnRefreshClick" />
@@ -135,7 +160,7 @@
 
             <TabControl Grid.Row="1">
                 <TabItem Header="Projet">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.15*,1*" ColumnSpacing="14">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="1.15*,1*" ColumnSpacing="8">
                         <Border Classes="card">
                             <StackPanel Spacing="10">
                                 <TextBlock Text="Mode de fonctionnement" FontSize="18" FontWeight="SemiBold" />
@@ -169,7 +194,7 @@
                 </TabItem>
 
                 <TabItem Header="Modifications">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.05*,1.35*" RowDefinitions="*,Auto" ColumnSpacing="14" RowSpacing="14">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="1.05*,1.35*" RowDefinitions="*,Auto" ColumnSpacing="8" RowSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*">
                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,10">
@@ -209,7 +234,7 @@
                 </TabItem>
 
                 <TabItem Header="Historique">
-                    <Grid Margin="0,14,0,0" RowDefinitions="Auto,*" RowSpacing="10">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="7">
                         <Border Classes="card" Padding="13">
                             <Grid ColumnDefinitions="*,Auto,250,Auto" ColumnSpacing="10">
                                 <TextBox Text="{Binding ExplorerSearch}" PlaceholderText="Rechercher par message, auteur ou hash…" />
@@ -298,7 +323,7 @@
                 </TabItem>
 
                 <TabItem Header="Branches">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.1*,1*" ColumnSpacing="14">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="1.1*,1*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*,Auto">
                                 <TextBlock Text="Branches locales" FontSize="16" FontWeight="SemiBold" />
@@ -333,11 +358,11 @@
                 </TabItem>
 
                 <TabItem Header="Graphes Git">
-                    <Grid Margin="0,14,0,0" RowDefinitions="Auto,*" RowSpacing="12">
-                        <Border Classes="card" Padding="15">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="7">
+                        <Border Classes="card" Padding="10">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="Visualisations alternatives de l'historique" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Visualisations alternatives de l'historique" FontSize="14" FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding GitGraphSummary}" Classes="muted" TextWrapping="Wrap" />
                                     <TextBlock Text="Analyse locale et strictement en lecture seule. Aucun commit, index ou fichier n'est modifié."
                                                FontSize="10" Foreground="#78D7B7" TextWrapping="Wrap" />
@@ -355,13 +380,13 @@
 
                         <TabControl Grid.Row="1">
                             <TabItem Header="Réseau de commits">
-                                <Border Margin="0,10,0,0" Classes="card" Padding="5">
+                                <Border Margin="0,6,0,0" Classes="card" Padding="3">
                                     <controls:GitCommitGraphView Commits="{Binding GitGraphCommits}" CommitSelected="OnGraphCommitSelected" />
                                 </Border>
                             </TabItem>
 
                             <TabItem Header="Relations entre fichiers">
-                                <Grid Margin="0,10,0,0" ColumnDefinitions="*,6,330">
+                                <Grid Margin="0,6,0,0" ColumnDefinitions="*,5,300">
                                     <Border Classes="card" Padding="5">
                                         <Grid RowDefinitions="Auto,*">
                                             <WrapPanel Margin="10,6,10,3" Orientation="Horizontal">
@@ -400,7 +425,7 @@
                             </TabItem>
 
                             <TabItem Header="Activité d'équipe">
-                                <Grid Margin="0,10,0,0" RowDefinitions="Auto,220,*" RowSpacing="10">
+                                <Grid Margin="0,6,0,0" RowDefinitions="Auto,190,*" RowSpacing="7">
                                     <Border Classes="card" Padding="13">
                                         <StackPanel Spacing="3">
                                             <TextBlock Text="Vue d'activité Git" FontSize="16" FontWeight="SemiBold" />
@@ -446,7 +471,7 @@
                             </TabItem>
 
                             <TabItem Header="Dépendances Unreal">
-                                <Grid Margin="0,10,0,0" ColumnDefinitions="*,6,350">
+                                <Grid Margin="0,6,0,0" ColumnDefinitions="*,5,320">
                                     <Border Classes="card" Padding="5">
                                         <Grid RowDefinitions="Auto,*">
                                             <StackPanel Margin="10,7,10,5" Spacing="3">
@@ -485,7 +510,7 @@
                 </TabItem>
 
                 <TabItem Header="Git LFS">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="320,*,390" ColumnSpacing="12">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="285,*,350" ColumnSpacing="8">
                         <Border Classes="card" Padding="12">
                             <Grid RowDefinitions="Auto,150,Auto,*">
                                 <TextBlock Text="Motifs suivis par Git LFS" FontSize="16" FontWeight="SemiBold" Margin="5" />
@@ -582,7 +607,7 @@
                 </TabItem>
 
                 <TabItem Header="Sauvegardes">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.25*,1*" ColumnSpacing="14">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="1.25*,1*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*,Auto">
                                 <Grid ColumnDefinitions="*,Auto">
@@ -657,7 +682,7 @@
                 </TabItem>
 
                 <TabItem Header="Synchronisation">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="1*,1.25*" ColumnSpacing="14">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="1*,1.25*" ColumnSpacing="8">
                         <Border Classes="card">
                             <StackPanel Spacing="10">
                                 <TextBlock Text="Instance Syncthing CyRevision" FontSize="17" FontWeight="SemiBold" />
@@ -742,7 +767,7 @@
                 </TabItem>
 
                 <TabItem Header="VPN WireGuard">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="0.95*,1.25*" ColumnSpacing="14">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="0.95*,1.25*" ColumnSpacing="8">
                         <Border Classes="card">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Spacing="9">
@@ -829,7 +854,7 @@
                 </TabItem>
 
                 <TabItem Header="Travail en cours">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.45*,0.75*" ColumnSpacing="14">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="1.45*,0.75*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*">
                                 <StackPanel>
@@ -871,7 +896,7 @@
                 </TabItem>
 
                 <TabItem Header="Diff assets">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="1.1*,1*" ColumnSpacing="14">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="1.1*,1*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="9">
                                 <StackPanel>
@@ -906,7 +931,7 @@
                 </TabItem>
 
                 <TabItem Header="Aide">
-                    <Grid Margin="0,14,0,0" ColumnDefinitions="340,*" ColumnSpacing="14">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="310,*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10">
                                 <StackPanel>
@@ -933,7 +958,7 @@
                             </Grid>
                         </Border>
 
-                        <Grid Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="14">
+                        <Grid Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="8">
                             <Border Classes="card" Padding="16">
                                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="16" RowSpacing="8">
                                     <StackPanel Spacing="3">
@@ -1001,10 +1026,10 @@
             </TabControl>
         </Grid>
 
-        <Border Grid.Row="2" Grid.Column="1" Background="#0E1526" BorderBrush="#252E45" BorderThickness="0,1,0,0">
-            <Grid ColumnDefinitions="*,Auto" Margin="16,0">
-                <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" FontSize="11" Classes="muted" />
-                <TextBlock Grid.Column="1" Text="Git actif · Sync sur demande" VerticalAlignment="Center" FontSize="11" Foreground="#78D7B7" />
+        <Border Grid.Row="2" Grid.Column="1" Background="#25272A" BorderBrush="#393B40" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto" Margin="12,0">
+                <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" FontSize="9.5" Classes="muted" />
+                <TextBlock Grid.Column="1" Text="Git actif · Sync sur demande" VerticalAlignment="Center" FontSize="9.5" Foreground="#78D7B7" />
             </Grid>
         </Border>
     </Grid>

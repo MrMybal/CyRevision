@@ -327,5 +327,7 @@
   "Version installée": "Installed version",
   "Recherche de mise à jour non lancée.": "Update check not started.",
   "Recherche de la dernière release publiée…": "Checking the latest published release…",
-  "Mise à jour téléchargée et vérifiée par SHA-256. L'installateur va s'ouvrir.": "Update downloaded and verified with SHA-256. The installer will now open."
+  "Mise à jour téléchargée et vérifiée par SHA-256. L'installateur va s'ouvrir.": "Update downloaded and verified with SHA-256. The installer will now open.",
+  "Avant": "Before",
+  "Après": "After"
 }
