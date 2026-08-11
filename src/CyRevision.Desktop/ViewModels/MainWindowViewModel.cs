@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CyRevision.Backup;
 using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
@@ -8,6 +9,7 @@ using CyRevision.Core.Updates;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.Documentation;
 using CyRevision.Diff;
+using CyRevision.Discord;
 using CyRevision.Git;
 using CyRevision.Security;
 using CyRevision.Sync;
@@ -30,6 +32,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly LocalizationService _localization;
     private readonly OfflineDocumentationService _documentationService;
     private readonly ApplicationUpdateService _updateService;
+    private readonly JsonDiscordAgentStore _discordAgentStore;
+    private readonly DiscordProjectAgent _discordAgent;
     private readonly string? _initialProjectPath;
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
@@ -127,6 +131,20 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private bool _isCheckingForUpdates;
     private bool _isDownloadingUpdate;
     private double _updateProgress;
+    private DiscordAgentProfile? _currentDiscordProfile;
+    private string _discordWebhookUrl = string.Empty;
+    private string _discordDisplayName = "CyRevision";
+    private string _discordProjectLabel = string.Empty;
+    private string _discordRepositoryWebUrl = string.Empty;
+    private string _discordPollIntervalSeconds = "30";
+    private bool _discordNotifyCommits = true;
+    private bool _discordNotifyBranchChanges = true;
+    private bool _discordStartAutomatically;
+    private bool _discordWebhookConfigured;
+    private bool _discordIsRunning;
+    private string _discordAgentState = "Discord agent not configured";
+    private string _discordAgentDetails = "Add a channel webhook to enable project notifications.";
+    private string _discordLastActivity = "No check performed.";
 
     public MainWindowViewModel(
         IProjectCatalog projectCatalog,
@@ -142,6 +160,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         LocalizationService localization,
         OfflineDocumentationService documentationService,
         ApplicationUpdateService updateService,
+        JsonDiscordAgentStore discordAgentStore,
+        DiscordProjectAgent discordAgent,
         string? initialProjectPath = null)
     {
         _projectCatalog = projectCatalog;
@@ -157,6 +177,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _localization = localization;
         _documentationService = documentationService;
         _updateService = updateService;
+        _discordAgentStore = discordAgentStore;
+        _discordAgent = discordAgent;
+        _discordAgent.StatusChanged += OnDiscordAgentStatusChanged;
         _selectedLanguage = localization.Languages.FirstOrDefault(language =>
             string.Equals(language.Code, localization.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase));
         _initialProjectPath = initialProjectPath;
@@ -855,6 +878,94 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _selectedVpnPeer;
         set => SetProperty(ref _selectedVpnPeer, value);
+    }
+
+    public string DiscordWebhookUrl
+    {
+        get => _discordWebhookUrl;
+        set => SetProperty(ref _discordWebhookUrl, value);
+    }
+
+    public string DiscordDisplayName
+    {
+        get => _discordDisplayName;
+        set => SetProperty(ref _discordDisplayName, value);
+    }
+
+    public string DiscordProjectLabel
+    {
+        get => _discordProjectLabel;
+        set => SetProperty(ref _discordProjectLabel, value);
+    }
+
+    public string DiscordRepositoryWebUrl
+    {
+        get => _discordRepositoryWebUrl;
+        set => SetProperty(ref _discordRepositoryWebUrl, value);
+    }
+
+    public string DiscordPollIntervalSeconds
+    {
+        get => _discordPollIntervalSeconds;
+        set => SetProperty(ref _discordPollIntervalSeconds, value);
+    }
+
+    public bool DiscordNotifyCommits
+    {
+        get => _discordNotifyCommits;
+        set => SetProperty(ref _discordNotifyCommits, value);
+    }
+
+    public bool DiscordNotifyBranchChanges
+    {
+        get => _discordNotifyBranchChanges;
+        set => SetProperty(ref _discordNotifyBranchChanges, value);
+    }
+
+    public bool DiscordStartAutomatically
+    {
+        get => _discordStartAutomatically;
+        set => SetProperty(ref _discordStartAutomatically, value);
+    }
+
+    public bool DiscordWebhookConfigured
+    {
+        get => _discordWebhookConfigured;
+        private set
+        {
+            if (SetProperty(ref _discordWebhookConfigured, value))
+            {
+                OnPropertyChanged(nameof(DiscordWebhookHint));
+            }
+        }
+    }
+
+    public string DiscordWebhookHint => DiscordWebhookConfigured
+        ? "Webhook configured — leave blank to keep it, or paste a new URL to replace it."
+        : "Paste the incoming webhook URL created for the target Discord channel.";
+
+    public bool DiscordIsRunning
+    {
+        get => _discordIsRunning;
+        private set => SetProperty(ref _discordIsRunning, value);
+    }
+
+    public string DiscordAgentState
+    {
+        get => _discordAgentState;
+        private set => SetProperty(ref _discordAgentState, value);
+    }
+
+    public string DiscordAgentDetails
+    {
+        get => _discordAgentDetails;
+        private set => SetProperty(ref _discordAgentDetails, value);
+    }
+
+    public string DiscordLastActivity
+    {
+        get => _discordLastActivity;
+        private set => SetProperty(ref _discordLastActivity, value);
     }
 
     public async Task InitializeAsync()
@@ -2130,11 +2241,112 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, $"Pair VPN {selected.DisplayName} retiré");
     }
 
-    private async Task LoadSelectedProjectAsync()
+    public async Task SaveDiscordAgentAsync()
     {
         if (SelectedProject is null)
         {
+            return;
+        }
+
+        await RunOperationAsync("Saving the Discord agent…", async () =>
+        {
+            DiscordAgentProfile profile = BuildDiscordProfile();
+            await _discordAgentStore.SaveProfileAsync(profile);
+            _currentDiscordProfile = profile;
+            DiscordWebhookConfigured = true;
+            DiscordWebhookUrl = string.Empty;
+            if (_discordAgent.IsRunning)
+            {
+                await _discordAgent.StartAsync(profile, SelectedProject.RootPath, SelectedProject.Name);
+            }
+
+            DiscordAgentState = _discordAgent.IsRunning
+                ? "Discord agent watching"
+                : "Discord agent ready — stopped";
+            DiscordAgentDetails = "Settings are stored locally for this project.";
+        }, "Discord agent settings saved");
+    }
+
+    public async Task StartDiscordAgentAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        if (!SelectedProject.Definition.Features.GitEnabled)
+        {
+            StatusMessage = "The Discord commit agent requires a Git-enabled project.";
+            return;
+        }
+
+        await RunOperationAsync("Starting the Discord agent…", async () =>
+        {
+            DiscordAgentProfile profile = BuildDiscordProfile();
+            await _discordAgentStore.SaveProfileAsync(profile);
+            _currentDiscordProfile = profile;
+            DiscordWebhookConfigured = true;
+            DiscordWebhookUrl = string.Empty;
+            await _discordAgent.StartAsync(profile, SelectedProject.RootPath, SelectedProject.Name);
+        }, "Discord agent started");
+    }
+
+    public async Task StopDiscordAgentAsync() => await RunOperationAsync(
+        "Stopping the Discord agent…",
+        () => _discordAgent.StopAsync(),
+        "Discord agent stopped");
+
+    public async Task CheckDiscordAgentNowAsync()
+    {
+        if (!_discordAgent.IsRunning)
+        {
+            StatusMessage = "Start the Discord agent before checking for project updates.";
+            return;
+        }
+
+        await RunOperationAsync(
+            "Checking Git for Discord updates…",
+            () => _discordAgent.PollNowAsync(),
+            "Discord check completed");
+    }
+
+    public async Task TestDiscordWebhookAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Sending a Discord test message…", async () =>
+        {
+            DiscordAgentProfile profile = BuildDiscordProfile();
+            await _discordAgent.SendTestAsync(profile, SelectedProject.Name);
+        }, "Discord test message sent");
+    }
+
+    public async Task RemoveDiscordWebhookAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        Guid projectId = SelectedProject.Id;
+        await RunOperationAsync("Removing the Discord webhook…", async () =>
+        {
+            await _discordAgent.StopAsync();
+            await _discordAgentStore.RemoveProjectAsync(projectId);
+            ResetDiscordView();
+        }, "Discord webhook removed from local settings");
+    }
+
+    private async Task LoadSelectedProjectAsync()
+    {
+        await _discordAgent.StopAsync();
+        if (SelectedProject is null)
+        {
             await StopSyncCoreAsync();
+            ResetDiscordView();
             ClearRepositoryView();
             return;
         }
@@ -2158,6 +2370,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await LoadBackupsCoreAsync();
             await LoadSyncProfileCoreAsync();
             await LoadVpnProfileCoreAsync();
+            await LoadDiscordProfileCoreAsync();
             await LoadAdvisoryReservationsCoreAsync();
             StatusMessage = "Dépôt chargé";
         }
@@ -2562,6 +2775,148 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
         ApplyVpnProfile(_currentVpnProfile);
         await RefreshVpnStatusCoreAsync();
+    }
+
+    private async Task LoadDiscordProfileCoreAsync()
+    {
+        if (SelectedProject is null)
+        {
+            ResetDiscordView();
+            return;
+        }
+
+        _currentDiscordProfile = await _discordAgentStore.GetProfileAsync(SelectedProject.Id);
+        DiscordWebhookUrl = string.Empty;
+        if (_currentDiscordProfile is null)
+        {
+            DiscordDisplayName = "CyRevision";
+            DiscordProjectLabel = SelectedProject.Name;
+            DiscordRepositoryWebUrl = string.Empty;
+            DiscordPollIntervalSeconds = "30";
+            DiscordNotifyCommits = true;
+            DiscordNotifyBranchChanges = true;
+            DiscordStartAutomatically = false;
+            DiscordWebhookConfigured = false;
+            DiscordAgentState = "Discord agent not configured";
+            DiscordAgentDetails = "Create an incoming webhook for the target channel, then paste its URL here.";
+            DiscordLastActivity = "No check performed.";
+            DiscordIsRunning = false;
+            return;
+        }
+
+        DiscordDisplayName = _currentDiscordProfile.DisplayName;
+        DiscordProjectLabel = _currentDiscordProfile.ProjectLabel ?? SelectedProject.Name;
+        DiscordRepositoryWebUrl = _currentDiscordProfile.RepositoryWebUrl ?? string.Empty;
+        DiscordPollIntervalSeconds = _currentDiscordProfile.PollIntervalSeconds.ToString();
+        DiscordNotifyCommits = _currentDiscordProfile.NotifyCommits;
+        DiscordNotifyBranchChanges = _currentDiscordProfile.NotifyBranchChanges;
+        DiscordStartAutomatically = _currentDiscordProfile.StartAutomatically;
+        DiscordWebhookConfigured = DiscordWebhookAddress.TryCreate(_currentDiscordProfile.WebhookUrl, out _);
+        DiscordAgentState = "Discord agent ready — stopped";
+        DiscordAgentDetails = "The webhook is stored in the local user configuration, outside the repository.";
+
+        DiscordAgentCheckpoint? checkpoint = await _discordAgentStore.GetCheckpointAsync(SelectedProject.Id);
+        DiscordLastActivity = checkpoint?.LastCheckedAt is { } checkedAt
+            ? $"Last check: {checkedAt.ToLocalTime():g} · branch {checkpoint.LastBranch ?? "—"}"
+            : "No check performed.";
+
+        if (_currentDiscordProfile.StartAutomatically &&
+            SelectedProject.Definition.Features.GitEnabled &&
+            DiscordWebhookConfigured)
+        {
+            try
+            {
+                await _discordAgent.StartAsync(
+                    _currentDiscordProfile,
+                    SelectedProject.RootPath,
+                    SelectedProject.Name);
+            }
+            catch (Exception exception)
+            {
+                DiscordAgentState = "Discord agent error";
+                DiscordAgentDetails = exception.Message;
+            }
+        }
+    }
+
+    private DiscordAgentProfile BuildDiscordProfile()
+    {
+        if (SelectedProject is null)
+        {
+            throw new InvalidOperationException("Select a project before configuring the Discord agent.");
+        }
+
+        string webhookUrl = DiscordWebhookUrl.Trim();
+        if (string.IsNullOrWhiteSpace(webhookUrl))
+        {
+            webhookUrl = _currentDiscordProfile?.WebhookUrl ?? string.Empty;
+        }
+
+        if (!int.TryParse(DiscordPollIntervalSeconds, out int pollIntervalSeconds))
+        {
+            throw new InvalidDataException("The polling interval must be a number of seconds.");
+        }
+
+        DiscordAgentProfile profile = new(
+            SelectedProject.Id,
+            webhookUrl,
+            DiscordDisplayName.Trim(),
+            string.IsNullOrWhiteSpace(DiscordProjectLabel) ? SelectedProject.Name : DiscordProjectLabel.Trim(),
+            string.IsNullOrWhiteSpace(DiscordRepositoryWebUrl) ? null : DiscordRepositoryWebUrl.Trim(),
+            pollIntervalSeconds,
+            DiscordNotifyCommits,
+            DiscordNotifyBranchChanges,
+            DiscordStartAutomatically);
+        profile.Validate();
+        return profile;
+    }
+
+    private void ResetDiscordView()
+    {
+        _currentDiscordProfile = null;
+        DiscordWebhookUrl = string.Empty;
+        DiscordDisplayName = "CyRevision";
+        DiscordProjectLabel = string.Empty;
+        DiscordRepositoryWebUrl = string.Empty;
+        DiscordPollIntervalSeconds = "30";
+        DiscordNotifyCommits = true;
+        DiscordNotifyBranchChanges = true;
+        DiscordStartAutomatically = false;
+        DiscordWebhookConfigured = false;
+        DiscordIsRunning = false;
+        DiscordAgentState = "Discord agent not configured";
+        DiscordAgentDetails = "Select a project and add a channel webhook.";
+        DiscordLastActivity = "No check performed.";
+    }
+
+    private void OnDiscordAgentStatusChanged(object? sender, DiscordAgentStatus status)
+    {
+        void ApplyStatus()
+        {
+            DiscordIsRunning = status.State is not DiscordAgentRuntimeState.Stopped;
+            DiscordAgentState = status.State switch
+            {
+                DiscordAgentRuntimeState.Starting => "Discord agent starting",
+                DiscordAgentRuntimeState.Watching => "Discord agent watching",
+                DiscordAgentRuntimeState.Sending => "Discord agent sending",
+                DiscordAgentRuntimeState.Error => "Discord agent error — retry scheduled",
+                _ => "Discord agent ready — stopped"
+            };
+            DiscordAgentDetails = status.Details;
+            if (status.LastCheckedAt is { } checkedAt)
+            {
+                DiscordLastActivity = $"Last check: {checkedAt.ToLocalTime():g} · branch {status.Branch ?? "—"}";
+            }
+        }
+
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            ApplyStatus();
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(ApplyStatus);
+        }
     }
 
     private async Task<VpnProjectProfile> SaveVpnFormCoreAsync()
@@ -3309,6 +3664,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopSyncCoreAsync();
+        _discordAgent.StatusChanged -= OnDiscordAgentStatusChanged;
+        await _discordAgent.DisposeAsync();
         AssetDiffPreview = null;
         LfsPreview = null;
         _updateService.Dispose();

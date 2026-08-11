@@ -56,6 +56,14 @@
     "keywords": ["unreal", "plugin", "asset", "reservation", "checkout", "lock", "content browser"]
   },
   {
+    "id": "discord-agent",
+    "category": "Integrations",
+    "title": "Discord project agent",
+    "summary": "Publish grouped Git updates to one Discord channel without requiring GitHub.",
+    "body": "CHANNEL WEBHOOK\nCreate an incoming webhook in the Discord channel that should receive notifications, then paste its URL in the Discord agent tab. A webhook belongs to a specific channel, so CyRevision does not need a global bot token.\n\nSAFE BASELINE\nThe first start records the current HEAD and does not publish old history. Later checks group new commits into one message and can also report active-branch changes. Pulls, peer exchanges, and local commits are detected once they become visible in the local Git repository.\n\nDUPLICATE PREVENTION\nCyRevision stores a per-project checkpoint only after Discord accepts a message. Run automatic monitoring on a single device per project; two active devices have independent local checkpoints and may both report the same update.\n\nSECRETS AND MENTIONS\nThe webhook is stored in the current user's CyRevision configuration, outside the project and repository. Its URL is hidden after saving and is never added to a notification. Automatic messages disable Discord mentions. Remove webhook deletes the local profile and checkpoint.\n\nLIMITS\nThe agent reports Git history visible locally and works without GitHub. Pull requests, issues, and review events belong to a forge and require that forge's own Discord integration.",
+    "keywords": ["discord", "webhook", "channel", "notification", "commit", "agent", "integration"]
+  },
+  {
     "id": "application-updates",
     "category": "Application",
     "title": "Stable release updates",

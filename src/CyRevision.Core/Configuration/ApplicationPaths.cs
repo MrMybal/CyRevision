@@ -11,6 +11,8 @@ public sealed record ApplicationPaths(
 
     public string VpnDirectory => Path.Combine(DataDirectory, "vpn");
 
+    public string DiscordDirectory => Path.Combine(ConfigurationDirectory, "discord");
+
     public string BackupDirectory => Path.Combine(DataDirectory, "backups");
 
     public static ApplicationPaths CreateDefault()

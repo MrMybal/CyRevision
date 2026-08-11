@@ -12,6 +12,7 @@
 | `CyRevision.Security` | Identités ECDSA, invitations, certificats et révocation |
 | `CyRevision.Diff` | Comparaisons d’assets sans moteur |
 | `CyRevision.Vpn` | Profils WireGuard, clés, configuration, tunnel possédé et admission VPN |
+| `CyRevision.Discord` | Webhooks de salon, surveillance Git, messages groupés et points de contrôle anti-doublon |
 | `CyRevision.Server` | Pair Linux, API, ordonnanceurs et dashboard web |
 | `CyRevisionUnreal` | Menus Content Browser, fenêtre de présence et pont vers le client |
 

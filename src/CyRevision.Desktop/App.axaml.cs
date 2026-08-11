@@ -8,6 +8,7 @@ using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.Documentation;
 using CyRevision.Desktop.ViewModels;
 using CyRevision.Diff;
+using CyRevision.Discord;
 using CyRevision.Git;
 using CyRevision.Sync;
 using CyRevision.Vpn;
@@ -35,6 +36,11 @@ public partial class App : Application
                 ApplicationUpdateService.ReadCurrentVersion(typeof(App).Assembly));
             JsonProjectCatalog catalog = new(paths.ProjectCatalogPath);
             GitCliRepositoryService gitService = new();
+            JsonDiscordAgentStore discordStore = new(paths.DiscordDirectory);
+            DiscordProjectAgent discordAgent = new(
+                new GitDiscordProjectSnapshotProvider(gitService),
+                discordStore,
+                new DiscordWebhookClient());
             GitPeerExchangeService gitExchange = new();
             AssetDiffService assetDiff = new();
             JsonSyncthingProfileStore syncProfiles = new(paths.ManagedSyncthingDirectory);
@@ -45,7 +51,7 @@ public partial class App : Application
             MainWindowViewModel viewModel = new(
                 catalog, gitService, paths, syncProfiles, gitExchange, assetDiff,
                 vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine,
-                localization, documentation, updates, initialProjectPath);
+                localization, documentation, updates, discordStore, discordAgent, initialProjectPath);
 
             desktop.MainWindow = new MainWindow(viewModel, localization, paths.ConfigurationDirectory);
             desktop.Exit += (_, _) =>

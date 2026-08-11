@@ -933,6 +933,92 @@
                     </Grid>
                 </TabItem>
 
+                <TabItem Header="Agent Discord">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="1.08*,0.92*" ColumnSpacing="8">
+                        <Border Classes="card">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="9">
+                                    <TextBlock Text="Notifications du projet vers Discord" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Le webhook choisit directement le salon cible. Aucun bot Discord complet ni jeton global n'est nécessaire."
+                                               TextWrapping="Wrap" FontSize="11" Classes="muted" />
+
+                                    <TextBlock Text="Webhook entrant du salon" FontSize="11" Classes="muted" Margin="0,5,0,0" />
+                                    <TextBox Text="{Binding DiscordWebhookUrl}"
+                                             PasswordChar="●"
+                                             PlaceholderText="{Binding DiscordWebhookHint}" />
+                                    <TextBlock Text="L'URL existante n'est jamais réaffichée après son enregistrement."
+                                               TextWrapping="Wrap" FontSize="10" Foreground="#78D7B7" />
+
+                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Text="Nom affiché" FontSize="11" Classes="muted" />
+                                            <TextBox Text="{Binding DiscordDisplayName}" PlaceholderText="CyRevision" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="Nom du projet dans Discord" FontSize="11" Classes="muted" />
+                                            <TextBox Text="{Binding DiscordProjectLabel}" PlaceholderText="Mon projet" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <TextBlock Text="Page web du dépôt (facultatif)" FontSize="11" Classes="muted" />
+                                    <TextBox Text="{Binding DiscordRepositoryWebUrl}" PlaceholderText="https://github.com/organisation/projet" />
+
+                                    <Grid ColumnDefinitions="145,*" ColumnSpacing="12">
+                                        <StackPanel>
+                                            <TextBlock Text="Intervalle (secondes)" FontSize="11" Classes="muted" />
+                                            <TextBox Text="{Binding DiscordPollIntervalSeconds}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="7" Margin="0,2,0,0">
+                                            <CheckBox Content="Nouveaux commits groupés" IsChecked="{Binding DiscordNotifyCommits}" />
+                                            <CheckBox Content="Changements de branche active" IsChecked="{Binding DiscordNotifyBranchChanges}" />
+                                            <CheckBox Content="Démarrer automatiquement avec ce projet" IsChecked="{Binding DiscordStartAutomatically}" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <WrapPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Button Classes="secondary" Content="Enregistrer" Click="OnSaveDiscordAgentClick" Margin="0,3,7,3" />
+                                        <Button Classes="secondary" Content="Envoyer un test" Click="OnTestDiscordWebhookClick" Margin="0,3,7,3" />
+                                        <Button Classes="danger" Content="Retirer le webhook" Click="OnRemoveDiscordWebhookClick" Margin="0,3,7,3" />
+                                    </WrapPanel>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+
+                        <Border Grid.Column="1" Classes="card">
+                            <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="État de l'agent" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding DiscordAgentState}" FontSize="14" FontWeight="SemiBold" Foreground="#78D7B7" />
+                                    <TextBlock Text="{Binding DiscordAgentDetails}" TextWrapping="Wrap" Classes="muted" />
+                                    <TextBlock Text="{Binding DiscordLastActivity}" TextWrapping="Wrap" FontSize="11" Foreground="#B8C1D8" />
+                                </StackPanel>
+
+                                <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="0,13,0,8">
+                                    <Button Classes="primary" Content="Démarrer" Click="OnStartDiscordAgentClick" Margin="0,3,7,3" />
+                                    <Button Classes="danger" Content="Arrêter" Click="OnStopDiscordAgentClick" Margin="0,3,7,3" />
+                                    <Button Classes="secondary" Content="Vérifier maintenant" Click="OnCheckDiscordAgentClick" Margin="0,3,7,3" />
+                                </WrapPanel>
+
+                                <Border Grid.Row="2" Height="1" Background="#393B40" Margin="0,4,0,12" />
+
+                                <StackPanel Grid.Row="3" Spacing="9">
+                                    <TextBlock Text="Comportement" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="• Le premier démarrage mémorise HEAD sans publier l'ancien historique." TextWrapping="Wrap" />
+                                    <TextBlock Text="• Les commits reçus par Pull, Sync ou créés localement sont détectés." TextWrapping="Wrap" />
+                                    <TextBlock Text="• Le point de contrôle avance uniquement après une réponse Discord valide." TextWrapping="Wrap" />
+                                    <TextBlock Text="• Les mentions Discord sont toujours désactivées dans les messages automatiques." TextWrapping="Wrap" />
+                                    <TextBlock Text="• Active l'agent automatique sur une seule machine par projet pour éviter les doublons." TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <Border Grid.Row="4" Background="#151D31" CornerRadius="6" Padding="11" Margin="0,12,0,0">
+                                    <TextBlock Text="Les pull requests restent un événement propre à GitHub/GitLab. L'agent CyRevision couvre les mises à jour Git visibles localement, même sans forge centrale."
+                                               TextWrapping="Wrap" FontSize="10.5" Foreground="#B8C1D8" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
                 <TabItem Header="Travail en cours">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.45*,0.75*" ColumnSpacing="8">
                         <Border Classes="card">
