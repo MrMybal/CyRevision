@@ -25,6 +25,8 @@
 - token Bearer pour l’API Linux.
 - interface WireGuard dédiée `cyrev-*`, marqueur de propriété obligatoire avant arrêt et refus des collisions ;
 - invitations VPN ECDSA limitées dans le temps, adresse et capacités signées, acceptation explicite par le propriétaire ;
+- assistant pare-feu limité à des règles `CyRevision-VPN-<projet>-*`, confirmation administrateur explicite et aucune activation UPnP automatique ;
+- bootstrap VPN via Sync limité aux invitations/réponses signées et publiques, avec SHA-256 et rejet des champs secrets ;
 - aucune route Internet complète créée par défaut et clé privée masquée dans l'interface ;
 
 ## Responsabilités d'exploitation

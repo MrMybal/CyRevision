@@ -50,10 +50,13 @@ public partial class App : Application
             WireGuardConfigService vpnConfiguration = new(paths.VpnDirectory);
             ManagedWireGuardEngine vpnEngine = new(paths.VpnDirectory, vpnConfiguration);
             WireGuardRuntimeResolver vpnRuntimeResolver = new();
+            VpnNetworkSetupService vpnNetworkSetup = new();
+            VpnSyncExchangeService vpnSyncExchange = new();
             string? initialProjectPath = ReadProjectArgument(desktop.Args);
             MainWindowViewModel viewModel = new(
                 catalog, gitService, paths, syncProfiles, gitExchange, assetDiff,
                 vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine, vpnRuntimeResolver,
+                vpnNetworkSetup, vpnSyncExchange,
                 localization, documentation, updates, discordStore, discordAgent, discordConnections, initialProjectPath);
 
             desktop.MainWindow = new MainWindow(viewModel, localization, paths.ConfigurationDirectory);

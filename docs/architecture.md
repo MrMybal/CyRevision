@@ -22,6 +22,10 @@ Les modules sont activés par des drapeaux indépendants. Git ne dépend pas de 
 
 Le VPN est lui aussi indépendant des modes projet. Il transporte du trafic IP générique et ne donne par lui-même aucun droit Git ou Syncthing. Chaque profil choisit l'installation WireGuard du système ou le runtime officiel livré avec CyRevision. Le MVP adopte une étoile autour du nœud invitant, adaptée à un serveur, une CI ou un coordinateur Swarm permanent.
 
+L'assistant réseau sépare le rôle client du rôle hôte. Un client ne crée aucune règle entrante. Un hôte ouvre uniquement son port UDP WireGuard ; Swarm et l'API de contrôle restent limités au sous-réseau VPN et ne sont jamais publiés sur le modem. Les règles portent des noms déterministes par projet, ce qui permet de les retirer sans toucher aux règles étrangères. macOS utilise le pare-feu applicatif officiel et reste guidé manuellement ; Windows Defender, UFW et firewalld peuvent appliquer le plan après confirmation et élévation explicites.
+
+Le dossier d'échange Sync peut transporter des invitations et réponses VPN. Ces objets sont déjà signés par les identités des appareils. Une enveloppe supplémentaire vérifie le SHA-256 et la cohérence des métadonnées ; les champs ressemblant à une clé privée, un token, un webhook ou un autre secret sont refusés. Charger un message ne rejoint jamais automatiquement le VPN : l'acceptation reste une action distincte.
+
 L'agent Discord peut vivre dans l'application desktop ou dans un processus autonome. Le module de contrôle ne renvoie jamais le webhook au client : il transmet les changements au sidecar par une API Bearer liée au loopback par défaut. Une exposition distante exige HTTPS, ou une autorisation explicite pour une adresse privée transportée par un VPN WireGuard de confiance.
 
 ## Git + Sync
