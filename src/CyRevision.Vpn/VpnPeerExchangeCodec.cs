@@ -106,7 +106,7 @@ public static class VpnPeerExchangeCodec
         Guid projectId,
         DeviceIdentity localIssuerIdentity)
     {
-        ValidateInvitation(response.InvitationOffer, projectId);
+        ValidateJoinResponseSignature(response, projectId);
         bool sameIssuer = response.InvitationOffer.IssuerIdentity.DeviceId == localIssuerIdentity.DeviceId &&
                           string.Equals(
                               response.InvitationOffer.IssuerIdentity.SigningPublicKey,
@@ -117,6 +117,18 @@ public static class VpnPeerExchangeCodec
             throw new UnauthorizedAccessException("Cette réponse vise une invitation créée par un autre appareil.");
         }
 
+        return response.JoiningPeer;
+    }
+
+    public static void ValidateJoinResponseSignature(VpnJoinResponse response, Guid? projectId = null)
+    {
+        if (response is null || response.InvitationOffer is null || response.JoiningPeer is null ||
+            response.JoiningIdentity is null || string.IsNullOrWhiteSpace(response.Signature))
+        {
+            throw new InvalidDataException("La réponse VPN est incomplète.");
+        }
+
+        ValidateInvitation(response.InvitationOffer, projectId);
         VpnInvitation invitation = response.InvitationOffer.Invitation;
         if (!string.Equals(invitation.AssignedAddress, response.JoiningPeer.TunnelAddress, StringComparison.Ordinal) ||
             response.JoiningPeer.PeerId != response.JoiningIdentity.DeviceId ||
@@ -130,8 +142,6 @@ public static class VpnPeerExchangeCodec
         {
             throw new UnauthorizedAccessException("La signature du pair VPN est invalide.");
         }
-
-        return response.JoiningPeer;
     }
 
     public static VpnProjectProfile ApplyInvitation(VpnProjectProfile localProfile, SignedVpnInvitation offer)
@@ -159,6 +169,12 @@ public static class VpnPeerExchangeCodec
 
     public static void ValidateInvitation(SignedVpnInvitation offer, Guid? projectId = null)
     {
+        if (offer is null || offer.Invitation is null || offer.IssuerIdentity is null ||
+            string.IsNullOrWhiteSpace(offer.Signature) || offer.Invitation.IssuerPeer is null)
+        {
+            throw new InvalidDataException("L'invitation VPN est incomplète.");
+        }
+
         if ((projectId is not null && offer.Invitation.ProjectId != projectId) ||
             offer.Invitation.InvitationId == Guid.Empty)
         {

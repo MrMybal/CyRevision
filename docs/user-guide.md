@@ -54,6 +54,10 @@ Le propriétaire peut sélectionner un membre actif et cliquer **Révoquer**. Le
 
 Le VPN ne dépend pas du mode choisi dans **Projet**. Dans **VPN WireGuard**, choisissez **Installation système** pour utiliser WireGuard déjà installé, ou **Runtime intégré** pour utiliser les composants WireGuard officiels livrés avec CyRevision. Configurez ensuite le moteur : CyRevision génère les clés du projet et prépare une interface `cyrev-*` séparée de vos autres tunnels.
 
+Dépliez **Guided setup**. Pour un poste qui rejoint seulement un réseau, laissez le mode client : aucun port entrant ni réglage de modem n'est nécessaire. Pour le serveur, coordinateur ou poste qui reçoit les connexions, activez le rôle hôte, lancez le diagnostic, appliquez les règles CyRevision après confirmation puis ouvrez la page du routeur. L'assistant indique l'adresse LAN à réserver et l'unique redirection UDP à créer.
+
+Si Sync est configuré, utilisez **Share current message** après avoir créé une invitation ou une réponse. Les autres pairs autorisés la verront dans la boîte Sync VPN. La clé privée ne quitte jamais la machine et charger un message ne l'accepte pas automatiquement.
+
 Indiquez un endpoint public `hôte:port` sur le nœud qui reçoit les connexions, choisissez sa fonction puis créez une invitation VPN. Le nouvel appareil configure WireGuard localement, colle l'invitation et renvoie la réponse signée ; le propriétaire l'accepte explicitement. Un pair VPN-only ne reçoit aucun accès Git ou Sync.
 
 Pour Unreal Swarm, utilisez de préférence un coordinateur Windows permanent comme nœud invitant. CyRevision affiche son IP VPN ; renseignez-la dans `CoordinatorRemotingHost` et autorisez TCP 8008/8009. Le guide complet se trouve dans [wireguard-vpn.md](wireguard-vpn.md).

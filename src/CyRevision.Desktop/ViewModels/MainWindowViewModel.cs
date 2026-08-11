@@ -32,6 +32,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly WireGuardConfigService _wireGuardConfiguration;
     private readonly ManagedWireGuardEngine _wireGuardEngine;
     private readonly WireGuardRuntimeResolver _wireGuardRuntimeResolver;
+    private readonly VpnNetworkSetupService _vpnNetworkSetupService;
+    private readonly VpnSyncExchangeService _vpnSyncExchangeService;
     private readonly LocalizationService _localization;
     private readonly OfflineDocumentationService _documentationService;
     private readonly ApplicationUpdateService _updateService;
@@ -123,6 +125,21 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private VpnNodeCapabilities _selectedVpnCapability = VpnNodeCapabilities.GeneralAccess;
     private VpnNodeCapabilities _selectedVpnInvitationCapability = VpnNodeCapabilities.GeneralAccess;
     private VpnPeerViewModel? _selectedVpnPeer;
+    private VpnSetupPlan? _currentVpnSetupPlan;
+    private bool _vpnSetupAcceptIncoming;
+    private bool _vpnSetupAllowSwarm;
+    private bool _vpnSetupAllowControlApi;
+    private bool _vpnCanApplyFirewall;
+    private bool _vpnCanOpenRouter;
+    private string _vpnSetupSummary = "Run the guided setup to inspect this computer.";
+    private string _vpnSetupNetwork = "Local network not inspected.";
+    private string _vpnFirewallStatus = "Firewall not inspected.";
+    private string _vpnComputerGuide = string.Empty;
+    private string _vpnRouterGuide = string.Empty;
+    private string _vpnFirewallCommands = string.Empty;
+    private string _vpnConnectivityStatus = "Tunnel connectivity not tested.";
+    private VpnSyncMessageViewModel? _selectedVpnSyncMessage;
+    private string _vpnSyncStatus = "Sync exchange not inspected.";
     private LanguageOption? _selectedLanguage;
     private IReadOnlyList<DocumentationTopic> _allDocumentationTopics = [];
     private DocumentationTopic? _selectedDocumentationTopic;
@@ -172,6 +189,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         WireGuardConfigService wireGuardConfiguration,
         ManagedWireGuardEngine wireGuardEngine,
         WireGuardRuntimeResolver wireGuardRuntimeResolver,
+        VpnNetworkSetupService vpnNetworkSetupService,
+        VpnSyncExchangeService vpnSyncExchangeService,
         LocalizationService localization,
         OfflineDocumentationService documentationService,
         ApplicationUpdateService updateService,
@@ -191,6 +210,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _wireGuardConfiguration = wireGuardConfiguration;
         _wireGuardEngine = wireGuardEngine;
         _wireGuardRuntimeResolver = wireGuardRuntimeResolver;
+        _vpnNetworkSetupService = vpnNetworkSetupService;
+        _vpnSyncExchangeService = vpnSyncExchangeService;
         _localization = localization;
         _documentationService = documentationService;
         _updateService = updateService;
@@ -453,6 +474,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<VpnPeerViewModel> VpnPeers { get; } = [];
 
+    public ObservableCollection<VpnSyncMessageViewModel> VpnSyncMessages { get; } = [];
+
     public IReadOnlyList<RetentionMode> RetentionModes { get; } = Enum.GetValues<RetentionMode>();
 
     public IReadOnlyList<ProjectPreset> Presets { get; } = ProjectPresets.All;
@@ -475,6 +498,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             {
                 _localization.SetLanguage(value.Code);
                 ReloadDocumentation();
+                if (_currentVpnSetupPlan is not null)
+                {
+                    ApplyVpnSetupPlan(_currentVpnSetupPlan);
+                }
             }
         }
     }
@@ -867,7 +894,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public string VpnNetworkCidr
     {
         get => _vpnNetworkCidr;
-        set => SetProperty(ref _vpnNetworkCidr, value);
+        set
+        {
+            if (SetProperty(ref _vpnNetworkCidr, value))
+            {
+                InvalidateVpnSetupPlan();
+            }
+        }
     }
 
     public string VpnLocalAddress
@@ -885,7 +918,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public string VpnListenPort
     {
         get => _vpnListenPort;
-        set => SetProperty(ref _vpnListenPort, value);
+        set
+        {
+            if (SetProperty(ref _vpnListenPort, value))
+            {
+                InvalidateVpnSetupPlan();
+            }
+        }
     }
 
     public string VpnExchangeText
@@ -916,6 +955,108 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _selectedVpnPeer;
         set => SetProperty(ref _selectedVpnPeer, value);
+    }
+
+    public bool VpnSetupAcceptIncoming
+    {
+        get => _vpnSetupAcceptIncoming;
+        set
+        {
+            if (SetProperty(ref _vpnSetupAcceptIncoming, value))
+            {
+                InvalidateVpnSetupPlan();
+            }
+        }
+    }
+
+    public bool VpnSetupAllowSwarm
+    {
+        get => _vpnSetupAllowSwarm;
+        set
+        {
+            if (SetProperty(ref _vpnSetupAllowSwarm, value))
+            {
+                InvalidateVpnSetupPlan();
+            }
+        }
+    }
+
+    public bool VpnSetupAllowControlApi
+    {
+        get => _vpnSetupAllowControlApi;
+        set
+        {
+            if (SetProperty(ref _vpnSetupAllowControlApi, value))
+            {
+                InvalidateVpnSetupPlan();
+            }
+        }
+    }
+
+    public bool VpnCanApplyFirewall
+    {
+        get => _vpnCanApplyFirewall;
+        private set => SetProperty(ref _vpnCanApplyFirewall, value);
+    }
+
+    public bool VpnCanOpenRouter
+    {
+        get => _vpnCanOpenRouter;
+        private set => SetProperty(ref _vpnCanOpenRouter, value);
+    }
+
+    public string VpnSetupSummary
+    {
+        get => _vpnSetupSummary;
+        private set => SetProperty(ref _vpnSetupSummary, value);
+    }
+
+    public string VpnSetupNetwork
+    {
+        get => _vpnSetupNetwork;
+        private set => SetProperty(ref _vpnSetupNetwork, value);
+    }
+
+    public string VpnFirewallStatus
+    {
+        get => _vpnFirewallStatus;
+        private set => SetProperty(ref _vpnFirewallStatus, value);
+    }
+
+    public string VpnComputerGuide
+    {
+        get => _vpnComputerGuide;
+        private set => SetProperty(ref _vpnComputerGuide, value);
+    }
+
+    public string VpnRouterGuide
+    {
+        get => _vpnRouterGuide;
+        private set => SetProperty(ref _vpnRouterGuide, value);
+    }
+
+    public string VpnFirewallCommands
+    {
+        get => _vpnFirewallCommands;
+        private set => SetProperty(ref _vpnFirewallCommands, value);
+    }
+
+    public string VpnConnectivityStatus
+    {
+        get => _vpnConnectivityStatus;
+        private set => SetProperty(ref _vpnConnectivityStatus, value);
+    }
+
+    public VpnSyncMessageViewModel? SelectedVpnSyncMessage
+    {
+        get => _selectedVpnSyncMessage;
+        set => SetProperty(ref _selectedVpnSyncMessage, value);
+    }
+
+    public string VpnSyncStatus
+    {
+        get => _vpnSyncStatus;
+        private set => SetProperty(ref _vpnSyncStatus, value);
     }
 
     public string DiscordWebhookUrl
@@ -2272,6 +2413,136 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         RefreshVpnStatusCoreAsync,
         "État VPN actualisé");
 
+    public async Task InspectVpnSetupAsync()
+    {
+        await RunOperationAsync("Inspecting network and firewall…", async () =>
+        {
+            VpnProjectProfile profile = await SaveVpnFormCoreAsync();
+            _currentVpnSetupPlan = await _vpnNetworkSetupService.InspectAsync(
+                profile,
+                CreateVpnSetupOptions());
+            ApplyVpnSetupPlan(_currentVpnSetupPlan);
+        }, "VPN setup diagnosis completed");
+    }
+
+    public async Task ApplyVpnFirewallAsync()
+    {
+        await RunOperationAsync("Applying the generated firewall rules…", async () =>
+        {
+            VpnProjectProfile profile = await SaveVpnFormCoreAsync();
+            VpnSetupOptions options = CreateVpnSetupOptions();
+            _currentVpnSetupPlan = await _vpnNetworkSetupService.InspectAsync(profile, options);
+            if (!_currentVpnSetupPlan.CanApplyAutomatically)
+            {
+                throw new InvalidOperationException(
+                    "Automatic firewall configuration is unavailable. Follow the generated computer steps.");
+            }
+
+            await _vpnNetworkSetupService.ApplyFirewallAsync(_currentVpnSetupPlan);
+            _currentVpnSetupPlan = await _vpnNetworkSetupService.InspectAsync(profile, options);
+            ApplyVpnSetupPlan(_currentVpnSetupPlan);
+        }, "CyRevision firewall rules applied");
+    }
+
+    public async Task TestVpnConnectivityAsync()
+    {
+        await RunOperationAsync("Testing WireGuard handshakes…", async () =>
+        {
+            VpnProjectProfile profile = await SaveVpnFormCoreAsync();
+            VpnConnectivityReport report = await _vpnNetworkSetupService.TestConnectivityAsync(profile);
+            string peers = report.Peers.Count == 0
+                ? string.Empty
+                : Environment.NewLine + string.Join(
+                    Environment.NewLine,
+                    report.Peers.Select(peer => peer.RecentHandshake
+                        ? $"✓ {peer.DisplayName} · {peer.TunnelAddress} · {peer.LastHandshakeAt?.ToLocalTime():g}"
+                        : $"○ {peer.DisplayName} · {peer.TunnelAddress} · no recent handshake"));
+            VpnConnectivityStatus = report.Summary + peers;
+        }, "VPN connectivity test completed");
+    }
+
+    public async Task RemoveVpnFirewallAsync()
+    {
+        await RunOperationAsync("Removing only the CyRevision firewall rules…", async () =>
+        {
+            VpnProjectProfile profile = await SaveVpnFormCoreAsync();
+            VpnSetupOptions options = CreateVpnSetupOptions();
+            _currentVpnSetupPlan = await _vpnNetworkSetupService.InspectAsync(profile, options);
+            if (!_currentVpnSetupPlan.CanApplyAutomatically)
+            {
+                throw new InvalidOperationException(
+                    "Automatic firewall configuration is unavailable. Follow the generated removal commands.");
+            }
+
+            await _vpnNetworkSetupService.RemoveFirewallAsync(_currentVpnSetupPlan);
+            _currentVpnSetupPlan = await _vpnNetworkSetupService.InspectAsync(profile, options);
+            ApplyVpnSetupPlan(_currentVpnSetupPlan);
+        }, "CyRevision firewall rules removed");
+    }
+
+    public async Task OpenVpnRouterAsync()
+    {
+        if (_currentVpnSetupPlan?.RouterAdminUri is null)
+        {
+            await InspectVpnSetupAsync();
+        }
+
+        if (_currentVpnSetupPlan?.RouterAdminUri is not { } routerUri)
+        {
+            StatusMessage = "No private router gateway was detected.";
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = routerUri.AbsoluteUri,
+                UseShellExecute = true
+            });
+            StatusMessage = "Router administration page opened in the default browser";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            StatusMessage = exception.Message;
+        }
+    }
+
+    public async Task PublishVpnExchangeViaSyncAsync()
+    {
+        await RunOperationAsync("Publishing the signed VPN message through Sync…", async () =>
+        {
+            SyncthingProfile profile = RequireVpnSyncProfile();
+            VpnSyncMessage message = await _vpnSyncExchangeService.PublishAsync(
+                profile.ExchangeDirectory,
+                VpnExchangeText);
+            await RefreshVpnSyncMessagesCoreAsync();
+            SelectedVpnSyncMessage = VpnSyncMessages.FirstOrDefault(item =>
+                item.Message.Envelope.MessageId == message.Envelope.MessageId);
+            VpnSyncStatus = _syncEngine?.Status.State == SyncEngineState.Running
+                ? "Signed public VPN message published; Sync is transferring it to authorized peers."
+                : "Signed public VPN message queued locally; start Sync to transfer it.";
+        }, "Signed VPN message published through Sync");
+    }
+
+    public async Task RefreshVpnSyncMessagesAsync() => await RunOperationAsync(
+        "Reading signed VPN messages from Sync…",
+        RefreshVpnSyncMessagesCoreAsync,
+        "VPN Sync messages refreshed");
+
+    public Task LoadSelectedVpnSyncMessageAsync()
+    {
+        if (SelectedVpnSyncMessage is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        VpnExchangeText = _vpnSyncExchangeService.LoadPayload(SelectedVpnSyncMessage.Message);
+        VpnSyncStatus = "Signed message loaded. Review it, then join or accept it explicitly.";
+        StatusMessage = "VPN Sync message loaded for explicit review";
+        return Task.CompletedTask;
+    }
+
     public async Task CreateVpnInvitationAsync()
     {
         await RunOperationAsync("Création de l'invitation VPN signée…", async () =>
@@ -3061,11 +3332,17 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             WireGuardExecutablePath = detected.WireGuardExecutablePath ?? detected.WgExecutablePath ?? string.Empty;
             VpnState = detected.CanGenerateKeys ? "WireGuard détecté — à configurer" : "WireGuard non détecté";
             VpnDetails = "Le VPN peut être utilisé seul, sans lancer Git ni Syncthing.";
+            await RefreshVpnSyncMessagesCoreAsync();
             return;
         }
 
+        VpnSetupAcceptIncoming = !string.IsNullOrWhiteSpace(_currentVpnProfile.PublicEndpoint);
+        VpnSetupAllowSwarm = _currentVpnProfile.LocalCapabilities.HasFlag(VpnNodeCapabilities.SwarmAgent) ||
+                             _currentVpnProfile.LocalCapabilities.HasFlag(VpnNodeCapabilities.SwarmCoordinator);
+        VpnSetupAllowControlApi = false;
         ApplyVpnProfile(_currentVpnProfile);
         await RefreshVpnStatusCoreAsync();
+        await RefreshVpnSyncMessagesCoreAsync();
     }
 
     private async Task LoadDiscordProfileCoreAsync()
@@ -3560,7 +3837,109 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         VpnConfigurationPreview = "Configurez WireGuard pour afficher le tunnel CyRevision.";
         VpnPeers.Clear();
         SelectedVpnPeer = null;
+        _currentVpnSetupPlan = null;
+        VpnSetupAcceptIncoming = false;
+        VpnSetupAllowSwarm = false;
+        VpnSetupAllowControlApi = false;
+        VpnCanApplyFirewall = false;
+        VpnCanOpenRouter = false;
+        VpnSetupSummary = "Run the guided setup to inspect this computer.";
+        VpnSetupNetwork = "Local network not inspected.";
+        VpnFirewallStatus = "Firewall not inspected.";
+        VpnComputerGuide = string.Empty;
+        VpnRouterGuide = string.Empty;
+        VpnFirewallCommands = string.Empty;
+        VpnConnectivityStatus = "Tunnel connectivity not tested.";
+        VpnSyncMessages.Clear();
+        SelectedVpnSyncMessage = null;
+        VpnSyncStatus = "Sync exchange not inspected.";
     }
+
+    private VpnSetupOptions CreateVpnSetupOptions()
+    {
+        VpnSetupFeatures features = VpnSetupFeatures.None;
+        if (VpnSetupAcceptIncoming)
+        {
+            features |= VpnSetupFeatures.AcceptIncomingTunnel;
+        }
+
+        if (VpnSetupAllowSwarm)
+        {
+            features |= VpnSetupFeatures.UnrealSwarm;
+        }
+
+        if (VpnSetupAllowControlApi)
+        {
+            features |= VpnSetupFeatures.CyRevisionControlApi;
+        }
+
+        return new VpnSetupOptions(features);
+    }
+
+    private void InvalidateVpnSetupPlan()
+    {
+        _currentVpnSetupPlan = null;
+        VpnCanApplyFirewall = false;
+        VpnCanOpenRouter = false;
+        VpnSetupSummary = "Options changed — run the diagnosis again before applying anything.";
+    }
+
+    private void ApplyVpnSetupPlan(VpnSetupPlan plan)
+    {
+        string local = plan.Network.LocalIpv4Address ?? "not detected";
+        string gateway = plan.Network.DefaultGateway ?? "not detected";
+        VpnSetupNetwork = $"{plan.Platform} · {plan.Network.InterfaceName ?? "no active interface"} · " +
+                          $"LAN {local} · gateway {gateway}";
+        VpnFirewallStatus = plan.Rules.Count == 0
+            ? "Client-only mode — no inbound firewall rule required."
+            : plan.RulesAlreadyApplied switch
+            {
+                true => $"{plan.FirewallTool} · all generated rules are present",
+                false => $"{plan.FirewallTool} · generated rules are not applied yet",
+                null => $"{plan.FirewallTool} · verify the generated rules after applying them"
+            };
+        VpnCanApplyFirewall = plan.CanApplyAutomatically && plan.RemoveCommands.Count > 0;
+        VpnCanOpenRouter = plan.RouterAdminUri is not null && plan.RequiresRouterPortForward;
+        VpnComputerGuide = FormatNumberedSteps(plan.ComputerSteps.Select(_localization.Translate));
+        VpnRouterGuide = FormatNumberedSteps(plan.RouterSteps.Concat(plan.Warnings).Select(_localization.Translate));
+        VpnFirewallCommands = plan.ApplyCommands.Count == 0
+            ? "No inbound rule will be created. Apply removes any previous CyRevision rules for this project."
+            : string.Join(Environment.NewLine, plan.ApplyCommands.Select(command => command.Preview));
+        VpnSetupSummary = plan.Options.AcceptIncomingTunnel
+            ? "Host mode: configure this computer, then create one UDP forward on the router."
+            : "Client-only mode: no router change is required; import a signed invitation to continue.";
+    }
+
+    private SyncthingProfile RequireVpnSyncProfile() =>
+        _currentSyncProfile
+        ?? throw new InvalidOperationException(
+            "Configure the isolated CyRevision Sync profile before exchanging VPN messages through Sync.");
+
+    private async Task RefreshVpnSyncMessagesCoreAsync()
+    {
+        if (_currentSyncProfile is null)
+        {
+            VpnSyncMessages.Clear();
+            SelectedVpnSyncMessage = null;
+            VpnSyncStatus = "Configure Sync to exchange signed VPN invitations automatically.";
+            return;
+        }
+
+        IReadOnlyList<VpnSyncMessage> messages = await _vpnSyncExchangeService.ListAsync(
+            _currentSyncProfile.ExchangeDirectory);
+        Guid? selectedId = SelectedVpnSyncMessage?.Message.Envelope.MessageId;
+        ReplaceCollection(VpnSyncMessages, messages.Select(message => new VpnSyncMessageViewModel(message)));
+        SelectedVpnSyncMessage = VpnSyncMessages.FirstOrDefault(item =>
+                                     item.Message.Envelope.MessageId == selectedId)
+                                 ?? VpnSyncMessages.FirstOrDefault();
+        VpnSyncStatus = messages.Count == 0
+            ? "No signed VPN message is currently available in the Sync exchange."
+            : $"{messages.Count} signed VPN message(s) available. Loading one never applies it automatically.";
+    }
+
+    private static string FormatNumberedSteps(IEnumerable<string> steps) => string.Join(
+        Environment.NewLine,
+        steps.Select((step, index) => $"{index + 1}. {step}"));
 
     private void UpdateVpnBackendDetails()
     {

@@ -9,6 +9,9 @@
 - autonomous multi-project Discord sidecar with a bearer-authenticated loopback/LAN/VPN control API and a desktop control plugin;
 - selectable integrated or autonomous Discord execution, including a packaged local-agent launcher and Linux user service;
 - selectable system-installed or bundled WireGuard runtime per project, with SHA-256 runtime validation and no changes to unrelated tunnels.
+- guided VPN initialization with LAN/gateway detection, client-only or incoming-host roles, and least-privilege firewall plans for Windows Defender, UFW and firewalld;
+- router/modem port-forwarding and CGNAT checklist, with no automatic UPnP changes;
+- optional Sync exchange for signed VPN invitations and responses, with payload validation and explicit rejection of private-key or secret-shaped fields.
 
 ## 0.1.5 Alpha — 2026-08-11
 

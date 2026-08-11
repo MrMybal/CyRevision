@@ -900,6 +900,58 @@
                                     <Border Background="#10241F" CornerRadius="8" Padding="11">
                                         <TextBlock Text="CyRevision contrôle uniquement l'interface cyrev-* de ce projet. Tes autres tunnels WireGuard ne sont jamais arrêtés ni modifiés." TextWrapping="Wrap" FontSize="11" Foreground="#78D7B7" />
                                     </Border>
+                                    <Expander Header="Guided setup · computer, firewall, router" Margin="0,3,0,0">
+                                        <StackPanel Spacing="8" Margin="0,8,0,2">
+                                            <TextBlock Text="{Binding VpnSetupSummary}" TextWrapping="Wrap" FontSize="11" Foreground="#78D7B7" />
+                                            <WrapPanel Orientation="Horizontal">
+                                                <CheckBox Content="This computer accepts incoming VPN connections"
+                                                          IsChecked="{Binding VpnSetupAcceptIncoming}" Margin="0,2,14,2" />
+                                                <CheckBox Content="Unreal Swarm over VPN"
+                                                          IsChecked="{Binding VpnSetupAllowSwarm}" Margin="0,2,14,2" />
+                                                <CheckBox Content="CyRevision control API over VPN"
+                                                          IsChecked="{Binding VpnSetupAllowControlApi}" Margin="0,2,14,2" />
+                                            </WrapPanel>
+                                            <WrapPanel Orientation="Horizontal">
+                                                <Button Classes="primary" Content="1 · Diagnose this computer"
+                                                        Click="OnInspectVpnSetupClick" Margin="0,3,7,3" />
+                                                <Button Classes="secondary" Content="2 · Apply firewall rules"
+                                                        IsEnabled="{Binding VpnCanApplyFirewall}"
+                                                        Click="OnApplyVpnFirewallClick" Margin="0,3,7,3" />
+                                                <Button Classes="danger" Content="Remove CyRevision rules"
+                                                        IsEnabled="{Binding VpnCanApplyFirewall}"
+                                                        Click="OnRemoveVpnFirewallClick" Margin="0,3,7,3" />
+                                                <Button Classes="secondary" Content="3 · Open router page"
+                                                        IsEnabled="{Binding VpnCanOpenRouter}"
+                                                        Click="OnOpenVpnRouterClick" Margin="0,3,7,3" />
+                                                <Button Classes="secondary" Content="4 · Test tunnel and peers"
+                                                        Click="OnTestVpnConnectivityClick" Margin="0,3,7,3" />
+                                            </WrapPanel>
+                                            <Border Background="#111A2D" CornerRadius="6" Padding="9">
+                                                <StackPanel Spacing="3">
+                                                    <TextBlock Text="{Binding VpnSetupNetwork}" TextWrapping="Wrap" FontSize="10.5" />
+                                                    <TextBlock Text="{Binding VpnFirewallStatus}" TextWrapping="Wrap" FontSize="10.5" Foreground="#78D7B7" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
+                                                <StackPanel>
+                                                    <TextBlock Text="Computer checklist" FontSize="10.5" Classes="muted" />
+                                                    <TextBox Text="{Binding VpnComputerGuide}" IsReadOnly="True" AcceptsReturn="True"
+                                                             TextWrapping="Wrap" MinHeight="105" FontSize="10" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Text="Router / modem checklist" FontSize="10.5" Classes="muted" />
+                                                    <TextBox Text="{Binding VpnRouterGuide}" IsReadOnly="True" AcceptsReturn="True"
+                                                             TextWrapping="Wrap" MinHeight="105" FontSize="10" />
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock Text="Generated commands" FontSize="10.5" Classes="muted" />
+                                            <TextBox Text="{Binding VpnFirewallCommands}" IsReadOnly="True" AcceptsReturn="True"
+                                                     TextWrapping="Wrap" MinHeight="58" FontFamily="Cascadia Mono,Consolas" FontSize="9.5" />
+                                            <TextBlock Text="Connectivity" FontSize="10.5" Classes="muted" />
+                                            <TextBlock Text="{Binding VpnConnectivityStatus}" TextWrapping="Wrap"
+                                                       FontSize="10.5" Foreground="#78D7B7" />
+                                        </StackPanel>
+                                    </Expander>
                                     <TextBlock Text="Aperçu sécurisé de la configuration" FontSize="11" Classes="muted" />
                                     <TextBox Text="{Binding VpnConfigurationPreview}" IsReadOnly="True" AcceptsReturn="True"
                                              MinHeight="110" FontFamily="Cascadia Mono,Consolas" FontSize="10"
@@ -909,7 +961,7 @@
                         </Border>
 
                         <Border Grid.Column="1" Classes="card">
-                            <Grid RowDefinitions="Auto,145,Auto,*,Auto">
+                            <Grid RowDefinitions="Auto,125,Auto,150,Auto,Auto,125,Auto">
                                 <StackPanel>
                                     <TextBlock Text="Pairs et services VPN" FontSize="17" FontWeight="SemiBold" />
                                     <TextBlock Text="VPN seul, Swarm, CI ou service : aucun accès Git/Sync n'est ajouté automatiquement." TextWrapping="Wrap" FontSize="11" Classes="muted" />
@@ -941,6 +993,32 @@
                                     <Border Grid.Column="1" Background="#1B2237" CornerRadius="8" Padding="10,6">
                                         <TextBlock Text="Swarm : Windows · TCP 8008/8009" FontSize="10" Foreground="#B8C1D8" />
                                     </Border>
+                                </Grid>
+                                <StackPanel Grid.Row="5" Margin="0,10,0,4">
+                                    <TextBlock Text="Signed VPN exchange through Sync" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="Only signed invitations and responses are synchronized. Private keys never enter Sync."
+                                               TextWrapping="Wrap" FontSize="10.5" Classes="muted" />
+                                </StackPanel>
+                                <DataGrid Grid.Row="6" ItemsSource="{Binding VpnSyncMessages}"
+                                          SelectedItem="{Binding SelectedVpnSyncMessage}"
+                                          AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                          Background="Transparent" BorderThickness="0">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="0.8*" />
+                                        <DataGridTextColumn Header="Sender" Binding="{Binding Sender}" Width="0.7*" />
+                                        <DataGridTextColumn Header="Created" Binding="{Binding Created}" Width="1*" />
+                                        <DataGridTextColumn Header="Expires" Binding="{Binding Expires}" Width="1*" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <Grid Grid.Row="7" ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="7" Margin="0,6,0,0">
+                                    <Button Classes="primary" Content="Share current message"
+                                            Click="OnPublishVpnSyncClick" />
+                                    <Button Grid.Column="1" Classes="secondary" Content="Refresh Sync inbox"
+                                            Click="OnRefreshVpnSyncClick" />
+                                    <Button Grid.Column="2" Classes="secondary" Content="Load selected"
+                                            Click="OnLoadVpnSyncClick" />
+                                    <TextBlock Grid.Column="3" Text="{Binding VpnSyncStatus}" TextWrapping="Wrap"
+                                               VerticalAlignment="Center" FontSize="10" Foreground="#78D7B7" />
                                 </Grid>
                             </Grid>
                         </Border>

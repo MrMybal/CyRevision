@@ -464,6 +464,46 @@ public partial class MainWindow : Window
 
     private async void OnRefreshVpnClick(object? sender, RoutedEventArgs e) => await _viewModel.RefreshVpnAsync();
 
+    private async void OnInspectVpnSetupClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.InspectVpnSetupAsync();
+
+    private async void OnTestVpnConnectivityClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.TestVpnConnectivityAsync();
+
+    private async void OnApplyVpnFirewallClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Apply CyRevision firewall rules"),
+                Translate("Only the generated CyRevision rules will be added. Administrator authorization may be requested. Existing unrelated firewall rules are not changed."),
+                Translate("Apply rules")))
+        {
+            await _viewModel.ApplyVpnFirewallAsync();
+        }
+    }
+
+    private async void OnRemoveVpnFirewallClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Remove CyRevision firewall rules"),
+                Translate("Only firewall rules whose deterministic names belong to this CyRevision project will be removed."),
+                Translate("Remove rules")))
+        {
+            await _viewModel.RemoveVpnFirewallAsync();
+        }
+    }
+
+    private async void OnOpenVpnRouterClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.OpenVpnRouterAsync();
+
+    private async void OnPublishVpnSyncClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.PublishVpnExchangeViaSyncAsync();
+
+    private async void OnRefreshVpnSyncClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshVpnSyncMessagesAsync();
+
+    private async void OnLoadVpnSyncClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.LoadSelectedVpnSyncMessageAsync();
+
     private async void OnSaveDiscordAgentClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SaveDiscordAgentAsync();
 
@@ -611,7 +651,10 @@ public partial class MainWindow : Window
         return file?.TryGetLocalPath();
     }
 
-    private async Task<bool> ShowConfirmationAsync(string title, string message)
+    private async Task<bool> ShowConfirmationAsync(
+        string title,
+        string message,
+        string? confirmLabel = null)
     {
         TextBlock description = new()
         {
@@ -628,7 +671,7 @@ public partial class MainWindow : Window
         };
         Button confirm = new()
         {
-            Content = Translate("Restaurer"),
+            Content = confirmLabel ?? Translate("Restaurer"),
             Padding = new Avalonia.Thickness(16, 9),
             Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#8A3E51")),
             Foreground = Avalonia.Media.Brushes.White
