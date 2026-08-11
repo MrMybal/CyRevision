@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5 Alpha — 2026-08-11
+
+- new Rider-inspired code diff viewer with syntax highlighting, unified and side-by-side modes, aligned lines, and change navigation;
+- modular History workspace with resizable and optional panels, three structural layouts, persistent layout preferences, and a detachable focused-diff window;
+- clearer compact desktop styling with distinct panel headers and improved revision browsing;
+- refined Git commit graph presentation and navigation;
+- graph zoom now requires `Ctrl + mouse wheel`, while the wheel alone keeps its normal scrolling behavior;
+- release-only update manager with platform-aware package selection and mandatory SHA-256 verification;
+- Alpha status displayed consistently in the application and release packages.
+
 ## 0.1.0
 
 - client desktop multi-mode Git, Sync et Backup ;
