@@ -47,7 +47,7 @@ public partial class App : Application
                 vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine,
                 localization, documentation, updates, initialProjectPath);
 
-            desktop.MainWindow = new MainWindow(viewModel, localization);
+            desktop.MainWindow = new MainWindow(viewModel, localization, paths.ConfigurationDirectory);
             desktop.Exit += (_, _) =>
             {
                 Task.Run(async () => await viewModel.DisposeAsync()).GetAwaiter().GetResult();

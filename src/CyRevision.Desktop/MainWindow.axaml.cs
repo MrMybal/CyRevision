@@ -1,11 +1,14 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using System.Diagnostics;
 using CyRevision.Desktop.Controls;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.ViewModels;
+using CyRevision.Desktop.Workspace;
 
 namespace CyRevision.Desktop;
 
@@ -15,18 +18,28 @@ public partial class MainWindow : Window
     private UiLocalizer? _uiLocalizer;
     private LocalizationService? _localization;
     private FocusedDiffWindow? _focusedDiffWindow;
-    private readonly double[] _historyPanelWeights = [0.9, 1.25, 1.15];
+    private WorkspaceLayoutPreferencesStore? _workspaceLayoutStore;
+    private HistoryLayoutMode _historyLayout = HistoryLayoutMode.Columns;
 
     public MainWindow()
     {
         InitializeComponent();
     }
 
-    public MainWindow(MainWindowViewModel viewModel, LocalizationService localization) : this()
+    public MainWindow(
+        MainWindowViewModel viewModel,
+        LocalizationService localization,
+        string configurationDirectory) : this()
     {
         _viewModel = viewModel;
         DataContext = viewModel;
         _localization = localization;
+        _workspaceLayoutStore = new WorkspaceLayoutPreferencesStore(configurationDirectory);
+        WorkspaceLayoutPreferences preferences = _workspaceLayoutStore.Load();
+        HistoryTimelineToggle.IsChecked = preferences.ShowTimeline;
+        HistoryFilesToggle.IsChecked = preferences.ShowFiles;
+        HistoryDiffToggle.IsChecked = preferences.ShowDiff;
+        ApplyHistoryLayout(preferences.HistoryLayout, false);
         _uiLocalizer = new UiLocalizer(this, localization);
         Opened += OnOpened;
         Closed += OnClosed;
@@ -45,29 +58,30 @@ public partial class MainWindow : Window
         _uiLocalizer?.Dispose();
     }
 
-    private void OnBalancedHistoryLayoutClick(object? sender, RoutedEventArgs e) =>
-        ApplyHistoryLayout(0.9, 1.25, 1.15);
+    private void OnColumnsHistoryLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyHistoryLayout(HistoryLayoutMode.Columns);
 
     private void OnReviewHistoryLayoutClick(object? sender, RoutedEventArgs e) =>
-        ApplyHistoryLayout(0.72, 1.55, 0.95);
+        ApplyHistoryLayout(HistoryLayoutMode.Review);
 
     private void OnDiffFocusedHistoryLayoutClick(object? sender, RoutedEventArgs e) =>
-        ApplyHistoryLayout(0.55, 0.8, 1.9);
+        ApplyHistoryLayout(HistoryLayoutMode.DiffFocus);
 
-    private void ApplyHistoryLayout(double timelineWeight, double filesWeight, double diffWeight)
+    private void ApplyHistoryLayout(HistoryLayoutMode layout, bool persist = true)
     {
-        _historyPanelWeights[0] = timelineWeight;
-        _historyPanelWeights[1] = filesWeight;
-        _historyPanelWeights[2] = diffWeight;
-        HistoryTimelineToggle.IsChecked = true;
-        HistoryFilesToggle.IsChecked = true;
-        HistoryDiffToggle.IsChecked = true;
+        _historyLayout = layout;
+        HistoryColumnsLayoutToggle.IsChecked = layout == HistoryLayoutMode.Columns;
+        HistoryReviewLayoutToggle.IsChecked = layout == HistoryLayoutMode.Review;
+        HistoryDiffFocusLayoutToggle.IsChecked = layout == HistoryLayoutMode.DiffFocus;
         RefreshHistoryWorkspaceLayout();
+        if (persist)
+        {
+            SaveHistoryLayoutPreferences();
+        }
     }
 
     private void OnHistoryPanelToggleClick(object? sender, RoutedEventArgs e)
     {
-        CaptureHistoryPanelWeights();
         if (HistoryTimelineToggle.IsChecked != true &&
             HistoryFilesToggle.IsChecked != true &&
             HistoryDiffToggle.IsChecked != true && sender is ToggleButton toggle)
@@ -76,18 +90,7 @@ public partial class MainWindow : Window
         }
 
         RefreshHistoryWorkspaceLayout();
-    }
-
-    private void CaptureHistoryPanelWeights()
-    {
-        Control[] panels = [HistoryTimelinePanel, HistoryFilesPanel, HistoryDiffPanel];
-        for (int index = 0; index < panels.Length; index++)
-        {
-            if (panels[index].IsVisible && panels[index].Bounds.Width > 1)
-            {
-                _historyPanelWeights[index] = panels[index].Bounds.Width;
-            }
-        }
+        SaveHistoryLayoutPreferences();
     }
 
     private void RefreshHistoryWorkspaceLayout()
@@ -100,37 +103,166 @@ public partial class MainWindow : Window
             HistoryDiffToggle.IsChecked == true
         ];
 
+        for (int index = 0; index < panels.Length; index++)
+        {
+            panels[index].IsVisible = visible[index];
+        }
+
+        ResetHistoryWorkspaceGrid();
+        int[] visibleIndices = Enumerable.Range(0, visible.Length).Where(index => visible[index]).ToArray();
+        if (visibleIndices.Length < 3)
+        {
+            ApplyFlowHistoryLayout(panels, visibleIndices);
+            return;
+        }
+
+        switch (_historyLayout)
+        {
+            case HistoryLayoutMode.Review:
+                ApplyReviewHistoryLayout();
+                break;
+            case HistoryLayoutMode.DiffFocus:
+                ApplyDiffFocusedHistoryLayout();
+                break;
+            default:
+                ApplyColumnsHistoryLayout();
+                break;
+        }
+    }
+
+    private void ResetHistoryWorkspaceGrid()
+    {
         foreach (ColumnDefinition column in HistoryWorkspaceGrid.ColumnDefinitions)
         {
             column.Width = new GridLength(0);
         }
 
-        int visibleIndex = 0;
-        for (int panelIndex = 0; panelIndex < panels.Length; panelIndex++)
+        foreach (RowDefinition row in HistoryWorkspaceGrid.RowDefinitions)
         {
-            Control panel = panels[panelIndex];
-            panel.IsVisible = visible[panelIndex];
-            if (!visible[panelIndex])
-            {
-                continue;
-            }
-
-            int columnIndex = visibleIndex * 2;
-            Grid.SetColumn(panel, columnIndex);
-            HistoryWorkspaceGrid.ColumnDefinitions[columnIndex].Width =
-                new GridLength(Math.Max(0.2, _historyPanelWeights[panelIndex]), GridUnitType.Star);
-            visibleIndex++;
+            row.Height = new GridLength(0);
         }
 
-        ConfigureHistorySplitter(HistorySplitterOne, 1, visibleIndex >= 2);
-        ConfigureHistorySplitter(HistorySplitterTwo, 3, visibleIndex >= 3);
+        HistorySplitterOne.IsVisible = false;
+        HistorySplitterTwo.IsVisible = false;
     }
 
-    private void ConfigureHistorySplitter(GridSplitter splitter, int columnIndex, bool visible)
+    private void ApplyColumnsHistoryLayout()
     {
-        splitter.IsVisible = visible;
-        Grid.SetColumn(splitter, columnIndex);
-        HistoryWorkspaceGrid.ColumnDefinitions[columnIndex].Width = new GridLength(visible ? 6 : 0);
+        SetHistoryColumn(0, 0.9, GridUnitType.Star);
+        SetHistoryColumn(1, 6);
+        SetHistoryColumn(2, 1.25, GridUnitType.Star);
+        SetHistoryColumn(3, 6);
+        SetHistoryColumn(4, 1.15, GridUnitType.Star);
+        SetHistoryRow(0, 1, GridUnitType.Star);
+        PlaceHistoryPanel(HistoryTimelinePanel, 0, 0);
+        PlaceHistoryPanel(HistoryFilesPanel, 0, 2);
+        PlaceHistoryPanel(HistoryDiffPanel, 0, 4);
+        ConfigureVerticalHistorySplitter(HistorySplitterOne, 1);
+        ConfigureVerticalHistorySplitter(HistorySplitterTwo, 3);
+    }
+
+    private void ApplyReviewHistoryLayout()
+    {
+        SetHistoryColumn(0, 0.78, GridUnitType.Star);
+        SetHistoryColumn(1, 6);
+        SetHistoryColumn(2, 1.72, GridUnitType.Star);
+        SetHistoryRow(0, 0.82, GridUnitType.Star);
+        SetHistoryRow(1, 6);
+        SetHistoryRow(2, 1.18, GridUnitType.Star);
+        PlaceHistoryPanel(HistoryTimelinePanel, 0, 0, 3);
+        PlaceHistoryPanel(HistoryFilesPanel, 0, 2);
+        PlaceHistoryPanel(HistoryDiffPanel, 2, 2);
+        ConfigureVerticalHistorySplitter(HistorySplitterOne, 1, 3);
+        ConfigureHorizontalHistorySplitter(HistorySplitterTwo, 1, 2);
+    }
+
+    private void ApplyDiffFocusedHistoryLayout()
+    {
+        SetHistoryColumn(0, 0.72, GridUnitType.Star);
+        SetHistoryColumn(1, 6);
+        SetHistoryColumn(2, 1.78, GridUnitType.Star);
+        SetHistoryRow(0, 1, GridUnitType.Star);
+        SetHistoryRow(1, 6);
+        SetHistoryRow(2, 1, GridUnitType.Star);
+        PlaceHistoryPanel(HistoryFilesPanel, 0, 0);
+        PlaceHistoryPanel(HistoryTimelinePanel, 2, 0);
+        PlaceHistoryPanel(HistoryDiffPanel, 0, 2, 3);
+        ConfigureVerticalHistorySplitter(HistorySplitterOne, 1, 3);
+        ConfigureHorizontalHistorySplitter(HistorySplitterTwo, 1, 0);
+    }
+
+    private void ApplyFlowHistoryLayout(IReadOnlyList<Control> panels, IReadOnlyList<int> visibleIndices)
+    {
+        SetHistoryRow(0, 1, GridUnitType.Star);
+        for (int visibleIndex = 0; visibleIndex < visibleIndices.Count; visibleIndex++)
+        {
+            int column = visibleIndex * 2;
+            int panelIndex = visibleIndices[visibleIndex];
+            double weight = panelIndex == 2 ? 1.35 : 1;
+            SetHistoryColumn(column, weight, GridUnitType.Star);
+            PlaceHistoryPanel(panels[panelIndex], 0, column);
+        }
+
+        if (visibleIndices.Count >= 2)
+        {
+            SetHistoryColumn(1, 6);
+            ConfigureVerticalHistorySplitter(HistorySplitterOne, 1);
+        }
+    }
+
+    private void ConfigureVerticalHistorySplitter(GridSplitter splitter, int column, int rowSpan = 1)
+    {
+        splitter.IsVisible = true;
+        splitter.ResizeDirection = GridResizeDirection.Columns;
+        splitter.Cursor = new Cursor(StandardCursorType.SizeWestEast);
+        splitter.Width = 6;
+        splitter.Height = double.NaN;
+        splitter.Margin = new Thickness(1, 10);
+        splitter.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        splitter.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;
+        Grid.SetRow(splitter, 0);
+        Grid.SetRowSpan(splitter, rowSpan);
+        Grid.SetColumn(splitter, column);
+        Grid.SetColumnSpan(splitter, 1);
+    }
+
+    private void ConfigureHorizontalHistorySplitter(GridSplitter splitter, int row, int column)
+    {
+        splitter.IsVisible = true;
+        splitter.ResizeDirection = GridResizeDirection.Rows;
+        splitter.Cursor = new Cursor(StandardCursorType.SizeNorthSouth);
+        splitter.Width = double.NaN;
+        splitter.Height = 6;
+        splitter.Margin = new Thickness(10, 1);
+        splitter.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        splitter.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;
+        Grid.SetRow(splitter, row);
+        Grid.SetRowSpan(splitter, 1);
+        Grid.SetColumn(splitter, column);
+        Grid.SetColumnSpan(splitter, 1);
+    }
+
+    private static void PlaceHistoryPanel(Control panel, int row, int column, int rowSpan = 1, int columnSpan = 1)
+    {
+        Grid.SetRow(panel, row);
+        Grid.SetRowSpan(panel, rowSpan);
+        Grid.SetColumn(panel, column);
+        Grid.SetColumnSpan(panel, columnSpan);
+    }
+
+    private void SetHistoryColumn(int index, double value, GridUnitType unit = GridUnitType.Pixel) =>
+        HistoryWorkspaceGrid.ColumnDefinitions[index].Width = new GridLength(value, unit);
+
+    private void SetHistoryRow(int index, double value, GridUnitType unit = GridUnitType.Pixel) =>
+        HistoryWorkspaceGrid.RowDefinitions[index].Height = new GridLength(value, unit);
+
+    private void SaveHistoryLayoutPreferences()
+    {
+        _workspaceLayoutStore?.Save(new WorkspaceLayoutPreferences(
+            _historyLayout,
+            HistoryTimelineToggle.IsChecked == true,
+            HistoryFilesToggle.IsChecked == true,
+            HistoryDiffToggle.IsChecked == true));
     }
 
     private void OnOpenFocusedDiffWindowClick(object? sender, RoutedEventArgs e)
