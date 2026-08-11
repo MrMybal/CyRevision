@@ -13,6 +13,8 @@ public sealed record ApplicationPaths(
 
     public string DiscordDirectory => Path.Combine(ConfigurationDirectory, "discord");
 
+    public string DiscordControlDirectory => Path.Combine(ConfigurationDirectory, "discord-control");
+
     public string BackupDirectory => Path.Combine(DataDirectory, "backups");
 
     public static ApplicationPaths CreateDefault()

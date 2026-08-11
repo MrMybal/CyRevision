@@ -70,7 +70,12 @@ public sealed class ManagedWireGuardEngine
         else
         {
             string executable = WireGuardKeyService.RequireExecutable(profile.WgQuickExecutablePath, "wg-quick");
-            ProcessResult result = await WireGuardKeyService.RunAsync(executable, ["up", configurationPath], null, cancellationToken);
+            ProcessResult result = await WireGuardKeyService.RunAsync(
+                executable,
+                ["up", configurationPath],
+                null,
+                cancellationToken,
+                BuildIntegratedEnvironment(profile));
             exitCode = result.ExitCode;
             if (exitCode != 0)
             {
@@ -113,7 +118,8 @@ public sealed class ManagedWireGuardEngine
                 executable,
                 ["down", _configuration.GetConfigurationPath(profile)],
                 null,
-                cancellationToken);
+                cancellationToken,
+                BuildIntegratedEnvironment(profile));
             if (result.ExitCode != 0)
             {
                 throw new InvalidOperationException($"wg-quick n'a pas arrêté le tunnel. {result.StandardError.Trim()}".Trim());
@@ -126,6 +132,22 @@ public sealed class ManagedWireGuardEngine
 
     private string GetOwnershipMarker(VpnProjectProfile profile) =>
         Path.Combine(_rootDirectory, "runtime", profile.ProjectId.ToString("N"), profile.InterfaceName + ".owned");
+
+    private static IReadOnlyDictionary<string, string?>? BuildIntegratedEnvironment(VpnProjectProfile profile)
+    {
+        if (profile.BackendMode != VpnBackendMode.IntegratedRuntime ||
+            string.IsNullOrWhiteSpace(profile.UserspaceExecutablePath))
+        {
+            return null;
+        }
+
+        string runtimeDirectory = Path.GetDirectoryName(profile.UserspaceExecutablePath)!;
+        return new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["WG_QUICK_USERSPACE_IMPLEMENTATION"] = profile.UserspaceExecutablePath,
+            ["PATH"] = runtimeDirectory + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH")
+        };
+    }
 
     private static async Task<bool> WindowsServiceExistsAsync(string interfaceName, CancellationToken cancellationToken)
     {

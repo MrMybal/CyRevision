@@ -24,6 +24,8 @@
     <ProjectReference Include="..\..\src\CyRevision.Backup\CyRevision.Backup.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Core\CyRevision.Core.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Discord\CyRevision.Discord.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Discord.Agent\CyRevision.Discord.Agent.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Discord.Control\CyRevision.Discord.Control.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Diff\CyRevision.Diff.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Git\CyRevision.Git.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Security\CyRevision.Security.csproj" />

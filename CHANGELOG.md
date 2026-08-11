@@ -6,6 +6,9 @@
 - grouped commit and active-branch notifications with a persistent per-project checkpoint;
 - safe first-run baseline, automatic retry after delivery failures, disabled mentions, masked webhook input, and local-only secret storage;
 - desktop configuration tab, startup option, manual check, test message, bilingual offline guide, and simulated webhook tests.
+- autonomous multi-project Discord sidecar with a bearer-authenticated loopback/LAN/VPN control API and a desktop control plugin;
+- selectable integrated or autonomous Discord execution, including a packaged local-agent launcher and Linux user service;
+- selectable system-installed or bundled WireGuard runtime per project, with SHA-256 runtime validation and no changes to unrelated tunnels.
 
 ## 0.1.5 Alpha — 2026-08-11
 

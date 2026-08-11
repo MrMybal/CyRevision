@@ -467,6 +467,12 @@ public partial class MainWindow : Window
     private async void OnSaveDiscordAgentClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SaveDiscordAgentAsync();
 
+    private async void OnConnectDiscordAgentClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ConnectDiscordAgentAsync();
+
+    private async void OnLaunchLocalDiscordAgentClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.LaunchLocalDiscordAgentAsync();
+
     private async void OnStartDiscordAgentClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.StartDiscordAgentAsync();
 

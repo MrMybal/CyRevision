@@ -59,7 +59,8 @@ public sealed class WireGuardKeyService
         string executable,
         IReadOnlyList<string> arguments,
         string? standardInput,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string?>? environment = null)
     {
         ProcessStartInfo startInfo = new()
         {
@@ -73,6 +74,14 @@ public sealed class WireGuardKeyService
         foreach (string argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        if (environment is not null)
+        {
+            foreach ((string name, string? value) in environment)
+            {
+                startInfo.Environment[name] = value;
+            }
         }
 
         using Process process = Process.Start(startInfo)

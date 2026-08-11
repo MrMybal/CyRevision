@@ -2,7 +2,11 @@
   "$name": "Français",
   "$patterns": {
     "^Keep the (\\d+) most recent versions$": "Conserver les $1 versions les plus récentes",
-    "^Peer: (.+)$": "Pair : $1"
+    "^Peer: (.+)$": "Pair : $1",
+    "^Connected to (.+) (.+) · (\\d+)/(\\d+) project agent\\(s\\) running$": "Connecté à $1 $2 · $3/$4 agent(s) de projet actif(s)",
+    "^Local sidecar connected · (\\d+)/(\\d+) running$": "Sidecar local connecté · $1/$2 actif(s)",
+    "^Integrated runtime ready in (.+)\\. (.+)$": "Runtime intégré prêt dans $1. $2",
+    "^Integrated runtime package required in (.+)\\. (.+)$": "Paquet du runtime intégré requis dans $1. $2"
   },
   "Git revisions and refs": "Révisions et références Git",
   "Signed peer exchange": "Échange signé entre pairs",
@@ -37,5 +41,20 @@
   "Paste the incoming webhook URL created for the target Discord channel.": "Collez l'URL du webhook entrant créé pour le salon Discord cible.",
   "No check performed.": "Aucune vérification effectuée.",
   "Settings are stored locally for this project.": "Les réglages sont stockés localement pour ce projet.",
-  "The webhook is stored in the local user configuration, outside the repository.": "Le webhook reste dans la configuration locale de l'utilisateur, hors du dépôt."
+  "The webhook is stored in the local user configuration, outside the repository.": "Le webhook reste dans la configuration locale de l'utilisateur, hors du dépôt.",
+  "Integrated": "Intégré (application)",
+  "Autonomous": "Agent autonome",
+  "SystemInstallation": "Installation système",
+  "IntegratedRuntime": "Runtime intégré",
+  "Integrated agent — runs with the desktop application.": "Agent intégré — fonctionne avec l'application desktop.",
+  "Integrated agent — runs only while the desktop application is open.": "Agent intégré — fonctionne uniquement lorsque l'application desktop est ouverte.",
+  "Autonomous agent — controlled over its authenticated network API.": "Agent autonome — contrôlé par son API réseau authentifiée.",
+  "Autonomous agent connected — project not configured": "Agent autonome connecté — projet non configuré",
+  "Autonomous agent connection required": "Connexion à l'agent autonome requise",
+  "Autonomous agent unavailable": "Agent autonome indisponible",
+  "The desktop application could not reach the autonomous agent.": "L'application desktop ne peut pas joindre l'agent autonome.",
+  "Control token saved locally — leave blank to keep it.": "Jeton de contrôle enregistré localement — laissez vide pour le conserver.",
+  "Paste the token printed by CyRevision.Discord.Agent.": "Collez le jeton affiché par CyRevision.Discord.Agent.",
+  "System WireGuard installation detected.": "Installation WireGuard du système détectée.",
+  "System WireGuard installation not detected.": "Installation WireGuard du système non détectée."
 }
