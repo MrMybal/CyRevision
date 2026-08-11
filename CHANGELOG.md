@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- optional Discord project agent using channel-scoped incoming webhooks without requiring GitHub;
+- grouped commit and active-branch notifications with a persistent per-project checkpoint;
+- safe first-run baseline, automatic retry after delivery failures, disabled mentions, masked webhook input, and local-only secret storage;
+- desktop configuration tab, startup option, manual check, test message, bilingual offline guide, and simulated webhook tests.
+
 ## 0.1.5 Alpha — 2026-08-11
 
 - new Rider-inspired code diff viewer with syntax highlighting, unified and side-by-side modes, aligned lines, and change navigation;

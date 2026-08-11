@@ -464,6 +464,24 @@ public partial class MainWindow : Window
 
     private async void OnRefreshVpnClick(object? sender, RoutedEventArgs e) => await _viewModel.RefreshVpnAsync();
 
+    private async void OnSaveDiscordAgentClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveDiscordAgentAsync();
+
+    private async void OnStartDiscordAgentClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.StartDiscordAgentAsync();
+
+    private async void OnStopDiscordAgentClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.StopDiscordAgentAsync();
+
+    private async void OnCheckDiscordAgentClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CheckDiscordAgentNowAsync();
+
+    private async void OnTestDiscordWebhookClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.TestDiscordWebhookAsync();
+
+    private async void OnRemoveDiscordWebhookClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RemoveDiscordWebhookAsync();
+
     private async void OnCreateVpnInvitationClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CreateVpnInvitationAsync();
 

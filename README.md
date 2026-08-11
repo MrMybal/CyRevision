@@ -26,6 +26,7 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 - Optional Linux server with an API, scheduled backups, scheduled Git exchange, and a protected web dashboard.
 - Optional Unreal Editor plugin for opening CyRevision and publishing non-blocking advisory asset reservations.
 - Optional WireGuard integration with guided setup, isolated tunnels, VPN-only peers, and Unreal Swarm/CI/service profiles.
+- Optional Discord agent with channel-scoped webhooks, grouped commit notifications, branch-change notices, and per-project duplicate prevention without requiring GitHub.
 - Extensible localization: English is the default, French is included, and additional JSON catalogs can be added to the desktop client and web dashboard.
 - Searchable offline documentation bundled with the desktop application in English and French.
 - Built-in stable-release updater with platform package selection and mandatory SHA-256 verification; commits, drafts, and prereleases are ignored.
@@ -89,6 +90,7 @@ Detailed documentation is currently available in French while its English transl
 - [Engine-independent asset diff](docs/asset-diff.md)
 - [Server API](docs/server-api.md)
 - [WireGuard VPN](docs/wireguard-vpn.md)
+- [Discord project agent](docs/discord-agent.md)
 - [Git visualizations](docs/git-visualizations.md)
 - [Git explorer and LFS Time Machine](docs/git-explorer-lfs-time-machine.md)
 - [Smart synchronization and cold archive](docs/smart-sync-and-cold-archive.md)

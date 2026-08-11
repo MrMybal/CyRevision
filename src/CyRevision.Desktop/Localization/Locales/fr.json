@@ -26,5 +26,16 @@
   "Archive": "Archive",
   "OnDemand": "À la demande",
   "RecentVersions": "Versions récentes",
-  "Everything": "Tout"
+  "Everything": "Tout",
+  "Discord agent not configured": "Agent Discord non configuré",
+  "Discord agent ready — stopped": "Agent Discord prêt — arrêté",
+  "Discord agent starting": "Démarrage de l'agent Discord",
+  "Discord agent watching": "Agent Discord en surveillance",
+  "Discord agent sending": "Envoi Discord en cours",
+  "Discord agent error — retry scheduled": "Erreur de l'agent Discord — nouvelle tentative planifiée",
+  "Webhook configured — leave blank to keep it, or paste a new URL to replace it.": "Webhook configuré — laissez vide pour le conserver, ou collez une nouvelle URL pour le remplacer.",
+  "Paste the incoming webhook URL created for the target Discord channel.": "Collez l'URL du webhook entrant créé pour le salon Discord cible.",
+  "No check performed.": "Aucune vérification effectuée.",
+  "Settings are stored locally for this project.": "Les réglages sont stockés localement pour ce projet.",
+  "The webhook is stored in the local user configuration, outside the repository.": "Le webhook reste dans la configuration locale de l'utilisateur, hors du dépôt."
 }

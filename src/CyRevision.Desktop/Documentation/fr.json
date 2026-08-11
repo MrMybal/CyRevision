@@ -56,6 +56,14 @@
     "keywords": ["unreal", "plugin", "asset", "réservation", "checkout", "verrou", "content browser"]
   },
   {
+    "id": "discord-agent",
+    "category": "Intégrations",
+    "title": "Agent de projet Discord",
+    "summary": "Publier les mises à jour Git groupées dans un salon Discord sans dépendre de GitHub.",
+    "body": "WEBHOOK DU SALON\nCréez un webhook entrant dans le salon Discord qui doit recevoir les notifications, puis collez son URL dans l'onglet Agent Discord. Le webhook appartient à un salon précis : CyRevision n'a pas besoin d'un token de bot global.\n\nPOINT DE DÉPART SÛR\nLe premier démarrage mémorise le HEAD actuel sans publier l'ancien historique. Les vérifications suivantes regroupent les nouveaux commits dans un message et peuvent signaler les changements de branche active. Les Pull, échanges entre pairs et commits locaux sont détectés dès qu'ils deviennent visibles dans le dépôt Git local.\n\nANTI-DOUBLON\nCyRevision enregistre un point de contrôle par projet uniquement après l'acceptation du message par Discord. Exécutez la surveillance automatique sur un seul appareil par projet : deux appareils actifs possèdent des points de contrôle locaux indépendants et peuvent annoncer la même mise à jour.\n\nSECRETS ET MENTIONS\nLe webhook reste dans la configuration CyRevision de l'utilisateur, hors du projet et du dépôt. Son URL est masquée après l'enregistrement et n'est jamais ajoutée à une notification. Les messages automatiques désactivent les mentions Discord. Retirer le webhook supprime le profil et le point de contrôle locaux.\n\nLIMITES\nL'agent annonce l'historique Git visible localement et fonctionne sans GitHub. Les pull requests, issues et reviews appartiennent à une forge et nécessitent l'intégration Discord de cette forge.",
+    "keywords": ["discord", "webhook", "salon", "notification", "commit", "agent", "intégration"]
+  },
+  {
     "id": "application-updates",
     "category": "Application",
     "title": "Mises à jour des releases stables",
