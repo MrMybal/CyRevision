@@ -81,3 +81,71 @@ public sealed record DiscordAgentStatus(
     string? Branch = null,
     DateTimeOffset? LastCheckedAt = null,
     DateTimeOffset? LastNotificationAt = null);
+
+public sealed record DiscordAgentRegistration(
+    Guid ProjectId,
+    string ProjectName,
+    string RepositoryPath,
+    DiscordAgentProfile Profile)
+{
+    public void Validate()
+    {
+        if (ProjectId == Guid.Empty || Profile.ProjectId != ProjectId)
+        {
+            throw new InvalidOperationException("The Discord registration project ID is invalid.");
+        }
+
+        if (string.IsNullOrWhiteSpace(ProjectName) || ProjectName.Trim().Length > 150)
+        {
+            throw new InvalidDataException("The registered project name must contain 1 to 150 characters.");
+        }
+
+        if (string.IsNullOrWhiteSpace(RepositoryPath) || !Path.IsPathFullyQualified(RepositoryPath))
+        {
+            throw new InvalidDataException("The autonomous agent repository path must be absolute.");
+        }
+
+        Profile.Validate();
+    }
+}
+
+public sealed record DiscordAgentPublicStatus(
+    Guid ProjectId,
+    string ProjectName,
+    string RepositoryPath,
+    bool WebhookConfigured,
+    bool StartAutomatically,
+    string DisplayName,
+    string? ProjectLabel,
+    string? RepositoryWebUrl,
+    int PollIntervalSeconds,
+    bool NotifyCommits,
+    bool NotifyBranchChanges,
+    bool IsRunning,
+    DiscordAgentRuntimeState State,
+    string Details,
+    string? Branch = null,
+    DateTimeOffset? LastCheckedAt = null,
+    DateTimeOffset? LastNotificationAt = null);
+
+public sealed record DiscordAgentConfigurationRequest(
+    Guid ProjectId,
+    string ProjectName,
+    string RepositoryPath,
+    string? WebhookUrl,
+    string DisplayName,
+    string? ProjectLabel,
+    string? RepositoryWebUrl,
+    int PollIntervalSeconds,
+    bool NotifyCommits,
+    bool NotifyBranchChanges,
+    bool StartAutomatically);
+
+public sealed record DiscordAgentHostStatus(
+    string Service,
+    string Version,
+    DateTimeOffset StartedAt,
+    int ConfiguredProjects,
+    int RunningProjects);
+
+public sealed record DiscordAgentCommandResult(bool Success, string Message);

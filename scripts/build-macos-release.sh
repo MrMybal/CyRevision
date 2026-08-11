@@ -20,6 +20,7 @@ fi
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 solution="$repository_root/CyRevision.sln"
 desktop_project="$repository_root/src/CyRevision.Desktop/CyRevision.Desktop.csproj"
+agent_project="$repository_root/src/CyRevision.Discord.Agent/CyRevision.Discord.Agent.csproj"
 release_root="$repository_root/artifacts/release/$version"
 publish_directory="$release_root/$rid"
 bundle_root="$release_root/CyRevision.app"
@@ -34,6 +35,7 @@ mkdir -p "$publish_directory" "$bundle_root/Contents/MacOS" "$bundle_root/Conten
 
 dotnet restore "$solution"
 dotnet restore "$desktop_project" --runtime "$rid"
+dotnet restore "$agent_project" --runtime "$rid"
 dotnet build "$solution" -c Release --no-restore "/p:Version=$version"
 if [[ "${CYREVISION_SKIP_TESTS:-0}" != "1" ]]; then
   dotnet test "$solution" -c Release --no-build --no-restore "/p:Version=$version"
@@ -47,9 +49,19 @@ dotnet publish "$desktop_project" \
   "/p:Version=$version" \
   /p:DebugType=None \
   /p:DebugSymbols=false
+dotnet publish "$agent_project" \
+  -c Release \
+  --runtime "$rid" \
+  --self-contained true \
+  --no-restore \
+  -o "$publish_directory/Agent" \
+  "/p:Version=$version" \
+  /p:DebugType=None \
+  /p:DebugSymbols=false
 
 cp -a "$publish_directory/." "$bundle_root/Contents/MacOS/"
 chmod +x "$bundle_root/Contents/MacOS/CyRevision.Desktop"
+chmod +x "$bundle_root/Contents/MacOS/Agent/CyRevision.Discord.Agent"
 cp "$repository_root/LICENSE" "$bundle_root/Contents/Resources/"
 cp "$repository_root/README.md" "$bundle_root/Contents/Resources/"
 

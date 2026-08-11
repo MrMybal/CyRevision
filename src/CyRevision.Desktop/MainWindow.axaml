@@ -854,9 +854,23 @@
                                     <TextBlock Text="Assistant WireGuard CyRevision" FontSize="17" FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding VpnState}" FontSize="14" FontWeight="SemiBold" Foreground="#78D7B7" />
                                     <TextBlock Text="{Binding VpnDetails}" TextWrapping="Wrap" Classes="muted" />
-                                    <Button Classes="primary" Content="Détecter et configurer automatiquement" Click="OnConfigureVpnClick" HorizontalAlignment="Left" />
+                                    <Grid ColumnDefinitions="190,*" ColumnSpacing="9">
+                                        <StackPanel>
+                                            <TextBlock Text="Moteur WireGuard" FontSize="11" Classes="muted" />
+                                            <ComboBox ItemsSource="{Binding VpnBackendModes}" SelectedItem="{Binding SelectedVpnBackendMode}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding VpnBackendDetails}" VerticalAlignment="Center"
+                                                   TextWrapping="Wrap" FontSize="10.5" Foreground="#78D7B7" />
+                                    </Grid>
+                                    <Button Classes="primary" Content="Configurer le moteur sélectionné" Click="OnConfigureVpnClick" HorizontalAlignment="Left" />
 
-                                    <TextBlock Text="Installation détectée" Margin="0,5,0,0" />
+                                    <TextBlock Text="Runtime actif" Margin="0,5,0,0" />
                                     <TextBox Text="{Binding WireGuardExecutablePath}" IsReadOnly="True" PlaceholderText="WireGuard non détecté" />
 
                                     <Grid ColumnDefinitions="1.25*,1*,0.65*" ColumnSpacing="8">
@@ -942,6 +956,53 @@
                                     <TextBlock Text="Le webhook choisit directement le salon cible. Aucun bot Discord complet ni jeton global n'est nécessaire."
                                                TextWrapping="Wrap" FontSize="11" Classes="muted" />
 
+                                    <Grid ColumnDefinitions="180,*" ColumnSpacing="10" Margin="0,5,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Mode d'exécution" FontSize="11" Classes="muted" />
+                                            <ComboBox ItemsSource="{Binding DiscordExecutionModes}"
+                                                      SelectedItem="{Binding SelectedDiscordExecutionMode}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding DiscordConnectionSummary}"
+                                                   VerticalAlignment="Center" TextWrapping="Wrap"
+                                                   FontSize="11" Foreground="#78D7B7" />
+                                    </Grid>
+
+                                    <Border IsVisible="{Binding DiscordUsesAutonomousAgent}"
+                                            Background="#1B2237" BorderBrush="#3D4965" BorderThickness="1"
+                                            CornerRadius="6" Padding="10">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="Contrôle de l'agent autonome" FontSize="14" FontWeight="SemiBold" />
+                                            <Grid ColumnDefinitions="1.15*,0.85*" ColumnSpacing="8">
+                                                <StackPanel>
+                                                    <TextBlock Text="Adresse de l'API" FontSize="10.5" Classes="muted" />
+                                                    <TextBox Text="{Binding DiscordAgentEndpoint}" PlaceholderText="http://127.0.0.1:47831" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Text="Jeton de contrôle" FontSize="10.5" Classes="muted" />
+                                                    <TextBox Text="{Binding DiscordAgentApiToken}" PasswordChar="●"
+                                                             PlaceholderText="{Binding DiscordControlTokenHint}" />
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock Text="Chemin du dépôt vu par la machine agent" FontSize="10.5" Classes="muted" />
+                                            <TextBox Text="{Binding DiscordAgentRepositoryPath}" PlaceholderText="D:\Projects\MonProjet ou /srv/projects/mon-projet" />
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                                <CheckBox Content="Autoriser HTTP uniquement dans un VPN WireGuard de confiance"
+                                                          IsChecked="{Binding DiscordAllowPrivateHttp}"
+                                                          VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Classes="secondary" Content="Connecter"
+                                                        Click="OnConnectDiscordAgentClick" />
+                                                <Button Grid.Column="2" Classes="primary" Content="Lancer l'agent local"
+                                                        Click="OnLaunchLocalDiscordAgentClick" />
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
                                     <TextBlock Text="Webhook entrant du salon" FontSize="11" Classes="muted" Margin="0,5,0,0" />
                                     <TextBox Text="{Binding DiscordWebhookUrl}"
                                              PasswordChar="●"
@@ -1008,6 +1069,7 @@
                                     <TextBlock Text="• Le point de contrôle avance uniquement après une réponse Discord valide." TextWrapping="Wrap" />
                                     <TextBlock Text="• Les mentions Discord sont toujours désactivées dans les messages automatiques." TextWrapping="Wrap" />
                                     <TextBlock Text="• Active l'agent automatique sur une seule machine par projet pour éviter les doublons." TextWrapping="Wrap" />
+                                    <TextBlock Text="• Le mode autonome continue de fonctionner lorsque l'interface CyRevision est fermée." TextWrapping="Wrap" />
                                 </StackPanel>
 
                                 <Border Grid.Row="4" Background="#151D31" CornerRadius="6" Padding="11" Margin="0,12,0,0">

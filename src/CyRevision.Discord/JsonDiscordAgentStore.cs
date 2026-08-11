@@ -30,6 +30,71 @@ public sealed class JsonDiscordAgentStore
         await WriteAsync(GetProfilePath(profile.ProjectId), profile, cancellationToken);
     }
 
+    public Task<DiscordAgentRegistration?> GetRegistrationAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default) =>
+        ReadAsync<DiscordAgentRegistration>(GetRegistrationPath(projectId), cancellationToken);
+
+    public async Task<IReadOnlyList<DiscordAgentRegistration>> GetRegistrationsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!Directory.Exists(_directory))
+            {
+                return [];
+            }
+
+            List<DiscordAgentRegistration> registrations = [];
+            foreach (string path in Directory.EnumerateFiles(_directory, "*.registration.json"))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    await using FileStream stream = File.OpenRead(path);
+                    DiscordAgentRegistration? registration = await JsonSerializer.DeserializeAsync<DiscordAgentRegistration>(
+                        stream,
+                        JsonOptions,
+                        cancellationToken);
+                    if (registration is not null)
+                    {
+                        registration.Validate();
+                        registrations.Add(registration);
+                    }
+                }
+                catch (JsonException)
+                {
+                    // A damaged registration is skipped without stopping the other projects.
+                }
+                catch (InvalidDataException)
+                {
+                    // A registration with invalid values is ignored.
+                }
+                catch (InvalidOperationException)
+                {
+                    // A registration with inconsistent project identifiers is ignored.
+                }
+            }
+
+            return registrations;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task SaveRegistrationAsync(
+        DiscordAgentRegistration registration,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(registration);
+        registration.Validate();
+        await WriteAsync(GetRegistrationPath(registration.ProjectId), registration, cancellationToken);
+        await SaveProfileAsync(registration.Profile, cancellationToken);
+    }
+
     public Task<DiscordAgentCheckpoint?> GetCheckpointAsync(
         Guid projectId,
         CancellationToken cancellationToken = default) =>
@@ -55,6 +120,7 @@ public sealed class JsonDiscordAgentStore
         {
             File.Delete(GetProfilePath(projectId));
             File.Delete(GetCheckpointPath(projectId));
+            File.Delete(GetRegistrationPath(projectId));
         }
         finally
         {
@@ -140,4 +206,7 @@ public sealed class JsonDiscordAgentStore
 
     private string GetCheckpointPath(Guid projectId) =>
         Path.Combine(_directory, $"{projectId:N}.checkpoint.json");
+
+    private string GetRegistrationPath(Guid projectId) =>
+        Path.Combine(_directory, $"{projectId:N}.registration.json");
 }

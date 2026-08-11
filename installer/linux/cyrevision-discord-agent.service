@@ -1,0 +1,15 @@
+[Unit]
+Description=CyRevision autonomous Discord agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/cyrevision/Agent/CyRevision.Discord.Agent
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

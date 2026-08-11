@@ -24,6 +24,12 @@ public enum VpnRuntimeState
     Faulted
 }
 
+public enum VpnBackendMode
+{
+    SystemInstallation,
+    IntegratedRuntime
+}
+
 public sealed record VpnPeerDefinition(
     Guid PeerId,
     string DisplayName,
@@ -50,7 +56,12 @@ public sealed record VpnProjectProfile(
     VpnNodeCapabilities LocalCapabilities,
     bool StartAutomatically,
     IReadOnlyList<VpnPeerDefinition> Peers,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    public VpnBackendMode BackendMode { get; init; } = VpnBackendMode.SystemInstallation;
+
+    public string? UserspaceExecutablePath { get; init; }
+}
 
 public sealed record VpnEngineStatus(
     VpnRuntimeState State,
@@ -63,6 +74,14 @@ public sealed record WireGuardInstallation(
     string? WgExecutablePath,
     string? WgQuickExecutablePath)
 {
+    public VpnBackendMode BackendMode { get; init; } = VpnBackendMode.SystemInstallation;
+
+    public string? UserspaceExecutablePath { get; init; }
+
+    public string? RuntimeDirectory { get; init; }
+
+    public string? ValidationMessage { get; init; }
+
     public bool CanGenerateKeys => !string.IsNullOrWhiteSpace(WgExecutablePath);
 
     public bool CanManageTunnel => OperatingSystem.IsWindows()

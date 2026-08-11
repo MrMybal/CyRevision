@@ -13,12 +13,16 @@
 | `CyRevision.Diff` | Comparaisons d’assets sans moteur |
 | `CyRevision.Vpn` | Profils WireGuard, clés, configuration, tunnel possédé et admission VPN |
 | `CyRevision.Discord` | Webhooks de salon, surveillance Git, messages groupés et points de contrôle anti-doublon |
+| `CyRevision.Discord.Control` | Client de contrôle authentifié pour un agent Discord local ou distant |
+| `CyRevision.Discord.Agent` | Processus autonome multi-projet exécutable à côté du client desktop |
 | `CyRevision.Server` | Pair Linux, API, ordonnanceurs et dashboard web |
 | `CyRevisionUnreal` | Menus Content Browser, fenêtre de présence et pont vers le client |
 
 Les modules sont activés par des drapeaux indépendants. Git ne dépend pas de Sync ; Sync ne dépend pas de Git ; Backup peut être utilisé seul.
 
-Le VPN est lui aussi indépendant des modes projet. Il transporte du trafic IP générique et ne donne par lui-même aucun droit Git ou Syncthing. Le MVP adopte une étoile autour du nœud invitant, adaptée à un serveur, une CI ou un coordinateur Swarm permanent.
+Le VPN est lui aussi indépendant des modes projet. Il transporte du trafic IP générique et ne donne par lui-même aucun droit Git ou Syncthing. Chaque profil choisit l'installation WireGuard du système ou le runtime officiel livré avec CyRevision. Le MVP adopte une étoile autour du nœud invitant, adaptée à un serveur, une CI ou un coordinateur Swarm permanent.
+
+L'agent Discord peut vivre dans l'application desktop ou dans un processus autonome. Le module de contrôle ne renvoie jamais le webhook au client : il transmet les changements au sidecar par une API Bearer liée au loopback par défaut. Une exposition distante exige HTTPS, ou une autorisation explicite pour une adresse privée transportée par un VPN WireGuard de confiance.
 
 ## Git + Sync
 

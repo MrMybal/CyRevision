@@ -52,7 +52,7 @@ Le propriétaire peut sélectionner un membre actif et cliquer **Révoquer**. Le
 
 ## VPN WireGuard
 
-Le VPN ne dépend pas du mode choisi dans **Projet**. Dans **VPN WireGuard**, cliquez **Détecter et configurer automatiquement** : CyRevision utilise l'installation officielle existante, génère les clés du projet et prépare une interface `cyrev-*` séparée de vos autres tunnels.
+Le VPN ne dépend pas du mode choisi dans **Projet**. Dans **VPN WireGuard**, choisissez **Installation système** pour utiliser WireGuard déjà installé, ou **Runtime intégré** pour utiliser les composants WireGuard officiels livrés avec CyRevision. Configurez ensuite le moteur : CyRevision génère les clés du projet et prépare une interface `cyrev-*` séparée de vos autres tunnels.
 
 Indiquez un endpoint public `hôte:port` sur le nœud qui reçoit les connexions, choisissez sa fonction puis créez une invitation VPN. Le nouvel appareil configure WireGuard localement, colle l'invitation et renvoie la réponse signée ; le propriétaire l'accepte explicitement. Un pair VPN-only ne reçoit aucun accès Git ou Sync.
 

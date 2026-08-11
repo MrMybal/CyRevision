@@ -1,6 +1,10 @@
 # Creating a CyRevision release
 
-CyRevision releases are self-contained: end users do not need to install the .NET runtime. Git, Git LFS, Syncthing, and WireGuard remain external tools because every project can enable or disable those modules independently.
+CyRevision releases are self-contained: end users do not need to install the .NET runtime. Git, Git LFS, and Syncthing remain external tools because every project can enable or disable those modules independently. WireGuard may use either a system installation or a separately packaged, checksum-verified integrated runtime.
+
+The autonomous Discord agent is published inside the `Agent` directory of every desktop package. Windows and macOS can launch it from the Discord tab. Debian packages also install the `cyrevision-discord-agent` command and a user-level systemd unit.
+
+The optional `VpnRuntime/<RID>` directory is copied into releases. A production integrated-VPN package must provide the platform files and `runtime.json` checksums described in `src/CyRevision.Desktop/VpnRuntime/README.md`; release builds must never substitute an unofficial cryptographic implementation.
 
 ## Packages
 

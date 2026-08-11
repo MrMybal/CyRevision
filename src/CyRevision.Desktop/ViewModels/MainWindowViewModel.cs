@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Text.Json;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -10,6 +11,7 @@ using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.Documentation;
 using CyRevision.Diff;
 using CyRevision.Discord;
+using CyRevision.Discord.Control;
 using CyRevision.Git;
 using CyRevision.Security;
 using CyRevision.Sync;
@@ -29,11 +31,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly WireGuardKeyService _wireGuardKeyService;
     private readonly WireGuardConfigService _wireGuardConfiguration;
     private readonly ManagedWireGuardEngine _wireGuardEngine;
+    private readonly WireGuardRuntimeResolver _wireGuardRuntimeResolver;
     private readonly LocalizationService _localization;
     private readonly OfflineDocumentationService _documentationService;
     private readonly ApplicationUpdateService _updateService;
     private readonly JsonDiscordAgentStore _discordAgentStore;
     private readonly DiscordProjectAgent _discordAgent;
+    private readonly DiscordControlConnectionStore _discordControlConnectionStore;
     private readonly string? _initialProjectPath;
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
@@ -131,6 +135,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private bool _isCheckingForUpdates;
     private bool _isDownloadingUpdate;
     private double _updateProgress;
+    private VpnBackendMode _selectedVpnBackendMode = VpnBackendMode.SystemInstallation;
+    private string _vpnBackendDetails = "Use the WireGuard installation already present on this system.";
     private DiscordAgentProfile? _currentDiscordProfile;
     private string _discordWebhookUrl = string.Empty;
     private string _discordDisplayName = "CyRevision";
@@ -145,6 +151,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _discordAgentState = "Discord agent not configured";
     private string _discordAgentDetails = "Add a channel webhook to enable project notifications.";
     private string _discordLastActivity = "No check performed.";
+    private DiscordControlConnection? _currentDiscordControlConnection;
+    private DiscordAgentExecutionMode _selectedDiscordExecutionMode = DiscordAgentExecutionMode.Integrated;
+    private string _discordAgentEndpoint = "http://127.0.0.1:47831";
+    private string _discordAgentApiToken = string.Empty;
+    private string _discordAgentRepositoryPath = string.Empty;
+    private bool _discordAllowPrivateHttp;
+    private bool _discordControlTokenConfigured;
+    private string _discordConnectionSummary = "Integrated agent — runs with the desktop application.";
 
     public MainWindowViewModel(
         IProjectCatalog projectCatalog,
@@ -157,11 +171,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         WireGuardKeyService wireGuardKeyService,
         WireGuardConfigService wireGuardConfiguration,
         ManagedWireGuardEngine wireGuardEngine,
+        WireGuardRuntimeResolver wireGuardRuntimeResolver,
         LocalizationService localization,
         OfflineDocumentationService documentationService,
         ApplicationUpdateService updateService,
         JsonDiscordAgentStore discordAgentStore,
         DiscordProjectAgent discordAgent,
+        DiscordControlConnectionStore discordControlConnectionStore,
         string? initialProjectPath = null)
     {
         _projectCatalog = projectCatalog;
@@ -174,11 +190,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _wireGuardKeyService = wireGuardKeyService;
         _wireGuardConfiguration = wireGuardConfiguration;
         _wireGuardEngine = wireGuardEngine;
+        _wireGuardRuntimeResolver = wireGuardRuntimeResolver;
         _localization = localization;
         _documentationService = documentationService;
         _updateService = updateService;
         _discordAgentStore = discordAgentStore;
         _discordAgent = discordAgent;
+        _discordControlConnectionStore = discordControlConnectionStore;
         _discordAgent.StatusChanged += OnDiscordAgentStatusChanged;
         _selectedLanguage = localization.Languages.FirstOrDefault(language =>
             string.Equals(language.Code, localization.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase));
@@ -814,6 +832,26 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         private set => SetProperty(ref _vpnState, value);
     }
 
+    public IReadOnlyList<VpnBackendMode> VpnBackendModes { get; } = Enum.GetValues<VpnBackendMode>();
+
+    public VpnBackendMode SelectedVpnBackendMode
+    {
+        get => _selectedVpnBackendMode;
+        set
+        {
+            if (SetProperty(ref _selectedVpnBackendMode, value))
+            {
+                UpdateVpnBackendDetails();
+            }
+        }
+    }
+
+    public string VpnBackendDetails
+    {
+        get => _vpnBackendDetails;
+        private set => SetProperty(ref _vpnBackendDetails, value);
+    }
+
     public string VpnDetails
     {
         get => _vpnDetails;
@@ -966,6 +1004,73 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _discordLastActivity;
         private set => SetProperty(ref _discordLastActivity, value);
+    }
+
+    public IReadOnlyList<DiscordAgentExecutionMode> DiscordExecutionModes { get; } =
+        Enum.GetValues<DiscordAgentExecutionMode>();
+
+    public DiscordAgentExecutionMode SelectedDiscordExecutionMode
+    {
+        get => _selectedDiscordExecutionMode;
+        set
+        {
+            if (SetProperty(ref _selectedDiscordExecutionMode, value))
+            {
+                OnPropertyChanged(nameof(DiscordUsesAutonomousAgent));
+                DiscordConnectionSummary = value == DiscordAgentExecutionMode.Integrated
+                    ? "Integrated agent — runs only while the desktop application is open."
+                    : "Autonomous agent — controlled over its authenticated network API.";
+            }
+        }
+    }
+
+    public bool DiscordUsesAutonomousAgent =>
+        SelectedDiscordExecutionMode == DiscordAgentExecutionMode.Autonomous;
+
+    public string DiscordAgentEndpoint
+    {
+        get => _discordAgentEndpoint;
+        set => SetProperty(ref _discordAgentEndpoint, value);
+    }
+
+    public string DiscordAgentApiToken
+    {
+        get => _discordAgentApiToken;
+        set => SetProperty(ref _discordAgentApiToken, value);
+    }
+
+    public string DiscordAgentRepositoryPath
+    {
+        get => _discordAgentRepositoryPath;
+        set => SetProperty(ref _discordAgentRepositoryPath, value);
+    }
+
+    public bool DiscordAllowPrivateHttp
+    {
+        get => _discordAllowPrivateHttp;
+        set => SetProperty(ref _discordAllowPrivateHttp, value);
+    }
+
+    public bool DiscordControlTokenConfigured
+    {
+        get => _discordControlTokenConfigured;
+        private set
+        {
+            if (SetProperty(ref _discordControlTokenConfigured, value))
+            {
+                OnPropertyChanged(nameof(DiscordControlTokenHint));
+            }
+        }
+    }
+
+    public string DiscordControlTokenHint => DiscordControlTokenConfigured
+        ? "Control token saved locally — leave blank to keep it."
+        : "Paste the token printed by CyRevision.Discord.Agent.";
+
+    public string DiscordConnectionSummary
+    {
+        get => _discordConnectionSummary;
+        private set => SetProperty(ref _discordConnectionSummary, value);
     }
 
     public async Task InitializeAsync()
@@ -2081,11 +2186,23 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
         await RunOperationAsync("Configuration de WireGuard…", async () =>
         {
-            WireGuardInstallation installation = _wireGuardKeyService.DetectInstallation();
-            if (!installation.CanGenerateKeys)
+            if (_currentVpnProfile is not null &&
+                _currentVpnProfile.BackendMode != SelectedVpnBackendMode &&
+                (await _wireGuardEngine.GetStatusAsync(_currentVpnProfile)).State == VpnRuntimeState.Running)
             {
-                throw new FileNotFoundException(
-                    "WireGuard est introuvable. Installez l'application officielle puis relancez la détection.");
+                throw new InvalidOperationException(
+                    "Stop the active CyRevision tunnel before changing the WireGuard backend.");
+            }
+
+            WireGuardInstallation installation = _wireGuardRuntimeResolver.Detect(SelectedVpnBackendMode);
+            bool integratedComplete = installation.BackendMode != VpnBackendMode.IntegratedRuntime ||
+                                      OperatingSystem.IsWindows() ||
+                                      !string.IsNullOrWhiteSpace(installation.UserspaceExecutablePath);
+            if (!installation.CanGenerateKeys || !installation.CanManageTunnel || !integratedComplete)
+            {
+                throw new FileNotFoundException(SelectedVpnBackendMode == VpnBackendMode.IntegratedRuntime
+                    ? $"The integrated WireGuard runtime is incomplete. Install its platform package in '{installation.RuntimeDirectory}'."
+                    : "WireGuard is unavailable. Install the official application and run detection again.");
             }
 
             string keyPath = Path.Combine(
@@ -2099,6 +2216,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 WireGuardExecutablePath = installation.WireGuardExecutablePath ?? profile.WireGuardExecutablePath,
                 WgExecutablePath = installation.WgExecutablePath ?? profile.WgExecutablePath,
                 WgQuickExecutablePath = installation.WgQuickExecutablePath ?? profile.WgQuickExecutablePath,
+                BackendMode = installation.BackendMode,
+                UserspaceExecutablePath = installation.UserspaceExecutablePath,
                 UpdatedAt = DateTimeOffset.UtcNow
             };
             if (string.IsNullOrWhiteSpace(profile.PublicKey) || !File.Exists(profile.PrivateKeyPath))
@@ -2241,6 +2360,122 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, $"Pair VPN {selected.DisplayName} retiré");
     }
 
+    public async Task ConnectDiscordAgentAsync()
+    {
+        if (SelectedProject is null || !DiscordUsesAutonomousAgent)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Connecting to the autonomous Discord agent…", async () =>
+        {
+            DiscordControlConnection connection = BuildDiscordControlConnection();
+            using DiscordAgentControlClient client = CreateDiscordControlClient(connection);
+            DiscordAgentHostStatus host = await client.GetHostStatusAsync();
+            await _discordControlConnectionStore.SaveAsync(connection);
+            _currentDiscordControlConnection = connection;
+            DiscordControlTokenConfigured = true;
+            DiscordAgentApiToken = string.Empty;
+            DiscordAgentPublicStatus? projectStatus = await client.GetProjectStatusAsync(SelectedProject.Id);
+            if (projectStatus is not null)
+            {
+                ApplyAutonomousDiscordStatus(projectStatus);
+            }
+            else
+            {
+                DiscordIsRunning = false;
+                DiscordWebhookConfigured = false;
+                DiscordAgentState = "Autonomous agent connected — project not configured";
+                DiscordAgentDetails = "Save this project configuration to register it on the autonomous agent.";
+            }
+
+            DiscordConnectionSummary = $"Connected to {host.Service} {host.Version} · " +
+                                       $"{host.RunningProjects}/{host.ConfiguredProjects} project agent(s) running";
+        }, "Autonomous Discord agent connected");
+    }
+
+    public async Task LaunchLocalDiscordAgentAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        SelectedDiscordExecutionMode = DiscordAgentExecutionMode.Autonomous;
+        await RunOperationAsync("Launching the local autonomous Discord agent…", async () =>
+        {
+            string executableName = OperatingSystem.IsWindows()
+                ? "CyRevision.Discord.Agent.exe"
+                : "CyRevision.Discord.Agent";
+            string executablePath = Path.Combine(AppContext.BaseDirectory, "Agent", executableName);
+            if (!File.Exists(executablePath))
+            {
+                throw new FileNotFoundException(
+                    "The autonomous agent is not present beside this CyRevision build.",
+                    executablePath);
+            }
+
+            ProcessStartInfo startInfo = new()
+            {
+                FileName = executablePath,
+                WorkingDirectory = Path.GetDirectoryName(executablePath)!,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            Process? process = Process.Start(startInfo);
+            process?.Dispose();
+
+            DiscordAgentEndpoint = "http://127.0.0.1:47831";
+            DiscordAllowPrivateHttp = false;
+            DiscordAgentRepositoryPath = SelectedProject.RootPath;
+            string tokenPath = Path.Combine(
+                _applicationPaths.DiscordDirectory,
+                "agent-host",
+                "control-token.txt");
+            for (int attempt = 0; attempt < 50 && !File.Exists(tokenPath); attempt++)
+            {
+                await Task.Delay(200);
+            }
+
+            if (!File.Exists(tokenPath))
+            {
+                throw new TimeoutException(
+                    "The local autonomous agent did not create its control token within ten seconds.");
+            }
+
+            DiscordAgentApiToken = (await File.ReadAllTextAsync(tokenPath)).Trim();
+            DiscordControlConnection connection = BuildDiscordControlConnection();
+            using DiscordAgentControlClient client = CreateDiscordControlClient(connection);
+            DiscordAgentHostStatus? host = null;
+            Exception? lastConnectionError = null;
+            for (int attempt = 0; attempt < 50 && host is null; attempt++)
+            {
+                try
+                {
+                    host = await client.GetHostStatusAsync();
+                }
+                catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+                {
+                    lastConnectionError = exception;
+                    await Task.Delay(200);
+                }
+            }
+
+            if (host is null)
+            {
+                throw new TimeoutException(
+                    "The local autonomous agent did not open its control API within ten seconds.",
+                    lastConnectionError);
+            }
+
+            await _discordControlConnectionStore.SaveAsync(connection);
+            _currentDiscordControlConnection = connection;
+            DiscordControlTokenConfigured = true;
+            DiscordAgentApiToken = string.Empty;
+            DiscordConnectionSummary = $"Local sidecar connected · {host.RunningProjects}/{host.ConfiguredProjects} running";
+        }, "Local autonomous Discord agent launched");
+    }
+
     public async Task SaveDiscordAgentAsync()
     {
         if (SelectedProject is null)
@@ -2248,9 +2483,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        if (DiscordUsesAutonomousAgent)
+        {
+            await SaveAutonomousDiscordAgentAsync(startAfterSave: false);
+            return;
+        }
+
         await RunOperationAsync("Saving the Discord agent…", async () =>
         {
             DiscordAgentProfile profile = BuildDiscordProfile();
+            await SaveIntegratedDiscordPreferenceAsync();
             await _discordAgentStore.SaveProfileAsync(profile);
             _currentDiscordProfile = profile;
             DiscordWebhookConfigured = true;
@@ -2274,6 +2516,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        if (DiscordUsesAutonomousAgent)
+        {
+            await SaveAutonomousDiscordAgentAsync(startAfterSave: true);
+            return;
+        }
+
         if (!SelectedProject.Definition.Features.GitEnabled)
         {
             StatusMessage = "The Discord commit agent requires a Git-enabled project.";
@@ -2283,6 +2531,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         await RunOperationAsync("Starting the Discord agent…", async () =>
         {
             DiscordAgentProfile profile = BuildDiscordProfile();
+            await SaveIntegratedDiscordPreferenceAsync();
             await _discordAgentStore.SaveProfileAsync(profile);
             _currentDiscordProfile = profile;
             DiscordWebhookConfigured = true;
@@ -2291,13 +2540,34 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, "Discord agent started");
     }
 
-    public async Task StopDiscordAgentAsync() => await RunOperationAsync(
-        "Stopping the Discord agent…",
-        () => _discordAgent.StopAsync(),
-        "Discord agent stopped");
+    public async Task StopDiscordAgentAsync()
+    {
+        if (DiscordUsesAutonomousAgent)
+        {
+            await RunAutonomousCommandAsync(
+                (client, projectId) => client.StopAsync(projectId),
+                "Stopping the autonomous Discord agent…",
+                "Autonomous Discord agent stopped");
+            return;
+        }
+
+        await RunOperationAsync(
+            "Stopping the Discord agent…",
+            () => _discordAgent.StopAsync(),
+            "Discord agent stopped");
+    }
 
     public async Task CheckDiscordAgentNowAsync()
     {
+        if (DiscordUsesAutonomousAgent)
+        {
+            await RunAutonomousCommandAsync(
+                (client, projectId) => client.PollNowAsync(projectId),
+                "Checking the autonomous Discord agent…",
+                "Autonomous Discord check completed");
+            return;
+        }
+
         if (!_discordAgent.IsRunning)
         {
             StatusMessage = "Start the Discord agent before checking for project updates.";
@@ -2317,6 +2587,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        if (DiscordUsesAutonomousAgent)
+        {
+            await SaveAutonomousDiscordAgentAsync(startAfterSave: false, sendTestAfterSave: true);
+            return;
+        }
+
         await RunOperationAsync("Sending a Discord test message…", async () =>
         {
             DiscordAgentProfile profile = BuildDiscordProfile();
@@ -2328,6 +2604,20 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         if (SelectedProject is null)
         {
+            return;
+        }
+
+        if (DiscordUsesAutonomousAgent)
+        {
+            Guid remoteProjectId = SelectedProject.Id;
+            await RunOperationAsync("Removing the autonomous Discord configuration…", async () =>
+            {
+                using DiscordAgentControlClient client = CreateDiscordControlClient();
+                await client.RemoveAsync(remoteProjectId);
+                await _discordControlConnectionStore.RemoveAsync(remoteProjectId);
+                _currentDiscordControlConnection = null;
+                ResetDiscordView();
+            }, "Autonomous Discord configuration removed");
             return;
         }
 
@@ -2766,7 +3056,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         if (_currentVpnProfile is null)
         {
             ClearVpnView();
-            WireGuardInstallation detected = _wireGuardKeyService.DetectInstallation();
+            SelectedVpnBackendMode = VpnBackendMode.SystemInstallation;
+            WireGuardInstallation detected = _wireGuardRuntimeResolver.Detect(SelectedVpnBackendMode);
             WireGuardExecutablePath = detected.WireGuardExecutablePath ?? detected.WgExecutablePath ?? string.Empty;
             VpnState = detected.CanGenerateKeys ? "WireGuard détecté — à configurer" : "WireGuard non détecté";
             VpnDetails = "Le VPN peut être utilisé seul, sans lancer Git ni Syncthing.";
@@ -2785,6 +3076,25 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        _currentDiscordControlConnection = await _discordControlConnectionStore.GetAsync(SelectedProject.Id);
+        if (_currentDiscordControlConnection is null)
+        {
+            SelectedDiscordExecutionMode = DiscordAgentExecutionMode.Integrated;
+            DiscordAgentEndpoint = "http://127.0.0.1:47831";
+            DiscordAgentRepositoryPath = SelectedProject.RootPath;
+            DiscordAllowPrivateHttp = false;
+            DiscordControlTokenConfigured = false;
+        }
+        else
+        {
+            SelectedDiscordExecutionMode = _currentDiscordControlConnection.Mode;
+            DiscordAgentEndpoint = _currentDiscordControlConnection.Endpoint;
+            DiscordAgentRepositoryPath = _currentDiscordControlConnection.AgentRepositoryPath ?? SelectedProject.RootPath;
+            DiscordAllowPrivateHttp = _currentDiscordControlConnection.AllowPrivateHttp;
+            DiscordControlTokenConfigured = !string.IsNullOrWhiteSpace(_currentDiscordControlConnection.ApiToken);
+        }
+
+        DiscordAgentApiToken = string.Empty;
         _currentDiscordProfile = await _discordAgentStore.GetProfileAsync(SelectedProject.Id);
         DiscordWebhookUrl = string.Empty;
         if (_currentDiscordProfile is null)
@@ -2801,26 +3111,67 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             DiscordAgentDetails = "Create an incoming webhook for the target channel, then paste its URL here.";
             DiscordLastActivity = "No check performed.";
             DiscordIsRunning = false;
+        }
+        else
+        {
+            DiscordDisplayName = _currentDiscordProfile.DisplayName;
+            DiscordProjectLabel = _currentDiscordProfile.ProjectLabel ?? SelectedProject.Name;
+            DiscordRepositoryWebUrl = _currentDiscordProfile.RepositoryWebUrl ?? string.Empty;
+            DiscordPollIntervalSeconds = _currentDiscordProfile.PollIntervalSeconds.ToString();
+            DiscordNotifyCommits = _currentDiscordProfile.NotifyCommits;
+            DiscordNotifyBranchChanges = _currentDiscordProfile.NotifyBranchChanges;
+            DiscordStartAutomatically = _currentDiscordProfile.StartAutomatically;
+            DiscordWebhookConfigured = DiscordWebhookAddress.TryCreate(_currentDiscordProfile.WebhookUrl, out _);
+            DiscordAgentState = "Discord agent ready — stopped";
+            DiscordAgentDetails = "The webhook is stored in the local user configuration, outside the repository.";
+
+            DiscordAgentCheckpoint? checkpoint = await _discordAgentStore.GetCheckpointAsync(SelectedProject.Id);
+            DiscordLastActivity = checkpoint?.LastCheckedAt is { } checkedAt
+                ? $"Last check: {checkedAt.ToLocalTime():g} · branch {checkpoint.LastBranch ?? "—"}"
+                : "No check performed.";
+        }
+
+        if (DiscordUsesAutonomousAgent)
+        {
+            DiscordConnectionSummary = "Autonomous agent configured — checking the control API…";
+            if (_currentDiscordControlConnection is null || !DiscordControlTokenConfigured)
+            {
+                DiscordAgentState = "Autonomous agent connection required";
+                DiscordAgentDetails = "Enter the API endpoint and control token, then connect.";
+                return;
+            }
+
+            try
+            {
+                using DiscordAgentControlClient client = CreateDiscordControlClient(_currentDiscordControlConnection);
+                DiscordAgentHostStatus host = await client.GetHostStatusAsync();
+                DiscordAgentPublicStatus? status = await client.GetProjectStatusAsync(SelectedProject.Id);
+                DiscordConnectionSummary = $"Connected to {host.Service} {host.Version} · " +
+                                           $"{host.RunningProjects}/{host.ConfiguredProjects} project agent(s) running";
+                if (status is not null)
+                {
+                    ApplyAutonomousDiscordStatus(status);
+                }
+                else
+                {
+                    DiscordWebhookConfigured = false;
+                    DiscordIsRunning = false;
+                    DiscordAgentState = "Autonomous agent connected — project not configured";
+                    DiscordAgentDetails = "Save this project configuration to register it on the autonomous agent.";
+                }
+            }
+            catch (Exception exception)
+            {
+                DiscordAgentState = "Autonomous agent unavailable";
+                DiscordAgentDetails = exception.Message;
+                DiscordConnectionSummary = "The desktop application could not reach the autonomous agent.";
+            }
+
             return;
         }
 
-        DiscordDisplayName = _currentDiscordProfile.DisplayName;
-        DiscordProjectLabel = _currentDiscordProfile.ProjectLabel ?? SelectedProject.Name;
-        DiscordRepositoryWebUrl = _currentDiscordProfile.RepositoryWebUrl ?? string.Empty;
-        DiscordPollIntervalSeconds = _currentDiscordProfile.PollIntervalSeconds.ToString();
-        DiscordNotifyCommits = _currentDiscordProfile.NotifyCommits;
-        DiscordNotifyBranchChanges = _currentDiscordProfile.NotifyBranchChanges;
-        DiscordStartAutomatically = _currentDiscordProfile.StartAutomatically;
-        DiscordWebhookConfigured = DiscordWebhookAddress.TryCreate(_currentDiscordProfile.WebhookUrl, out _);
-        DiscordAgentState = "Discord agent ready — stopped";
-        DiscordAgentDetails = "The webhook is stored in the local user configuration, outside the repository.";
-
-        DiscordAgentCheckpoint? checkpoint = await _discordAgentStore.GetCheckpointAsync(SelectedProject.Id);
-        DiscordLastActivity = checkpoint?.LastCheckedAt is { } checkedAt
-            ? $"Last check: {checkedAt.ToLocalTime():g} · branch {checkpoint.LastBranch ?? "—"}"
-            : "No check performed.";
-
-        if (_currentDiscordProfile.StartAutomatically &&
+        DiscordConnectionSummary = "Integrated agent — runs only while the desktop application is open.";
+        if (_currentDiscordProfile?.StartAutomatically == true &&
             SelectedProject.Definition.Features.GitEnabled &&
             DiscordWebhookConfigured)
         {
@@ -2837,6 +3188,196 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 DiscordAgentDetails = exception.Message;
             }
         }
+    }
+
+    private async Task SaveAutonomousDiscordAgentAsync(
+        bool startAfterSave,
+        bool sendTestAfterSave = false)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        await RunOperationAsync("Configuring the autonomous Discord agent…", async () =>
+        {
+            if (_discordAgent.IsRunning)
+            {
+                await _discordAgent.StopAsync();
+            }
+
+            DiscordControlConnection connection = BuildDiscordControlConnection();
+            using DiscordAgentControlClient client = CreateDiscordControlClient(connection);
+            _ = await client.GetHostStatusAsync();
+            DiscordAgentConfigurationRequest configuration = BuildAutonomousDiscordConfiguration();
+            await client.ConfigureAsync(configuration);
+            if (startAfterSave)
+            {
+                await client.StartAsync(SelectedProject.Id);
+            }
+
+            if (sendTestAfterSave)
+            {
+                await client.SendTestAsync(SelectedProject.Id);
+            }
+
+            await _discordControlConnectionStore.SaveAsync(connection);
+            _currentDiscordControlConnection = connection;
+            DiscordControlTokenConfigured = true;
+            DiscordAgentApiToken = string.Empty;
+            DiscordWebhookUrl = string.Empty;
+            DiscordAgentPublicStatus? status = await client.GetProjectStatusAsync(SelectedProject.Id);
+            if (status is not null)
+            {
+                ApplyAutonomousDiscordStatus(status);
+            }
+        }, sendTestAfterSave
+            ? "Autonomous Discord test message sent"
+            : startAfterSave
+                ? "Autonomous Discord agent started"
+                : "Autonomous Discord configuration saved");
+    }
+
+    private async Task RunAutonomousCommandAsync(
+        Func<DiscordAgentControlClient, Guid, Task<DiscordAgentCommandResult>> command,
+        string progressMessage,
+        string successMessage)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        Guid projectId = SelectedProject.Id;
+        await RunOperationAsync(progressMessage, async () =>
+        {
+            using DiscordAgentControlClient client = CreateDiscordControlClient();
+            await command(client, projectId);
+            DiscordAgentPublicStatus? status = await client.GetProjectStatusAsync(projectId);
+            if (status is not null)
+            {
+                ApplyAutonomousDiscordStatus(status);
+            }
+        }, successMessage);
+    }
+
+    private DiscordControlConnection BuildDiscordControlConnection()
+    {
+        if (SelectedProject is null)
+        {
+            throw new InvalidOperationException("Select a project before connecting an autonomous Discord agent.");
+        }
+
+        string token = DiscordAgentApiToken.Trim();
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            token = _currentDiscordControlConnection?.ApiToken ?? string.Empty;
+        }
+
+        string repositoryPath = string.IsNullOrWhiteSpace(DiscordAgentRepositoryPath)
+            ? SelectedProject.RootPath
+            : DiscordAgentRepositoryPath.Trim();
+        DiscordControlConnection connection = new(
+            SelectedProject.Id,
+            DiscordAgentExecutionMode.Autonomous,
+            DiscordAgentEndpoint.Trim(),
+            token,
+            DiscordAllowPrivateHttp,
+            repositoryPath);
+        _ = CyRevision.Discord.Control.DiscordAgentEndpoint.Create(
+            connection.Endpoint,
+            connection.AllowPrivateHttp);
+        if (connection.ApiToken.Length < 32)
+        {
+            throw new InvalidDataException("Enter the autonomous agent control token.");
+        }
+
+        return connection;
+    }
+
+    private async Task SaveIntegratedDiscordPreferenceAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        if (_currentDiscordControlConnection?.Mode == DiscordAgentExecutionMode.Autonomous &&
+            _currentDiscordControlConnection.ApiToken.Length >= 32)
+        {
+            using DiscordAgentControlClient remote = CreateDiscordControlClient(_currentDiscordControlConnection);
+            await remote.StopAsync(SelectedProject.Id);
+        }
+
+        DiscordControlConnection connection = new(
+            SelectedProject.Id,
+            DiscordAgentExecutionMode.Integrated,
+            _currentDiscordControlConnection?.Endpoint ?? "http://127.0.0.1:47831",
+            _currentDiscordControlConnection?.ApiToken ?? string.Empty,
+            _currentDiscordControlConnection?.AllowPrivateHttp ?? false,
+            _currentDiscordControlConnection?.AgentRepositoryPath ?? SelectedProject.RootPath);
+        await _discordControlConnectionStore.SaveAsync(connection);
+        _currentDiscordControlConnection = connection;
+    }
+
+    private DiscordAgentConfigurationRequest BuildAutonomousDiscordConfiguration()
+    {
+        if (SelectedProject is null)
+        {
+            throw new InvalidOperationException("Select a project before configuring the autonomous Discord agent.");
+        }
+
+        if (!int.TryParse(DiscordPollIntervalSeconds, out int pollIntervalSeconds))
+        {
+            throw new InvalidDataException("The polling interval must be a number of seconds.");
+        }
+
+        return new DiscordAgentConfigurationRequest(
+            SelectedProject.Id,
+            SelectedProject.Name,
+            string.IsNullOrWhiteSpace(DiscordAgentRepositoryPath)
+                ? SelectedProject.RootPath
+                : DiscordAgentRepositoryPath.Trim(),
+            string.IsNullOrWhiteSpace(DiscordWebhookUrl) ? null : DiscordWebhookUrl.Trim(),
+            DiscordDisplayName.Trim(),
+            string.IsNullOrWhiteSpace(DiscordProjectLabel) ? SelectedProject.Name : DiscordProjectLabel.Trim(),
+            string.IsNullOrWhiteSpace(DiscordRepositoryWebUrl) ? null : DiscordRepositoryWebUrl.Trim(),
+            pollIntervalSeconds,
+            DiscordNotifyCommits,
+            DiscordNotifyBranchChanges,
+            DiscordStartAutomatically);
+    }
+
+    private DiscordAgentControlClient CreateDiscordControlClient() =>
+        CreateDiscordControlClient(BuildDiscordControlConnection());
+
+    private static DiscordAgentControlClient CreateDiscordControlClient(DiscordControlConnection connection) =>
+        new(connection.Endpoint, connection.ApiToken, connection.AllowPrivateHttp);
+
+    private void ApplyAutonomousDiscordStatus(DiscordAgentPublicStatus status)
+    {
+        DiscordWebhookConfigured = status.WebhookConfigured;
+        DiscordIsRunning = status.IsRunning;
+        DiscordDisplayName = status.DisplayName;
+        DiscordProjectLabel = status.ProjectLabel ?? status.ProjectName;
+        DiscordRepositoryWebUrl = status.RepositoryWebUrl ?? string.Empty;
+        DiscordPollIntervalSeconds = status.PollIntervalSeconds.ToString();
+        DiscordNotifyCommits = status.NotifyCommits;
+        DiscordNotifyBranchChanges = status.NotifyBranchChanges;
+        DiscordStartAutomatically = status.StartAutomatically;
+        DiscordAgentRepositoryPath = status.RepositoryPath;
+        DiscordAgentState = status.State switch
+        {
+            DiscordAgentRuntimeState.Starting => "Autonomous Discord agent starting",
+            DiscordAgentRuntimeState.Watching => "Autonomous Discord agent watching",
+            DiscordAgentRuntimeState.Sending => "Autonomous Discord agent sending",
+            DiscordAgentRuntimeState.Error => "Autonomous Discord agent error",
+            _ => "Autonomous Discord agent ready — stopped"
+        };
+        DiscordAgentDetails = status.Details;
+        DiscordLastActivity = status.LastCheckedAt is { } checkedAt
+            ? $"Last check: {checkedAt.ToLocalTime():g} · branch {status.Branch ?? "—"}"
+            : "No check performed.";
     }
 
     private DiscordAgentProfile BuildDiscordProfile()
@@ -2874,6 +3415,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private void ResetDiscordView()
     {
         _currentDiscordProfile = null;
+        _currentDiscordControlConnection = null;
+        SelectedDiscordExecutionMode = DiscordAgentExecutionMode.Integrated;
+        DiscordAgentEndpoint = "http://127.0.0.1:47831";
+        DiscordAgentApiToken = string.Empty;
+        DiscordAgentRepositoryPath = string.Empty;
+        DiscordAllowPrivateHttp = false;
+        DiscordControlTokenConfigured = false;
+        DiscordConnectionSummary = "Integrated agent — runs only while the desktop application is open.";
         DiscordWebhookUrl = string.Empty;
         DiscordDisplayName = "CyRevision";
         DiscordProjectLabel = string.Empty;
@@ -2961,6 +3510,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private void ApplyVpnProfile(VpnProjectProfile profile)
     {
+        SelectedVpnBackendMode = profile.BackendMode;
         WireGuardExecutablePath = profile.WireGuardExecutablePath ?? profile.WgExecutablePath ?? string.Empty;
         VpnNetworkCidr = profile.NetworkCidr;
         VpnLocalAddress = profile.LocalAddress;
@@ -2998,6 +3548,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private void ClearVpnView()
     {
+        SelectedVpnBackendMode = VpnBackendMode.SystemInstallation;
         VpnState = "VPN non configuré";
         VpnDetails = "WireGuard reste indépendant de Git et de Sync.";
         WireGuardExecutablePath = string.Empty;
@@ -3009,6 +3560,24 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         VpnConfigurationPreview = "Configurez WireGuard pour afficher le tunnel CyRevision.";
         VpnPeers.Clear();
         SelectedVpnPeer = null;
+    }
+
+    private void UpdateVpnBackendDetails()
+    {
+        WireGuardInstallation installation = _wireGuardRuntimeResolver.Detect(SelectedVpnBackendMode);
+        if (SelectedVpnBackendMode == VpnBackendMode.IntegratedRuntime)
+        {
+            bool ready = installation.CanGenerateKeys && installation.CanManageTunnel &&
+                         (OperatingSystem.IsWindows() || !string.IsNullOrWhiteSpace(installation.UserspaceExecutablePath));
+            VpnBackendDetails = ready
+                ? $"Integrated runtime ready in {installation.RuntimeDirectory}. {installation.ValidationMessage}"
+                : $"Integrated runtime package required in {installation.RuntimeDirectory}. {installation.ValidationMessage}";
+            return;
+        }
+
+        VpnBackendDetails = installation.CanGenerateKeys && installation.CanManageTunnel
+            ? "System WireGuard installation detected."
+            : "System WireGuard installation not detected.";
     }
 
     private async Task ConfigureCurrentSyncFolderAsync()

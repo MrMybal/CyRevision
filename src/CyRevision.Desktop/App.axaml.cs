@@ -9,6 +9,7 @@ using CyRevision.Desktop.Documentation;
 using CyRevision.Desktop.ViewModels;
 using CyRevision.Diff;
 using CyRevision.Discord;
+using CyRevision.Discord.Control;
 using CyRevision.Git;
 using CyRevision.Sync;
 using CyRevision.Vpn;
@@ -37,6 +38,7 @@ public partial class App : Application
             JsonProjectCatalog catalog = new(paths.ProjectCatalogPath);
             GitCliRepositoryService gitService = new();
             JsonDiscordAgentStore discordStore = new(paths.DiscordDirectory);
+            DiscordControlConnectionStore discordConnections = new(paths.DiscordControlDirectory);
             DiscordProjectAgent discordAgent = new(
                 new GitDiscordProjectSnapshotProvider(gitService),
                 discordStore,
@@ -47,11 +49,12 @@ public partial class App : Application
             JsonVpnProfileStore vpnProfiles = new(paths.VpnDirectory);
             WireGuardConfigService vpnConfiguration = new(paths.VpnDirectory);
             ManagedWireGuardEngine vpnEngine = new(paths.VpnDirectory, vpnConfiguration);
+            WireGuardRuntimeResolver vpnRuntimeResolver = new();
             string? initialProjectPath = ReadProjectArgument(desktop.Args);
             MainWindowViewModel viewModel = new(
                 catalog, gitService, paths, syncProfiles, gitExchange, assetDiff,
-                vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine,
-                localization, documentation, updates, discordStore, discordAgent, initialProjectPath);
+                vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine, vpnRuntimeResolver,
+                localization, documentation, updates, discordStore, discordAgent, discordConnections, initialProjectPath);
 
             desktop.MainWindow = new MainWindow(viewModel, localization, paths.ConfigurationDirectory);
             desktop.Exit += (_, _) =>
