@@ -792,6 +792,100 @@ public partial class MainWindow : Window
     private async void OnLoadVpnSyncClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.LoadSelectedVpnSyncMessageAsync();
 
+    private async void OnPickSwarmAgentClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFileAsync("Select SwarmAgent.exe");
+        if (path is not null) _viewModel.SetSwarmAgentPath(path);
+    }
+
+    private async void OnPickSwarmCoordinatorClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFileAsync("Select SwarmCoordinator.exe");
+        if (path is not null) _viewModel.SetSwarmCoordinatorPath(path);
+    }
+
+    private async void OnPickSwarmOptionsClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFileAsync("Select SwarmAgent.Options.xml");
+        if (path is not null) _viewModel.SetSwarmOptionsPath(path);
+    }
+
+    private async void OnPickSwarmCacheClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select the Swarm cache folder");
+        if (path is not null) _viewModel.SetSwarmCacheFolder(path);
+    }
+
+    private async void OnSaveSwarmClick(object? sender, RoutedEventArgs e) => await _viewModel.SaveSwarmAsync();
+
+    private async void OnDiagnoseSwarmClick(object? sender, RoutedEventArgs e) => await _viewModel.DiagnoseSwarmAsync();
+
+    private async void OnApplySwarmOptionsClick(object? sender, RoutedEventArgs e) => await _viewModel.ApplySwarmOptionsAsync();
+
+    private async void OnApplySwarmDnsClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Apply local Swarm DNS alias"),
+                Translate("CyRevision will replace only this project's marked block in the Windows hosts file and flush the DNS cache. Administrator authorization is required."),
+                Translate("Apply alias")))
+        {
+            await _viewModel.ApplySwarmDnsAsync();
+        }
+    }
+
+    private async void OnRemoveSwarmDnsClick(object? sender, RoutedEventArgs e) => await _viewModel.RemoveSwarmDnsAsync();
+
+    private async void OnLaunchSwarmAgentClick(object? sender, RoutedEventArgs e) => await _viewModel.LaunchSwarmAgentAsync();
+
+    private async void OnLaunchSwarmCoordinatorClick(object? sender, RoutedEventArgs e) => await _viewModel.LaunchSwarmCoordinatorAsync();
+
+    private async void OnPickVpnInboxClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select the private VPN inbox folder");
+        if (path is not null) _viewModel.SetVpnFileInboxPath(path);
+    }
+
+    private async void OnPickVpnSharedFolderClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select the folder explicitly shared over VPN");
+        if (path is not null) _viewModel.SetVpnFileSharedFolderPath(path);
+    }
+
+    private async void OnSaveVpnFilesClick(object? sender, RoutedEventArgs e) => await _viewModel.SaveVpnFileExchangeAsync();
+
+    private async void OnStartVpnFilesClick(object? sender, RoutedEventArgs e) => await _viewModel.StartVpnFileExchangeAsync();
+
+    private async void OnStopVpnFilesClick(object? sender, RoutedEventArgs e) => await _viewModel.StopVpnFileExchangeAsync();
+
+    private async void OnTestVpnFilePeerClick(object? sender, RoutedEventArgs e) => await _viewModel.TestVpnFilePeerAsync();
+
+    private async void OnRefreshVpnSharedFilesClick(object? sender, RoutedEventArgs e) => await _viewModel.RefreshVpnSharedFilesAsync();
+
+    private async void OnSendVpnFileClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFileAsync("Select a file to send to the VPN peer inbox");
+        if (path is not null) await _viewModel.SendVpnFileAsync(path);
+    }
+
+    private async void OnDownloadVpnSharedFileClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickSaveFileAsync(
+            _viewModel.SelectedVpnSharedFile?.RelativePath,
+            "Save the verified VPN file as");
+        if (path is not null) await _viewModel.DownloadVpnSharedFileAsync(path);
+    }
+
+    private async void OnRotateVpnFileTokenClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Rotate file-exchange token"),
+                Translate("The endpoint will stop and every authorized peer must receive the new token through a separate trusted channel."),
+                Translate("Rotate token")))
+        {
+            await _viewModel.RotateVpnFileTokenAsync();
+        }
+    }
+
     private async void OnSaveDiscordAgentClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SaveDiscordAgentAsync();
 

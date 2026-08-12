@@ -87,9 +87,35 @@ Swarm Coordinator distribue les travaux aux Swarm Agents. Swarm est actuellement
 - postes artistes Windows : `GeneralAccess` ou `SwarmAgent` ;
 - machines de calcul Windows : `SwarmAgent`, éventuellement VPN-only.
 
-Dans Swarm Agent, utilisez l'adresse VPN du coordinateur comme `CoordinatorRemotingHost`. Autorisez TCP 8008/8009 dans le pare-feu Windows sur l'interface CyRevision. CyRevision affiche l'adresse du coordinateur détecté mais ne modifie pas encore le pare-feu.
+Dans Swarm Agent, utilisez l'adresse VPN ou l'alias local du coordinateur comme `CoordinatorRemotingHost`. L'assistant CyRevision peut appliquer une règle Windows TCP 8008/8009 limitée au sous-réseau WireGuard après confirmation administrateur.
 
 Références officielles : [WireGuard Quick Start](https://www.wireguard.com/quickstart/), [gestion des tunnels WireGuard Windows](https://git.zx2c4.com/wireguard-windows/about/docs/enterprise.md) et [Unreal Swarm](https://dev.epicgames.com/documentation/unreal-engine/unreal-swarm-in-unreal-engine?lang=en-US).
+
+### Assistant Swarm CyRevision
+
+Dans **Swarm over VPN**, choisissez `Agent` ou `CoordinatorAndAgent`, puis l'adresse VPN et l'alias local du coordinateur. CyRevision peut :
+
+- détecter `SwarmAgent.exe`, `SwarmCoordinator.exe` et `SwarmAgent.Options.xml`, avec sélection manuelle possible ;
+- sauvegarder le XML existant, puis modifier uniquement les champs Swarm déjà présents (`CoordinatorRemotingHost`, groupes, filtre d'agents et cache) ;
+- créer un bloc DNS local marqué par projet dans le fichier `hosts` Windows et retirer uniquement ce bloc ;
+- créer la règle Windows TCP 8008-8009 limitée au sous-réseau VPN ;
+- tester l'adresse WireGuard locale, le DNS, les exécutables, le XML, le pare-feu et les deux ports du coordinateur ;
+- proposer pour chaque échec une correction concrète lorsque l'action ne peut pas être automatisée.
+
+Fermez Swarm Agent avant d'appliquer son XML. Les ports 8008/8009 ne doivent jamais être redirigés sur le modem. Le plugin Unreal autonome fournit aussi **Tools > Swarm over VPN** pour configurer/lancer/tester Swarm sans CyRevision ; l'application ajoute les opérations administrateur et le diagnostic complet.
+
+## Transfert et dossier partagé dans le VPN
+
+L'onglet **VPN files** expose un service CyRevision minimal, et non un partage SMB :
+
+- il écoute uniquement l'adresse IPv4 WireGuard du projet et refuse une source hors de son sous-réseau VPN ;
+- chaque commande exige le jeton aléatoire 256 bits du projet ; transmettez ce jeton aux pairs autorisés par un canal de confiance distinct ;
+- **Send file to inbox** envoie un fichier vers un dossier privé sans jamais écraser un nom existant ;
+- le dossier partagé est choisi explicitement, peut être listé et téléchargé selon trois permissions séparées ;
+- la taille annoncée et le SHA-256 sont vérifiés, un transfert interrompu reste temporaire puis est supprimé ;
+- les chemins absolus, `..`, jonctions et liens symboliques ne peuvent pas sortir de la racine partagée.
+
+WireGuard chiffre le transport ; le jeton ajoute l'autorisation applicative. Le port TCP par défaut `47842` est ouvert uniquement pour le sous-réseau VPN par l'assistant. Aucun accès Git, Sync ou dossier de projet n'est ajouté implicitement.
 
 ## Serveur Linux optionnel
 

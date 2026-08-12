@@ -111,7 +111,11 @@ internal sealed class UnrealBridgeServer : IAsyncDisposable
                     version = _applicationVersion,
                     plugin = "0.1.0",
                     projectRoot = registration.ProjectRoot,
-                    capabilities = new[] { "git", "git-lfs", "sync", "backup", "asset-diff", "advisory-reservations" }
+                    capabilities = new[]
+                    {
+                        "git", "git-lfs", "sync", "backup", "asset-diff", "advisory-reservations",
+                        "swarm-over-vpn", "vpn-file-exchange"
+                    }
                 }, cancellationToken);
                 return;
             }
