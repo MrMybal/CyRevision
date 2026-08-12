@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 2,
-  "VersionName": "0.2.0",
+  "Version": 3,
+  "VersionName": "0.3.0",
   "FriendlyName": "CyRevision Collaboration",
-  "Description": "Pont CyRevision et réservations souples non bloquantes pour les assets Unreal.",
+  "Description": "Autonomous revision tools, advisory reservations, and an optional authenticated CyRevision bridge.",
   "Category": "Source Control",
   "CreatedBy": "CyRevision",
   "CanContainContent": false,

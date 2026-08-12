@@ -14,6 +14,7 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 
 - Native Avalonia desktop application for Windows, Linux, and macOS.
 - Five project modes: **Git**, **Git + Sync**, **Sync**, **Sync + Versions**, and **Backup**.
+- Integrated GitHub pull request manager with repository detection, filters, request creation, files and patches, conversations, reviews, safe local checkout, state changes, and confirmed merge operations. Provider adapters keep the module open to other forges.
 - Local Git workflows: status, staging, commits, branches, merges, remotes, Git LFS, an interactive history explorer, A ↔ B comparisons, and per-file history.
 - LFS Time Machine with object history, local/peer/archive availability, signed on-demand requests, resumable transfers, texture previews, export, and confirmed restore operations.
 - Optional Git visualizations for commit history, co-change relations, team activity, and simplified engine-independent Unreal dependencies.
@@ -24,11 +25,16 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 - Configurable smart synchronization planning without implicitly starting Syncthing.
 - Engine-independent comparisons for text, textures and heatmaps, OBJ geometry, binary files, and simplified `.uasset`/`.umap` inspection.
 - Optional Linux server with an API, scheduled backups, scheduled Git exchange, and a protected web dashboard.
-- Optional Unreal Editor plugin for opening CyRevision and publishing non-blocking advisory asset reservations.
+- Optional runtime-loaded CyRevision plugins with per-user enable/disable state; Unreal integration is shipped separately and disabled by default.
+- Autonomous Unreal Editor plugin with a revision dashboard, Git actions, advisory asset reservations, and an authenticated loopback bridge to CyRevision.
+- Unreal plugin installation and safe updates from the CyRevision Plugins page, with recoverable backups of the previous project plugin.
 - Optional WireGuard integration with a selectable system or bundled runtime, guided Windows/macOS/Linux firewall setup, router/NAT checklists, signed Sync-assisted onboarding, isolated tunnels, VPN-only peers, and Unreal Swarm/CI/service profiles.
 - Optional Discord agent with integrated and autonomous sidecar modes, authenticated LAN/VPN control, channel-scoped webhooks, grouped commit notifications, branch-change notices, and per-project duplicate prevention without requiring GitHub.
 - Extensible localization: English is the default, French is included, and additional JSON catalogs can be added to the desktop client and web dashboard.
 - Searchable offline documentation bundled with the desktop application in English and French.
+- Rider-style Code workspace with a full project tree, fast Ctrl+Shift+F search, file patterns, symbol outline, text preview, and Git history for files, folders, or selected lines.
+- Optional AI Workspace plugin for Codex CLI, OpenAI Responses API, compatible APIs, Ollama, and LM Studio, with explicit read/edit/network/stage/commit permissions and no automatic push.
+- Project-scoped MCP manager for STDIO and Streamable HTTP servers, local-only profiles, environment-based secrets, server/tool allow and deny lists, approval modes, timeouts, unmanaged-server isolation, and an emergency block switch.
 - Built-in stable-release updater with platform package selection and mandatory SHA-256 verification; commits, drafts, and prereleases are ignored.
 
 ## Open in Rider
@@ -62,7 +68,7 @@ Publish on Windows:
 Build a self-contained Windows installer and portable release locally:
 
 ```powershell
-./scripts/build-release.cmd 0.1.0
+./scripts/build-release.cmd 0.1.6
 ```
 
 Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).
@@ -97,6 +103,9 @@ Detailed documentation is currently available in French while its English transl
 - [Localization](docs/localization.md)
 - [Creating a multiplatform release](docs/releasing.md)
 - [Unreal Editor bridge](plugins/CyRevisionUnreal/README.md)
+- [CyRevision plugins and Unreal installation](docs/plugins-and-unreal.md)
+- [Code explorer, global search, and AI workspace](docs/code-explorer-and-ai.md)
+- [Pull request manager](docs/pull-request-manager.md)
 
 ## License
 

@@ -22,12 +22,18 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CyRevision.Backup\CyRevision.Backup.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Code\CyRevision.Code.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Core\CyRevision.Core.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Discord\CyRevision.Discord.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Discord.Agent\CyRevision.Discord.Agent.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Discord.Control\CyRevision.Discord.Control.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Desktop\CyRevision.Desktop.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Diff\CyRevision.Diff.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Git\CyRevision.Git.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Plugin.Abstractions\CyRevision.Plugin.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Plugin.Unreal\CyRevision.Plugin.Unreal.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Plugin.AI\CyRevision.Plugin.AI.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.PullRequests\CyRevision.PullRequests.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Security\CyRevision.Security.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Sync\CyRevision.Sync.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Vpn\CyRevision.Vpn.csproj" />

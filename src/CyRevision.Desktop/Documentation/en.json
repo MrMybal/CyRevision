@@ -50,10 +50,10 @@
   {
     "id": "unreal-plugin",
     "category": "Unreal Engine",
-    "title": "Unreal plugin and advisory reservations",
-    "summary": "Open CyRevision from Unreal and show who is working on an asset without blocking anyone.",
-    "body": "PLUGIN INSTALLATION\nCopy plugins/CyRevisionUnreal into the Unreal project's Plugins folder, apply the example editor settings, regenerate project files, and compile the Editor target.\n\nOPEN IN CYREVISION\nThe Tools menu opens the external CyRevision client for the current Unreal project. Git, LFS, Sync, backups, and most comparisons continue to work with Unreal closed.\n\nADVISORY RESERVATIONS\nFrom the Content Browser, choose Report: I am working on this asset. The marker shares the user, machine, and update time. It is informational only: no checkout, permission change, or Git LFS lock is created. Multiple users may continue after seeing a warning.\n\nEXPIRATION\nThe plugin renews active markers periodically. Stale markers expire automatically after the configured duration and can be cleaned from the Work in progress tab.",
-    "keywords": ["unreal", "plugin", "asset", "reservation", "checkout", "lock", "content browser"]
+    "title": "Optional CyRevision plugin and autonomous Unreal plugin",
+    "summary": "Install CyRevisionUnreal from the app, manage revisions inside Unreal, and connect both sides when desired.",
+    "body": "TWO SEPARATE PLUGINS\nUnreal Engine Integration is an optional CyRevision plugin and is disabled by default. CyRevisionUnreal is an autonomous Editor plugin included as source in every desktop package.\n\nINSTALL FROM CYREVISION\nOpen Plugins, enable Unreal Engine Integration, select a .uproject file, then choose Install / update in project. Existing plugin files are moved to Saved/CyRevision/PluginBackups before an update. Regenerate project files and compile the Editor target when required by the Unreal toolchain.\n\nAUTONOMOUS REVISION TOOLS\nTools > Revision dashboard works without CyRevision. It shows Git status and recent commits and can stage, commit, fetch, pull, and push.\n\nDIRECT CONNECTION\nCyRevision creates a random project token under Saved/CyRevision/bridge.json and listens on loopback only. Unreal can notify the matching CyRevision project after Git or advisory changes. Disabling the CyRevision plugin stops the bridge but does not remove the Editor plugin.\n\nADVISORY RESERVATIONS\nContent Browser markers remain informational only: no checkout, permission change, or Git LFS lock is created.",
+    "keywords": ["unreal", "plugin", "installer", "revision", "git", "bridge", "asset", "reservation", "checkout", "lock", "content browser"]
   },
   {
     "id": "discord-agent",
@@ -70,6 +70,30 @@
     "summary": "Check, download, verify, and launch a published CyRevision installer from the Help tab.",
     "body": "RELEASES ONLY\nThe updater reads the latest stable GitHub Release for CyRevision. Commits, branches, drafts, and prereleases are never offered as application updates. Project repositories remain independent and do not require GitHub.\n\nCHECK FOR UPDATES\nCyRevision checks after startup, and Check for updates can be used at any time. The installed assembly version is compared with the published release tag.\n\nPLATFORM PACKAGE\nCyRevision selects the native installer for the current system: Windows Setup, Linux DEB for x64 or ARM64, or macOS DMG for x64 or ARM64. The release page remains available when a compatible package is not present.\n\nDOWNLOAD SAFETY\nThe package is downloaded into the CyRevision cache. Its SHA-256 value must match the release's SHA256SUMS.txt manifest before the operating system is asked to open it. Installation never begins silently and no source-code git pull is performed.",
     "keywords": ["update", "release", "installer", "version", "sha-256", "github", "stable"]
+  },
+  {
+    "id": "code-and-ai",
+    "category": "Code and AI",
+    "title": "Code explorer, global search, and AI permissions",
+    "summary": "Browse a complete project tree, search with Ctrl+Shift+F, follow selected-line history, and connect an optional AI agent safely.",
+    "body": "CODE EXPLORER\\nThe Code tab shows a hierarchical project tree, file metadata, text previews, and detected symbols. Build outputs, Unreal caches, .git, and dependency caches are excluded automatically. Hidden files remain optional.\\n\\nGLOBAL SEARCH\\nPress Ctrl+Shift+F from anywhere in CyRevision. Search supports case, whole words, regular expressions, and semicolon-separated patterns such as *.cs;*.cpp. ripgrep is used when available, with a managed fallback.\\n\\nSELECTION HISTORY\\nSelect lines in the preview and choose History of selection. CyRevision follows that inclusive line range through Git. Selecting a folder loads history for the complete subtree.\\n\\nOPTIONAL AI\\nEnable AI Workspace from Plugins. Connect Codex CLI, OpenAI Responses API, a compatible API, Ollama, or LM Studio. API keys stay in memory for the current run only.\\n\\nPERMISSIONS\\nRead is required. File modification, network access, staging, and commit are separate choices. Codex uses a read-only sandbox unless edits are explicitly allowed. CyRevision brokers stage and commit after a successful run. Push is never automatic.",
+    "keywords": ["code", "explorer", "search", "ctrl shift f", "selection", "history", "AI", "Codex", "permissions"]
+  },
+  {
+    "id": "mcp-policy",
+    "category": "Code and AI",
+    "title": "MCP servers and emergency blocking",
+    "summary": "Configure local or remote MCP servers per project and restrict every server or tool.",
+    "body": "TRANSPORTS\\nThe MCP tab supports STDIO processes and Streamable HTTP addresses. Configure commands, arguments, working directories, environment forwarding, URLs, OAuth, bearer-token environment variables, and HTTP headers. STDIO is available to local Codex providers. Responses API providers use remote HTTP MCP only, require network permission and an explicit tool allow list, and resolve authorization from the configured environment variable.\\n\\nTOOL POLICY\\nEach server has an enabled switch, read-only or read/write capability, network requirement, startup/tool timeout, allow list, deny list, default approval mode, and per-tool approval overrides. The deny list wins after the allow list. API approval requests are never accepted silently; only an explicit Approve policy permits immediate execution.\\n\\nPROJECT ISOLATION\\nProfiles are stored in local CyRevision configuration, outside Git. Block unmanaged Codex servers exposes only the servers listed for the current project. ReadWrite servers require workspace modification permission; HTTP and network servers require network permission.\\n\\nEMERGENCY BLOCK\\nBLOCK ALL MCP persists an all-server block and cancels the current CyRevision AI run. Unblock removes the emergency state but keeps individual blocks and permissions. MCP is disabled by default. Prefer environment-variable references for secrets.",
+    "keywords": ["MCP", "server", "stdio", "http", "tools", "allow", "deny", "block", "OAuth", "Codex"]
+  },
+  {
+    "id": "pull-request-manager",
+    "category": "Git",
+    "title": "Pull request manager",
+    "summary": "Review, create, check out, discuss, close, and merge GitHub pull requests inside CyRevision.",
+    "body": "CONNECTION\nSelect a Git project and open Pull Requests. CyRevision detects the GitHub origin remote. Public repositories can be read without a token; private repositories and write operations use a masked session token or the configured environment variable. Tokens are never persisted.\n\nREVIEW WORKSPACE\nFilter open, closed, or all requests. Inspect changed files, unified patches, comments, reviews, branches, draft state, change statistics, and mergeability. Create requests, publish a general comment, approve, request changes, or open the provider page. Line-level review comments are planned after the alpha workspace.\n\nSAFE CHECKOUT\nCheckout stops when the working tree is dirty. CyRevision fetches the pull head into a dedicated reference and creates or fast-forwards cyrevision/pr-N; it never force-resets the active branch.\n\nREMOTE ACTIONS\nClose, reopen, and merge change the remote repository and require confirmation. Choose merge, squash, or rebase according to repository policy. These actions may trigger CI or deployments.\n\nPROVIDERS\nGitHub is the first adapter, including Enterprise API overrides. The core is provider-neutral for future GitLab, Forgejo, and decentralized review adapters. Git, LFS, Sync, and backup remain fully usable without a forge.",
+    "keywords": ["pull request", "PR", "GitHub", "review", "merge", "squash", "rebase", "checkout", "comment"]
   },
   {
     "id": "troubleshooting",

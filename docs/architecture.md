@@ -15,8 +15,10 @@
 | `CyRevision.Discord` | Webhooks de salon, surveillance Git, messages groupés et points de contrôle anti-doublon |
 | `CyRevision.Discord.Control` | Client de contrôle authentifié pour un agent Discord local ou distant |
 | `CyRevision.Discord.Agent` | Processus autonome multi-projet exécutable à côté du client desktop |
+| `CyRevision.Plugin.Abstractions` | Contrats stables et sans interface pour les extensions chargeables |
+| `CyRevision.Plugin.Unreal` | Extension Unreal optionnelle : inspection, installateur et pont loopback authentifié |
 | `CyRevision.Server` | Pair Linux, API, ordonnanceurs et dashboard web |
-| `CyRevisionUnreal` | Menus Content Browser, fenêtre de présence et pont vers le client |
+| `CyRevisionUnreal` | Plugin Editor autonome : révisions Git, présence et connexion facultative au client |
 
 Les modules sont activés par des drapeaux indépendants. Git ne dépend pas de Sync ; Sync ne dépend pas de Git ; Backup peut être utilisé seul.
 
@@ -77,5 +79,5 @@ Un snapshot contient un manifeste JSON trié et des références vers des objets
 ## Limites assumées
 
 - un graphe Blueprint parfaitement fidèle nécessite le plugin Unreal et les sérialiseurs du moteur ; le client externe fournit une analyse structurale simplifiée ;
-- le plugin Unreal fournit le pont externe et la présence non bloquante ; un fournisseur Source Control natif complet reste un module séparé ;
+- le plugin Editor Unreal fournit des outils Git autonomes, la présence non bloquante et un pont externe ; un fournisseur Source Control natif complet reste un module séparé ;
 - la direction `ReadOnly` du mode Sync sans Git repose aussi sur la configuration du client Syncthing distant ; Git, lui, vérifie le rôle cryptographiquement lors de l’import.

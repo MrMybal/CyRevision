@@ -7,12 +7,16 @@ using CyRevision.Backup;
 using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
 using CyRevision.Core.Updates;
+using CyRevision.Code;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.Documentation;
+using CyRevision.Desktop.Plugins;
 using CyRevision.Diff;
 using CyRevision.Discord;
 using CyRevision.Discord.Control;
 using CyRevision.Git;
+using CyRevision.Plugin.Abstractions;
+using CyRevision.PullRequests;
 using CyRevision.Security;
 using CyRevision.Sync;
 using CyRevision.Vpn;
@@ -40,6 +44,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly JsonDiscordAgentStore _discordAgentStore;
     private readonly DiscordProjectAgent _discordAgent;
     private readonly DiscordControlConnectionStore _discordControlConnectionStore;
+    private readonly CyRevisionPluginManager _pluginManager;
+    private readonly CodeWorkspaceService _codeWorkspaceService;
+    private readonly IPullRequestService _pullRequestService;
     private readonly string? _initialProjectPath;
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
@@ -176,6 +183,69 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private bool _discordAllowPrivateHttp;
     private bool _discordControlTokenConfigured;
     private string _discordConnectionSummary = "Integrated agent — runs with the desktop application.";
+    private PluginItemViewModel? _selectedPlugin;
+    private bool _isUnrealIntegrationEnabled;
+    private string _unrealProjectPath = string.Empty;
+    private string _unrealPluginSummary = "Enable the Unreal Engine Integration plugin to inspect and install CyRevisionUnreal.";
+    private string _unrealBridgeSummary = "The optional Unreal bridge is disabled.";
+    private UnrealProjectInspection? _unrealProjectInspection;
+    private IUnrealIntegrationPlugin? _subscribedUnrealPlugin;
+    private CancellationTokenSource? _codeSearchCancellation;
+    private CancellationTokenSource? _aiAgentCancellation;
+    private CodeTreeNode? _selectedCodeNode;
+    private CodeSearchResult? _selectedCodeSearchResult;
+    private CodeSymbol? _selectedCodeSymbol;
+    private string _codeTreeFilter = string.Empty;
+    private bool _codeIncludeHidden;
+    private string _codeWorkspaceSummary = "Select a project to explore its code.";
+    private string _codeSearchQuery = string.Empty;
+    private string _codeFilePatterns = string.Empty;
+    private bool _codeSearchMatchCase;
+    private bool _codeSearchWholeWord;
+    private bool _codeSearchRegex;
+    private string _codeSearchSummary = "Ctrl+Shift+F searches the entire project.";
+    private string _codePreviewText = string.Empty;
+    private string _codePreviewSummary = "Select a file to preview it.";
+    private string _codeSelectionSummary = "Select lines in the preview, then request their Git history.";
+    private bool _isAiIntegrationEnabled;
+    private AiProviderDescriptor? _selectedAiProvider;
+    private string _aiModel = string.Empty;
+    private string _aiEndpoint = string.Empty;
+    private string _aiExecutablePath = "codex";
+    private string _aiApiKey = string.Empty;
+    private string _aiPrompt = string.Empty;
+    private string _aiResponse = "Enable the optional AI Workspace plugin to connect Codex or an API provider.";
+    private string _aiStatus = "AI integration disabled.";
+    private bool _aiAllowModify;
+    private bool _aiAllowNetwork;
+    private bool _aiStageAfterRun;
+    private bool _aiCommitAfterRun;
+    private string _aiCommitMessage = "Apply AI-assisted changes";
+    private AiMcpServerViewModel? _selectedAiMcpServer;
+    private bool _aiMcpEnabled;
+    private bool _aiMcpEmergencyBlocked;
+    private bool _aiMcpBlockUnmanagedServers = true;
+    private string _aiMcpStatus = "MCP is disabled for this project.";
+    private PullRequestRepository? _pullRequestRepository;
+    private PullRequestSummary? _selectedPullRequest;
+    private PullRequestFile? _selectedPullRequestFile;
+    private PullRequestDetails? _selectedPullRequestDetails;
+    private PullRequestStateFilter _pullRequestStateFilter = PullRequestStateFilter.Open;
+    private PullRequestMergeMethod _pullRequestMergeMethod = PullRequestMergeMethod.Squash;
+    private PullRequestReviewAction _pullRequestReviewAction = PullRequestReviewAction.Comment;
+    private string _pullRequestStatus = "Select a GitHub-backed project to manage pull requests.";
+    private string _pullRequestApiBaseUrl = string.Empty;
+    private string _pullRequestToken = string.Empty;
+    private string _pullRequestTokenEnvironmentVariable = "GITHUB_TOKEN";
+    private string _pullRequestPatch = "Select a changed file to inspect its patch.";
+    private string _newPullRequestTitle = string.Empty;
+    private string _newPullRequestBody = string.Empty;
+    private string _newPullRequestHeadBranch = string.Empty;
+    private string _newPullRequestBaseBranch = "main";
+    private bool _newPullRequestIsDraft;
+    private string _pullRequestComment = string.Empty;
+    private string _pullRequestReviewBody = string.Empty;
+    private int _pullRequestDetailsLoadVersion;
 
     public MainWindowViewModel(
         IProjectCatalog projectCatalog,
@@ -197,6 +267,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         JsonDiscordAgentStore discordAgentStore,
         DiscordProjectAgent discordAgent,
         DiscordControlConnectionStore discordControlConnectionStore,
+        CyRevisionPluginManager pluginManager,
+        CodeWorkspaceService codeWorkspaceService,
+        IPullRequestService pullRequestService,
         string? initialProjectPath = null)
     {
         _projectCatalog = projectCatalog;
@@ -218,6 +291,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _discordAgentStore = discordAgentStore;
         _discordAgent = discordAgent;
         _discordControlConnectionStore = discordControlConnectionStore;
+        _pluginManager = pluginManager;
+        _codeWorkspaceService = codeWorkspaceService;
+        _pullRequestService = pullRequestService;
         _discordAgent.StatusChanged += OnDiscordAgentStatusChanged;
         _selectedLanguage = localization.Languages.FirstOrDefault(language =>
             string.Equals(language.Code, localization.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase));
@@ -252,6 +328,42 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<AdvisoryReservationViewModel> AdvisoryReservations { get; } = [];
 
     public ObservableCollection<DocumentationTopic> DocumentationTopics { get; } = [];
+
+    public ObservableCollection<PluginItemViewModel> Plugins { get; } = [];
+
+    public ObservableCollection<CodeTreeNode> CodeTree { get; } = [];
+
+    public ObservableCollection<CodeSearchResult> CodeSearchResults { get; } = [];
+
+    public ObservableCollection<CodeHistoryEntry> CodeHistory { get; } = [];
+
+    public ObservableCollection<CodeSymbol> CodeSymbols { get; } = [];
+
+    public ObservableCollection<AiProviderDescriptor> AiProviders { get; } = [];
+
+    public ObservableCollection<AiMcpServerViewModel> AiMcpServers { get; } = [];
+
+    public ObservableCollection<PullRequestSummary> PullRequests { get; } = [];
+
+    public ObservableCollection<PullRequestFile> PullRequestFiles { get; } = [];
+
+    public ObservableCollection<PullRequestReview> PullRequestReviews { get; } = [];
+
+    public ObservableCollection<PullRequestComment> PullRequestComments { get; } = [];
+
+    public IReadOnlyList<PullRequestStateFilter> PullRequestStateFilters { get; } = Enum.GetValues<PullRequestStateFilter>();
+
+    public IReadOnlyList<PullRequestMergeMethod> PullRequestMergeMethods { get; } = Enum.GetValues<PullRequestMergeMethod>();
+
+    public IReadOnlyList<PullRequestReviewAction> PullRequestReviewActions { get; } = Enum.GetValues<PullRequestReviewAction>();
+
+    public IReadOnlyList<AiMcpTransport> AiMcpTransports { get; } = Enum.GetValues<AiMcpTransport>();
+
+    public IReadOnlyList<AiMcpCapability> AiMcpCapabilities { get; } = Enum.GetValues<AiMcpCapability>();
+
+    public IReadOnlyList<AiMcpApprovalMode> AiMcpApprovalModes { get; } = Enum.GetValues<AiMcpApprovalMode>();
+
+    public IReadOnlyList<AiMcpHttpAuth> AiMcpHttpAuthModes { get; } = Enum.GetValues<AiMcpHttpAuth>();
 
     public IReadOnlyList<GitGraphCommit> GitGraphCommits
     {
@@ -606,6 +718,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             }
 
             OnPropertyChanged(nameof(HasSelectedProject));
+            if (value is not null && Directory.Exists(value.RootPath) &&
+                Directory.EnumerateFiles(value.RootPath, "*.uproject", SearchOption.TopDirectoryOnly).Any())
+            {
+                UnrealProjectPath = value.RootPath;
+                RefreshUnrealInspection();
+            }
             _ = LoadSelectedProjectAsync();
         }
     }
@@ -1214,8 +1332,479 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         private set => SetProperty(ref _discordConnectionSummary, value);
     }
 
+    public PluginItemViewModel? SelectedPlugin
+    {
+        get => _selectedPlugin;
+        set
+        {
+            if (SetProperty(ref _selectedPlugin, value))
+            {
+                OnPropertyChanged(nameof(CanEnableSelectedPlugin));
+                OnPropertyChanged(nameof(CanDisableSelectedPlugin));
+            }
+        }
+    }
+
+    public bool CanEnableSelectedPlugin => SelectedPlugin is { IsEnabled: false };
+
+    public bool CanDisableSelectedPlugin => SelectedPlugin is { IsEnabled: true };
+
+    public bool IsUnrealIntegrationEnabled
+    {
+        get => _isUnrealIntegrationEnabled;
+        private set => SetProperty(ref _isUnrealIntegrationEnabled, value);
+    }
+
+    public string UnrealProjectPath
+    {
+        get => _unrealProjectPath;
+        private set => SetProperty(ref _unrealProjectPath, value);
+    }
+
+    public string UnrealPluginSummary
+    {
+        get => _unrealPluginSummary;
+        private set => SetProperty(ref _unrealPluginSummary, value);
+    }
+
+    public string UnrealBridgeSummary
+    {
+        get => _unrealBridgeSummary;
+        private set => SetProperty(ref _unrealBridgeSummary, value);
+    }
+
+    public string UnrealEditorPluginVersion => _unrealProjectInspection?.BundledPluginVersion ?? "—";
+
+    public string UnrealInstalledPluginVersion => _unrealProjectInspection?.InstalledPluginVersion ?? "Not installed";
+
+    public bool CanInstallUnrealEditorPlugin =>
+        IsUnrealIntegrationEnabled && _unrealProjectInspection?.IsValid == true;
+
+    public CodeTreeNode? SelectedCodeNode
+    {
+        get => _selectedCodeNode;
+        set
+        {
+            if (SetProperty(ref _selectedCodeNode, value))
+            {
+                _ = LoadCodeNodeAsync(value);
+            }
+        }
+    }
+
+    public CodeSearchResult? SelectedCodeSearchResult
+    {
+        get => _selectedCodeSearchResult;
+        set
+        {
+            if (SetProperty(ref _selectedCodeSearchResult, value) && value is not null)
+            {
+                _ = OpenCodeSearchResultAsync(value);
+            }
+        }
+    }
+
+    public CodeSymbol? SelectedCodeSymbol
+    {
+        get => _selectedCodeSymbol;
+        set => SetProperty(ref _selectedCodeSymbol, value);
+    }
+
+    public string CodeTreeFilter
+    {
+        get => _codeTreeFilter;
+        set => SetProperty(ref _codeTreeFilter, value);
+    }
+
+    public bool CodeIncludeHidden
+    {
+        get => _codeIncludeHidden;
+        set => SetProperty(ref _codeIncludeHidden, value);
+    }
+
+    public string CodeWorkspaceSummary
+    {
+        get => _codeWorkspaceSummary;
+        private set => SetProperty(ref _codeWorkspaceSummary, value);
+    }
+
+    public string CodeSearchQuery
+    {
+        get => _codeSearchQuery;
+        set => SetProperty(ref _codeSearchQuery, value);
+    }
+
+    public string CodeFilePatterns
+    {
+        get => _codeFilePatterns;
+        set => SetProperty(ref _codeFilePatterns, value);
+    }
+
+    public bool CodeSearchMatchCase
+    {
+        get => _codeSearchMatchCase;
+        set => SetProperty(ref _codeSearchMatchCase, value);
+    }
+
+    public bool CodeSearchWholeWord
+    {
+        get => _codeSearchWholeWord;
+        set => SetProperty(ref _codeSearchWholeWord, value);
+    }
+
+    public bool CodeSearchRegex
+    {
+        get => _codeSearchRegex;
+        set => SetProperty(ref _codeSearchRegex, value);
+    }
+
+    public string CodeSearchSummary
+    {
+        get => _codeSearchSummary;
+        private set => SetProperty(ref _codeSearchSummary, value);
+    }
+
+    public string CodePreviewText
+    {
+        get => _codePreviewText;
+        private set => SetProperty(ref _codePreviewText, value);
+    }
+
+    public string CodePreviewSummary
+    {
+        get => _codePreviewSummary;
+        private set => SetProperty(ref _codePreviewSummary, value);
+    }
+
+    public string CodeSelectionSummary
+    {
+        get => _codeSelectionSummary;
+        private set => SetProperty(ref _codeSelectionSummary, value);
+    }
+
+    public bool IsAiIntegrationEnabled
+    {
+        get => _isAiIntegrationEnabled;
+        private set => SetProperty(ref _isAiIntegrationEnabled, value);
+    }
+
+    public AiProviderDescriptor? SelectedAiProvider
+    {
+        get => _selectedAiProvider;
+        set
+        {
+            if (!SetProperty(ref _selectedAiProvider, value) || value is null) return;
+            AiModel = value.DefaultModel;
+            AiEndpoint = value.DefaultEndpoint;
+            OnPropertyChanged(nameof(AiProviderDescription));
+            OnPropertyChanged(nameof(AiProviderRequiresKey));
+            OnPropertyChanged(nameof(AiProviderSupportsEdits));
+        }
+    }
+
+    public string AiProviderDescription => SelectedAiProvider?.Description ?? "No provider selected.";
+
+    public bool AiProviderRequiresKey => SelectedAiProvider?.RequiresApiKey == true;
+
+    public bool AiProviderSupportsEdits => SelectedAiProvider?.SupportsWorkspaceEdits == true;
+
+    public string AiModel
+    {
+        get => _aiModel;
+        set => SetProperty(ref _aiModel, value);
+    }
+
+    public string AiEndpoint
+    {
+        get => _aiEndpoint;
+        set => SetProperty(ref _aiEndpoint, value);
+    }
+
+    public string AiApiKey
+    {
+        get => _aiApiKey;
+        set => SetProperty(ref _aiApiKey, value);
+    }
+
+    public string AiExecutablePath
+    {
+        get => _aiExecutablePath;
+        set => SetProperty(ref _aiExecutablePath, value);
+    }
+
+    public string AiPrompt
+    {
+        get => _aiPrompt;
+        set => SetProperty(ref _aiPrompt, value);
+    }
+
+    public string AiResponse
+    {
+        get => _aiResponse;
+        private set => SetProperty(ref _aiResponse, value);
+    }
+
+    public string AiStatus
+    {
+        get => _aiStatus;
+        private set => SetProperty(ref _aiStatus, value);
+    }
+
+    public bool AiAllowModify
+    {
+        get => _aiAllowModify;
+        set
+        {
+            if (!SetProperty(ref _aiAllowModify, value)) return;
+            if (!value)
+            {
+                AiStageAfterRun = false;
+                AiCommitAfterRun = false;
+            }
+        }
+    }
+
+    public bool AiAllowNetwork
+    {
+        get => _aiAllowNetwork;
+        set => SetProperty(ref _aiAllowNetwork, value);
+    }
+
+    public bool AiStageAfterRun
+    {
+        get => _aiStageAfterRun;
+        set
+        {
+            if (value && !AiAllowModify) AiAllowModify = true;
+            if (!SetProperty(ref _aiStageAfterRun, value)) return;
+            if (!value) AiCommitAfterRun = false;
+        }
+    }
+
+    public bool AiCommitAfterRun
+    {
+        get => _aiCommitAfterRun;
+        set
+        {
+            if (value)
+            {
+                if (!AiAllowModify) AiAllowModify = true;
+                if (!AiStageAfterRun) AiStageAfterRun = true;
+            }
+            SetProperty(ref _aiCommitAfterRun, value);
+        }
+    }
+
+    public string AiCommitMessage
+    {
+        get => _aiCommitMessage;
+        set => SetProperty(ref _aiCommitMessage, value);
+    }
+
+    public AiMcpServerViewModel? SelectedAiMcpServer
+    {
+        get => _selectedAiMcpServer;
+        set
+        {
+            if (SetProperty(ref _selectedAiMcpServer, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedAiMcpServer));
+            }
+        }
+    }
+
+    public bool HasSelectedAiMcpServer => SelectedAiMcpServer is not null;
+
+    public bool AiMcpEnabled
+    {
+        get => _aiMcpEnabled;
+        set
+        {
+            if (SetProperty(ref _aiMcpEnabled, value)) UpdateAiMcpStatus();
+        }
+    }
+
+    public bool AiMcpEmergencyBlocked
+    {
+        get => _aiMcpEmergencyBlocked;
+        private set
+        {
+            if (SetProperty(ref _aiMcpEmergencyBlocked, value))
+            {
+                OnPropertyChanged(nameof(AiMcpEmergencyState));
+                UpdateAiMcpStatus();
+            }
+        }
+    }
+
+    public string AiMcpEmergencyState => AiMcpEmergencyBlocked ? "BLOCKED" : "READY";
+
+    public bool AiMcpBlockUnmanagedServers
+    {
+        get => _aiMcpBlockUnmanagedServers;
+        set
+        {
+            if (SetProperty(ref _aiMcpBlockUnmanagedServers, value)) UpdateAiMcpStatus();
+        }
+    }
+
+    public string AiMcpStatus
+    {
+        get => _aiMcpStatus;
+        private set => SetProperty(ref _aiMcpStatus, value);
+    }
+
+    public PullRequestSummary? SelectedPullRequest
+    {
+        get => _selectedPullRequest;
+        set
+        {
+            if (SetProperty(ref _selectedPullRequest, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedPullRequest));
+                OnPropertyChanged(nameof(CanMergeSelectedPullRequest));
+                _ = LoadSelectedPullRequestAsync(value);
+            }
+        }
+    }
+
+    public PullRequestFile? SelectedPullRequestFile
+    {
+        get => _selectedPullRequestFile;
+        set
+        {
+            if (SetProperty(ref _selectedPullRequestFile, value))
+            {
+                PullRequestPatch = value is null
+                    ? "Select a changed file to inspect its patch."
+                    : string.IsNullOrWhiteSpace(value.Patch)
+                        ? "GitHub did not provide a text patch for this file. It may be binary or too large."
+                        : value.Patch;
+            }
+        }
+    }
+
+    public PullRequestStateFilter PullRequestStateFilter
+    {
+        get => _pullRequestStateFilter;
+        set => SetProperty(ref _pullRequestStateFilter, value);
+    }
+
+    public PullRequestMergeMethod PullRequestMergeMethod
+    {
+        get => _pullRequestMergeMethod;
+        set => SetProperty(ref _pullRequestMergeMethod, value);
+    }
+
+    public PullRequestReviewAction PullRequestReviewAction
+    {
+        get => _pullRequestReviewAction;
+        set => SetProperty(ref _pullRequestReviewAction, value);
+    }
+
+    public string PullRequestStatus
+    {
+        get => _pullRequestStatus;
+        private set => SetProperty(ref _pullRequestStatus, value);
+    }
+
+    public string PullRequestApiBaseUrl
+    {
+        get => _pullRequestApiBaseUrl;
+        set => SetProperty(ref _pullRequestApiBaseUrl, value);
+    }
+
+    public string PullRequestToken
+    {
+        get => _pullRequestToken;
+        set
+        {
+            if (SetProperty(ref _pullRequestToken, value))
+                OnPropertyChanged(nameof(PullRequestAuthenticationState));
+        }
+    }
+
+    public string PullRequestTokenEnvironmentVariable
+    {
+        get => _pullRequestTokenEnvironmentVariable;
+        set
+        {
+            if (SetProperty(ref _pullRequestTokenEnvironmentVariable, value))
+                OnPropertyChanged(nameof(PullRequestAuthenticationState));
+        }
+    }
+
+    public string PullRequestAuthenticationState => !string.IsNullOrWhiteSpace(PullRequestToken)
+        ? "Session token ready · never persisted"
+        : !string.IsNullOrWhiteSpace(ResolvePullRequestToken())
+            ? $"Using environment variable {PullRequestTokenEnvironmentVariable.Trim()}"
+            : "Public read only · add a token for write operations";
+
+    public string PullRequestRepositoryName => _pullRequestRepository?.FullName ?? "No supported remote detected";
+
+    public bool HasSelectedPullRequest => SelectedPullRequest is not null;
+
+    public bool CanMergeSelectedPullRequest =>
+        SelectedPullRequest is { IsMerged: false } pull && pull.State.Equals("open", StringComparison.OrdinalIgnoreCase);
+
+    public string PullRequestDetailsSummary => _selectedPullRequestDetails?.ChangeSummary ?? "Select a pull request.";
+
+    public string PullRequestBody => string.IsNullOrWhiteSpace(_selectedPullRequestDetails?.Body)
+        ? "No description provided."
+        : _selectedPullRequestDetails.Body;
+
+    public string PullRequestPatch
+    {
+        get => _pullRequestPatch;
+        private set => SetProperty(ref _pullRequestPatch, value);
+    }
+
+    public string NewPullRequestTitle
+    {
+        get => _newPullRequestTitle;
+        set => SetProperty(ref _newPullRequestTitle, value);
+    }
+
+    public string NewPullRequestBody
+    {
+        get => _newPullRequestBody;
+        set => SetProperty(ref _newPullRequestBody, value);
+    }
+
+    public string NewPullRequestHeadBranch
+    {
+        get => _newPullRequestHeadBranch;
+        set => SetProperty(ref _newPullRequestHeadBranch, value);
+    }
+
+    public string NewPullRequestBaseBranch
+    {
+        get => _newPullRequestBaseBranch;
+        set => SetProperty(ref _newPullRequestBaseBranch, value);
+    }
+
+    public bool NewPullRequestIsDraft
+    {
+        get => _newPullRequestIsDraft;
+        set => SetProperty(ref _newPullRequestIsDraft, value);
+    }
+
+    public string PullRequestComment
+    {
+        get => _pullRequestComment;
+        set => SetProperty(ref _pullRequestComment, value);
+    }
+
+    public string PullRequestReviewBody
+    {
+        get => _pullRequestReviewBody;
+        set => SetProperty(ref _pullRequestReviewBody, value);
+    }
+
     public async Task InitializeAsync()
     {
+        await _pluginManager.InitializeAsync();
+        RefreshPluginCatalog();
         await RunOperationAsync("Chargement des projets…", async () =>
         {
             GitToolAvailability availability = await _gitService.GetToolAvailabilityAsync();
@@ -1277,6 +1866,803 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, "Prêt");
 
         _ = CheckForUpdatesAsync();
+    }
+
+    public async Task RefreshCodeWorkspaceAsync()
+    {
+        if (SelectedProject is null)
+        {
+            ClearCodeWorkspace();
+            return;
+        }
+
+        CodeWorkspaceSummary = "Indexing workspace…";
+        try
+        {
+            CodeWorkspaceSnapshot snapshot = await _codeWorkspaceService.BuildTreeAsync(
+                SelectedProject.RootPath,
+                CodeTreeFilter,
+                CodeIncludeHidden);
+            ReplaceCollection(CodeTree, snapshot.Roots);
+            CodeWorkspaceSummary = $"{snapshot.FileCount:N0} files · {snapshot.DirectoryCount:N0} folders · " +
+                                   $"indexed in {snapshot.Elapsed.TotalMilliseconds:N0} ms" +
+                                   (snapshot.WasTruncated ? " · safety limit reached" : string.Empty);
+            SelectedCodeNode = FindFirstFile(CodeTree);
+        }
+        catch (Exception exception)
+        {
+            CodeWorkspaceSummary = exception.Message;
+        }
+    }
+
+    public async Task SearchCodeAsync()
+    {
+        if (SelectedProject is null || string.IsNullOrWhiteSpace(CodeSearchQuery))
+        {
+            CodeSearchSummary = "Enter a search term and select a project.";
+            return;
+        }
+
+        _codeSearchCancellation?.Cancel();
+        _codeSearchCancellation?.Dispose();
+        _codeSearchCancellation = new CancellationTokenSource();
+        CancellationToken token = _codeSearchCancellation.Token;
+        CodeSearchSummary = "Searching…";
+        try
+        {
+            CodeSearchReport report = await _codeWorkspaceService.SearchAsync(
+                SelectedProject.RootPath,
+                CodeSearchQuery,
+                new CodeSearchOptions(
+                    CodeSearchMatchCase,
+                    CodeSearchWholeWord,
+                    CodeSearchRegex,
+                    CodeIncludeHidden,
+                    CodeFilePatterns),
+                token);
+            ReplaceCollection(CodeSearchResults, report.Results);
+            CodeSearchSummary = $"{report.Results.Count:N0} result(s) in {report.FilesScanned:N0} file(s) · " +
+                                $"{report.Elapsed.TotalMilliseconds:N0} ms · " +
+                                (report.UsedRipgrep ? "ripgrep engine" : "managed fallback") +
+                                (report.WasTruncated ? " · result limit reached" : string.Empty);
+            SelectedCodeSearchResult = CodeSearchResults.FirstOrDefault();
+        }
+        catch (OperationCanceledException)
+        {
+            CodeSearchSummary = "Search cancelled.";
+        }
+        catch (Exception exception)
+        {
+            CodeSearchSummary = exception.Message;
+        }
+    }
+
+    public void CancelCodeSearch() => _codeSearchCancellation?.Cancel();
+
+    public async Task LoadCodeSelectionHistoryAsync(int selectionStart, int selectionEnd)
+    {
+        if (SelectedProject is null || SelectedCodeNode is not { IsDirectory: false } node)
+        {
+            CodeSelectionSummary = "Select a file and one or more lines first.";
+            return;
+        }
+
+        CodeSelection selection = CodeWorkspaceService.SelectionFromOffsets(
+            CodePreviewText,
+            selectionStart,
+            selectionEnd);
+        CodeSelectionSummary = $"Following Git history for lines {selection.StartLine}–{selection.EndLine}…";
+        try
+        {
+            IReadOnlyList<CodeHistoryEntry> history = await _codeWorkspaceService.GetHistoryAsync(
+                SelectedProject.RootPath,
+                node.RelativePath,
+                selection);
+            ReplaceCollection(CodeHistory, history);
+            CodeSelectionSummary = history.Count == 0
+                ? $"No Git history found for lines {selection.StartLine}–{selection.EndLine}."
+                : $"{history.Count} revision(s) affected lines {selection.StartLine}–{selection.EndLine}.";
+        }
+        catch (Exception exception)
+        {
+            CodeSelectionSummary = exception.Message;
+        }
+    }
+
+    public async Task ResolvePullRequestRepositoryAsync()
+    {
+        ClearPullRequestData(clearConnection: false);
+        if (SelectedProject is null || !SelectedProject.Definition.Features.GitEnabled)
+        {
+            PullRequestStatus = "Select a Git project first.";
+            return;
+        }
+
+        string? remoteUrl = await _gitService.GetRemoteUrlAsync(SelectedProject.RootPath);
+        if (string.IsNullOrWhiteSpace(remoteUrl))
+        {
+            _pullRequestRepository = null;
+            PullRequestStatus = "The origin remote is not configured.";
+            OnPropertyChanged(nameof(PullRequestRepositoryName));
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(RemoteUrl)) RemoteUrl = remoteUrl;
+        if (!_pullRequestService.TryResolveRepository(
+                remoteUrl,
+                string.IsNullOrWhiteSpace(PullRequestApiBaseUrl) ? null : PullRequestApiBaseUrl,
+                out PullRequestRepository? repository) || repository is null)
+        {
+            _pullRequestRepository = null;
+            PullRequestStatus = "This remote is not supported yet. GitLab and Forgejo will use provider adapters.";
+            OnPropertyChanged(nameof(PullRequestRepositoryName));
+            return;
+        }
+
+        _pullRequestRepository = repository;
+        if (string.IsNullOrWhiteSpace(NewPullRequestHeadBranch)) NewPullRequestHeadBranch = CurrentBranch;
+        if (string.IsNullOrWhiteSpace(NewPullRequestBaseBranch)) NewPullRequestBaseBranch = "main";
+        PullRequestStatus = $"{repository.Provider} repository detected · click Refresh to load pull requests.";
+        OnPropertyChanged(nameof(PullRequestRepositoryName));
+        OnPropertyChanged(nameof(PullRequestAuthenticationState));
+    }
+
+    public async Task RefreshPullRequestsAsync()
+    {
+        if (_pullRequestRepository is null) await ResolvePullRequestRepositoryAsync();
+        if (_pullRequestRepository is null) return;
+        await RunOperationAsync("Loading pull requests…", async () =>
+        {
+            try
+            {
+                await RefreshPullRequestsCoreAsync();
+            }
+            catch (Exception exception)
+            {
+                PullRequestStatus = exception.Message;
+                throw;
+            }
+        }, "Pull requests loaded");
+    }
+
+    public async Task CreatePullRequestAsync()
+    {
+        if (_pullRequestRepository is null) await ResolvePullRequestRepositoryAsync();
+        if (_pullRequestRepository is null) return;
+        if (!TryGetPullRequestWriteToken(out string token)) return;
+        CreatePullRequestRequest request = new(
+            NewPullRequestTitle,
+            NewPullRequestBody,
+            NewPullRequestHeadBranch,
+            NewPullRequestBaseBranch,
+            NewPullRequestIsDraft);
+        await RunOperationAsync("Creating pull request…", async () =>
+        {
+            try
+            {
+                PullRequestSummary created = await _pullRequestService.CreateAsync(
+                    _pullRequestRepository, request, token);
+                NewPullRequestTitle = string.Empty;
+                NewPullRequestBody = string.Empty;
+                NewPullRequestIsDraft = false;
+                await RefreshPullRequestsCoreAsync(created.Number);
+                PullRequestStatus = $"Pull request #{created.Number} created.";
+            }
+            catch (Exception exception)
+            {
+                PullRequestStatus = exception.Message;
+                throw;
+            }
+        }, "Pull request created");
+    }
+
+    public async Task AddPullRequestCommentAsync()
+    {
+        if (_pullRequestRepository is null || SelectedPullRequest is null) return;
+        if (!TryGetPullRequestWriteToken(out string token)) return;
+        string body = PullRequestComment;
+        await RunOperationAsync("Publishing pull request comment…", async () =>
+        {
+            try
+            {
+                await _pullRequestService.AddCommentAsync(
+                    _pullRequestRepository, SelectedPullRequest.Number, body, token);
+                PullRequestComment = string.Empty;
+                await LoadSelectedPullRequestAsync(SelectedPullRequest);
+                PullRequestStatus = "Comment published.";
+            }
+            catch (Exception exception)
+            {
+                PullRequestStatus = exception.Message;
+                throw;
+            }
+        }, "Comment published");
+    }
+
+    public async Task SubmitPullRequestReviewAsync()
+    {
+        if (_pullRequestRepository is null || SelectedPullRequest is null) return;
+        if (!TryGetPullRequestWriteToken(out string token)) return;
+        string body = PullRequestReviewBody;
+        CyRevision.PullRequests.PullRequestReviewAction action = this.PullRequestReviewAction;
+        await RunOperationAsync("Submitting pull request review…", async () =>
+        {
+            try
+            {
+                await _pullRequestService.SubmitReviewAsync(
+                    _pullRequestRepository, SelectedPullRequest.Number, body, action, token);
+                PullRequestReviewBody = string.Empty;
+                await LoadSelectedPullRequestAsync(SelectedPullRequest);
+                PullRequestStatus = $"{action} review submitted.";
+            }
+            catch (Exception exception)
+            {
+                PullRequestStatus = exception.Message;
+                throw;
+            }
+        }, "Review submitted");
+    }
+
+    public async Task MergeSelectedPullRequestAsync()
+    {
+        if (_pullRequestRepository is null || SelectedPullRequest is null) return;
+        if (!TryGetPullRequestWriteToken(out string token)) return;
+        int number = SelectedPullRequest.Number;
+        CyRevision.PullRequests.PullRequestMergeMethod method = this.PullRequestMergeMethod;
+        await RunOperationAsync($"Merging pull request #{number}…", async () =>
+        {
+            try
+            {
+                MergePullRequestResult result = await _pullRequestService.MergeAsync(
+                    _pullRequestRepository, number, method, token);
+                await RefreshPullRequestsCoreAsync(number);
+                PullRequestStatus = result.Message;
+            }
+            catch (Exception exception)
+            {
+                PullRequestStatus = exception.Message;
+                throw;
+            }
+        }, $"Pull request #{number} merged");
+    }
+
+    public async Task ToggleSelectedPullRequestStateAsync()
+    {
+        if (_pullRequestRepository is null || SelectedPullRequest is null) return;
+        if (!TryGetPullRequestWriteToken(out string token)) return;
+        int number = SelectedPullRequest.Number;
+        bool open = !SelectedPullRequest.State.Equals("open", StringComparison.OrdinalIgnoreCase);
+        await RunOperationAsync(open ? "Reopening pull request…" : "Closing pull request…", async () =>
+        {
+            try
+            {
+                await _pullRequestService.SetStateAsync(_pullRequestRepository, number, open, token);
+                await RefreshPullRequestsCoreAsync(number);
+                PullRequestStatus = open ? "Pull request reopened." : "Pull request closed.";
+            }
+            catch (Exception exception)
+            {
+                PullRequestStatus = exception.Message;
+                throw;
+            }
+        }, open ? "Pull request reopened" : "Pull request closed");
+    }
+
+    public async Task CheckoutSelectedPullRequestAsync()
+    {
+        if (SelectedProject is null || SelectedPullRequest is null) return;
+        int number = SelectedPullRequest.Number;
+        await RunOperationAsync($"Checking out pull request #{number}…", async () =>
+        {
+            GitRepositoryStatus status = await _gitService.GetStatusAsync(SelectedProject.RootPath);
+            if (status.Changes.Count > 0)
+                throw new InvalidOperationException("Commit, stash, or discard working-tree changes before checking out a pull request.");
+            string remoteReference = $"refs/remotes/cyrevision/pull/{number}";
+            await _gitService.FetchReferenceAsync(
+                SelectedProject.RootPath,
+                "origin",
+                $"+pull/{number}/head:{remoteReference}");
+            string localBranch = $"cyrevision/pr-{number}";
+            IReadOnlyList<GitBranch> branches = await _gitService.GetBranchesAsync(SelectedProject.RootPath);
+            if (branches.Any(branch => !branch.IsRemote && branch.Name.Equals(localBranch, StringComparison.Ordinal)))
+            {
+                await _gitService.CheckoutBranchAsync(SelectedProject.RootPath, localBranch);
+                await _gitService.FastForwardAsync(SelectedProject.RootPath, remoteReference);
+            }
+            else
+            {
+                await _gitService.CreateBranchFromAsync(SelectedProject.RootPath, localBranch, remoteReference);
+            }
+            await RefreshCoreAsync();
+            PullRequestStatus = $"Pull request #{number} checked out as {localBranch}.";
+        }, $"Pull request #{number} checked out");
+    }
+
+    public void OpenSelectedPullRequestInBrowser()
+    {
+        if (SelectedPullRequest is null) return;
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = SelectedPullRequest.WebUrl.AbsoluteUri,
+            UseShellExecute = true
+        });
+    }
+
+    private async Task RefreshPullRequestsCoreAsync(int? selectNumber = null)
+    {
+        if (_pullRequestRepository is null) return;
+        int? previousNumber = selectNumber ?? SelectedPullRequest?.Number;
+        IReadOnlyList<PullRequestSummary> pulls = await _pullRequestService.ListAsync(
+            _pullRequestRepository,
+            PullRequestStateFilter,
+            ResolvePullRequestToken());
+        ReplaceCollection(PullRequests, pulls);
+        PullRequestStatus = $"{pulls.Count} pull request(s) · {_pullRequestRepository.FullName} · {PullRequestStateFilter}";
+        SelectedPullRequest = previousNumber is int number
+            ? PullRequests.FirstOrDefault(pull => pull.Number == number) ?? PullRequests.FirstOrDefault()
+            : PullRequests.FirstOrDefault();
+    }
+
+    private async Task LoadSelectedPullRequestAsync(PullRequestSummary? pullRequest)
+    {
+        int loadVersion = Interlocked.Increment(ref _pullRequestDetailsLoadVersion);
+        if (_pullRequestRepository is null || pullRequest is null)
+        {
+            ClearPullRequestDetails();
+            return;
+        }
+
+        PullRequestStatus = $"Loading pull request #{pullRequest.Number}…";
+        try
+        {
+            PullRequestDetails details = await _pullRequestService.GetDetailsAsync(
+                _pullRequestRepository,
+                pullRequest.Number,
+                ResolvePullRequestToken());
+            if (loadVersion != _pullRequestDetailsLoadVersion || SelectedPullRequest?.Number != pullRequest.Number) return;
+            _selectedPullRequestDetails = details;
+            ReplaceCollection(PullRequestFiles, details.Files);
+            ReplaceCollection(PullRequestReviews, details.Reviews);
+            ReplaceCollection(PullRequestComments, details.Comments);
+            SelectedPullRequestFile = PullRequestFiles.FirstOrDefault();
+            OnPropertyChanged(nameof(PullRequestDetailsSummary));
+            OnPropertyChanged(nameof(PullRequestBody));
+            OnPropertyChanged(nameof(CanMergeSelectedPullRequest));
+            PullRequestStatus = $"Pull request #{pullRequest.Number} loaded.";
+        }
+        catch (Exception exception)
+        {
+            if (loadVersion == _pullRequestDetailsLoadVersion) PullRequestStatus = exception.Message;
+        }
+    }
+
+    private string? ResolvePullRequestToken()
+    {
+        if (!string.IsNullOrWhiteSpace(PullRequestToken)) return PullRequestToken.Trim();
+        if (string.IsNullOrWhiteSpace(PullRequestTokenEnvironmentVariable)) return null;
+        try
+        {
+            return Environment.GetEnvironmentVariable(PullRequestTokenEnvironmentVariable.Trim());
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private bool TryGetPullRequestWriteToken(out string token)
+    {
+        token = ResolvePullRequestToken() ?? string.Empty;
+        if (token.Length > 0) return true;
+
+        PullRequestStatus = "A session token or token environment variable is required for this operation.";
+        StatusMessage = PullRequestStatus;
+        return false;
+    }
+
+    private void ClearPullRequestData(bool clearConnection = true)
+    {
+        Interlocked.Increment(ref _pullRequestDetailsLoadVersion);
+        PullRequests.Clear();
+        ClearPullRequestDetails();
+        SelectedPullRequest = null;
+        if (clearConnection)
+        {
+            _pullRequestRepository = null;
+            PullRequestToken = string.Empty;
+            PullRequestApiBaseUrl = string.Empty;
+            PullRequestStatus = "Select a GitHub-backed project to manage pull requests.";
+            OnPropertyChanged(nameof(PullRequestRepositoryName));
+        }
+    }
+
+    private void ClearPullRequestDetails()
+    {
+        _selectedPullRequestDetails = null;
+        PullRequestFiles.Clear();
+        PullRequestReviews.Clear();
+        PullRequestComments.Clear();
+        SelectedPullRequestFile = null;
+        OnPropertyChanged(nameof(PullRequestDetailsSummary));
+        OnPropertyChanged(nameof(PullRequestBody));
+    }
+
+    public void AddAiMcpServer(AiMcpTransport transport)
+    {
+        AiMcpServerViewModel server = AiMcpServerViewModel.Create(transport, AiMcpServers.Count + 1);
+        AiMcpServers.Add(server);
+        SelectedAiMcpServer = server;
+        UpdateAiMcpStatus();
+    }
+
+    public void RemoveSelectedAiMcpServer()
+    {
+        if (SelectedAiMcpServer is null) return;
+        int index = AiMcpServers.IndexOf(SelectedAiMcpServer);
+        AiMcpServers.Remove(SelectedAiMcpServer);
+        SelectedAiMcpServer = AiMcpServers.Count == 0
+            ? null
+            : AiMcpServers[Math.Clamp(index, 0, AiMcpServers.Count - 1)];
+        UpdateAiMcpStatus();
+    }
+
+    public async Task SaveAiMcpProfileAsync()
+    {
+        IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        if (plugin is null || SelectedProject is null)
+        {
+            AiMcpStatus = "Enable AI Workspace and select a project first.";
+            return;
+        }
+
+        AiMcpProjectProfile profile;
+        try
+        {
+            profile = CreateCurrentAiMcpProfile();
+            EnsureUniqueMcpIds(profile.Servers);
+        }
+        catch (Exception exception)
+        {
+            AiMcpStatus = exception.Message;
+            return;
+        }
+
+        await RunOperationAsync("Saving MCP policy…", async () =>
+        {
+            await plugin.SaveMcpProfileAsync(profile);
+            UpdateAiMcpStatus("Policy saved locally outside the repository.");
+        }, "MCP policy saved");
+    }
+
+    public async Task EmergencyBlockAiMcpAsync()
+    {
+        AiMcpEmergencyBlocked = true;
+        _aiAgentCancellation?.Cancel();
+        IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        if (plugin is not null && SelectedProject is not null)
+        {
+            await plugin.SaveMcpProfileAsync(CreateCurrentAiMcpProfile());
+        }
+        UpdateAiMcpStatus("Emergency block applied. Any running CyRevision AI task was cancelled.");
+    }
+
+    public async Task UnblockAiMcpAsync()
+    {
+        AiMcpEmergencyBlocked = false;
+        IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        if (plugin is not null && SelectedProject is not null)
+        {
+            await plugin.SaveMcpProfileAsync(CreateCurrentAiMcpProfile());
+        }
+        UpdateAiMcpStatus("Emergency block removed. Individual server policies still apply.");
+    }
+
+    public async Task RunAiAgentAsync()
+    {
+        IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        if (plugin is null || SelectedAiProvider is null || SelectedProject is null)
+        {
+            AiStatus = "Enable AI Workspace, select a provider, and open a project.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(AiPrompt))
+        {
+            AiStatus = "Describe the task for the AI agent.";
+            return;
+        }
+
+        AiWorkspacePermission permissions = AiWorkspacePermission.ReadRepository;
+        if (AiAllowModify) permissions |= AiWorkspacePermission.ModifyFiles;
+        if (AiAllowNetwork) permissions |= AiWorkspacePermission.NetworkAccess;
+        if (AiStageAfterRun) permissions |= AiWorkspacePermission.StageChanges;
+        if (AiCommitAfterRun) permissions |= AiWorkspacePermission.CreateCommit;
+        AiMcpProjectProfile mcpProfile = CreateCurrentAiMcpProfile();
+        AiAgentRequest request = new(
+            SelectedProject.RootPath,
+            AiPrompt,
+            SelectedCodeNode is { IsDirectory: false }
+                ? $"FILE: {SelectedCodeNode.RelativePath}{Environment.NewLine}{CodePreviewText[..Math.Min(CodePreviewText.Length, 100_000)]}"
+                : string.Empty,
+            SelectedAiProvider,
+            AiModel,
+            AiEndpoint,
+            AiExecutablePath,
+            string.IsNullOrWhiteSpace(AiApiKey) ? null : AiApiKey,
+            permissions,
+            mcpProfile);
+
+        _aiAgentCancellation?.Cancel();
+        _aiAgentCancellation?.Dispose();
+        _aiAgentCancellation = new CancellationTokenSource();
+        CancellationToken aiCancellationToken = _aiAgentCancellation.Token;
+        await RunOperationAsync("Running AI agent…", async () =>
+        {
+            AiStatus = "Agent running inside the selected permission boundary…";
+            AiAgentResult result = await plugin.RunAsync(request, aiCancellationToken);
+            AiResponse = string.IsNullOrWhiteSpace(result.Response) ? result.Diagnostic : result.Response;
+            AiStatus = result.Succeeded
+                ? $"Completed in {result.Duration:g}."
+                : $"Agent failed (exit {result.ExitCode}): {result.Diagnostic}";
+            if (!result.Succeeded) throw new InvalidOperationException(AiStatus);
+            if (SelectedProject.Definition.Features.GitEnabled && (AiStageAfterRun || AiCommitAfterRun))
+            {
+                GitRepositoryStatus status = await _gitService.GetStatusAsync(SelectedProject.RootPath);
+                string[] paths = status.Changes.Select(change => change.Path).Distinct().ToArray();
+                if (paths.Length > 0 && AiCommitAfterRun)
+                {
+                    if (string.IsNullOrWhiteSpace(AiCommitMessage))
+                        throw new InvalidOperationException("A commit message is required for the Git broker.");
+                    await _gitService.CreateRevisionAsync(SelectedProject.RootPath, AiCommitMessage, paths);
+                    AiStatus += $" CyRevision created commit '{AiCommitMessage.Trim()}'.";
+                }
+                else if (paths.Length > 0 && AiStageAfterRun)
+                {
+                    await _gitService.StageAsync(SelectedProject.RootPath, paths);
+                    AiStatus += $" CyRevision staged {paths.Length} changed file(s).";
+                }
+                await RefreshCoreAsync();
+                await RefreshCodeWorkspaceAsync();
+            }
+            AiApiKey = string.Empty;
+        }, "AI task completed");
+    }
+
+    private AiMcpProjectProfile CreateCurrentAiMcpProfile()
+    {
+        if (SelectedProject is null) return AiMcpProjectProfile.CreateDefault(Guid.Empty);
+        return new AiMcpProjectProfile(
+            SelectedProject.Id,
+            AiMcpEnabled,
+            AiMcpEmergencyBlocked,
+            AiMcpBlockUnmanagedServers,
+            AiMcpServers.Select(server => server.ToConfiguration()).ToArray(),
+            DateTimeOffset.UtcNow);
+    }
+
+    private async Task LoadAiMcpProfileCoreAsync()
+    {
+        IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        if (plugin is null || SelectedProject is null)
+        {
+            ClearAiMcpProfile();
+            return;
+        }
+
+        try
+        {
+            AiMcpProjectProfile profile = await plugin.GetMcpProfileAsync(SelectedProject.Id);
+            AiMcpEnabled = profile.Enabled;
+            AiMcpEmergencyBlocked = profile.EmergencyBlocked;
+            AiMcpBlockUnmanagedServers = profile.BlockUnmanagedServers;
+            ReplaceCollection(AiMcpServers, profile.Servers.Select(server => new AiMcpServerViewModel(server)));
+            SelectedAiMcpServer = AiMcpServers.FirstOrDefault();
+            UpdateAiMcpStatus("Loaded from local project settings.");
+        }
+        catch (Exception exception)
+        {
+            ClearAiMcpProfile();
+            AiMcpStatus = exception.Message;
+        }
+    }
+
+    private void ClearAiMcpProfile()
+    {
+        AiMcpServers.Clear();
+        SelectedAiMcpServer = null;
+        AiMcpEnabled = false;
+        AiMcpEmergencyBlocked = false;
+        AiMcpBlockUnmanagedServers = true;
+        AiMcpStatus = "MCP is disabled for this project.";
+    }
+
+    private void UpdateAiMcpStatus(string? suffix = null)
+    {
+        int enabled = AiMcpServers.Count(server => server.Enabled);
+        string state = AiMcpEmergencyBlocked
+            ? "ALL MCP BLOCKED"
+            : AiMcpEnabled
+                ? $"MCP enabled · {enabled}/{AiMcpServers.Count} server(s) enabled"
+                : "MCP disabled for this project";
+        string isolation = AiMcpBlockUnmanagedServers
+            ? " · unmanaged Codex MCP servers blocked"
+            : " · unmanaged Codex MCP servers allowed";
+        AiMcpStatus = state + isolation + (string.IsNullOrWhiteSpace(suffix) ? string.Empty : " · " + suffix);
+    }
+
+    private static void EnsureUniqueMcpIds(IEnumerable<AiMcpServerConfiguration> servers)
+    {
+        string[] duplicateIds = servers.GroupBy(server => server.Id, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToArray();
+        if (duplicateIds.Length > 0)
+        {
+            throw new InvalidOperationException("MCP server IDs must be unique: " + string.Join(", ", duplicateIds));
+        }
+    }
+
+    private async Task OpenCodeSearchResultAsync(CodeSearchResult result)
+    {
+        CodeTreeNode? node = FindNode(CodeTree, result.RelativePath);
+        if (node is not null)
+        {
+            SelectedCodeNode = node;
+        }
+        else if (SelectedProject is not null)
+        {
+            await LoadCodeNodeAsync(new CodeTreeNode(
+                Path.GetFileName(result.RelativePath),
+                result.RelativePath,
+                result.FullPath,
+                false,
+                size: new FileInfo(result.FullPath).Length));
+        }
+        CodePreviewSummary += $" · match at line {result.LineNumber}, column {result.ColumnNumber}";
+    }
+
+    private async Task LoadCodeNodeAsync(CodeTreeNode? node)
+    {
+        CodeHistory.Clear();
+        CodeSymbols.Clear();
+        CodePreviewText = string.Empty;
+        if (SelectedProject is null || node is null)
+        {
+            CodePreviewSummary = "Select a file to preview it.";
+            return;
+        }
+
+        try
+        {
+            if (node.IsDirectory)
+            {
+                CodePreviewSummary = $"Folder · {node.RelativePath} · {node.Children.Count} visible item(s)";
+                if (SelectedProject.Definition.Features.GitEnabled)
+                {
+                    ReplaceCollection(CodeHistory, await _codeWorkspaceService.GetHistoryAsync(
+                        SelectedProject.RootPath, node.RelativePath));
+                }
+                return;
+            }
+            CodeFilePreview preview = await _codeWorkspaceService.ReadPreviewAsync(
+                SelectedProject.RootPath, node.RelativePath);
+            CodePreviewText = preview.IsBinary
+                ? "Binary preview is not available. Use Asset diff for supported visual formats."
+                : preview.Text;
+            CodePreviewSummary = $"{preview.RelativePath} · {preview.Summary}";
+            ReplaceCollection(CodeSymbols, preview.Symbols);
+            if (SelectedProject.Definition.Features.GitEnabled)
+            {
+                ReplaceCollection(CodeHistory, await _codeWorkspaceService.GetHistoryAsync(
+                    SelectedProject.RootPath, node.RelativePath));
+            }
+            CodeSelectionSummary = "Select lines in the preview, then request their Git history.";
+        }
+        catch (Exception exception)
+        {
+            CodePreviewSummary = exception.Message;
+        }
+    }
+
+    private static CodeTreeNode? FindFirstFile(IEnumerable<CodeTreeNode> nodes)
+    {
+        foreach (CodeTreeNode node in nodes)
+        {
+            if (!node.IsDirectory) return node;
+            CodeTreeNode? child = FindFirstFile(node.Children);
+            if (child is not null) return child;
+        }
+        return null;
+    }
+
+    private static CodeTreeNode? FindNode(IEnumerable<CodeTreeNode> nodes, string relativePath)
+    {
+        foreach (CodeTreeNode node in nodes)
+        {
+            if (string.Equals(node.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase)) return node;
+            CodeTreeNode? child = FindNode(node.Children, relativePath);
+            if (child is not null) return child;
+        }
+        return null;
+    }
+
+    public void SetUnrealProjectPath(string path)
+    {
+        UnrealProjectPath = Path.GetFullPath(path);
+        RefreshUnrealInspection();
+    }
+
+    public async Task EnableSelectedPluginAsync()
+    {
+        if (SelectedPlugin is null)
+        {
+            return;
+        }
+
+        string pluginId = SelectedPlugin.Id;
+        await RunOperationAsync("Enabling plugin…", async () =>
+        {
+            await _pluginManager.EnableAsync(pluginId);
+            RefreshPluginCatalog(pluginId);
+        }, "Plugin enabled");
+    }
+
+    public async Task DisableSelectedPluginAsync()
+    {
+        if (SelectedPlugin is null)
+        {
+            return;
+        }
+
+        string pluginId = SelectedPlugin.Id;
+        await RunOperationAsync("Disabling plugin…", async () =>
+        {
+            DetachUnrealPluginEvents();
+            await _pluginManager.DisableAsync(pluginId);
+            RefreshPluginCatalog(pluginId);
+        }, "Plugin disabled");
+    }
+
+    public async Task InstallUnrealEditorPluginAsync()
+    {
+        IUnrealIntegrationPlugin? plugin = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        if (plugin is null || string.IsNullOrWhiteSpace(UnrealProjectPath))
+        {
+            StatusMessage = "Enable the Unreal Engine Integration plugin and select an Unreal project.";
+            return;
+        }
+
+        await RunOperationAsync("Installing CyRevisionUnreal…", async () =>
+        {
+            string executable = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "CyRevision.Desktop");
+            UnrealPluginInstallationResult result = await plugin.InstallOrUpdateEditorPluginAsync(
+                UnrealProjectPath,
+                executable);
+            UnrealPluginSummary = result.Message + (result.BackupDirectory is null
+                ? string.Empty
+                : $" Backup: {result.BackupDirectory}");
+            RefreshUnrealInspection();
+            if (!result.Succeeded)
+            {
+                throw new InvalidOperationException(result.Message);
+            }
+        }, "CyRevisionUnreal installed and the private loopback connection configured");
+    }
+
+    public async Task ConfigureUnrealBridgeAsync()
+    {
+        IUnrealIntegrationPlugin? plugin = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        if (plugin is null || string.IsNullOrWhiteSpace(UnrealProjectPath))
+        {
+            StatusMessage = "Enable the Unreal Engine Integration plugin and select an Unreal project.";
+            return;
+        }
+
+        await RunOperationAsync("Configuring the Unreal bridge…", async () =>
+        {
+            string executable = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "CyRevision.Desktop");
+            UnrealBridgeStatus bridge = await plugin.ConfigureProjectConnectionAsync(UnrealProjectPath, executable);
+            UnrealBridgeSummary = FormatBridgeStatus(bridge);
+        }, "Unreal project authorized on the private loopback bridge");
     }
 
     public async Task CheckForUpdatesAsync()
@@ -1480,14 +2866,20 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 SelectedProject.RootPath,
                 Math.Min(1000, Math.Max(commitLimit, 500)),
                 GitGraphIncludeAllBranches);
-            Task<UnrealDependencyGraph> unrealTask = _assetDiffService.ScanUnrealDependenciesAsync(
-                SelectedProject.RootPath,
-                Math.Min(1000, Math.Max(fileLimit * 5, 100)));
-            await Task.WhenAll(commitsTask, filesTask, insightsTask, unrealTask);
+            Task<UnrealDependencyGraph>? unrealTask = IsUnrealIntegrationEnabled
+                ? _assetDiffService.ScanUnrealDependenciesAsync(
+                    SelectedProject.RootPath,
+                    Math.Min(1000, Math.Max(fileLimit * 5, 100)))
+                : null;
+            List<Task> analysisTasks = [commitsTask, filesTask, insightsTask];
+            if (unrealTask is not null)
+            {
+                analysisTasks.Add(unrealTask);
+            }
+            await Task.WhenAll(analysisTasks);
             IReadOnlyList<GitGraphCommit> commits = await commitsTask;
             GitFileActivityGraph files = await filesTask;
             GitRepositoryInsights insights = await insightsTask;
-            UnrealDependencyGraph unreal = await unrealTask;
             GitGraphCommits = commits.ToArray();
             GitFileActivities = files.Files.ToArray();
             GitFileRelations = files.Relations.ToArray();
@@ -1497,22 +2889,33 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             GitInsightsSummary = $"{insights.CommitCount} commits · {insights.ContributorCount} contributeur(s) · " +
                                  $"{insights.FileCount} fichier(s) · +{insights.AddedLines} / -{insights.DeletedLines} · " +
                                  $"{insights.BinaryChanges} changement(s) binaire(s)";
-            UnrealAssets = unreal.Assets.ToArray();
-            UnrealDependencyFiles = unreal.Assets.Select(asset => new GitFileActivity(
-                asset.Path,
-                GitFileKind.UnrealAsset,
-                Math.Max(1, asset.DependencyCount + asset.ReferencedByCount),
-                0,
-                0,
-                1,
-                DateTimeOffset.MinValue)).ToArray();
-            UnrealDependencyRelations = unreal.Dependencies.Select(dependency => new GitFileRelation(
-                dependency.SourcePath,
-                dependency.TargetPath,
-                1)).ToArray();
-            UnrealDependencySummary = $"{unreal.InspectedAssetCount} / {unreal.TotalAssetCount} asset(s) inspecté(s) · " +
-                                      $"{unreal.Dependencies.Count} dépendance(s) résolue(s) · " +
-                                      $"{unreal.UnresolvedReferenceCount} référence(s) externe(s) ou non résolue(s)";
+            if (unrealTask is not null)
+            {
+                UnrealDependencyGraph unreal = await unrealTask;
+                UnrealAssets = unreal.Assets.ToArray();
+                UnrealDependencyFiles = unreal.Assets.Select(asset => new GitFileActivity(
+                    asset.Path,
+                    GitFileKind.UnrealAsset,
+                    Math.Max(1, asset.DependencyCount + asset.ReferencedByCount),
+                    0,
+                    0,
+                    1,
+                    DateTimeOffset.MinValue)).ToArray();
+                UnrealDependencyRelations = unreal.Dependencies.Select(dependency => new GitFileRelation(
+                    dependency.SourcePath,
+                    dependency.TargetPath,
+                    1)).ToArray();
+                UnrealDependencySummary = $"{unreal.InspectedAssetCount} / {unreal.TotalAssetCount} asset(s) inspecté(s) · " +
+                                          $"{unreal.Dependencies.Count} dépendance(s) résolue(s) · " +
+                                          $"{unreal.UnresolvedReferenceCount} référence(s) externe(s) ou non résolue(s)";
+            }
+            else
+            {
+                UnrealDependencyFiles = [];
+                UnrealDependencyRelations = [];
+                UnrealAssets = [];
+                UnrealDependencySummary = "Enable the Unreal Engine Integration plugin to analyze Unreal dependencies.";
+            }
             int mergeCount = commits.Count(commit => commit.IsMerge);
             int binaryFiles = files.Files.Count(file => file.BinaryChangeCount > 0);
             GitGraphSummary = $"{commits.Count} commits · {mergeCount} merges · " +
@@ -2030,6 +3433,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             }
 
             await RefreshCoreAsync();
+            await RefreshCodeWorkspaceAsync();
+            await LoadAiMcpProfileCoreAsync();
             await LoadBackupsCoreAsync();
             await LoadSyncProfileCoreAsync();
             await LoadVpnProfileCoreAsync();
@@ -2904,6 +4309,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private async Task LoadSelectedProjectAsync()
     {
         await _discordAgent.StopAsync();
+        ClearPullRequestData();
         if (SelectedProject is null)
         {
             await StopSyncCoreAsync();
@@ -2933,6 +4339,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await LoadVpnProfileCoreAsync();
             await LoadDiscordProfileCoreAsync();
             await LoadAdvisoryReservationsCoreAsync();
+            await RefreshCodeWorkspaceAsync();
+            await LoadAiMcpProfileCoreAsync();
+            await ResolvePullRequestRepositoryAsync();
             StatusMessage = "Dépôt chargé";
         }
         catch (Exception exception)
@@ -4582,6 +5991,25 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         ClearVpnView();
         DiffText = "Sélectionnez un projet Git.";
         ClearGitGraphView();
+        ClearCodeWorkspace();
+        ClearAiMcpProfile();
+        ClearPullRequestData();
+    }
+
+    private void ClearCodeWorkspace()
+    {
+        CodeTree.Clear();
+        CodeSearchResults.Clear();
+        CodeHistory.Clear();
+        CodeSymbols.Clear();
+        SelectedCodeNode = null;
+        SelectedCodeSearchResult = null;
+        SelectedCodeSymbol = null;
+        CodePreviewText = string.Empty;
+        CodeWorkspaceSummary = "Select a project to explore its code.";
+        CodeSearchSummary = "Ctrl+Shift+F searches the entire project.";
+        CodePreviewSummary = "Select a file to preview it.";
+        CodeSelectionSummary = "Select lines in the preview, then request their Git history.";
     }
 
     private void ClearGitGraphView()
@@ -4600,6 +6028,111 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         GitGraphSummary = "Analyse optionnelle non lancée.";
     }
 
+    private void RefreshPluginCatalog(string? selectedPluginId = null)
+    {
+        string? selection = selectedPluginId ?? SelectedPlugin?.Id;
+        ReplaceCollection(
+            Plugins,
+            _pluginManager.Entries.Select(entry => new PluginItemViewModel(entry)));
+        SelectedPlugin = Plugins.FirstOrDefault(plugin =>
+                             string.Equals(plugin.Id, selection, StringComparison.OrdinalIgnoreCase))
+                         ?? Plugins.FirstOrDefault();
+
+        IUnrealIntegrationPlugin? unreal = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        IsUnrealIntegrationEnabled = unreal is not null;
+        if (unreal is null)
+        {
+            DetachUnrealPluginEvents();
+            _unrealProjectInspection = null;
+            UnrealPluginSummary = "Enable the Unreal Engine Integration plugin to inspect and install CyRevisionUnreal.";
+            UnrealBridgeSummary = "The optional Unreal bridge is disabled.";
+        }
+        else
+        {
+            AttachUnrealPluginEvents(unreal);
+            UnrealBridgeSummary = FormatBridgeStatus(unreal.BridgeStatus);
+            RefreshUnrealInspection();
+        }
+
+        OnPropertyChanged(nameof(UnrealEditorPluginVersion));
+        OnPropertyChanged(nameof(UnrealInstalledPluginVersion));
+        OnPropertyChanged(nameof(CanInstallUnrealEditorPlugin));
+
+        IAiIntegrationPlugin? ai = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        IsAiIntegrationEnabled = ai is not null;
+        ReplaceCollection(AiProviders, ai?.Providers ?? []);
+        SelectedAiProvider = AiProviders.FirstOrDefault(provider => provider.Id == SelectedAiProvider?.Id)
+                             ?? AiProviders.FirstOrDefault();
+        if (ai is null)
+        {
+            AiStatus = "AI integration disabled.";
+            AiResponse = "Enable the optional AI Workspace plugin from the Plugins tab.";
+            ClearAiMcpProfile();
+        }
+        else
+        {
+            AiStatus = "AI Workspace ready. Read access only by default.";
+            AiResponse = "Choose a provider, review permissions, and describe a task.";
+            _ = LoadAiMcpProfileCoreAsync();
+        }
+    }
+
+    private void RefreshUnrealInspection()
+    {
+        IUnrealIntegrationPlugin? plugin = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        if (plugin is null || string.IsNullOrWhiteSpace(UnrealProjectPath))
+        {
+            _unrealProjectInspection = null;
+            OnPropertyChanged(nameof(UnrealEditorPluginVersion));
+            OnPropertyChanged(nameof(UnrealInstalledPluginVersion));
+            OnPropertyChanged(nameof(CanInstallUnrealEditorPlugin));
+            return;
+        }
+
+        _unrealProjectInspection = plugin.InspectProject(UnrealProjectPath);
+        UnrealPluginSummary = _unrealProjectInspection.Summary;
+        OnPropertyChanged(nameof(UnrealEditorPluginVersion));
+        OnPropertyChanged(nameof(UnrealInstalledPluginVersion));
+        OnPropertyChanged(nameof(CanInstallUnrealEditorPlugin));
+    }
+
+    private void AttachUnrealPluginEvents(IUnrealIntegrationPlugin plugin)
+    {
+        if (ReferenceEquals(_subscribedUnrealPlugin, plugin))
+        {
+            return;
+        }
+
+        DetachUnrealPluginEvents();
+        _subscribedUnrealPlugin = plugin;
+        _subscribedUnrealPlugin.ProjectChanged += OnUnrealProjectChanged;
+    }
+
+    private void DetachUnrealPluginEvents()
+    {
+        if (_subscribedUnrealPlugin is not null)
+        {
+            _subscribedUnrealPlugin.ProjectChanged -= OnUnrealProjectChanged;
+            _subscribedUnrealPlugin = null;
+        }
+    }
+
+    private void OnUnrealProjectChanged(object? sender, UnrealProjectChangedEventArgs eventArgs)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            StatusMessage = $"Unreal Editor reported '{eventArgs.Action}' for {eventArgs.ProjectRoot}";
+            if (SelectedProject is not null && ProjectPathsEqual(SelectedProject.RootPath, eventArgs.ProjectRoot))
+            {
+                _ = RefreshAsync();
+            }
+        });
+    }
+
+    private static string FormatBridgeStatus(UnrealBridgeStatus status) =>
+        $"{(status.IsRunning ? "Connected" : "Stopped")} · {status.Endpoint} · " +
+        $"{status.AuthorizedProjectCount} authorized project(s) · {status.Detail}";
+
     private static void ReplaceCollection<T>(ObservableCollection<T> destination, IEnumerable<T> source)
     {
         destination.Clear();
@@ -4611,9 +6144,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _codeSearchCancellation?.Cancel();
+        _codeSearchCancellation?.Dispose();
+        _aiAgentCancellation?.Cancel();
+        _aiAgentCancellation?.Dispose();
         await StopSyncCoreAsync();
+        DetachUnrealPluginEvents();
+        await _pluginManager.DisposeAsync();
         _discordAgent.StatusChanged -= OnDiscordAgentStatusChanged;
         await _discordAgent.DisposeAsync();
+        await _pullRequestService.DisposeAsync();
         AssetDiffPreview = null;
         LfsPreview = null;
         _updateService.Dispose();

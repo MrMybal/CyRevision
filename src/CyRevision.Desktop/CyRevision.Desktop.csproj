@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\Branding\cyrevision.ico</ApplicationIcon>
-    <VersionPrefix>0.1.5</VersionPrefix>
+    <VersionPrefix>0.1.6</VersionPrefix>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,11 +22,16 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CyRevision.Backup\CyRevision.Backup.csproj" />
+    <ProjectReference Include="..\CyRevision.Code\CyRevision.Code.csproj" />
     <ProjectReference Include="..\CyRevision.Core\CyRevision.Core.csproj" />
     <ProjectReference Include="..\CyRevision.Discord\CyRevision.Discord.csproj" />
     <ProjectReference Include="..\CyRevision.Discord.Control\CyRevision.Discord.Control.csproj" />
     <ProjectReference Include="..\CyRevision.Diff\CyRevision.Diff.csproj" />
     <ProjectReference Include="..\CyRevision.Git\CyRevision.Git.csproj" />
+    <ProjectReference Include="..\CyRevision.Plugin.Abstractions\CyRevision.Plugin.Abstractions.csproj" />
+    <ProjectReference Include="..\CyRevision.Plugin.Unreal\CyRevision.Plugin.Unreal.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\CyRevision.Plugin.AI\CyRevision.Plugin.AI.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\CyRevision.PullRequests\CyRevision.PullRequests.csproj" />
     <ProjectReference Include="..\CyRevision.Security\CyRevision.Security.csproj" />
     <ProjectReference Include="..\CyRevision.Sync\CyRevision.Sync.csproj" />
     <ProjectReference Include="..\CyRevision.Vpn\CyRevision.Vpn.csproj" />
@@ -36,6 +41,49 @@
     <None Update="Localization\Locales\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="Documentation\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="VpnRuntime\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevision.UnrealIntegration\cyrevision-plugin.json"
+          Link="Plugins\CyRevision.UnrealIntegration\cyrevision-plugin.json"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevision.AIIntegration\cyrevision-plugin.json"
+          Link="Plugins\CyRevision.AIIntegration\cyrevision-plugin.json"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevisionUnreal\**\*"
+          Exclude="..\..\plugins\CyRevisionUnreal\Binaries\**\*;..\..\plugins\CyRevisionUnreal\Intermediate\**\*;..\..\plugins\CyRevisionUnreal\Saved\**\*"
+          Link="PluginPayloads\Unreal\CyRevisionUnreal\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
+
+  <Target Name="CopyCyRevisionPluginAssembliesToOutput" AfterTargets="Build">
+    <PropertyGroup>
+      <UnrealPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Unreal\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Unreal.dll</UnrealPluginAssembly>
+      <AiPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.AI\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.AI.dll</AiPluginAssembly>
+    </PropertyGroup>
+    <MakeDir Directories="$(OutDir)Plugins\CyRevision.UnrealIntegration" />
+    <Copy SourceFiles="$(UnrealPluginAssembly)"
+          DestinationFolder="$(OutDir)Plugins\CyRevision.UnrealIntegration"
+          SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(OutDir)Plugins\CyRevision.AIIntegration" />
+    <Copy SourceFiles="$(AiPluginAssembly)"
+          DestinationFolder="$(OutDir)Plugins\CyRevision.AIIntegration"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyCyRevisionPluginAssembliesToPublish" AfterTargets="Publish">
+    <PropertyGroup>
+      <UnrealPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Unreal\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Unreal.dll</UnrealPluginAssembly>
+      <AiPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.AI\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.AI.dll</AiPluginAssembly>
+    </PropertyGroup>
+    <MakeDir Directories="$(PublishDir)Plugins\CyRevision.UnrealIntegration" />
+    <Copy SourceFiles="$(UnrealPluginAssembly)"
+          DestinationFolder="$(PublishDir)Plugins\CyRevision.UnrealIntegration"
+          SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(PublishDir)Plugins\CyRevision.AIIntegration" />
+    <Copy SourceFiles="$(AiPluginAssembly)"
+          DestinationFolder="$(PublishDir)Plugins\CyRevision.AIIntegration"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

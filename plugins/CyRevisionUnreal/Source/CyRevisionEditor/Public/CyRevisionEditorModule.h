@@ -12,6 +12,7 @@ template <typename ItemType> class SListView;
 struct FAssetData;
 struct FCyRevisionSoftReservation;
 struct FToolMenuSection;
+class FCyRevisionRevisionTools;
 
 class FCyRevisionEditorModule final : public IModuleInterface
 {
@@ -23,6 +24,8 @@ private:
     void RegisterMenus();
     void AddAssetContextEntries(FToolMenuSection& Section);
     void OpenCyRevision() const;
+    void ShowRevisionDashboard();
+    void TestCyRevisionConnection();
     void MarkAssetsInProgress(TArray<FAssetData> Assets);
     void ReleaseAssets(TArray<FAssetData> Assets);
     void ShowReservations();
@@ -37,5 +40,6 @@ private:
     TWeakPtr<SWindow> ReservationWindow;
     TSharedPtr<SListView<TSharedPtr<FCyRevisionSoftReservation>>> ReservationList;
     TSharedPtr<STextBlock> ReservationStatusText;
+    TUniquePtr<FCyRevisionRevisionTools> RevisionTools;
     FTSTicker::FDelegateHandle HeartbeatHandle;
 };

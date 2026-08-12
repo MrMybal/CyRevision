@@ -76,6 +76,20 @@ Un snapshot est dédupliqué. La colonne **Ajouté** correspond donc aux nouveau
 
 Restaurez d’abord vers un dossier vide et vérifiez le contenu avant de remplacer un projet actif.
 
+## Explorateur de code et recherche globale
+
+L'onglet **Code** fournit un explorateur complet du projet, indépendant de Rider et d'Unreal Editor. Les dossiers lourds ou générés (`.git`, `bin`, `obj`, `Binaries`, `Intermediate`, `Saved`, `DerivedDataCache`, `node_modules`) sont exclus automatiquement. Utilisez le filtre de chemin pour réduire l'arborescence, ou activez explicitement les fichiers cachés.
+
+Le raccourci **Ctrl+Shift+F** ouvre la recherche globale et place le curseur dans le champ. La recherche accepte la casse exacte, les mots entiers, les expressions régulières et des motifs de fichiers tels que `*.cs;*.cpp;*.h`. CyRevision utilise `ripgrep` lorsqu'il est disponible et bascule sur son moteur .NET dans le cas contraire.
+
+Sélectionnez un fichier pour afficher son aperçu, ses symboles et son historique Git. Pour suivre seulement une partie du code, sélectionnez une ou plusieurs lignes dans l'aperçu puis cliquez **History of selection** : CyRevision utilise l'historique Git de la plage au lieu d'afficher tous les commits du fichier. La sélection d'un dossier affiche l'historique de tout ce sous-arbre.
+
+## Assistant IA facultatif
+
+Activez **AI Workspace** depuis l'onglet **Plugins**, puis ouvrez **AI Assistant**. Les fournisseurs proposés sont Codex CLI, l'API OpenAI Responses, une API compatible, ainsi que Codex avec Ollama ou LM Studio. Une clé API saisie dans l'interface reste uniquement en mémoire pendant la session et est effacée après l'exécution.
+
+Les droits sont accordés projet par projet : lecture obligatoire, modification de fichiers, réseau, indexation Git et commit. Codex démarre en sandbox `read-only`; `workspace-write` n'est utilisé que si la modification a été cochée. CyRevision ne donne jamais de droit de push automatique à l'agent. Les opérations `git add` et `git commit` sont effectuées par CyRevision après une exécution réussie, uniquement si les options correspondantes ont été activées.
+
 ## Diff assets
 
 Choisissez deux fichiers ou sélectionnez un changement Git puis **Sélection Git ↔ HEAD**. Les textures produisent une heatmap ; les OBJ une vue filaire cyan/magenta ; les `.uasset` et `.umap` donnent un rapport binaire et les symboles/types détectables hors moteur.

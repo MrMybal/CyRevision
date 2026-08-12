@@ -1,9 +1,16 @@
 [CyRevision]
 ExecutablePath=C:/Tools/CyRevision/CyRevision.Desktop.exe
+GitExecutable=git
 
-; Nom visible dans les réservations souples. Par défaut : utilisateur du système.
-AdvisoryDisplayName=Prénom
+; Display name used by advisory reservations. Defaults to the operating-system user.
+AdvisoryDisplayName=Your name
 
-; Une réservation est renouvelée chaque minute tant que l'éditeur reste ouvert.
-; Elle expire automatiquement après cette durée si l'éditeur s'arrête ou perd le partage.
+; A reservation is renewed every minute while the Editor remains open.
+; It expires after this duration if the Editor stops or loses the shared directory.
 AdvisoryExpirationMinutes=30
+
+; The CyRevision installer writes the preferred private settings to
+; Saved/CyRevision/bridge.json so its random token is never committed.
+; These values are manual fallbacks only.
+BridgeUrl=http://127.0.0.1:47832/cyrevision/v1/
+BridgeToken=

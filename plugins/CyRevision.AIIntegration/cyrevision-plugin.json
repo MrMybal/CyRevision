@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "cyrevision.ai",
+  "name": "AI Workspace",
+  "version": "0.2.0",
+  "description": "Optional Codex CLI, API, local-model, and MCP integration with project-scoped permissions and blocking controls.",
+  "category": "AI",
+  "entryAssembly": "CyRevision.Plugin.AI.dll",
+  "entryType": "CyRevision.Plugin.AI.AiIntegrationPlugin",
+  "enabledByDefault": false
+}
