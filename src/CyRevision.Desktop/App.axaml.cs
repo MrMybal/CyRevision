@@ -4,13 +4,16 @@ using Avalonia.Markup.Xaml;
 using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
 using CyRevision.Core.Updates;
+using CyRevision.Code;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.Documentation;
+using CyRevision.Desktop.Plugins;
 using CyRevision.Desktop.ViewModels;
 using CyRevision.Diff;
 using CyRevision.Discord;
 using CyRevision.Discord.Control;
 using CyRevision.Git;
+using CyRevision.PullRequests;
 using CyRevision.Sync;
 using CyRevision.Vpn;
 
@@ -35,8 +38,14 @@ public partial class App : Application
             ApplicationUpdateService updates = new(
                 new Uri("https://github.com/MrMybal/CyRevision"),
                 ApplicationUpdateService.ReadCurrentVersion(typeof(App).Assembly));
+            CyRevisionPluginManager pluginManager = new(
+                AppContext.BaseDirectory,
+                paths.ConfigurationDirectory,
+                paths.DataDirectory,
+                ApplicationUpdateService.ReadCurrentVersion(typeof(App).Assembly).ToString());
             JsonProjectCatalog catalog = new(paths.ProjectCatalogPath);
             GitCliRepositoryService gitService = new();
+            GitHubPullRequestService pullRequests = new();
             JsonDiscordAgentStore discordStore = new(paths.DiscordDirectory);
             DiscordControlConnectionStore discordConnections = new(paths.DiscordControlDirectory);
             DiscordProjectAgent discordAgent = new(
@@ -57,7 +66,8 @@ public partial class App : Application
                 catalog, gitService, paths, syncProfiles, gitExchange, assetDiff,
                 vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine, vpnRuntimeResolver,
                 vpnNetworkSetup, vpnSyncExchange,
-                localization, documentation, updates, discordStore, discordAgent, discordConnections, initialProjectPath);
+                localization, documentation, updates, discordStore, discordAgent, discordConnections,
+                pluginManager, new CodeWorkspaceService(), pullRequests, initialProjectPath);
 
             desktop.MainWindow = new MainWindow(viewModel, localization, paths.ConfigurationDirectory);
             desktop.Exit += (_, _) =>

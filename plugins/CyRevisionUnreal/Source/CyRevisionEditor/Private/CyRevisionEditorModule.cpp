@@ -1,4 +1,5 @@
 #include "CyRevisionEditorModule.h"
+#include "CyRevisionRevisionTools.h"
 
 #include "AssetRegistry/AssetData.h"
 #include "ContentBrowserMenuContexts.h"
@@ -428,6 +429,7 @@ TSharedRef<FJsonObject> MakeReservationJson(
 
 void FCyRevisionEditorModule::StartupModule()
 {
+    RevisionTools = MakeUnique<FCyRevisionRevisionTools>();
     UToolMenus::RegisterStartupCallback(
         FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FCyRevisionEditorModule::RegisterMenus));
     HeartbeatHandle = FTSTicker::GetCoreTicker().AddTicker(
@@ -437,6 +439,11 @@ void FCyRevisionEditorModule::StartupModule()
 
 void FCyRevisionEditorModule::ShutdownModule()
 {
+    if (RevisionTools)
+    {
+        RevisionTools->Shutdown();
+        RevisionTools.Reset();
+    }
     if (HeartbeatHandle.IsValid())
     {
         FTSTicker::GetCoreTicker().RemoveTicker(HeartbeatHandle);
@@ -457,16 +464,28 @@ void FCyRevisionEditorModule::RegisterMenus()
     FToolMenuSection& Section = ToolsMenu->FindOrAddSection(TEXT("CyRevision"));
     Section.AddMenuEntry(
         TEXT("OpenCyRevision"),
-        LOCTEXT("OpenCyRevisionLabel", "Ouvrir dans CyRevision"),
-        LOCTEXT("OpenCyRevisionTooltip", "Ouvre le client CyRevision externe sur le projet Unreal courant."),
+        LOCTEXT("OpenCyRevisionLabel", "Open in CyRevision"),
+        LOCTEXT("OpenCyRevisionTooltip", "Opens the external CyRevision client for the current Unreal project."),
         FSlateIcon(),
         FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::OpenCyRevision)));
     Section.AddMenuEntry(
         TEXT("ShowCyRevisionReservations"),
-        LOCTEXT("ShowReservationsLabel", "Réservations souples"),
-        LOCTEXT("ShowReservationsTooltip", "Affiche qui travaille sur quels assets, sans checkout ni verrou."),
+        LOCTEXT("ShowReservationsLabel", "Advisory reservations"),
+        LOCTEXT("ShowReservationsTooltip", "Shows who is working on each asset without checkout or locking."),
         FSlateIcon(),
         FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::ShowReservations)));
+    Section.AddMenuEntry(
+        TEXT("ShowCyRevisionDashboard"),
+        LOCTEXT("ShowRevisionDashboardLabel", "Revision dashboard"),
+        LOCTEXT("ShowRevisionDashboardTooltip", "Manage Git revisions inside Unreal Editor. CyRevision is optional."),
+        FSlateIcon(),
+        FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::ShowRevisionDashboard)));
+    Section.AddMenuEntry(
+        TEXT("TestCyRevisionConnection"),
+        LOCTEXT("TestConnectionLabel", "Test CyRevision connection"),
+        LOCTEXT("TestConnectionTooltip", "Checks the authenticated local connection to CyRevision."),
+        FSlateIcon(),
+        FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::TestCyRevisionConnection)));
 
     UToolMenu* AssetMenu = UToolMenus::Get()->ExtendMenu(TEXT("ContentBrowser.AssetContextMenu"));
     FToolMenuSection& AssetSection = AssetMenu->FindOrAddSection(TEXT("CyRevision"));
@@ -486,55 +505,47 @@ void FCyRevisionEditorModule::AddAssetContextEntries(FToolMenuSection& Section)
     const TArray<FAssetData> SelectedAssets = Context->SelectedAssets;
     Section.AddMenuEntry(
         TEXT("CyRevisionMarkInProgress"),
-        LOCTEXT("MarkInProgressLabel", "Signaler : je travaille dessus"),
+        LOCTEXT("MarkInProgressLabel", "Report: I am working on this"),
         LOCTEXT(
             "MarkInProgressTooltip",
-            "Crée une réservation informative. L'asset reste modifiable et aucun checkout ou verrou LFS n'est créé."),
+            "Creates an advisory marker. The asset stays editable and no checkout or LFS lock is created."),
         FSlateIcon(),
         FUIAction(FExecuteAction::CreateLambda([this, SelectedAssets]() { MarkAssetsInProgress(SelectedAssets); })));
     Section.AddMenuEntry(
         TEXT("CyRevisionReleaseAdvisory"),
-        LOCTEXT("ReleaseAdvisoryLabel", "Libérer mon signalement"),
-        LOCTEXT("ReleaseAdvisoryTooltip", "Supprime uniquement vos propres signalements pour les assets sélectionnés."),
+        LOCTEXT("ReleaseAdvisoryLabel", "Release my advisory"),
+        LOCTEXT("ReleaseAdvisoryTooltip", "Removes only your own advisory markers for the selected assets."),
         FSlateIcon(),
         FUIAction(FExecuteAction::CreateLambda([this, SelectedAssets]() { ReleaseAssets(SelectedAssets); })));
     Section.AddMenuEntry(
         TEXT("CyRevisionViewAdvisories"),
-        LOCTEXT("ViewAdvisoriesLabel", "Voir les réservations souples"),
-        LOCTEXT("ViewAdvisoriesTooltip", "Affiche tous les signalements actifs et expirés du projet."),
+        LOCTEXT("ViewAdvisoriesLabel", "View advisory reservations"),
+        LOCTEXT("ViewAdvisoriesTooltip", "Shows active and expired advisory markers for this project."),
         FSlateIcon(),
         FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::ShowReservations)));
 }
 
 void FCyRevisionEditorModule::OpenCyRevision() const
 {
-    FString ExecutablePath;
-    GConfig->GetString(TEXT("CyRevision"), TEXT("ExecutablePath"), ExecutablePath, GEditorPerProjectIni);
-    if (ExecutablePath.IsEmpty() || !FPaths::FileExists(ExecutablePath))
+    if (RevisionTools)
     {
-        FMessageDialog::Open(
-            EAppMsgType::Ok,
-            LOCTEXT(
-                "MissingExecutable",
-                "Configurez [CyRevision] ExecutablePath dans Config/DefaultEditorPerProjectUserSettings.ini."));
-        return;
+        RevisionTools->OpenCyRevision();
     }
+}
 
-    const FString ProjectDirectory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
-    const FString Arguments = FString::Printf(TEXT("--project=\"%s\""), *ProjectDirectory);
-    FProcHandle Process = FPlatformProcess::CreateProc(
-        *ExecutablePath,
-        *Arguments,
-        true,
-        false,
-        false,
-        nullptr,
-        0,
-        nullptr,
-        nullptr);
-    if (!Process.IsValid())
+void FCyRevisionEditorModule::ShowRevisionDashboard()
+{
+    if (RevisionTools)
     {
-        FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("LaunchFailed", "CyRevision n'a pas pu être démarré."));
+        RevisionTools->ShowDashboard();
+    }
+}
+
+void FCyRevisionEditorModule::TestCyRevisionConnection()
+{
+    if (RevisionTools)
+    {
+        RevisionTools->TestConnection();
     }
 }
 
@@ -597,6 +608,10 @@ void FCyRevisionEditorModule::MarkAssetsInProgress(TArray<FAssetData> Assets)
         Message += FString::Join(ConflictingOwners.Array(), TEXT(", "));
     }
     FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
+    if (RevisionTools)
+    {
+        RevisionTools->NotifyProjectChanged(TEXT("advisory-reservation"));
+    }
 }
 
 void FCyRevisionEditorModule::ReleaseAssets(TArray<FAssetData> Assets)
@@ -629,7 +644,11 @@ void FCyRevisionEditorModule::ReleaseAssets(TArray<FAssetData> Assets)
     RefreshReservationWindow();
     FMessageDialog::Open(
         EAppMsgType::Ok,
-        FText::Format(LOCTEXT("ReleasedCount", "{0} signalement(s) personnel(s) libéré(s)."), Removed));
+        FText::Format(LOCTEXT("ReleasedCount", "{0} personal advisory marker(s) released."), Removed));
+    if (RevisionTools)
+    {
+        RevisionTools->NotifyProjectChanged(TEXT("advisory-release"));
+    }
 }
 
 void FCyRevisionEditorModule::ShowReservations()
@@ -642,7 +661,7 @@ void FCyRevisionEditorModule::ShowReservations()
     }
 
     TSharedRef<SWindow> Window = SNew(SWindow)
-        .Title(LOCTEXT("ReservationWindowTitle", "CyRevision — Réservations souples"))
+        .Title(LOCTEXT("ReservationWindowTitle", "CyRevision — Advisory reservations"))
         .ClientSize(FVector2D(980.0f, 520.0f))
         .SupportsMaximize(true)
         .SupportsMinimize(true);
@@ -663,7 +682,7 @@ void FCyRevisionEditorModule::ShowReservations()
             .AutoHeight()
             [
                 SNew(STextBlock)
-                .Text(LOCTEXT("ReservationHeading", "Qui travaille sur quoi ?"))
+                .Text(LOCTEXT("ReservationHeading", "Who is working on what?"))
                 .Font(FCoreStyle::GetDefaultFontStyle("Bold", 18))
             ]
             + SVerticalBox::Slot()
@@ -679,10 +698,10 @@ void FCyRevisionEditorModule::ShowReservations()
             [
                 SNew(SHorizontalBox)
                 + SHorizontalBox::Slot().FillWidth(2.3f)[SNew(STextBlock).Text(LOCTEXT("AssetColumn", "Asset"))]
-                + SHorizontalBox::Slot().FillWidth(1.2f)[SNew(STextBlock).Text(LOCTEXT("OwnerColumn", "Personne"))]
+                + SHorizontalBox::Slot().FillWidth(1.2f)[SNew(STextBlock).Text(LOCTEXT("OwnerColumn", "Person"))]
                 + SHorizontalBox::Slot().FillWidth(1.2f)[SNew(STextBlock).Text(LOCTEXT("MachineColumn", "Machine"))]
-                + SHorizontalBox::Slot().FillWidth(1.1f)[SNew(STextBlock).Text(LOCTEXT("UpdatedColumn", "Actualisé"))]
-                + SHorizontalBox::Slot().FillWidth(0.7f)[SNew(STextBlock).Text(LOCTEXT("StateColumn", "État"))]
+                + SHorizontalBox::Slot().FillWidth(1.1f)[SNew(STextBlock).Text(LOCTEXT("UpdatedColumn", "Updated"))]
+                + SHorizontalBox::Slot().FillWidth(0.7f)[SNew(STextBlock).Text(LOCTEXT("StateColumn", "State"))]
             ]
             + SVerticalBox::Slot()
             .FillHeight(1.0f)
@@ -706,7 +725,7 @@ void FCyRevisionEditorModule::ShowReservations()
                 .AutoWidth()
                 [
                     SNew(SButton)
-                    .Text(LOCTEXT("RefreshReservations", "Actualiser"))
+                    .Text(LOCTEXT("RefreshReservations", "Refresh"))
                     .OnClicked_Lambda([this]()
                     {
                         RefreshReservationWindow();
@@ -720,7 +739,7 @@ void FCyRevisionEditorModule::ShowReservations()
                     SNew(STextBlock)
                     .Text(LOCTEXT(
                         "NonBlockingReminder",
-                        "Information uniquement : aucun checkout, aucun verrou Git LFS, aucune écriture protégée."))
+                        "Information only: no checkout, Git LFS lock, or protected write."))
                     .AutoWrapText(true)
                 ]
             ]
@@ -813,7 +832,7 @@ TSharedRef<ITableRow> FCyRevisionEditorModule::GenerateReservationRow(
             ]
             + SHorizontalBox::Slot().FillWidth(0.7f)
             [
-                SNew(STextBlock).Text(Item->bExpired ? LOCTEXT("ExpiredState", "Expirée") : LOCTEXT("ActiveState", "En cours"))
+                SNew(STextBlock).Text(Item->bExpired ? LOCTEXT("ExpiredState", "Expired") : LOCTEXT("ActiveState", "Active"))
             ]
         ];
 }

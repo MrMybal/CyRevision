@@ -19,7 +19,10 @@ public partial class MainWindow : Window
     private LocalizationService? _localization;
     private FocusedDiffWindow? _focusedDiffWindow;
     private WorkspaceLayoutPreferencesStore? _workspaceLayoutStore;
+    private WorkspaceLayoutPreferences _layoutPreferences = WorkspaceLayoutPreferences.Default;
     private HistoryLayoutMode _historyLayout = HistoryLayoutMode.Columns;
+    private ChangesLayoutMode _changesLayout = ChangesLayoutMode.Balanced;
+    private CodeLayoutMode _codeLayout = CodeLayoutMode.Balanced;
 
     public MainWindow()
     {
@@ -35,12 +38,30 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         _localization = localization;
         _workspaceLayoutStore = new WorkspaceLayoutPreferencesStore(configurationDirectory);
-        WorkspaceLayoutPreferences preferences = _workspaceLayoutStore.Load();
-        HistoryTimelineToggle.IsChecked = preferences.ShowTimeline;
-        HistoryFilesToggle.IsChecked = preferences.ShowFiles;
-        HistoryDiffToggle.IsChecked = preferences.ShowDiff;
-        ApplyHistoryLayout(preferences.HistoryLayout, false);
+        _layoutPreferences = _workspaceLayoutStore.Load();
+        HistoryTimelineToggle.IsChecked = _layoutPreferences.ShowTimeline;
+        HistoryFilesToggle.IsChecked = _layoutPreferences.ShowFiles;
+        HistoryDiffToggle.IsChecked = _layoutPreferences.ShowDiff;
+        CodeExplorerPanelToggle.IsChecked = _layoutPreferences.ShowCodeExplorer;
+        CodeSymbolsPanelToggle.IsChecked = _layoutPreferences.ShowCodeSymbols;
+        CodeResultsPanelToggle.IsChecked = _layoutPreferences.ShowCodeResults;
+        ApplyHistoryLayout(_layoutPreferences.HistoryLayout, false);
+        ApplyChangesLayout(_layoutPreferences.ChangesLayout, false, true);
+        ApplyCodeLayout(_layoutPreferences.CodeLayout, false, true);
+        foreach (GridSplitter splitter in new[]
+                 {
+                     ChangesWorkspaceSplitter,
+                     CodeExplorerSplitter,
+                     CodeResultsSplitter,
+                     CodeSymbolsSplitter,
+                     HistorySplitterOne,
+                     HistorySplitterTwo
+                 })
+        {
+            splitter.PointerReleased += OnWorkspaceSplitterPointerReleased;
+        }
         _uiLocalizer = new UiLocalizer(this, localization);
+        KeyDown += OnWindowKeyDown;
         Opened += OnOpened;
         Closed += OnClosed;
     }
@@ -56,6 +77,137 @@ public partial class MainWindow : Window
         _focusedDiffWindow?.Close();
         _focusedDiffWindow = null;
         _uiLocalizer?.Dispose();
+    }
+
+    private void OnBalancedChangesLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyChangesLayout(ChangesLayoutMode.Balanced);
+
+    private void OnDiffFocusChangesLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyChangesLayout(ChangesLayoutMode.DiffFocus);
+
+    private void ApplyChangesLayout(ChangesLayoutMode layout, bool persist = true, bool restoreSavedSize = false)
+    {
+        _changesLayout = layout;
+        ChangesBalancedLayoutToggle.IsChecked = layout == ChangesLayoutMode.Balanced;
+        ChangesDiffFocusLayoutToggle.IsChecked = layout == ChangesLayoutMode.DiffFocus;
+        bool restore = restoreSavedSize && _layoutPreferences.ChangesLayout == layout;
+        double listWeight = restore
+            ? _layoutPreferences.ChangesListWeight
+            : layout == ChangesLayoutMode.DiffFocus ? 0.68 : 1.05;
+        double diffWeight = restore
+            ? _layoutPreferences.ChangesDiffWeight
+            : layout == ChangesLayoutMode.DiffFocus ? 1.72 : 1.35;
+        ChangesWorkspaceGrid.ColumnDefinitions[0].Width = new GridLength(listWeight, GridUnitType.Star);
+        ChangesWorkspaceGrid.ColumnDefinitions[1].Width = new GridLength(8);
+        ChangesWorkspaceGrid.ColumnDefinitions[2].Width = new GridLength(diffWeight, GridUnitType.Star);
+        if (persist) SaveWorkspaceLayoutPreferences();
+    }
+
+    private void OnBalancedCodeLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyCodeLayout(CodeLayoutMode.Balanced);
+
+    private void OnEditorFocusCodeLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyCodeLayout(CodeLayoutMode.EditorFocus);
+
+    private void OnSearchFocusCodeLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyCodeLayout(CodeLayoutMode.SearchFocus);
+
+    private void ApplyCodeLayout(CodeLayoutMode layout, bool persist = true, bool restoreSavedSize = false)
+    {
+        _codeLayout = layout;
+        CodeBalancedLayoutToggle.IsChecked = layout == CodeLayoutMode.Balanced;
+        CodeEditorFocusLayoutToggle.IsChecked = layout == CodeLayoutMode.EditorFocus;
+        CodeSearchFocusLayoutToggle.IsChecked = layout == CodeLayoutMode.SearchFocus;
+
+        if (!restoreSavedSize)
+        {
+            CodeExplorerPanelToggle.IsChecked = true;
+            CodeSymbolsPanelToggle.IsChecked = true;
+            CodeResultsPanelToggle.IsChecked = true;
+        }
+
+        (double explorer, double editor, double results, double editorHeight, double symbolsHeight) = layout switch
+        {
+            CodeLayoutMode.EditorFocus => (0.56, 1.95, 0.64, 1.0, 0.24),
+            CodeLayoutMode.SearchFocus => (0.68, 1.0, 1.42, 1.0, 0.30),
+            _ => (0.8, 1.45, 1.0, 1.0, 0.32)
+        };
+        if (restoreSavedSize && _layoutPreferences.CodeLayout == layout)
+        {
+            explorer = _layoutPreferences.CodeExplorerWeight;
+            editor = _layoutPreferences.CodeEditorWeight;
+            results = _layoutPreferences.CodeResultsWeight;
+            editorHeight = _layoutPreferences.CodeEditorHeightWeight;
+            symbolsHeight = _layoutPreferences.CodeSymbolsHeightWeight;
+        }
+
+        RefreshCodeDockLayout(explorer, editor, results, editorHeight, symbolsHeight);
+        if (persist) SaveWorkspaceLayoutPreferences();
+    }
+
+    private void OnCodePanelToggleClick(object? sender, RoutedEventArgs e)
+    {
+        RefreshCodeDockLayout(
+            GetGridWeight(CodeDockWorkspaceGrid.ColumnDefinitions[0], _layoutPreferences.CodeExplorerWeight),
+            GetGridWeight(CodeDockWorkspaceGrid.ColumnDefinitions[2], _layoutPreferences.CodeEditorWeight),
+            GetGridWeight(CodeDockWorkspaceGrid.ColumnDefinitions[4], _layoutPreferences.CodeResultsWeight),
+            GetGridWeight(CodeEditorDockGrid.RowDefinitions[1], _layoutPreferences.CodeEditorHeightWeight),
+            GetGridWeight(CodeEditorDockGrid.RowDefinitions[3], _layoutPreferences.CodeSymbolsHeightWeight));
+        SaveWorkspaceLayoutPreferences();
+    }
+
+    private void RefreshCodeDockLayout(
+        double explorerWeight,
+        double editorWeight,
+        double resultsWeight,
+        double editorHeightWeight,
+        double symbolsHeightWeight)
+    {
+        bool showExplorer = CodeExplorerPanelToggle.IsChecked == true;
+        bool showSymbols = CodeSymbolsPanelToggle.IsChecked == true;
+        bool showResults = CodeResultsPanelToggle.IsChecked == true;
+        CodeExplorerPanel.IsVisible = showExplorer;
+        CodeExplorerSplitter.IsVisible = showExplorer;
+        CodeResultsPanel.IsVisible = showResults;
+        CodeResultsSplitter.IsVisible = showResults;
+        CodeSymbolsPanel.IsVisible = showSymbols;
+        CodeSymbolsSplitter.IsVisible = showSymbols;
+
+        CodeDockWorkspaceGrid.ColumnDefinitions[0].Width = showExplorer
+            ? new GridLength(explorerWeight, GridUnitType.Star)
+            : new GridLength(0);
+        CodeDockWorkspaceGrid.ColumnDefinitions[1].Width = new GridLength(showExplorer ? 8 : 0);
+        CodeDockWorkspaceGrid.ColumnDefinitions[2].Width = new GridLength(editorWeight, GridUnitType.Star);
+        CodeDockWorkspaceGrid.ColumnDefinitions[3].Width = new GridLength(showResults ? 8 : 0);
+        CodeDockWorkspaceGrid.ColumnDefinitions[4].Width = showResults
+            ? new GridLength(resultsWeight, GridUnitType.Star)
+            : new GridLength(0);
+        CodeEditorDockGrid.RowDefinitions[1].Height = new GridLength(editorHeightWeight, GridUnitType.Star);
+        CodeEditorDockGrid.RowDefinitions[2].Height = new GridLength(showSymbols ? 8 : 0);
+        CodeEditorDockGrid.RowDefinitions[3].Height = showSymbols
+            ? new GridLength(symbolsHeightWeight, GridUnitType.Star)
+            : new GridLength(0);
+    }
+
+    private void OnWorkspaceSplitterPointerReleased(object? sender, PointerReleasedEventArgs e) =>
+        SaveWorkspaceLayoutPreferences();
+
+    private void OnSaveWorkspaceLayoutClick(object? sender, RoutedEventArgs e) =>
+        SaveWorkspaceLayoutPreferences();
+
+    private void OnResetWorkspaceLayoutClick(object? sender, RoutedEventArgs e)
+    {
+        _layoutPreferences = WorkspaceLayoutPreferences.Default;
+        HistoryTimelineToggle.IsChecked = true;
+        HistoryFilesToggle.IsChecked = true;
+        HistoryDiffToggle.IsChecked = true;
+        CodeExplorerPanelToggle.IsChecked = true;
+        CodeSymbolsPanelToggle.IsChecked = true;
+        CodeResultsPanelToggle.IsChecked = true;
+        ApplyHistoryLayout(HistoryLayoutMode.Columns, false);
+        ApplyChangesLayout(ChangesLayoutMode.Balanced, false);
+        ApplyCodeLayout(CodeLayoutMode.Balanced, false);
+        SaveWorkspaceLayoutPreferences();
     }
 
     private void OnColumnsHistoryLayoutClick(object? sender, RoutedEventArgs e) =>
@@ -148,11 +300,12 @@ public partial class MainWindow : Window
 
     private void ApplyColumnsHistoryLayout()
     {
-        SetHistoryColumn(0, 0.9, GridUnitType.Star);
+        bool restore = _layoutPreferences.HistoryLayout == HistoryLayoutMode.Columns;
+        SetHistoryColumn(0, restore ? _layoutPreferences.HistoryFirstWeight : 0.9, GridUnitType.Star);
         SetHistoryColumn(1, 6);
-        SetHistoryColumn(2, 1.25, GridUnitType.Star);
+        SetHistoryColumn(2, restore ? _layoutPreferences.HistorySecondWeight : 1.25, GridUnitType.Star);
         SetHistoryColumn(3, 6);
-        SetHistoryColumn(4, 1.15, GridUnitType.Star);
+        SetHistoryColumn(4, restore ? _layoutPreferences.HistoryThirdWeight : 1.15, GridUnitType.Star);
         SetHistoryRow(0, 1, GridUnitType.Star);
         PlaceHistoryPanel(HistoryTimelinePanel, 0, 0);
         PlaceHistoryPanel(HistoryFilesPanel, 0, 2);
@@ -163,12 +316,13 @@ public partial class MainWindow : Window
 
     private void ApplyReviewHistoryLayout()
     {
-        SetHistoryColumn(0, 0.78, GridUnitType.Star);
+        bool restore = _layoutPreferences.HistoryLayout == HistoryLayoutMode.Review;
+        SetHistoryColumn(0, restore ? _layoutPreferences.HistoryFirstWeight : 0.78, GridUnitType.Star);
         SetHistoryColumn(1, 6);
-        SetHistoryColumn(2, 1.72, GridUnitType.Star);
-        SetHistoryRow(0, 0.82, GridUnitType.Star);
+        SetHistoryColumn(2, restore ? _layoutPreferences.HistorySecondWeight : 1.72, GridUnitType.Star);
+        SetHistoryRow(0, restore ? _layoutPreferences.HistoryTopWeight : 0.82, GridUnitType.Star);
         SetHistoryRow(1, 6);
-        SetHistoryRow(2, 1.18, GridUnitType.Star);
+        SetHistoryRow(2, restore ? _layoutPreferences.HistoryBottomWeight : 1.18, GridUnitType.Star);
         PlaceHistoryPanel(HistoryTimelinePanel, 0, 0, 3);
         PlaceHistoryPanel(HistoryFilesPanel, 0, 2);
         PlaceHistoryPanel(HistoryDiffPanel, 2, 2);
@@ -178,12 +332,13 @@ public partial class MainWindow : Window
 
     private void ApplyDiffFocusedHistoryLayout()
     {
-        SetHistoryColumn(0, 0.72, GridUnitType.Star);
+        bool restore = _layoutPreferences.HistoryLayout == HistoryLayoutMode.DiffFocus;
+        SetHistoryColumn(0, restore ? _layoutPreferences.HistoryFirstWeight : 0.72, GridUnitType.Star);
         SetHistoryColumn(1, 6);
-        SetHistoryColumn(2, 1.78, GridUnitType.Star);
-        SetHistoryRow(0, 1, GridUnitType.Star);
+        SetHistoryColumn(2, restore ? _layoutPreferences.HistorySecondWeight : 1.78, GridUnitType.Star);
+        SetHistoryRow(0, restore ? _layoutPreferences.HistoryTopWeight : 1, GridUnitType.Star);
         SetHistoryRow(1, 6);
-        SetHistoryRow(2, 1, GridUnitType.Star);
+        SetHistoryRow(2, restore ? _layoutPreferences.HistoryBottomWeight : 1, GridUnitType.Star);
         PlaceHistoryPanel(HistoryFilesPanel, 0, 0);
         PlaceHistoryPanel(HistoryTimelinePanel, 2, 0);
         PlaceHistoryPanel(HistoryDiffPanel, 0, 2, 3);
@@ -214,6 +369,8 @@ public partial class MainWindow : Window
     {
         splitter.IsVisible = true;
         splitter.ResizeDirection = GridResizeDirection.Columns;
+        splitter.ResizeBehavior = GridResizeBehavior.PreviousAndNext;
+        splitter.ShowsPreview = false;
         splitter.Cursor = new Cursor(StandardCursorType.SizeWestEast);
         splitter.Width = 6;
         splitter.Height = double.NaN;
@@ -230,6 +387,8 @@ public partial class MainWindow : Window
     {
         splitter.IsVisible = true;
         splitter.ResizeDirection = GridResizeDirection.Rows;
+        splitter.ResizeBehavior = GridResizeBehavior.PreviousAndNext;
+        splitter.ShowsPreview = false;
         splitter.Cursor = new Cursor(StandardCursorType.SizeNorthSouth);
         splitter.Width = double.NaN;
         splitter.Height = 6;
@@ -256,14 +415,44 @@ public partial class MainWindow : Window
     private void SetHistoryRow(int index, double value, GridUnitType unit = GridUnitType.Pixel) =>
         HistoryWorkspaceGrid.RowDefinitions[index].Height = new GridLength(value, unit);
 
-    private void SaveHistoryLayoutPreferences()
+    private void SaveHistoryLayoutPreferences() => SaveWorkspaceLayoutPreferences();
+
+    private void SaveWorkspaceLayoutPreferences()
     {
-        _workspaceLayoutStore?.Save(new WorkspaceLayoutPreferences(
+        _layoutPreferences = new WorkspaceLayoutPreferences(
             _historyLayout,
             HistoryTimelineToggle.IsChecked == true,
             HistoryFilesToggle.IsChecked == true,
-            HistoryDiffToggle.IsChecked == true));
+            HistoryDiffToggle.IsChecked == true,
+            _changesLayout,
+            _codeLayout,
+            CodeExplorerPanelToggle.IsChecked == true,
+            CodeSymbolsPanelToggle.IsChecked == true,
+            CodeResultsPanelToggle.IsChecked == true,
+            GetGridWeight(ChangesWorkspaceGrid.ColumnDefinitions[0], _layoutPreferences.ChangesListWeight),
+            GetGridWeight(ChangesWorkspaceGrid.ColumnDefinitions[2], _layoutPreferences.ChangesDiffWeight),
+            GetGridWeight(CodeDockWorkspaceGrid.ColumnDefinitions[0], _layoutPreferences.CodeExplorerWeight),
+            GetGridWeight(CodeDockWorkspaceGrid.ColumnDefinitions[2], _layoutPreferences.CodeEditorWeight),
+            GetGridWeight(CodeDockWorkspaceGrid.ColumnDefinitions[4], _layoutPreferences.CodeResultsWeight),
+            GetGridWeight(CodeEditorDockGrid.RowDefinitions[1], _layoutPreferences.CodeEditorHeightWeight),
+            GetGridWeight(CodeEditorDockGrid.RowDefinitions[3], _layoutPreferences.CodeSymbolsHeightWeight),
+            GetGridWeight(HistoryWorkspaceGrid.ColumnDefinitions[0], _layoutPreferences.HistoryFirstWeight),
+            GetGridWeight(HistoryWorkspaceGrid.ColumnDefinitions[2], _layoutPreferences.HistorySecondWeight),
+            GetGridWeight(HistoryWorkspaceGrid.ColumnDefinitions[4], _layoutPreferences.HistoryThirdWeight),
+            GetGridWeight(HistoryWorkspaceGrid.RowDefinitions[0], _layoutPreferences.HistoryTopWeight),
+            GetGridWeight(HistoryWorkspaceGrid.RowDefinitions[2], _layoutPreferences.HistoryBottomWeight));
+        _workspaceLayoutStore?.Save(_layoutPreferences);
     }
+
+    private static double GetGridWeight(ColumnDefinition definition, double fallback) =>
+        definition.Width.IsStar && double.IsFinite(definition.Width.Value) && definition.Width.Value > 0
+            ? definition.Width.Value
+            : fallback;
+
+    private static double GetGridWeight(RowDefinition definition, double fallback) =>
+        definition.Height.IsStar && double.IsFinite(definition.Height.Value) && definition.Height.Value > 0
+            ? definition.Height.Value
+            : fallback;
 
     private void OnOpenFocusedDiffWindowClick(object? sender, RoutedEventArgs e)
     {
@@ -288,6 +477,58 @@ public partial class MainWindow : Window
         _focusedDiffWindow = window;
         window.Show(this);
     }
+
+    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        KeyModifiers required = KeyModifiers.Control | KeyModifiers.Shift;
+        if (e.Key == Key.F && (e.KeyModifiers & required) == required)
+        {
+            WorkspaceTabs.SelectedItem = CodeWorkspaceTab;
+            GlobalCodeSearch.Focus();
+            GlobalCodeSearch.SelectAll();
+            e.Handled = true;
+        }
+    }
+
+    private async void OnCodeSearchBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        await _viewModel.SearchCodeAsync();
+    }
+
+    private async void OnSearchCodeClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SearchCodeAsync();
+
+    private void OnCancelCodeSearchClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.CancelCodeSearch();
+
+    private async void OnRefreshCodeWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshCodeWorkspaceAsync();
+
+    private async void OnCodeSelectionHistoryClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.LoadCodeSelectionHistoryAsync(CodePreview.SelectionStart, CodePreview.SelectionEnd);
+
+    private async void OnRunAiAgentClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RunAiAgentAsync();
+
+    private void OnAddAiMcpStdioClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.AddAiMcpServer(CyRevision.Plugin.Abstractions.AiMcpTransport.Stdio);
+
+    private void OnAddAiMcpHttpClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.AddAiMcpServer(CyRevision.Plugin.Abstractions.AiMcpTransport.StreamableHttp);
+
+    private void OnRemoveAiMcpClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.RemoveSelectedAiMcpServer();
+
+    private async void OnSaveAiMcpClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveAiMcpProfileAsync();
+
+    private async void OnEmergencyBlockAiMcpClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.EmergencyBlockAiMcpAsync();
+
+    private async void OnUnblockAiMcpClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.UnblockAiMcpAsync();
 
     private async void OnAddExistingClick(object? sender, RoutedEventArgs e)
     {
@@ -363,6 +604,53 @@ public partial class MainWindow : Window
     private async void OnPushClick(object? sender, RoutedEventArgs e) => await _viewModel.PushAsync();
 
     private async void OnSaveRemoteClick(object? sender, RoutedEventArgs e) => await _viewModel.SaveRemoteAsync();
+
+    private async void OnResolvePullRequestRepositoryClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ResolvePullRequestRepositoryAsync();
+
+    private async void OnRefreshPullRequestsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshPullRequestsAsync();
+
+    private async void OnCreatePullRequestClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CreatePullRequestAsync();
+
+    private async void OnAddPullRequestCommentClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.AddPullRequestCommentAsync();
+
+    private async void OnSubmitPullRequestReviewClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SubmitPullRequestReviewAsync();
+
+    private async void OnCheckoutPullRequestClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CheckoutSelectedPullRequestAsync();
+
+    private void OnOpenPullRequestClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.OpenSelectedPullRequestInBrowser();
+
+    private async void OnMergePullRequestClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedPullRequest is not { } pullRequest) return;
+        if (await ShowConfirmationAsync(
+                "Merge pull request",
+                $"Merge #{pullRequest.Number} '{pullRequest.Title}' into {pullRequest.BaseBranch} using {_viewModel.PullRequestMergeMethod}? This changes the remote repository and may trigger CI or deployments.",
+                "Merge"))
+        {
+            await _viewModel.MergeSelectedPullRequestAsync();
+        }
+    }
+
+    private async void OnTogglePullRequestStateClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedPullRequest is not { } pullRequest) return;
+        bool reopen = !pullRequest.State.Equals("open", StringComparison.OrdinalIgnoreCase);
+        string action = reopen ? "Reopen" : "Close";
+        if (await ShowConfirmationAsync(
+                $"{action} pull request",
+                $"{action} pull request #{pullRequest.Number} '{pullRequest.Title}' on the remote repository?",
+                action))
+        {
+            await _viewModel.ToggleSelectedPullRequestStateAsync();
+        }
+    }
 
     private async void OnTrackLfsClick(object? sender, RoutedEventArgs e) => await _viewModel.TrackLfsPatternAsync();
 
@@ -583,6 +871,36 @@ public partial class MainWindow : Window
 
     private async void OnCompareSelectedToHeadClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CompareSelectedChangeToHeadAsync();
+
+    private async void OnEnablePluginClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.EnableSelectedPluginAsync();
+
+    private async void OnDisablePluginClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.DisableSelectedPluginAsync();
+
+    private async void OnPickUnrealProjectClick(object? sender, RoutedEventArgs e)
+    {
+        IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select an Unreal Engine project",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Unreal Engine project") { Patterns = ["*.uproject"] }
+            ]
+        });
+        string? path = files.FirstOrDefault()?.TryGetLocalPath();
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            _viewModel.SetUnrealProjectPath(path);
+        }
+    }
+
+    private async void OnInstallUnrealPluginClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.InstallUnrealEditorPluginAsync();
+
+    private async void OnConfigureUnrealBridgeClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ConfigureUnrealBridgeAsync();
 
     private async void OnCheckForUpdatesClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CheckForUpdatesAsync();

@@ -134,7 +134,23 @@ public interface IGitRepositoryService
         string remoteUrl,
         CancellationToken cancellationToken = default);
 
+    Task<string?> GetRemoteUrlAsync(
+        string repositoryPath,
+        string remoteName = "origin",
+        CancellationToken cancellationToken = default);
+
     Task FetchAsync(string repositoryPath, CancellationToken cancellationToken = default);
+
+    Task FetchReferenceAsync(
+        string repositoryPath,
+        string remoteName,
+        string referenceSpec,
+        CancellationToken cancellationToken = default);
+
+    Task FastForwardAsync(
+        string repositoryPath,
+        string reference,
+        CancellationToken cancellationToken = default);
 
     Task PullAsync(string repositoryPath, CancellationToken cancellationToken = default);
 

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.6 Alpha — 2026-08-12
+
+- integrated GitHub pull request manager with remote detection, filters, creation, draft support, files, colored patches, conversations, reviews, safe checkout, close/reopen, and confirmed merge/squash/rebase operations;
+- provider-neutral pull request service boundary prepared for GitLab, Forgejo, and future decentralized review adapters, with session-only or environment-based credentials;
+- complete Code workspace with hierarchical project explorer, fast `Ctrl+Shift+F` search, symbol outline, previews, and Git history for files, folders, and selected line ranges;
+- optional AI workspace for Codex CLI, OpenAI-compatible APIs, Ollama, and LM Studio, with separate read, edit, network, stage, and commit permissions;
+- project-scoped MCP manager with STDIO and Streamable HTTP servers, tool allow/deny policies, approval modes, timeouts, unmanaged-server isolation, and an emergency block switch;
+- optional CyRevision plugin system plus separately packaged Unreal integration, autonomous Unreal Editor revision tools, authenticated loopback bridge, and guided project-plugin installation;
 - optional Discord project agent using channel-scoped incoming webhooks without requiring GitHub;
 - grouped commit and active-branch notifications with a persistent per-project checkpoint;
 - safe first-run baseline, automatic retry after delivery failures, disabled mentions, masked webhook input, and local-only secret storage;

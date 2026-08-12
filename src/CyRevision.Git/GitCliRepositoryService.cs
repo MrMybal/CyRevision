@@ -837,8 +837,46 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         await RunGitAsync(repositoryPath, arguments, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<string?> GetRemoteUrlAsync(
+        string repositoryPath,
+        string remoteName = "origin",
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(remoteName);
+        ProcessResult result = await RunGitResultAsync(
+            repositoryPath,
+            ["remote", "get-url", remoteName],
+            cancellationToken).ConfigureAwait(false);
+        return result.Succeeded && !string.IsNullOrWhiteSpace(result.StandardOutput)
+            ? result.StandardOutput.Trim()
+            : null;
+    }
+
     public Task FetchAsync(string repositoryPath, CancellationToken cancellationToken = default) =>
         RunGitWithoutOutputAsync(repositoryPath, ["fetch", "--all", "--prune"], cancellationToken);
+
+    public Task FetchReferenceAsync(
+        string repositoryPath,
+        string remoteName,
+        string referenceSpec,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(remoteName);
+        ValidateReferenceName(referenceSpec);
+        return RunGitWithoutOutputAsync(
+            repositoryPath,
+            ["fetch", "--no-tags", remoteName, referenceSpec],
+            cancellationToken);
+    }
+
+    public Task FastForwardAsync(
+        string repositoryPath,
+        string reference,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(reference);
+        return RunGitWithoutOutputAsync(repositoryPath, ["merge", "--ff-only", reference], cancellationToken);
+    }
 
     public Task PullAsync(string repositoryPath, CancellationToken cancellationToken = default) =>
         RunGitWithoutOutputAsync(repositoryPath, ["pull", "--ff-only"], cancellationToken);

@@ -13,6 +13,7 @@ public class CyRevisionEditor : ModuleRules
             "ContentBrowser",
             "CoreUObject",
             "Engine",
+            "HTTP",
             "InputCore",
             "Json",
             "Projects",

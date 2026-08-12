@@ -190,7 +190,7 @@
                 </StackPanel>
             </Grid>
 
-            <TabControl Grid.Row="1">
+            <TabControl x:Name="WorkspaceTabs" Grid.Row="1">
                 <TabItem Header="Projet">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.15*,1*" ColumnSpacing="8">
                         <Border Classes="card">
@@ -226,8 +226,27 @@
                 </TabItem>
 
                 <TabItem Header="Modifications">
-                    <Grid Margin="0,8,0,0" ColumnDefinitions="1.05*,1.35*" RowDefinitions="*,Auto" ColumnSpacing="8" RowSpacing="8">
-                        <Border Classes="card">
+                    <Grid x:Name="ChangesWorkspaceGrid" Margin="0,8,0,0"
+                          ColumnDefinitions="1.05*,8,1.35*" RowDefinitions="Auto,*,Auto" RowSpacing="8">
+                        <Border Grid.ColumnSpan="3" Background="#26282B" BorderBrush="#393B40" BorderThickness="1"
+                                CornerRadius="6" Padding="7,5">
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+                                <TextBlock Text="LAYOUT" FontSize="9" FontWeight="Bold" Foreground="#7E8189"
+                                           VerticalAlignment="Center" Margin="3,0,2,0" />
+                                <ToggleButton x:Name="ChangesBalancedLayoutToggle" Grid.Column="1" Classes="layoutChoice"
+                                              Content="Review" Click="OnBalancedChangesLayoutClick"
+                                              ToolTip.Tip="Balanced file list and diff" />
+                                <ToggleButton x:Name="ChangesDiffFocusLayoutToggle" Grid.Column="2" Classes="layoutChoice"
+                                              Content="Diff focus" Click="OnDiffFocusChangesLayoutClick"
+                                              ToolTip.Tip="Give more space to the diff viewer" />
+                                <TextBlock Grid.Column="3" Text="Drag the divider to resize panels. Layout sizes are saved locally."
+                                           FontSize="9.5" Classes="muted" VerticalAlignment="Center" Margin="8,0" />
+                                <Button Grid.Column="4" Classes="secondary" Content="Save layout" Click="OnSaveWorkspaceLayoutClick" />
+                                <Button Grid.Column="5" Classes="secondary" Content="Reset" Click="OnResetWorkspaceLayoutClick" />
+                            </Grid>
+                        </Border>
+
+                        <Border x:Name="ChangesListPanel" Grid.Row="1" Classes="card" MinWidth="220">
                             <Grid RowDefinitions="Auto,*">
                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,10">
                                     <Button Classes="secondary" Content="Tout indexer" Click="OnStageAllClick" />
@@ -246,7 +265,11 @@
                             </Grid>
                         </Border>
 
-                        <Border Grid.Column="1" Classes="card">
+                        <GridSplitter x:Name="ChangesWorkspaceSplitter" Grid.Row="1" Grid.Column="1" Width="8"
+                                      ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                                      Background="#4B4D52" Cursor="SizeWestEast" />
+
+                        <Border x:Name="ChangesDiffPanel" Grid.Row="1" Grid.Column="2" Classes="card" MinWidth="320">
                             <Grid RowDefinitions="Auto,*">
                                 <TextBlock Text="Diff" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,10" />
                                 <controls:CodeDiffView Grid.Row="1"
@@ -255,13 +278,187 @@
                             </Grid>
                         </Border>
 
-                        <Border Grid.Row="1" Grid.ColumnSpan="2" Classes="card">
+                        <Border Grid.Row="2" Grid.ColumnSpan="3" Classes="card">
                             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12">
                                 <TextBlock Text="Nouvelle révision" FontWeight="SemiBold" />
                                 <TextBox Grid.Row="1" Text="{Binding CommitMessage}" PlaceholderText="Décrire clairement les changements…" Margin="0,8,0,0" />
                                 <Button Grid.Row="1" Grid.Column="1" Classes="primary" Content="Créer la révision" Click="OnCommitClick" Margin="0,8,0,0" />
                             </Grid>
                         </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem x:Name="CodeWorkspaceTab" Header="Code">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="7">
+                        <Border Classes="card" Padding="10">
+                            <Grid ColumnDefinitions="*,115,Auto,Auto" ColumnSpacing="8" RowDefinitions="Auto,Auto">
+                                <TextBox x:Name="GlobalCodeSearch" Text="{Binding CodeSearchQuery}"
+                                         PlaceholderText="Search text, symbol, or pattern across the project…"
+                                         KeyDown="OnCodeSearchBoxKeyDown" />
+                                <TextBox Grid.Column="1" Text="{Binding CodeFilePatterns}"
+                                         PlaceholderText="*.cs;*.cpp" ToolTip.Tip="Optional file patterns separated with semicolons" />
+                                <Button Grid.Column="2" Classes="primary" Content="Search" Click="OnSearchCodeClick" />
+                                <Button Grid.Column="3" Classes="secondary" Content="Cancel" Click="OnCancelCodeSearchClick" />
+                                <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="14" Margin="2,7,0,0">
+                                    <CheckBox Content="Match case" IsChecked="{Binding CodeSearchMatchCase}" />
+                                    <CheckBox Content="Whole words" IsChecked="{Binding CodeSearchWholeWord}" />
+                                    <CheckBox Content="Regular expression" IsChecked="{Binding CodeSearchRegex}" />
+                                    <TextBlock Text="Ctrl+Shift+F" Foreground="#78D7B7" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding CodeSearchSummary}" Classes="muted" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="3,0">
+                            <TextBlock Text="{Binding CodeWorkspaceSummary}" FontSize="10.5" Classes="muted" />
+                            <TextBlock Grid.Column="1" Text="Heavy build/cache folders are excluded automatically"
+                                       FontSize="10.5" Foreground="#78D7B7" />
+                        </Grid>
+
+                        <Border Grid.Row="2" Background="#26282B" BorderBrush="#393B40" BorderThickness="1"
+                                CornerRadius="6" Padding="7,5">
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,1,Auto,Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+                                <TextBlock Text="LAYOUT" FontSize="9" FontWeight="Bold" Foreground="#7E8189"
+                                           VerticalAlignment="Center" Margin="3,0,2,0" />
+                                <ToggleButton x:Name="CodeBalancedLayoutToggle" Grid.Column="1" Classes="layoutChoice"
+                                              Content="Balanced" Click="OnBalancedCodeLayoutClick" />
+                                <ToggleButton x:Name="CodeEditorFocusLayoutToggle" Grid.Column="2" Classes="layoutChoice"
+                                              Content="Editor" Click="OnEditorFocusCodeLayoutClick" />
+                                <ToggleButton x:Name="CodeSearchFocusLayoutToggle" Grid.Column="3" Classes="layoutChoice"
+                                              Content="Search" Click="OnSearchFocusCodeLayoutClick" />
+                                <Border Grid.Column="4" Width="1" Height="18" Background="#4B4D52" Margin="4,0" />
+                                <TextBlock Grid.Column="5" Text="PANELS" FontSize="9" FontWeight="Bold" Foreground="#7E8189"
+                                           VerticalAlignment="Center" />
+                                <ToggleButton x:Name="CodeExplorerPanelToggle" Grid.Column="6" Classes="panelToggle"
+                                              Content="Explorer" Click="OnCodePanelToggleClick" />
+                                <ToggleButton x:Name="CodeSymbolsPanelToggle" Grid.Column="7" Classes="panelToggle"
+                                              Content="Symbols" Click="OnCodePanelToggleClick" />
+                                <ToggleButton x:Name="CodeResultsPanelToggle" Grid.Column="8" Classes="panelToggle"
+                                              Content="Results" Click="OnCodePanelToggleClick" />
+                                <TextBlock Grid.Column="9" Text="Drag dividers to resize · workspace is saved locally"
+                                           FontSize="9.5" Classes="muted" VerticalAlignment="Center" Margin="8,0" />
+                                <Button Grid.Column="10" Classes="secondary" Content="Save layout" Click="OnSaveWorkspaceLayoutClick" />
+                                <Button Grid.Column="11" Classes="secondary" Content="Reset" Click="OnResetWorkspaceLayoutClick" />
+                            </Grid>
+                        </Border>
+
+                        <Grid x:Name="CodeDockWorkspaceGrid" Grid.Row="3" ColumnDefinitions="0.8*,8,1.45*,8,1*">
+                            <Border x:Name="CodeExplorerPanel" Classes="card" Padding="0" ClipToBounds="True" MinWidth="190">
+                                <Grid RowDefinitions="Auto,Auto,*">
+                                    <Grid Margin="10,9,10,5" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                        <TextBlock Text="Project explorer" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Refresh" Click="OnRefreshCodeWorkspaceClick" />
+                                    </Grid>
+                                    <Grid Grid.Row="1" Margin="10,2,10,7" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                        <TextBox Text="{Binding CodeTreeFilter}" PlaceholderText="Filter paths…" />
+                                        <CheckBox Grid.Column="1" Content="Hidden" IsChecked="{Binding CodeIncludeHidden}"
+                                                  VerticalAlignment="Center" />
+                                    </Grid>
+                                    <TreeView Grid.Row="2" ItemsSource="{Binding CodeTree}" SelectedItem="{Binding SelectedCodeNode}"
+                                              Background="Transparent" BorderThickness="0" Margin="4,0,4,6">
+                                        <TreeView.ItemTemplate>
+                                            <TreeDataTemplate ItemsSource="{Binding Children}">
+                                                <Grid ColumnDefinitions="28,*,Auto" Margin="2,3">
+                                                    <Border Width="24" Height="20" CornerRadius="3" Background="#31343A">
+                                                        <TextBlock Text="{Binding Icon}" FontSize="9" FontWeight="Bold"
+                                                                   Foreground="#7DE2CC" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Margin="6,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding RelativePath}" FontSize="9" Classes="muted"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Detail}" FontSize="9" Classes="muted"
+                                                               VerticalAlignment="Center" Margin="5,0" />
+                                                </Grid>
+                                            </TreeDataTemplate>
+                                        </TreeView.ItemTemplate>
+                                    </TreeView>
+                                </Grid>
+                            </Border>
+
+                            <GridSplitter x:Name="CodeExplorerSplitter" Grid.Column="1" Width="8"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                                          Background="#4B4D52" Cursor="SizeWestEast" />
+
+                            <Border x:Name="CodeEditorPanel" Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True" MinWidth="300">
+                                <Grid x:Name="CodeEditorDockGrid" RowDefinitions="Auto,1*,8,0.32*">
+                                    <Grid Margin="10,8" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Text="Editor preview" FontSize="14" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding CodePreviewSummary}" FontSize="10" Classes="muted"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="secondary" Content="History of selection"
+                                                Click="OnCodeSelectionHistoryClick"
+                                                ToolTip.Tip="Select lines in the editor, then follow only those lines through Git" />
+                                    </Grid>
+                                    <TextBox x:Name="CodePreview" Grid.Row="1" Text="{Binding CodePreviewText}"
+                                             IsReadOnly="True" AcceptsReturn="True" AcceptsTab="True"
+                                             FontFamily="Cascadia Mono,JetBrains Mono,Consolas" FontSize="11.5"
+                                             TextWrapping="NoWrap" Padding="10,7" BorderThickness="0" CornerRadius="0"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    <GridSplitter x:Name="CodeSymbolsSplitter" Grid.Row="2" Height="8"
+                                                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                                                  Background="#4B4D52" Cursor="SizeNorthSouth" />
+                                    <Border x:Name="CodeSymbolsPanel" Grid.Row="3" BorderBrush="#393B40" BorderThickness="0,1,0,0"
+                                            MinHeight="90">
+                                        <Grid RowDefinitions="Auto,*">
+                                            <Grid Margin="10,6" ColumnDefinitions="*,Auto">
+                                                <TextBlock Text="Symbols" FontWeight="SemiBold" />
+                                                <TextBlock Grid.Column="1" Text="{Binding CodeSelectionSummary}" FontSize="10" Classes="muted"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </Grid>
+                                            <DataGrid Grid.Row="1" ItemsSource="{Binding CodeSymbols}" SelectedItem="{Binding SelectedCodeSymbol}"
+                                                      AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                                      Background="Transparent" BorderThickness="0">
+                                                <DataGrid.Columns>
+                                                    <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="85" />
+                                                    <DataGridTextColumn Header="Symbol" Binding="{Binding Name}" Width="*" />
+                                                    <DataGridTextColumn Header="Line" Binding="{Binding LineNumber}" Width="65" />
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </Border>
+
+                            <GridSplitter x:Name="CodeResultsSplitter" Grid.Column="3" Width="8"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                                          Background="#4B4D52" Cursor="SizeWestEast" />
+
+                            <Border x:Name="CodeResultsPanel" Grid.Column="4" Classes="card" Padding="0" ClipToBounds="True" MinWidth="230">
+                                <TabControl>
+                                    <TabItem Header="Search results">
+                                        <DataGrid ItemsSource="{Binding CodeSearchResults}" SelectedItem="{Binding SelectedCodeSearchResult}"
+                                                  AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                                  Background="Transparent" BorderThickness="0" Margin="3">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="145" />
+                                                <DataGridTextColumn Header="Preview" Binding="{Binding Preview}" Width="*" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </TabItem>
+                                    <TabItem Header="Git history">
+                                        <Grid RowDefinitions="Auto,*">
+                                            <TextBlock Text="File, folder, or selected-line history" FontSize="10.5" Classes="muted" Margin="8,6" />
+                                            <DataGrid Grid.Row="1" ItemsSource="{Binding CodeHistory}"
+                                                      AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                                      Background="Transparent" BorderThickness="0" Margin="3">
+                                                <DataGrid.Columns>
+                                                    <DataGridTextColumn Header="Rev" Binding="{Binding ShortHash}" Width="65" />
+                                                    <DataGridTextColumn Header="Description" Binding="{Binding Subject}" Width="*" />
+                                                    <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="95" />
+                                                    <DataGridTextColumn Header="Date" Binding="{Binding DateText}" Width="120" />
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+                                        </Grid>
+                                    </TabItem>
+                                </TabControl>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </TabItem>
 
@@ -316,6 +513,13 @@
                                               Content="Diff ciblé" IsChecked="True" Click="OnHistoryPanelToggleClick"
                                               ToolTip.Tip="Afficher le diff ciblé" />
 
+                                <StackPanel Grid.Column="9" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                    <TextBlock Text="Drag dividers to resize" FontSize="9.5" Classes="muted"
+                                               VerticalAlignment="Center" Margin="6,0" />
+                                    <Button Classes="secondary" Content="Save layout" Click="OnSaveWorkspaceLayoutClick" />
+                                    <Button Classes="secondary" Content="Reset" Click="OnResetWorkspaceLayoutClick" />
+                                </StackPanel>
+
                                 <Button Grid.Column="10" Classes="secondary" Content="Ouvrir le diff dans une fenêtre ↗"
                                         Click="OnOpenFocusedDiffWindowClick" ToolTip.Tip="Ouvrir le diff ciblé dans une fenêtre redimensionnable" />
                             </Grid>
@@ -343,7 +547,8 @@
                                 </Grid>
                             </Border>
                             <GridSplitter x:Name="HistorySplitterOne" Grid.Column="1" Width="6" Margin="1,14"
-                                          ResizeDirection="Columns" Background="#4B4D52" Cursor="SizeWestEast" />
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                                          Background="#4B4D52" Cursor="SizeWestEast" />
 
                             <Border x:Name="HistoryFilesPanel" Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
                                 <Grid RowDefinitions="Auto,1.45*,Auto,0.75*">
@@ -378,7 +583,8 @@
                                 </Grid>
                             </Border>
                             <GridSplitter x:Name="HistorySplitterTwo" Grid.Column="3" Width="6" Margin="1,14"
-                                          ResizeDirection="Columns" Background="#4B4D52" Cursor="SizeWestEast" />
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                                          Background="#4B4D52" Cursor="SizeWestEast" />
 
                             <Border x:Name="HistoryDiffPanel" Grid.Column="4" Classes="card" Padding="0" ClipToBounds="True">
                                 <Grid RowDefinitions="Auto,*">
@@ -434,6 +640,188 @@
                                 <Button Classes="secondary" Content="Enregistrer origin" Click="OnSaveRemoteClick" HorizontalAlignment="Left" />
                             </StackPanel>
                         </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Pull Requests">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="8">
+                        <Border Classes="card" Padding="10">
+                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="8">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Pull Request Manager" FontSize="16" FontWeight="SemiBold" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="{Binding PullRequestRepositoryName}" Foreground="#78D7B7" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding PullRequestStatus}" Classes="muted" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7">
+                                    <ComboBox Width="105" ItemsSource="{Binding PullRequestStateFilters}"
+                                              SelectedItem="{Binding PullRequestStateFilter}" />
+                                    <Button Classes="secondary" Content="Detect remote" Click="OnResolvePullRequestRepositoryClick" />
+                                    <Button Classes="primary" Content="Refresh" Click="OnRefreshPullRequestsClick" />
+                                </StackPanel>
+                                <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,170,Auto,230,Auto,230,*"
+                                      ColumnSpacing="7">
+                                    <TextBlock Text="API" Classes="muted" VerticalAlignment="Center" />
+                                    <TextBox Grid.Column="1" Text="{Binding PullRequestApiBaseUrl}"
+                                             PlaceholderText="Auto / GitHub Enterprise API" />
+                                    <TextBlock Grid.Column="2" Text="Token env" Classes="muted" VerticalAlignment="Center" />
+                                    <TextBox Grid.Column="3" Text="{Binding PullRequestTokenEnvironmentVariable}"
+                                             PlaceholderText="GITHUB_TOKEN" />
+                                    <TextBlock Grid.Column="4" Text="Session token" Classes="muted" VerticalAlignment="Center" />
+                                    <TextBox Grid.Column="5" Text="{Binding PullRequestToken}" PasswordChar="●"
+                                             PlaceholderText="Never saved" />
+                                    <TextBlock Grid.Column="6" Text="{Binding PullRequestAuthenticationState}" FontSize="9.5"
+                                               Foreground="#F2C66D" VerticalAlignment="Center" Margin="8,0" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="420,8,*">
+                            <Border Classes="card" Padding="0" ClipToBounds="True" MinWidth="310">
+                                <TabControl>
+                                    <TabItem Header="Requests">
+                                        <DataGrid ItemsSource="{Binding PullRequests}" SelectedItem="{Binding SelectedPullRequest}"
+                                                  AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                                  Background="Transparent" BorderThickness="0" Margin="4">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="#" Binding="{Binding NumberText}" Width="58" />
+                                                <DataGridTextColumn Header="State" Binding="{Binding StateText}" Width="72" />
+                                                <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*" />
+                                                <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="100" />
+                                                <DataGridTextColumn Header="Updated" Binding="{Binding UpdatedText}" Width="125" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </TabItem>
+                                    <TabItem Header="Create">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel Margin="12" Spacing="8">
+                                                <TextBlock Text="Create pull request" FontSize="15" FontWeight="SemiBold" />
+                                                <TextBlock Text="The source branch must already be pushed to the remote."
+                                                           Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                                <TextBox Text="{Binding NewPullRequestTitle}" PlaceholderText="Title" />
+                                                <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
+                                                    <StackPanel Spacing="3">
+                                                        <TextBlock Text="Head branch" FontSize="10" Classes="muted" />
+                                                        <TextBox Text="{Binding NewPullRequestHeadBranch}" PlaceholderText="feature/name" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Spacing="3">
+                                                        <TextBlock Text="Base branch" FontSize="10" Classes="muted" />
+                                                        <TextBox Text="{Binding NewPullRequestBaseBranch}" PlaceholderText="main" />
+                                                    </StackPanel>
+                                                </Grid>
+                                                <TextBox Text="{Binding NewPullRequestBody}" AcceptsReturn="True" Height="180"
+                                                         TextWrapping="Wrap" PlaceholderText="Description (Markdown)" />
+                                                <CheckBox Content="Create as draft" IsChecked="{Binding NewPullRequestIsDraft}" />
+                                                <Button Classes="primary" Content="Create pull request" Click="OnCreatePullRequestClick"
+                                                        HorizontalAlignment="Left" />
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </TabItem>
+                                </TabControl>
+                            </Border>
+
+                            <GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns"
+                                          ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                                          Background="#4B4D52" Cursor="SizeWestEast" />
+
+                            <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="Auto,*">
+                                    <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="12,9">
+                                        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="5">
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding SelectedPullRequest.NumberText}" FontWeight="Bold" Foreground="#78D7B7" />
+                                                    <TextBlock Text="{Binding SelectedPullRequest.Title}" FontSize="15" FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <Border Background="#34363A" CornerRadius="4" Padding="6,2">
+                                                        <TextBlock Text="{Binding SelectedPullRequest.StateText}" FontSize="9" FontWeight="Bold"
+                                                                   Foreground="#F2C66D" />
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding SelectedPullRequest.BranchText}" FontSize="10" Classes="muted" />
+                                                <TextBlock Text="{Binding PullRequestDetailsSummary}" FontSize="10" Foreground="#78D7B7" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                <Button Classes="secondary" Content="Open ↗" Click="OnOpenPullRequestClick"
+                                                        IsEnabled="{Binding HasSelectedPullRequest}" />
+                                                <Button Classes="secondary" Content="Checkout" Click="OnCheckoutPullRequestClick"
+                                                        IsEnabled="{Binding HasSelectedPullRequest}" />
+                                                <Button Classes="secondary" Content="Close / reopen" Click="OnTogglePullRequestStateClick"
+                                                        IsEnabled="{Binding HasSelectedPullRequest}" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Row="1" Text="{Binding PullRequestBody}" TextWrapping="Wrap"
+                                                       MaxHeight="72" Classes="muted" />
+                                            <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                                                        VerticalAlignment="Bottom">
+                                                <ComboBox Width="105" ItemsSource="{Binding PullRequestMergeMethods}"
+                                                          SelectedItem="{Binding PullRequestMergeMethod}" />
+                                                <Button Classes="primary" Content="Merge" Click="OnMergePullRequestClick"
+                                                        IsEnabled="{Binding CanMergeSelectedPullRequest}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
+                                    <TabControl Grid.Row="1">
+                                        <TabItem Header="Files and patch">
+                                            <Grid ColumnDefinitions="0.78*,8,1.22*" Margin="4">
+                                                <DataGrid ItemsSource="{Binding PullRequestFiles}" SelectedItem="{Binding SelectedPullRequestFile}"
+                                                          AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                                          Background="Transparent" BorderThickness="0">
+                                                    <DataGrid.Columns>
+                                                        <DataGridTextColumn Header="State" Binding="{Binding Status}" Width="78" />
+                                                        <DataGridTextColumn Header="File" Binding="{Binding Path}" Width="*" />
+                                                        <DataGridTextColumn Header="Change" Binding="{Binding ChangeText}" Width="95" />
+                                                    </DataGrid.Columns>
+                                                </DataGrid>
+                                                <GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns"
+                                                              ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                                                              Background="#4B4D52" Cursor="SizeWestEast" />
+                                                <controls:CodeDiffView Grid.Column="2" DiffText="{Binding PullRequestPatch}"
+                                                                       FilePath="{Binding SelectedPullRequestFile.Path}" />
+                                            </Grid>
+                                        </TabItem>
+                                        <TabItem Header="Conversation">
+                                            <Grid Margin="8" RowDefinitions="*,Auto" RowSpacing="8">
+                                                <TabControl>
+                                                    <TabItem Header="Comments">
+                                                        <DataGrid ItemsSource="{Binding PullRequestComments}" AutoGenerateColumns="False"
+                                                                  IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent"
+                                                                  BorderThickness="0">
+                                                            <DataGrid.Columns>
+                                                                <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="110" />
+                                                                <DataGridTextColumn Header="Comment" Binding="{Binding Body}" Width="*" />
+                                                                <DataGridTextColumn Header="Date" Binding="{Binding CreatedText}" Width="135" />
+                                                            </DataGrid.Columns>
+                                                        </DataGrid>
+                                                    </TabItem>
+                                                    <TabItem Header="Reviews">
+                                                        <DataGrid ItemsSource="{Binding PullRequestReviews}" AutoGenerateColumns="False"
+                                                                  IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent"
+                                                                  BorderThickness="0">
+                                                            <DataGrid.Columns>
+                                                                <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="110" />
+                                                                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="120" />
+                                                                <DataGridTextColumn Header="Review" Binding="{Binding Body}" Width="*" />
+                                                                <DataGridTextColumn Header="Date" Binding="{Binding SubmittedText}" Width="135" />
+                                                            </DataGrid.Columns>
+                                                        </DataGrid>
+                                                    </TabItem>
+                                                </TabControl>
+                                                <Grid Grid.Row="1" ColumnDefinitions="1*,Auto,1*,125,Auto" ColumnSpacing="7">
+                                                    <TextBox Text="{Binding PullRequestComment}" PlaceholderText="General comment…" />
+                                                    <Button Grid.Column="1" Classes="secondary" Content="Comment" Click="OnAddPullRequestCommentClick" />
+                                                    <TextBox Grid.Column="2" Text="{Binding PullRequestReviewBody}" PlaceholderText="Review summary…" />
+                                                    <ComboBox Grid.Column="3" ItemsSource="{Binding PullRequestReviewActions}"
+                                                              SelectedItem="{Binding PullRequestReviewAction}" />
+                                                    <Button Grid.Column="4" Classes="primary" Content="Submit review" Click="OnSubmitPullRequestReviewClick" />
+                                                </Grid>
+                                            </Grid>
+                                        </TabItem>
+                                    </TabControl>
+                                </Grid>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </TabItem>
 
@@ -550,7 +938,7 @@
                                 </Grid>
                             </TabItem>
 
-                            <TabItem Header="Dépendances Unreal">
+                            <TabItem Header="Dépendances Unreal" IsVisible="{Binding IsUnrealIntegrationEnabled}">
                                 <Grid Margin="0,6,0,0" ColumnDefinitions="*,5,320">
                                     <Border Classes="card" Padding="5">
                                         <Grid RowDefinitions="Auto,*">
@@ -1233,6 +1621,398 @@
                                 <TextBlock Grid.Row="2" Text="Les Blueprints et assets Unreal sont comparés sans l'éditeur par structure binaire et symboles détectables. Le plugin Unreal ajoutera ensuite un graphe visuel complet." TextWrapping="Wrap" FontSize="11" Classes="muted" />
                             </Grid>
                         </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="AI Assistant">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="390,6,*">
+                        <Border Classes="card" Padding="12">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="9">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel>
+                                            <TextBlock Text="AI Workspace" FontSize="18" FontWeight="SemiBold" />
+                                            <TextBlock Text="Optional, project-scoped agent connection" FontSize="10.5" Classes="muted" />
+                                        </StackPanel>
+                                        <Border Grid.Column="1" Background="#203D50" BorderBrush="#3BAA96" BorderThickness="1"
+                                                CornerRadius="4" Padding="7,3" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding IsAiIntegrationEnabled, StringFormat='Enabled: {0}'}"
+                                                       FontSize="10" Foreground="#7DE2CC" />
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="{Binding AiStatus}" TextWrapping="Wrap" Foreground="#78D7B7" />
+                                    <TextBlock Text="Enable or disable this integration from the Plugins tab. API keys are never saved to disk."
+                                               FontSize="10.5" Classes="muted" TextWrapping="Wrap" />
+                                    <Border Height="1" Background="#393B40" />
+
+                                    <TextBlock Text="Provider" FontWeight="SemiBold" />
+                                    <ComboBox ItemsSource="{Binding AiProviders}" SelectedItem="{Binding SelectedAiProvider}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Margin="3">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding Description}" FontSize="9.5" Classes="muted"
+                                                               TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <TextBlock Text="{Binding AiProviderDescription}" FontSize="10.5" Classes="muted" TextWrapping="Wrap" />
+
+                                    <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="6">
+                                        <TextBlock Text="Model" VerticalAlignment="Center" Classes="muted" />
+                                        <TextBox Grid.Column="1" Text="{Binding AiModel}" PlaceholderText="Provider default" />
+                                        <TextBlock Grid.Row="1" Text="Endpoint" VerticalAlignment="Center" Classes="muted" />
+                                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding AiEndpoint}" PlaceholderText="Responses API endpoint" />
+                                        <TextBlock Grid.Row="2" Text="API key" VerticalAlignment="Center" Classes="muted" />
+                                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding AiApiKey}" PasswordChar="●"
+                                                 PlaceholderText="Session only" />
+                                        <TextBlock Grid.Row="3" Text="Codex CLI" VerticalAlignment="Center" Classes="muted" />
+                                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding AiExecutablePath}"
+                                                 PlaceholderText="codex or an absolute executable path" />
+                                    </Grid>
+
+                                    <Border Height="1" Background="#393B40" />
+                                    <TextBlock Text="Workspace permissions" FontWeight="SemiBold" />
+                                    <CheckBox Content="Read repository (required)" IsChecked="True" IsEnabled="False" />
+                                    <CheckBox Content="Modify files inside this project" IsChecked="{Binding AiAllowModify}"
+                                              IsEnabled="{Binding AiProviderSupportsEdits}" />
+                                    <CheckBox Content="Allow network / web search" IsChecked="{Binding AiAllowNetwork}" />
+                                    <CheckBox Content="Stage changed files after success" IsChecked="{Binding AiStageAfterRun}"
+                                              IsEnabled="{Binding AiAllowModify}" />
+                                    <CheckBox Content="Create a Git commit after success" IsChecked="{Binding AiCommitAfterRun}"
+                                              IsEnabled="{Binding AiStageAfterRun}" />
+                                    <TextBox Text="{Binding AiCommitMessage}" PlaceholderText="Commit message" />
+                                    <TextBlock Text="Codex never receives direct permission to push. Stage and commit operations are brokered by CyRevision after a successful run."
+                                               FontSize="10.5" Foreground="#F2C66D" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+
+                        <GridSplitter Grid.Column="1" Width="6" ResizeDirection="Columns"
+                                      Background="#393B40" Cursor="SizeWestEast" />
+
+                        <Grid Grid.Column="2" RowDefinitions="0.9*,Auto,1.1*" RowSpacing="7">
+                            <Border Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="Auto,*">
+                                    <Grid Margin="11,9" ColumnDefinitions="*,Auto">
+                                        <StackPanel>
+                                            <TextBlock Text="Task" FontSize="15" FontWeight="SemiBold" />
+                                            <TextBlock Text="The repository and current Code preview are attached automatically; unrelated changes must be preserved."
+                                                       FontSize="10" Classes="muted" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="primary" Content="Run agent" Click="OnRunAiAgentClick"
+                                                IsEnabled="{Binding IsAiIntegrationEnabled}" />
+                                    </Grid>
+                                    <TextBox Grid.Row="1" Text="{Binding AiPrompt}" AcceptsReturn="True" TextWrapping="Wrap"
+                                             PlaceholderText="Example: inspect the selected subsystem, fix the issue, and run focused tests…"
+                                             Padding="11" BorderThickness="0" CornerRadius="0"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                </Grid>
+                            </Border>
+                            <Border Grid.Row="1" Background="#202225" BorderBrush="#393B40" BorderThickness="1"
+                                    CornerRadius="4" Padding="10,5">
+                                <TextBlock Text="Permission boundary: read-only by default · workspace-write only when explicitly enabled · no automatic push"
+                                           FontSize="10.5" Foreground="#78D7B7" />
+                            </Border>
+                            <Border Grid.Row="2" Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="Auto,*">
+                                    <TextBlock Text="Agent response" Margin="11,9" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBox Grid.Row="1" Text="{Binding AiResponse}" IsReadOnly="True" AcceptsReturn="True"
+                                             TextWrapping="Wrap" FontFamily="Cascadia Mono,JetBrains Mono,Consolas" FontSize="11"
+                                             Padding="11" BorderThickness="0" CornerRadius="0"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="MCP">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="7">
+                        <Border Classes="card" Padding="10">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="10">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="Model Context Protocol" FontSize="16" FontWeight="SemiBold" />
+                                        <Border Background="#34363A" CornerRadius="4" Padding="7,2">
+                                            <TextBlock Text="{Binding AiMcpEmergencyState}" FontSize="9" FontWeight="Bold"
+                                                       Foreground="#F2C66D" />
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding AiMcpStatus}" FontSize="10.5" Classes="muted" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <CheckBox Grid.Column="1" Content="Enable MCP for project" IsChecked="{Binding AiMcpEnabled}"
+                                          VerticalAlignment="Center" />
+                                <CheckBox Grid.Column="2" Content="Block unmanaged Codex servers" IsChecked="{Binding AiMcpBlockUnmanagedServers}"
+                                          VerticalAlignment="Center" ToolTip.Tip="Only MCP servers listed here are exposed to the CyRevision agent run" />
+                                <Button Grid.Column="3" Classes="secondary" Content="Unblock" Click="OnUnblockAiMcpClick" />
+                                <Button Grid.Column="4" Classes="danger" Content="BLOCK ALL MCP" Click="OnEmergencyBlockAiMcpClick"
+                                        ToolTip.Tip="Blocks every MCP server and cancels the current CyRevision AI run" />
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="385,6,*">
+                            <Border Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="Auto,*,Auto">
+                                    <Grid Margin="10,9" ColumnDefinitions="*,Auto">
+                                        <StackPanel>
+                                            <TextBlock Text="Project MCP servers" FontSize="14" FontWeight="SemiBold" />
+                                            <TextBlock Text="Stored locally; never written into the repository" FontSize="9.5" Classes="muted" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="primary" Content="Save policy" Click="OnSaveAiMcpClick" />
+                                    </Grid>
+                                    <DataGrid Grid.Row="1" ItemsSource="{Binding AiMcpServers}" SelectedItem="{Binding SelectedAiMcpServer}"
+                                              AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                              Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Server" Binding="{Binding Name}" Width="*" />
+                                            <DataGridTextColumn Header="Transport" Binding="{Binding Transport}" Width="100" />
+                                            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="70" />
+                                            <DataGridTextColumn Header="Policy" Binding="{Binding PolicySummary}" Width="130" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <Grid Grid.Row="2" Margin="8" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="7">
+                                        <Button Classes="secondary" Content="+ STDIO" Click="OnAddAiMcpStdioClick" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="+ HTTP" Click="OnAddAiMcpHttpClick" />
+                                        <Button Grid.Column="3" Classes="danger" Content="Remove" Click="OnRemoveAiMcpClick"
+                                                IsEnabled="{Binding HasSelectedAiMcpServer}" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+
+                            <GridSplitter Grid.Column="1" Width="6" ResizeDirection="Columns"
+                                          Background="#393B40" Cursor="SizeWestEast" />
+
+                            <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="13,10,13,16" Spacing="10" IsEnabled="{Binding HasSelectedAiMcpServer}">
+                                        <Grid ColumnDefinitions="*,160,Auto,Auto" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Text="Server configuration" FontSize="15" FontWeight="SemiBold" />
+                                                <TextBlock Text="Every server and tool can be independently restricted or blocked."
+                                                           FontSize="10" Classes="muted" />
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1" ItemsSource="{Binding AiMcpTransports}"
+                                                      SelectedItem="{Binding SelectedAiMcpServer.Transport}" />
+                                            <CheckBox Grid.Column="2" Content="Enabled" IsChecked="{Binding SelectedAiMcpServer.Enabled}"
+                                                      VerticalAlignment="Center" />
+                                            <CheckBox Grid.Column="3" Content="Required" IsChecked="{Binding SelectedAiMcpServer.Required}"
+                                                      VerticalAlignment="Center" ToolTip.Tip="Fail the AI run when this enabled server cannot initialize" />
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="90,*,70,*" ColumnSpacing="8">
+                                            <TextBlock Text="Name" Classes="muted" VerticalAlignment="Center" />
+                                            <TextBox Grid.Column="1" Text="{Binding SelectedAiMcpServer.Name}" />
+                                            <TextBlock Grid.Column="2" Text="ID" Classes="muted" VerticalAlignment="Center" />
+                                            <TextBox Grid.Column="3" Text="{Binding SelectedAiMcpServer.Id}" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="90,180,Auto,*" ColumnSpacing="8">
+                                            <TextBlock Text="Capability" Classes="muted" VerticalAlignment="Center" />
+                                            <ComboBox Grid.Column="1" ItemsSource="{Binding AiMcpCapabilities}"
+                                                      SelectedItem="{Binding SelectedAiMcpServer.Capability}" />
+                                            <CheckBox Grid.Column="2" Content="Requires network permission"
+                                                      IsChecked="{Binding SelectedAiMcpServer.RequiresNetwork}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="3" Text="ReadWrite servers are omitted unless workspace modification is authorized."
+                                                       FontSize="9.5" Foreground="#F2C66D" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                        </Grid>
+
+                                        <Border Height="1" Background="#393B40" />
+                                        <StackPanel Spacing="7" IsVisible="{Binding SelectedAiMcpServer.IsStdio}">
+                                            <TextBlock Text="STDIO process" FontWeight="SemiBold" />
+                                            <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="7">
+                                                <TextBlock Text="Command" Classes="muted" VerticalAlignment="Center" />
+                                                <TextBox Grid.Column="1" Text="{Binding SelectedAiMcpServer.Command}"
+                                                         PlaceholderText="npx, node, python, or an absolute executable path" />
+                                                <TextBlock Grid.Row="1" Text="Arguments" Classes="muted" VerticalAlignment="Top" />
+                                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedAiMcpServer.Arguments}"
+                                                         AcceptsReturn="True" Height="68" PlaceholderText="One argument per line" />
+                                                <TextBlock Grid.Row="2" Text="Working dir" Classes="muted" VerticalAlignment="Center" />
+                                                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SelectedAiMcpServer.WorkingDirectory}"
+                                                         PlaceholderText="Optional; blank uses the project" />
+                                            </Grid>
+                                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
+                                                <StackPanel Spacing="3">
+                                                    <TextBlock Text="Environment values" FontSize="10" Classes="muted" />
+                                                    <TextBox Text="{Binding SelectedAiMcpServer.EnvironmentVariables}" AcceptsReturn="True" Height="68"
+                                                             PlaceholderText="NAME=value (stored locally)" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Spacing="3">
+                                                    <TextBlock Text="Forward environment names" FontSize="10" Classes="muted" />
+                                                    <TextBox Text="{Binding SelectedAiMcpServer.ForwardEnvironmentVariables}" AcceptsReturn="True" Height="68"
+                                                             PlaceholderText="TOKEN_NAME (one per line)" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <StackPanel Spacing="7" IsVisible="{Binding SelectedAiMcpServer.IsHttp}">
+                                            <TextBlock Text="Streamable HTTP" FontWeight="SemiBold" />
+                                            <TextBlock Text="Responses API: requires network permission, an explicit tool allow list, and environment-based authorization. OAuth sessions and custom headers apply to local Codex only."
+                                                       FontSize="9.5" Foreground="#F2C66D" TextWrapping="Wrap" />
+                                            <Grid ColumnDefinitions="105,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="7">
+                                                <TextBlock Text="Server URL" Classes="muted" VerticalAlignment="Center" />
+                                                <TextBox Grid.Column="1" Text="{Binding SelectedAiMcpServer.Url}" PlaceholderText="https://server.example/mcp" />
+                                                <TextBlock Grid.Row="1" Text="Authentication" Classes="muted" VerticalAlignment="Center" />
+                                                <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="150,*" ColumnSpacing="8">
+                                                    <ComboBox ItemsSource="{Binding AiMcpHttpAuthModes}"
+                                                              SelectedItem="{Binding SelectedAiMcpServer.HttpAuth}" />
+                                                    <TextBox Grid.Column="1" Text="{Binding SelectedAiMcpServer.BearerTokenEnvironmentVariable}"
+                                                             PlaceholderText="Bearer-token environment variable" />
+                                                </Grid>
+                                                <TextBlock Grid.Row="2" Text="OAuth" Classes="muted" VerticalAlignment="Center" />
+                                                <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="1*,1*" ColumnSpacing="8">
+                                                    <TextBox Text="{Binding SelectedAiMcpServer.OAuthScopes}" PlaceholderText="Scopes, comma separated" />
+                                                    <TextBox Grid.Column="1" Text="{Binding SelectedAiMcpServer.OAuthResource}" PlaceholderText="OAuth resource (optional)" />
+                                                </Grid>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
+                                                <StackPanel Spacing="3">
+                                                    <TextBlock Text="Static HTTP headers" FontSize="10" Classes="muted" />
+                                                    <TextBox Text="{Binding SelectedAiMcpServer.HttpHeaders}" AcceptsReturn="True" Height="68"
+                                                             PlaceholderText="Header=value (stored locally)" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Spacing="3">
+                                                    <TextBlock Text="Headers from environment" FontSize="10" Classes="muted" />
+                                                    <TextBox Text="{Binding SelectedAiMcpServer.EnvironmentHttpHeaders}" AcceptsReturn="True" Height="68"
+                                                             PlaceholderText="Header=ENV_VARIABLE" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <Border Height="1" Background="#393B40" />
+                                        <TextBlock Text="Tool policy" FontWeight="SemiBold" />
+                                        <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
+                                            <StackPanel Spacing="3">
+                                                <TextBlock Text="Enabled tools (allow list)" FontSize="10" Classes="muted" />
+                                                <TextBox Text="{Binding SelectedAiMcpServer.EnabledTools}" AcceptsReturn="True" Height="74"
+                                                         PlaceholderText="Local: blank allows all. API: list at least one tool." />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Spacing="3">
+                                                <TextBlock Text="Disabled tools (deny list wins)" FontSize="10" Classes="muted" />
+                                                <TextBox Text="{Binding SelectedAiMcpServer.DisabledTools}" AcceptsReturn="True" Height="74"
+                                                         PlaceholderText="One blocked tool per line" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="150,*,100,90,100,90" ColumnSpacing="8">
+                                            <ComboBox ItemsSource="{Binding AiMcpApprovalModes}"
+                                                      SelectedItem="{Binding SelectedAiMcpServer.ApprovalMode}" />
+                                            <TextBlock Grid.Column="1" Text="Default approval: Prompt/Writes remain blocked in non-interactive runs unless explicitly approved by policy."
+                                                       FontSize="9.5" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="2" Text="Startup (s)" Classes="muted" VerticalAlignment="Center" />
+                                            <TextBox Grid.Column="3" Text="{Binding SelectedAiMcpServer.StartupTimeoutSeconds}" />
+                                            <TextBlock Grid.Column="4" Text="Tool (s)" Classes="muted" VerticalAlignment="Center" />
+                                            <TextBox Grid.Column="5" Text="{Binding SelectedAiMcpServer.ToolTimeoutSeconds}" />
+                                        </Grid>
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Per-tool approval overrides" FontSize="10" Classes="muted" />
+                                            <TextBox Text="{Binding SelectedAiMcpServer.ToolApprovalOverrides}" AcceptsReturn="True" Height="62"
+                                                     PlaceholderText="tool_name=approve | prompt | writes | auto" />
+                                        </StackPanel>
+                                        <Border Background="#2B2520" BorderBrush="#6D5731" BorderThickness="1" CornerRadius="4" Padding="9,6">
+                                            <TextBlock Text="Security: prefer environment-variable references for tokens. Static environment values and headers are saved in the local CyRevision profile, never in Git."
+                                                       FontSize="10" Foreground="#F2C66D" TextWrapping="Wrap" />
+                                        </Border>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Plugins">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="0.85*,1.4*" ColumnSpacing="8">
+                        <Border Classes="card">
+                            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="CyRevision plugins" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Plugins are packaged separately and can be enabled only when needed."
+                                               Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <DataGrid Grid.Row="1"
+                                          ItemsSource="{Binding Plugins}"
+                                          SelectedItem="{Binding SelectedPlugin}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          GridLinesVisibility="Horizontal"
+                                          Background="Transparent"
+                                          BorderThickness="0">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Plugin" Binding="{Binding Name}" Width="1.4*" />
+                                        <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="75" />
+                                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="105" />
+                                        <DataGridTextColumn Header="State" Binding="{Binding State}" Width="105" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="primary" Content="Enable"
+                                            IsEnabled="{Binding CanEnableSelectedPlugin}"
+                                            Click="OnEnablePluginClick" />
+                                    <Button Classes="secondary" Content="Disable"
+                                            IsEnabled="{Binding CanDisableSelectedPlugin}"
+                                            Click="OnDisablePluginClick" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="8">
+                                <Border Classes="card">
+                                    <StackPanel Spacing="10">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel Spacing="3">
+                                                <TextBlock Text="Unreal Engine Integration" FontSize="18" FontWeight="SemiBold" />
+                                                <TextBlock Text="Optional CyRevision plugin · autonomous Unreal Editor companion included"
+                                                           Classes="muted" FontSize="11" />
+                                            </StackPanel>
+                                            <Border Grid.Column="1" Background="#203D50" BorderBrush="#3BAA96"
+                                                    BorderThickness="1" CornerRadius="4" Padding="8,3">
+                                                <TextBlock Text="{Binding IsUnrealIntegrationEnabled, StringFormat='Enabled: {0}'}"
+                                                           Foreground="#7DE2CC" FontSize="10" FontWeight="SemiBold" />
+                                            </Border>
+                                        </Grid>
+
+                                        <Border Height="1" Background="#393B40" />
+                                        <TextBlock Text="Unreal project" FontWeight="SemiBold" />
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <TextBox Text="{Binding UnrealProjectPath}" IsReadOnly="True"
+                                                     PlaceholderText="Select a .uproject file…" />
+                                            <Button Grid.Column="1" Classes="secondary" Content="Choose project…"
+                                                    Click="OnPickUnrealProjectClick" />
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="Auto,Auto,24,Auto,Auto" ColumnSpacing="8">
+                                            <TextBlock Text="Bundled" Classes="muted" />
+                                            <TextBlock Grid.Column="1" Text="{Binding UnrealEditorPluginVersion}"
+                                                       Foreground="#78D7B7" FontWeight="SemiBold" />
+                                            <TextBlock Grid.Column="3" Text="Installed" Classes="muted" />
+                                            <TextBlock Grid.Column="4" Text="{Binding UnrealInstalledPluginVersion}"
+                                                       FontWeight="SemiBold" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding UnrealPluginSummary}" TextWrapping="Wrap" />
+
+                                        <WrapPanel Orientation="Horizontal">
+                                            <Button Classes="primary" Content="Install / update in project"
+                                                    IsEnabled="{Binding CanInstallUnrealEditorPlugin}"
+                                                    Click="OnInstallUnrealPluginClick" Margin="0,3,8,3" />
+                                            <Button Classes="secondary" Content="Configure direct connection"
+                                                    IsEnabled="{Binding CanInstallUnrealEditorPlugin}"
+                                                    Click="OnConfigureUnrealBridgeClick" Margin="0,3,8,3" />
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Classes="card">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="Private CyRevision bridge" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding UnrealBridgeSummary}" TextWrapping="Wrap" Foreground="#78D7B7" />
+                                        <TextBlock Text="The bridge listens on loopback only. Each Unreal project receives a random token under Saved/CyRevision; the token is not added to Git."
+                                                   Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                                        <TextBlock Text="CyRevisionUnreal remains useful without CyRevision: its revision dashboard, Git actions, and advisory reservations work independently. Connecting unlocks application refresh and the extended Git/LFS/Sync/backup workflow."
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
                     </Grid>
                 </TabItem>
 

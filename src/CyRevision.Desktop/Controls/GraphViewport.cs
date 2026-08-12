@@ -12,6 +12,7 @@ internal sealed class GraphViewport : UserControl
 {
     private const double MinimumZoom = 0.15;
     private const double MaximumZoom = 2.5;
+    private const double WheelScrollStep = 72;
     private readonly Control _graph;
     private readonly Canvas _surface;
     private readonly ScrollViewer _scrollViewer;
@@ -97,7 +98,7 @@ internal sealed class GraphViewport : UserControl
             IsHitTestVisible = false,
             Child = new TextBlock
             {
-                Text = "Glisser pour déplacer · Ctrl + molette pour zoomer · double-clic pour ajuster",
+                Text = "Drag to pan · Wheel: vertical · Shift + wheel: horizontal · Ctrl + wheel: zoom · Double-click: fit",
                 FontSize = 9,
                 Foreground = new SolidColorBrush(Color.Parse("#AEB9D1"))
             }
@@ -217,20 +218,40 @@ internal sealed class GraphViewport : UserControl
 
     private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
-        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
+            if (Math.Abs(e.Delta.Y) < double.Epsilon)
+            {
+                return;
+            }
+
+            double wheelStep = Math.Clamp(e.Delta.Y, -1, 1);
+            double factor = Math.Pow(1.12, wheelStep);
+            SetZoom(_zoom * factor, e.GetPosition(_scrollViewer));
+            e.Handled = true;
             return;
         }
 
-        if (Math.Abs(e.Delta.Y) < double.Epsilon)
+        Vector currentOffset = _pendingOffset ?? _scrollViewer.Offset;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
         {
+            double horizontalDelta = Math.Abs(e.Delta.Y) > double.Epsilon ? e.Delta.Y : e.Delta.X;
+            if (Math.Abs(horizontalDelta) > double.Epsilon)
+            {
+                _pendingOffset = null;
+                SetOffset(new Vector(currentOffset.X - horizontalDelta * WheelScrollStep, currentOffset.Y));
+                e.Handled = true;
+            }
             return;
         }
 
-        double wheelStep = Math.Clamp(e.Delta.Y, -1, 1);
-        double factor = Math.Pow(1.12, wheelStep);
-        SetZoom(_zoom * factor, e.GetPosition(_scrollViewer));
-        e.Handled = true;
+        double verticalDelta = Math.Abs(e.Delta.Y) > double.Epsilon ? e.Delta.Y : e.Delta.X;
+        if (Math.Abs(verticalDelta) > double.Epsilon)
+        {
+            _pendingOffset = null;
+            SetOffset(new Vector(currentOffset.X, currentOffset.Y - verticalDelta * WheelScrollStep));
+            e.Handled = true;
+        }
     }
 
     private void SetZoom(double requestedZoom, Point? anchor)
