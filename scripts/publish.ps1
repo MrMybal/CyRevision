@@ -13,5 +13,6 @@ dotnet build (Join-Path $repositoryRoot 'CyRevision.sln') -c $Configuration --no
 dotnet test (Join-Path $repositoryRoot 'CyRevision.sln') -c $Configuration --no-build --no-restore
 dotnet publish (Join-Path $repositoryRoot 'src/CyRevision.Desktop/CyRevision.Desktop.csproj') -c $Configuration --no-build --no-restore -o (Join-Path $outputRoot 'desktop')
 dotnet publish (Join-Path $repositoryRoot 'src/CyRevision.Server/CyRevision.Server.csproj') -c $Configuration --no-build --no-restore -o (Join-Path $outputRoot 'server')
+dotnet publish (Join-Path $repositoryRoot 'src/CyRevision.Build.Agent/CyRevision.Build.Agent.csproj') -c $Configuration --no-build --no-restore -o (Join-Path $outputRoot 'build-agent')
 
 Write-Host "CyRevision publié dans $outputRoot"

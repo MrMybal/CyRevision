@@ -34,6 +34,7 @@
     <ProjectReference Include="..\..\src\CyRevision.Plugin.Unreal\CyRevision.Plugin.Unreal.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Plugin.AI\CyRevision.Plugin.AI.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.PullRequests\CyRevision.PullRequests.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.RemoteBuild\CyRevision.RemoteBuild.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Security\CyRevision.Security.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Sync\CyRevision.Sync.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Vpn\CyRevision.Vpn.csproj" />

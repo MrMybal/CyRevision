@@ -17,6 +17,10 @@ public sealed record ApplicationPaths(
 
     public string BackupDirectory => Path.Combine(DataDirectory, "backups");
 
+    public string LfsManagementDirectory => Path.Combine(ConfigurationDirectory, "lfs-management");
+
+    public string RemoteBuildDirectory => Path.Combine(ConfigurationDirectory, "remote-build");
+
     public static ApplicationPaths CreateDefault()
     {
         string configurationRoot = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);

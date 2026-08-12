@@ -1,0 +1,18 @@
+[Unit]
+Description=CyRevision Remote Build Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cyrevision-build-agent --listen http://127.0.0.1:47841
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=-%h/.config/CyRevision -%h/.local/share/CyRevision
+
+[Install]
+WantedBy=default.target

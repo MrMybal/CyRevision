@@ -7,6 +7,8 @@
 | `CyRevision.Desktop` | Client Avalonia et orchestration locale |
 | `CyRevision.Core` | Catalogue, profils, options et rétention |
 | `CyRevision.Git` | Git CLI, LFS et transactions P2P signées |
+| `CyRevision.RemoteBuild` | Snapshots de source, client distant, recettes autorisées, jobs et artefacts |
+| `CyRevision.Build.Agent` | Agent headless Windows/Linux/macOS pour les compilations sur VPN |
 | `CyRevision.Sync` | Processus Syncthing isolé, profils et API REST |
 | `CyRevision.Backup` | Objets dédupliqués, manifestes et restauration |
 | `CyRevision.Security` | Identités ECDSA, invitations, certificats et révocation |
@@ -29,6 +31,10 @@ L'assistant réseau sépare le rôle client du rôle hôte. Un client ne crée a
 Le profil Swarm est distinct du profil WireGuard, mais référence obligatoirement une adresse du même sous-réseau. La configuration XML est conservatrice : un fichier existant est requis, une sauvegarde horodatée est créée et aucun nœud inconnu n'est inventé. L'alias DNS Windows occupe un bloc `hosts` déterministe, remplaçable et supprimable sans toucher aux autres lignes.
 
 Le transfert de fichiers VPN est un protocole applicatif borné, pas un serveur de fichiers générique. Le listener s'attache à une seule adresse WireGuard, filtre l'adresse source selon le CIDR, puis exige un secret de projet. Les uploads vont dans une inbox non destructive ; les downloads ne peuvent lire que sous une racine explicite après validation canonique du chemin et refus des reparse points. Chaque fichier est validé par taille et SHA-256 avant publication atomique.
+
+Le gestionnaire LFS s'appuie sur `lfs.storage` local au dépôt. Une relocalisation copie et vérifie chaque objet avant de changer la configuration ; un marqueur de propriété interdit le partage accidentel d'un même store entre plusieurs dépôts. L'analyse protège toutes les références locales, index, stashes et worktrees. Un objet orphelin ne devient supprimable qu'avec le nombre configuré de preuves remote, pair signé ou archive SHA-256.
+
+L'agent de build est un processus facultatif distinct. Sa configuration locale est l'autorité : le contrôleur choisit uniquement un identifiant de recette et ne transmet jamais une commande. Le mode workspace utilise un projet déjà synchronisé ; le mode snapshot extrait une archive sans `.git` dans un dossier de job isolé. Seuls les motifs d'artefacts autorisés par la recette sont retournés.
 
 Le dossier d'échange Sync peut transporter des invitations et réponses VPN. Ces objets sont déjà signés par les identités des appareils. Une enveloppe supplémentaire vérifie le SHA-256 et la cohérence des métadonnées ; les champs ressemblant à une clé privée, un token, un webhook ou un autre secret sont refusés. Charger un message ne rejoint jamais automatiquement le VPN : l'acceptation reste une action distincte.
 

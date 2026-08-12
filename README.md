@@ -17,6 +17,7 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 - Integrated GitHub pull request manager with repository detection, filters, request creation, files and patches, conversations, reviews, safe local checkout, state changes, and confirmed merge operations. Provider adapters keep the module open to other forges.
 - Local Git workflows: status, staging, commits, branches, merges, remotes, Git LFS, an interactive history explorer, A ↔ B comparisons, and per-file history.
 - LFS Time Machine with object history, local/peer/archive availability, signed on-demand requests, resumable transfers, texture previews, export, and confirmed restore operations.
+- Optional safe LFS storage manager with dedicated `lfs.storage` relocation, dry-run classification, local-ref protection, verified remote/peer/archive evidence, audit logs, and blocked deletion when the local machine may hold the last copy.
 - Optional Git visualizations for commit history, co-change relations, team activity, and simplified engine-independent Unreal dependencies.
 - Intelligent peer-to-peer Git exchange using signed bundles and inventories, configurable LFS priorities, resumable transfers, and SHA-256 verification without synchronizing the active `.git` directory.
 - Optional Syncthing integration with a dedicated profile, identity, database, loopback API, and port for every CyRevision project.
@@ -29,6 +30,9 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 - Autonomous Unreal Editor plugin with a revision dashboard, Git actions, advisory asset reservations, and an authenticated loopback bridge to CyRevision.
 - Unreal plugin installation and safe updates from the CyRevision Plugins page, with recoverable backups of the previous project plugin.
 - Optional WireGuard integration with a selectable system or bundled runtime, guided Windows/macOS/Linux firewall setup, router/NAT checklists, signed Sync-assisted onboarding, isolated tunnels, VPN-only peers, and Unreal Swarm/CI/service profiles.
+- Unreal Swarm over VPN workspace with Agent/Coordinator roles, safe Agent XML backups, reversible local DNS aliases, VPN-only firewall rules, process controls, and actionable end-to-end diagnostics; matching autonomous tools are included in CyRevisionUnreal.
+- Secure VPN file inbox and explicit folder sharing with VPN-address binding, subnet filtering, project token authentication, SHA-256 verification, no overwrites, and traversal/symlink protection.
+- Optional headless remote-build agent for Windows, Linux, and macOS: VPN-scoped bearer authentication, server-side allowlisted recipes, synchronized-workspace or uploaded-snapshot modes, live logs, cancellation, and artifact download without pushing a temporary branch.
 - Optional Discord agent with integrated and autonomous sidecar modes, authenticated LAN/VPN control, channel-scoped webhooks, grouped commit notifications, branch-change notices, and per-project duplicate prevention without requiring GitHub.
 - Extensible localization: English is the default, French is included, and additional JSON catalogs can be added to the desktop client and web dashboard.
 - Searchable offline documentation bundled with the desktop application in English and French.

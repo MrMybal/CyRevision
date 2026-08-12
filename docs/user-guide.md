@@ -66,6 +66,16 @@ L'onglet **Swarm over VPN** automatise maintenant ce workflow : rôle Agent/Coor
 
 L'onglet **VPN files** crée une inbox privée et un dossier partagé explicite entre pairs WireGuard. Enregistrez le profil, appliquez la règle pare-feu VPN, démarrez l'endpoint puis choisissez un pair pour tester, envoyer, parcourir ou télécharger. Copiez le jeton de projet uniquement aux appareils autorisés via un canal distinct ; sa rotation arrête l'endpoint et invalide immédiatement les anciennes copies.
 
+## Stockage et nettoyage Git LFS
+
+Dans **Git LFS > Storage & safe cleanup**, choisissez si besoin un dossier `lfs.storage` dédié et une archive. **Analyze** ne modifie rien : il classe les objets protégés, ceux disposant de preuves et ceux bloqués. Une branche locale non publiée reste protégée. Après suppression d'une ancienne branche ou PR, l'objet ne devient candidat que s'il n'est plus référencé localement et si le remote, un pair signé récent ou l'archive en conserve assez de copies.
+
+Utilisez **Archive candidates** pour créer une copie SHA-256 avant la purge, puis relancez l'analyse. **Clean verified objects** recontrôle les références et les archives avant chaque suppression et produit un audit. Pour déplacer le cache vers un autre disque, la relocalisation copie et vérifie d'abord tous les objets, active ensuite `lfs.storage`, et ne retire l'ancien cache que si l'option a été confirmée.
+
+## Compilation distante
+
+Installez `CyRevision.Build.Agent` sur la machine CI, générez son token et déclarez localement les projets et recettes autorisées dans `agent.json`. Dans **Remote builds**, saisissez son adresse WireGuard, le token, l'identifiant de recette et le dossier de réception. **ExistingWorkspace** ne transfère aucun code et exige que le workspace distant soit synchronisé ; **UploadedSnapshot** transmet l'état de travail Git sans `.git` ni caches générés. Les logs sont suivis dans l'interface et le ZIP d'artefacts est rapatrié après réussite, sans branche ou commit temporaire sur le remote.
+
 ## Sauvegardes
 
 Dans **Sauvegardes**, choisissez un dossier local, NAS ou volume monté, puis la stratégie :

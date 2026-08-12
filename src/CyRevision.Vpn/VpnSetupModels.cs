@@ -7,7 +7,8 @@ public enum VpnSetupFeatures
     AcceptIncomingTunnel = 1,
     UnrealSwarm = 2,
     CyRevisionControlApi = 4,
-    SecureFileExchange = 8
+    SecureFileExchange = 8,
+    RemoteBuildAgent = 16
 }
 
 public enum VpnSetupPlatform
@@ -31,6 +32,8 @@ public sealed record VpnSetupOptions(VpnSetupFeatures Features)
 {
     public int FileExchangePort { get; init; } = VpnFileExchangeDefaults.Port;
 
+    public int RemoteBuildPort { get; init; } = 47841;
+
     public bool AcceptIncomingTunnel => Features.HasFlag(VpnSetupFeatures.AcceptIncomingTunnel);
 
     public bool AllowUnrealSwarm => Features.HasFlag(VpnSetupFeatures.UnrealSwarm);
@@ -38,6 +41,8 @@ public sealed record VpnSetupOptions(VpnSetupFeatures Features)
     public bool AllowCyRevisionControlApi => Features.HasFlag(VpnSetupFeatures.CyRevisionControlApi);
 
     public bool AllowSecureFileExchange => Features.HasFlag(VpnSetupFeatures.SecureFileExchange);
+
+    public bool AllowRemoteBuildAgent => Features.HasFlag(VpnSetupFeatures.RemoteBuildAgent);
 }
 
 public sealed record VpnNetworkSnapshot(

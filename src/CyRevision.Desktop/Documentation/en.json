@@ -104,6 +104,22 @@
     "keywords": ["swarm", "coordinator", "agent", "wireguard", "vpn", "dns", "firewall", "file", "folder", "transfer", "sha-256"]
   },
   {
+    "id": "safe-lfs-storage",
+    "category": "Git LFS",
+    "title": "Safe LFS storage and cleanup",
+    "summary": "Move the LFS cache to another disk and reclaim old objects without deleting the project's last copy.",
+    "body": "CLASSIFICATION\nOpen Git LFS > Storage & safe cleanup and run Analyze. Protected objects are reachable from local refs, stashes, indexes, or worktrees and are never selected. This includes commits and branches that have not been pushed. Eligible objects are orphaned, outside the grace period, and have the configured number of verified copies. Everything else is blocked.\n\nRETENTION EVIDENCE\nA remote copy is accepted only after a Git LFS dry run with remote and unreachable-object verification. A peer copy requires a fresh signed inventory and an object actually published in the exchange store. An archive copy uses CyRevision's manifest and is SHA-256 checked again before deletion. With no remote, retain at least one peer or archive copy; require two or more for stronger redundancy.\n\nDELETED PRS AND BRANCHES\nA branch deleted on a forge may still exist locally. Its objects stay protected until you deliberately remove the local ref. Once orphaned, Analyze decides whether another verified copy makes them eligible. A local-only PR or unpushed branch is always kept.\n\nEXTERNAL STORAGE\nChoose a dedicated empty directory, then relocate. CyRevision copies and hashes every object before setting the repository-local lfs.storage value. A repository ownership marker prevents unsafe shared stores. Keep the old cache for the first test, then enable removal only after checkout and Time Machine access succeed.\n\nCLEANUP\nArchive candidates creates verified copies without deleting. Analyze again, review each decision, then confirm cleanup. Plans expire after fifteen minutes, local references are rechecked, and an audit is written under .git/cyrevision/lfs-cleanup.",
+    "keywords": ["git lfs", "storage", "prune", "cleanup", "archive", "peer", "remote", "branch", "pull request", "disk"]
+  },
+  {
+    "id": "remote-builds",
+    "category": "Build and VPN",
+    "title": "Remote builds over VPN",
+    "summary": "Run allowlisted builds on a CI machine and download artifacts without pushing a temporary branch.",
+    "body": "AGENT SETUP\nInstall the packaged BuildAgent on the CI/build machine and run CyRevision.Build.Agent --print-token. The first run creates a token and a safe empty agent.json. Add the exact CyRevision project ID and one or more recipes. The agent operator owns the executable, arguments, timeout, workspace, and artifact patterns; a client can select only a recipe ID and can never submit a command.\n\nNETWORK\nLocal testing uses 127.0.0.1:47841. For another peer, bind to the build machine's WireGuard IPv4, add --allow-private-http, and enable Remote build agent over VPN in the firewall assistant. Never forward TCP 47841 on the router.\n\nSOURCE MODES\nExistingWorkspace transfers no source and uses the configured workspace. If both sides have Git metadata, a different HEAD is rejected. UploadedSnapshot sends tracked and non-ignored working files but excludes .git and generated caches, then extracts into a unique path with traversal and size checks.\n\nRUN AND DOWNLOAD\nIn Remote builds, enter the VPN endpoint, token, recipe ID, mode, and artifact destination. Test agent lists the allowlisted recipes. Start remote build follows the job log, supports cancellation, and downloads an artifact ZIP after success. Only recipe-declared files and build.log are returned; no commit or branch is pushed to a remote.",
+    "keywords": ["remote build", "CI", "agent", "VPN", "WireGuard", "Unreal", "compile", "artifact", "recipe"]
+  },
+  {
     "id": "troubleshooting",
     "category": "Support",
     "title": "Troubleshooting and safety",

@@ -325,9 +325,10 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
             localDeviceId,
             authorized,
             cancellationToken);
-        string gitDirectory = await GetGitDirectoryAsync(repositoryRoot, cancellationToken);
+        LfsStoragePaths lfsStorage = await LfsStoragePathResolver.ResolveAsync(
+            _processRunner, "git", repositoryRoot, cancellationToken);
         TransferBatchResult importedLfs = await ImportLfsObjectsAsync(
-            gitDirectory,
+            lfsStorage,
             exchangeRoot,
             availability,
             localRequests,
@@ -442,7 +443,8 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
         List<(string Oid, string Path)> ordered = ParseLfsList(currentResult.StandardOutput)
             .Concat(ParseLfsList(allResult.StandardOutput))
             .ToList();
-        string gitDirectory = await GetGitDirectoryAsync(repositoryPath, cancellationToken);
+        LfsStoragePaths lfsStorage = await LfsStoragePathResolver.ResolveAsync(
+            _processRunner, "git", repositoryPath, cancellationToken);
         Dictionary<string, MutableLocalLfsObject> objects = new(StringComparer.OrdinalIgnoreCase);
         int historicalIndex = 0;
         foreach ((string oid, string path) in ordered)
@@ -452,7 +454,7 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
                 continue;
             }
 
-            string objectPath = GetLfsObjectPath(gitDirectory, oid);
+            string objectPath = lfsStorage.GetObjectPath(oid);
             if (!File.Exists(objectPath))
             {
                 continue;
@@ -568,7 +570,7 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
     }
 
     private async Task<TransferBatchResult> ImportLfsObjectsAsync(
-        string gitDirectory,
+        LfsStoragePaths lfsStorage,
         string exchangeRoot,
         PeerLfsAvailabilityCache availability,
         IReadOnlySet<string> requestedOids,
@@ -625,7 +627,7 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
                 continue;
             }
 
-            string destination = GetLfsObjectPath(gitDirectory, candidate.OidSha256);
+            string destination = lfsStorage.GetObjectPath(candidate.OidSha256);
             try
             {
                 ResumableCopyResult result = await CopyResumableVerifiedAsync(
@@ -897,14 +899,6 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
         }
     }
 
-    private async Task<string> GetGitDirectoryAsync(string repositoryPath, CancellationToken cancellationToken)
-    {
-        ProcessResult result = await RunGitAsync(repositoryPath, ["rev-parse", "--git-common-dir"], cancellationToken);
-        EnsureSucceeded(result, "Unable to locate the Git directory");
-        string gitDirectory = result.StandardOutput.Trim();
-        return Path.GetFullPath(Path.IsPathRooted(gitDirectory) ? gitDirectory : Path.Combine(repositoryPath, gitDirectory));
-    }
-
     private Task<ProcessResult> RunGitAsync(
         string repositoryPath,
         IReadOnlyCollection<string> arguments,
@@ -1020,9 +1014,6 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
 
     private static bool IsSha256(string value) =>
         value.Length == 64 && value.All(character => char.IsAsciiHexDigit(character));
-
-    private static string GetLfsObjectPath(string gitDirectory, string oid) =>
-        Path.Combine(gitDirectory, "lfs", "objects", oid[..2], oid.Substring(2, 2), oid);
 
     private static string GetExchangeLfsObjectPath(string exchangeRoot, string oid) =>
         Path.Combine(exchangeRoot, "lfs", "objects", oid[..2], oid.Substring(2, 2), oid);

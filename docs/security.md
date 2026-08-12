@@ -29,6 +29,8 @@
 - bootstrap VPN via Sync limité aux invitations/réponses signées et publiques, avec SHA-256 et rejet des champs secrets ;
 - configuration Swarm limitée aux champs XML connus avec sauvegarde préalable, bloc DNS local marqué par projet et ports 8008/8009 jamais publiés sur le modem ;
 - transfert de fichiers lié à l'adresse VPN du projet, source limitée au sous-réseau, jeton 256 bits séparé du profil, SHA-256 obligatoire, aucun écrasement et blocage des traversées/jonctions/liens symboliques ;
+- purge LFS bloquée pour tout objet référencé localement ou sans le nombre requis de preuves remote/pair/archive ; revalidation SHA-256, plan limité à quinze minutes et journal d'audit sous `.git/cyrevision` ;
+- agent de build limité aux recettes définies localement, token comparé en temps constant, HTTP privé explicitement autorisé seulement sur VPN, extraction anti-traversée, timeout et liste blanche d'artefacts ;
 - aucune route Internet complète créée par défaut et clé privée masquée dans l'interface ;
 
 ## Responsabilités d'exploitation

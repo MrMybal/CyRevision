@@ -32,11 +32,13 @@ function Invoke-NativeCommand
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $desktopProject = Join-Path $repositoryRoot 'src\CyRevision.Desktop\CyRevision.Desktop.csproj'
 $agentProject = Join-Path $repositoryRoot 'src\CyRevision.Discord.Agent\CyRevision.Discord.Agent.csproj'
+$buildAgentProject = Join-Path $repositoryRoot 'src\CyRevision.Build.Agent\CyRevision.Build.Agent.csproj'
 $solution = Join-Path $repositoryRoot 'CyRevision.sln'
 $installerScript = Join-Path $repositoryRoot 'installer\windows\CyRevision.iss'
 $releaseRoot = Join-Path $repositoryRoot "artifacts\release\$Version"
 $publishDirectory = Join-Path $releaseRoot 'win-x64'
 $agentPublishDirectory = Join-Path $publishDirectory 'Agent'
+$buildAgentPublishDirectory = Join-Path $publishDirectory 'BuildAgent'
 $portableArchive = Join-Path $releaseRoot "CyRevision-$Version-win-x64-portable.zip"
 
 if (Test-Path -LiteralPath $releaseRoot)
@@ -56,6 +58,7 @@ New-Item -ItemType Directory -Path $publishDirectory -Force | Out-Null
 Invoke-NativeCommand 'dotnet' @('restore', $solution)
 Invoke-NativeCommand 'dotnet' @('restore', $desktopProject, '--runtime', 'win-x64')
 Invoke-NativeCommand 'dotnet' @('restore', $agentProject, '--runtime', 'win-x64')
+Invoke-NativeCommand 'dotnet' @('restore', $buildAgentProject, '--runtime', 'win-x64')
 Invoke-NativeCommand 'dotnet' @('build', $solution, '-c', $Configuration, '--no-restore', "/p:Version=$Version")
 if (-not $SkipTests)
 {
@@ -81,6 +84,18 @@ Invoke-NativeCommand 'dotnet' @(
     '--self-contained', 'true',
     '--no-restore',
     '-o', $agentPublishDirectory,
+    "/p:Version=$Version",
+    '/p:DebugType=None',
+    '/p:DebugSymbols=false'
+)
+
+Invoke-NativeCommand 'dotnet' @(
+    'publish', $buildAgentProject,
+    '-c', $Configuration,
+    '--runtime', 'win-x64',
+    '--self-contained', 'true',
+    '--no-restore',
+    '-o', $buildAgentPublishDirectory,
     "/p:Version=$Version",
     '/p:DebugType=None',
     '/p:DebugSymbols=false'
