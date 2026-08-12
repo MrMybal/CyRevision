@@ -1,5 +1,6 @@
 #include "CyRevisionEditorModule.h"
 #include "CyRevisionRevisionTools.h"
+#include "CyRevisionSwarmTools.h"
 
 #include "AssetRegistry/AssetData.h"
 #include "ContentBrowserMenuContexts.h"
@@ -430,6 +431,7 @@ TSharedRef<FJsonObject> MakeReservationJson(
 void FCyRevisionEditorModule::StartupModule()
 {
     RevisionTools = MakeUnique<FCyRevisionRevisionTools>();
+    SwarmTools = MakeUnique<FCyRevisionSwarmTools>();
     UToolMenus::RegisterStartupCallback(
         FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FCyRevisionEditorModule::RegisterMenus));
     HeartbeatHandle = FTSTicker::GetCoreTicker().AddTicker(
@@ -443,6 +445,11 @@ void FCyRevisionEditorModule::ShutdownModule()
     {
         RevisionTools->Shutdown();
         RevisionTools.Reset();
+    }
+    if (SwarmTools)
+    {
+        SwarmTools->Shutdown();
+        SwarmTools.Reset();
     }
     if (HeartbeatHandle.IsValid())
     {
@@ -486,6 +493,18 @@ void FCyRevisionEditorModule::RegisterMenus()
         LOCTEXT("TestConnectionTooltip", "Checks the authenticated local connection to CyRevision."),
         FSlateIcon(),
         FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::TestCyRevisionConnection)));
+    Section.AddMenuEntry(
+        TEXT("ShowCyRevisionSwarm"),
+        LOCTEXT("ShowSwarmLabel", "Swarm over VPN"),
+        LOCTEXT("ShowSwarmTooltip", "Configure, launch and test Unreal Swarm over the project WireGuard network."),
+        FSlateIcon(),
+        FUIAction(FExecuteAction::CreateLambda([this]()
+        {
+            if (SwarmTools)
+            {
+                SwarmTools->Show();
+            }
+        })));
 
     UToolMenu* AssetMenu = UToolMenus::Get()->ExtendMenu(TEXT("ContentBrowser.AssetContextMenu"));
     FToolMenuSection& AssetSection = AssetMenu->FindOrAddSection(TEXT("CyRevision"));

@@ -6,7 +6,8 @@ public enum VpnSetupFeatures
     None = 0,
     AcceptIncomingTunnel = 1,
     UnrealSwarm = 2,
-    CyRevisionControlApi = 4
+    CyRevisionControlApi = 4,
+    SecureFileExchange = 8
 }
 
 public enum VpnSetupPlatform
@@ -28,11 +29,15 @@ public enum VpnFirewallTool
 
 public sealed record VpnSetupOptions(VpnSetupFeatures Features)
 {
+    public int FileExchangePort { get; init; } = VpnFileExchangeDefaults.Port;
+
     public bool AcceptIncomingTunnel => Features.HasFlag(VpnSetupFeatures.AcceptIncomingTunnel);
 
     public bool AllowUnrealSwarm => Features.HasFlag(VpnSetupFeatures.UnrealSwarm);
 
     public bool AllowCyRevisionControlApi => Features.HasFlag(VpnSetupFeatures.CyRevisionControlApi);
+
+    public bool AllowSecureFileExchange => Features.HasFlag(VpnSetupFeatures.SecureFileExchange);
 }
 
 public sealed record VpnNetworkSnapshot(
@@ -46,7 +51,10 @@ public sealed record VpnFirewallRule(
     string Protocol,
     string Ports,
     string? RemoteAddress,
-    string Purpose);
+    string Purpose)
+{
+    public string? LocalAddress { get; init; }
+}
 
 public sealed record VpnFirewallCommand(
     string Executable,

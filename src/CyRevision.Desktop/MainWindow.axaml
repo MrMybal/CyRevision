@@ -1298,6 +1298,8 @@
                                                           IsChecked="{Binding VpnSetupAllowSwarm}" Margin="0,2,14,2" />
                                                 <CheckBox Content="CyRevision control API over VPN"
                                                           IsChecked="{Binding VpnSetupAllowControlApi}" Margin="0,2,14,2" />
+                                                <CheckBox Content="Secure file exchange over VPN"
+                                                          IsChecked="{Binding VpnSetupAllowFileExchange}" Margin="0,2,14,2" />
                                             </WrapPanel>
                                             <WrapPanel Orientation="Horizontal">
                                                 <Button Classes="primary" Content="1 · Diagnose this computer"
@@ -1408,6 +1410,194 @@
                                     <TextBlock Grid.Column="3" Text="{Binding VpnSyncStatus}" TextWrapping="Wrap"
                                                VerticalAlignment="Center" FontSize="10" Foreground="#78D7B7" />
                                 </Grid>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Swarm over VPN">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="1.03*,0.97*" ColumnSpacing="8">
+                        <Border Classes="card">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="9">
+                                    <TextBlock Text="Unreal Swarm session" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Configure Swarm Agent and an optional Coordinator on the project WireGuard network. Swarm remains Windows-only."
+                                               TextWrapping="Wrap" FontSize="11" Classes="muted" />
+                                    <TextBlock Text="{Binding SwarmStatus}" TextWrapping="Wrap" Foreground="#78D7B7" />
+
+                                    <Grid ColumnDefinitions="180,*" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Text="This computer" FontSize="10.5" Classes="muted" />
+                                            <ComboBox ItemsSource="{Binding SwarmRoles}" SelectedItem="{Binding SelectedSwarmRole}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="Coordinator VPN IPv4" FontSize="10.5" Classes="muted" />
+                                            <TextBox Text="{Binding SwarmCoordinatorAddress}" PlaceholderText="10.80.40.1" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="Local coordinator alias" FontSize="10.5" Classes="muted" />
+                                    <TextBox Text="{Binding SwarmCoordinatorAlias}" PlaceholderText="cyrev-swarm-project" />
+                                    <TextBlock Text="The alias is an optional local hosts/DNS entry. Swarm can also use the VPN IPv4 directly."
+                                               TextWrapping="Wrap" FontSize="10" Classes="muted" />
+
+                                    <TextBlock Text="SwarmAgent.exe" FontSize="10.5" Classes="muted" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                        <TextBox Text="{Binding SwarmAgentPath}" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Browseâ€¦" Click="OnPickSwarmAgentClick" />
+                                    </Grid>
+                                    <TextBlock Text="SwarmCoordinator.exe" FontSize="10.5" Classes="muted" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                        <TextBox Text="{Binding SwarmCoordinatorPath}" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Browseâ€¦" Click="OnPickSwarmCoordinatorClick" />
+                                    </Grid>
+                                    <TextBlock Text="SwarmAgent.Options.xml" FontSize="10.5" Classes="muted" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                        <TextBox Text="{Binding SwarmOptionsPath}" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Browseâ€¦" Click="OnPickSwarmOptionsClick" />
+                                    </Grid>
+
+                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Text="Agent group" FontSize="10.5" Classes="muted" />
+                                            <TextBox Text="{Binding SwarmAgentGroup}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="Allowed remote group" FontSize="10.5" Classes="muted" />
+                                            <TextBox Text="{Binding SwarmAllowedGroup}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="Allowed remote agent names" FontSize="10.5" Classes="muted" />
+                                    <TextBox Text="{Binding SwarmAllowedAgents}" />
+                                    <TextBlock Text="Swarm cache folder (optional)" FontSize="10.5" Classes="muted" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                        <TextBox Text="{Binding SwarmCacheFolder}" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Browseâ€¦" Click="OnPickSwarmCacheClick" />
+                                    </Grid>
+
+                                    <WrapPanel Orientation="Horizontal">
+                                        <Button Classes="secondary" Content="Save session" Click="OnSaveSwarmClick" Margin="0,3,7,3" />
+                                        <Button Classes="primary" Content="Apply Agent configuration" Click="OnApplySwarmOptionsClick" Margin="0,3,7,3" />
+                                        <Button Classes="secondary" Content="Apply local DNS alias" Click="OnApplySwarmDnsClick" Margin="0,3,7,3" />
+                                        <Button Classes="danger" Content="Remove local alias" Click="OnRemoveSwarmDnsClick" Margin="0,3,7,3" />
+                                    </WrapPanel>
+                                    <Border Background="#10241F" CornerRadius="7" Padding="10">
+                                        <TextBlock Text="CyRevision backs up the existing Swarm XML and edits only known fields. Its DNS entry is enclosed in a project-owned block. Firewall rules remain restricted to the VPN subnet; never forward TCP 8008/8009 on the modem."
+                                                   TextWrapping="Wrap" FontSize="10.5" Foreground="#78D7B7" />
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+
+                        <Border Grid.Column="1" Classes="card">
+                            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                                <StackPanel>
+                                    <TextBlock Text="Connection and configuration tests" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Tests the VPN address, executable paths, Agent XML, local DNS, project firewall and TCP 8008/8009."
+                                               TextWrapping="Wrap" FontSize="11" Classes="muted" />
+                                </StackPanel>
+                                <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,8">
+                                    <Button Classes="primary" Content="Run full diagnosis" Click="OnDiagnoseSwarmClick" Margin="0,3,7,3" />
+                                    <Button Classes="secondary" Content="Launch Agent" Click="OnLaunchSwarmAgentClick" Margin="0,3,7,3" />
+                                    <Button Classes="secondary" Content="Launch Coordinator" Click="OnLaunchSwarmCoordinatorClick" Margin="0,3,7,3"
+                                            IsEnabled="{Binding SwarmHostsCoordinator}" />
+                                </WrapPanel>
+                                <TextBox Grid.Row="2" Text="{Binding SwarmDiagnostic}" IsReadOnly="True" AcceptsReturn="True"
+                                         TextWrapping="Wrap" FontFamily="Cascadia Mono,Consolas" FontSize="10.5"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                <Border Grid.Row="3" Background="#1B2237" CornerRadius="7" Padding="10" Margin="0,8,0,0">
+                                    <TextBlock Text="When automatic repair is unavailable, every failed check includes an exact corrective step. Swarm is never exposed to the public Internet."
+                                               TextWrapping="Wrap" FontSize="10.5" Classes="muted" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="VPN files">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="0.92*,1.08*" ColumnSpacing="8">
+                        <Border Classes="card">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="9">
+                                    <TextBlock Text="Private inbox and explicit folder share" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="The endpoint binds only to this project's VPN IPv4. WireGuard encrypts transport and a 256-bit project token authorizes every operation."
+                                               TextWrapping="Wrap" FontSize="11" Classes="muted" />
+                                    <TextBlock Text="{Binding VpnFileStatus}" TextWrapping="Wrap" Foreground="#78D7B7" />
+                                    <Grid ColumnDefinitions="*,115" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Text="Project access token" FontSize="10.5" Classes="muted" />
+                                            <TextBox Text="{Binding VpnFileAccessToken}" PasswordChar="*" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="TCP port" FontSize="10.5" Classes="muted" />
+                                            <TextBox Text="{Binding VpnFileListenPort}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="Private inbox for received files" FontSize="10.5" Classes="muted" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                        <TextBox Text="{Binding VpnFileInboxPath}" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Browseâ€¦" Click="OnPickVpnInboxClick" />
+                                    </Grid>
+                                    <TextBlock Text="Folder explicitly shared with authorized VPN peers" FontSize="10.5" Classes="muted" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                        <TextBox Text="{Binding VpnFileSharedFolderPath}" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Browseâ€¦" Click="OnPickVpnSharedFolderClick" />
+                                    </Grid>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <CheckBox Content="Receive into inbox" IsChecked="{Binding VpnFileAllowReceive}" Margin="0,2,14,2" />
+                                        <CheckBox Content="Expose file list" IsChecked="{Binding VpnFileAllowBrowse}" Margin="0,2,14,2" />
+                                        <CheckBox Content="Allow downloads" IsChecked="{Binding VpnFileAllowDownload}" Margin="0,2,14,2" />
+                                        <CheckBox Content="Start with project" IsChecked="{Binding VpnFileStartAutomatically}" Margin="0,2,14,2" />
+                                    </WrapPanel>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <Button Classes="secondary" Content="Save" Click="OnSaveVpnFilesClick" Margin="0,3,7,3" />
+                                        <Button Classes="primary" Content="Start endpoint" Click="OnStartVpnFilesClick" Margin="0,3,7,3" />
+                                        <Button Classes="danger" Content="Stop endpoint" Click="OnStopVpnFilesClick" Margin="0,3,7,3" />
+                                        <Button Classes="danger" Content="Rotate token" Click="OnRotateVpnFileTokenClick" Margin="0,3,7,3" />
+                                    </WrapPanel>
+                                    <Border Background="#10241F" CornerRadius="7" Padding="10">
+                                        <TextBlock Text="Received files never overwrite existing files, every transfer is checked with SHA-256, partial files are discarded on failure, and symbolic links/junctions cannot escape the shared root. Share the token only through a separate trusted channel."
+                                                   TextWrapping="Wrap" FontSize="10.5" Foreground="#78D7B7" />
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+
+                        <Border Grid.Column="1" Classes="card">
+                            <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+                                <StackPanel>
+                                    <TextBlock Text="Send, receive and browse" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Select an authorized WireGuard peer. Git, Sync and repository files are not touched."
+                                               TextWrapping="Wrap" FontSize="11" Classes="muted" />
+                                </StackPanel>
+                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,10,0,8">
+                                    <ComboBox ItemsSource="{Binding VpnPeers}" SelectedItem="{Binding SelectedVpnFilePeer}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding TunnelAddress}" Classes="muted" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <Button Grid.Column="1" Classes="secondary" Content="Test authenticated peer" Click="OnTestVpnFilePeerClick" />
+                                </Grid>
+                                <WrapPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Button Classes="primary" Content="Send file to inboxâ€¦" Click="OnSendVpnFileClick" Margin="0,3,7,3" />
+                                    <Button Classes="secondary" Content="Refresh shared folder" Click="OnRefreshVpnSharedFilesClick" Margin="0,3,7,3" />
+                                    <Button Classes="secondary" Content="Download selectedâ€¦" Click="OnDownloadVpnSharedFileClick" Margin="0,3,7,3" />
+                                </WrapPanel>
+                                <DataGrid Grid.Row="3" ItemsSource="{Binding VpnSharedFiles}" SelectedItem="{Binding SelectedVpnSharedFile}"
+                                          AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                          Background="Transparent" BorderThickness="0">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Shared file" Binding="{Binding RelativePath}" Width="1.8*" />
+                                        <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="0.55*" />
+                                        <DataGridTextColumn Header="Modified" Binding="{Binding Modified}" Width="0.8*" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <TextBlock Grid.Row="4" Text="No SMB share, no public listener, no automatic overwrite and no implicit repository access."
+                                           Margin="0,8,0,0" TextWrapping="Wrap" FontSize="10.5" Classes="muted" />
                             </Grid>
                         </Border>
                     </Grid>

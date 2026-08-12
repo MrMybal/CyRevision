@@ -19,8 +19,10 @@ public class CyRevisionEditor : ModuleRules
             "Projects",
             "Slate",
             "SlateCore",
+            "Sockets",
             "ToolMenus",
-            "UnrealEd"
+            "UnrealEd",
+            "XmlParser"
         });
     }
 }

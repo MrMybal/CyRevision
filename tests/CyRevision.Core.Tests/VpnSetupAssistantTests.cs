@@ -78,6 +78,96 @@ public sealed class VpnSetupAssistantTests : IDisposable
     }
 
     [Fact]
+    public void SecureFileExchangeFirewallRuleIsVpnOnlyAndUsesConfiguredPort()
+    {
+        VpnProjectProfile profile = CreateProfile();
+        VpnNetworkSetupService service = new();
+        VpnSetupOptions options = new(VpnSetupFeatures.SecureFileExchange) { FileExchangePort = 47999 };
+
+        VpnSetupPlan plan = service.BuildPlan(
+            profile,
+            options,
+            VpnSetupPlatform.Windows,
+            VpnFirewallTool.WindowsDefender,
+            new VpnNetworkSnapshot("192.168.1.20", "192.168.1.1", "Ethernet"));
+
+        VpnFirewallRule rule = Assert.Single(plan.Rules);
+        Assert.Equal("TCP", rule.Protocol);
+        Assert.Equal("47999", rule.Ports);
+        Assert.Equal(profile.NetworkCidr, rule.RemoteAddress);
+        Assert.Equal(profile.LocalAddress, rule.LocalAddress);
+        Assert.False(plan.RequiresRouterPortForward);
+        Assert.Contains(plan.ComputerSteps, step => step.Contains("token", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task SwarmOptionsUpdateChangesKnownFieldsAndCreatesBackup()
+    {
+        Directory.CreateDirectory(_root);
+        string options = Path.Combine(_root, "SwarmAgent.Options.xml");
+        await File.WriteAllTextAsync(options,
+            "<AgentOptions><CoordinatorRemotingHost>old-host</CoordinatorRemotingHost>" +
+            "<AgentGroupName>Old</AgentGroupName><AllowedRemoteAgentGroup>Old</AllowedRemoteAgentGroup>" +
+            "<AllowedRemoteAgentNames>OLD*</AllowedRemoteAgentNames><CacheFolder>C:\\Old</CacheFolder></AgentOptions>");
+        SwarmProjectProfile profile = new(
+            Guid.NewGuid(),
+            SwarmNodeRole.Agent,
+            "10.80.40.1",
+            "cyrev-swarm-test",
+            string.Empty,
+            string.Empty,
+            options,
+            "Artists",
+            "Workers",
+            "WORKER*",
+            "C:\\SwarmCache",
+            DateTimeOffset.UtcNow);
+
+        SwarmOptionsUpdateResult result = await new SwarmSetupService(new VpnNetworkSetupService())
+            .UpdateAgentOptionsAsync(profile);
+        string updated = await File.ReadAllTextAsync(options);
+
+        Assert.True(File.Exists(result.BackupPath));
+        Assert.Contains("<CoordinatorRemotingHost>cyrev-swarm-test</CoordinatorRemotingHost>", updated);
+        Assert.Contains("<AgentGroupName>Artists</AgentGroupName>", updated);
+        Assert.Contains("<AllowedRemoteAgentGroup>Workers</AllowedRemoteAgentGroup>", updated);
+        Assert.Contains("<AllowedRemoteAgentNames>WORKER*</AllowedRemoteAgentNames>", updated);
+        Assert.Contains("<CacheFolder>C:\\SwarmCache</CacheFolder>", updated);
+    }
+
+    [Fact]
+    public void VpnFolderShareRejectsTraversalAndSymbolicEscape()
+    {
+        string shared = Path.Combine(_root, "shared");
+        Directory.CreateDirectory(shared);
+        string valid = VpnFileExchangeService.ResolveSharedPath(shared, Path.Combine("folder", "asset.zip"));
+
+        Assert.StartsWith(Path.GetFullPath(shared), valid, OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal);
+        Assert.Throws<InvalidDataException>(() =>
+            VpnFileExchangeService.ResolveSharedPath(shared, Path.Combine("..", "secret.txt")));
+        Assert.Throws<InvalidDataException>(() =>
+            VpnFileExchangeService.ResolveSharedPath(shared, Path.GetPathRoot(shared) + "secret.txt"));
+    }
+
+    [Fact]
+    public async Task VpnFileExchangeStoreKeepsTokenSeparateAndRotatesIt()
+    {
+        Directory.CreateDirectory(_root);
+        VpnProjectProfile vpn = CreateProfile();
+        JsonVpnFileExchangeProfileStore store = new(Path.Combine(_root, "vpn"));
+        VpnFileExchangeCredentials created = await store.GetOrCreateAsync(vpn, Path.Combine(_root, "data"));
+        VpnFileExchangeCredentials rotated = await store.RotateTokenAsync(vpn.ProjectId);
+
+        Assert.NotEqual(created.AccessToken, rotated.AccessToken);
+        string profilePath = Path.Combine(_root, "vpn", "file-exchange", vpn.ProjectId.ToString("N") + ".json");
+        string tokenPath = Path.Combine(_root, "vpn", "file-exchange", vpn.ProjectId.ToString("N") + ".token");
+        Assert.DoesNotContain(rotated.AccessToken, await File.ReadAllTextAsync(profilePath), StringComparison.Ordinal);
+        Assert.Equal(rotated.AccessToken, (await File.ReadAllTextAsync(tokenPath)).Trim());
+    }
+
+    [Fact]
     public void LatestHandshakeParserKeepsNeverConnectedAndValidTimestampsSeparate()
     {
         string connectedKey = Convert.ToBase64String(Enumerable.Repeat((byte)4, 32).ToArray());

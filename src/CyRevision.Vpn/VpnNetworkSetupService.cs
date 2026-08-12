@@ -41,7 +41,11 @@ public sealed class VpnNetworkSetupService
         VpnSetupOptions allOptions = new(
             VpnSetupFeatures.AcceptIncomingTunnel |
             VpnSetupFeatures.UnrealSwarm |
-            VpnSetupFeatures.CyRevisionControlApi);
+            VpnSetupFeatures.CyRevisionControlApi |
+            VpnSetupFeatures.SecureFileExchange)
+        {
+            FileExchangePort = options.FileExchangePort
+        };
         List<VpnFirewallRule> allProjectRules = BuildRules(profile, allOptions);
         (_, IReadOnlyList<VpnFirewallCommand> remove, bool cleanupAutomatic) =
             BuildCommands(platform, firewall, allProjectRules);
@@ -264,7 +268,10 @@ public sealed class VpnNetworkSetupService
                 "TCP",
                 "8008-8009",
                 profile.NetworkCidr,
-                "Unreal Swarm coordinator and agent traffic inside the VPN"));
+                "Unreal Swarm coordinator and agent traffic inside the VPN")
+            {
+                LocalAddress = profile.LocalAddress
+            });
         }
 
         if (options.AllowCyRevisionControlApi)
@@ -275,7 +282,28 @@ public sealed class VpnNetworkSetupService
                 "TCP",
                 CyRevisionControlPort.ToString(),
                 profile.NetworkCidr,
-                "Authenticated CyRevision services inside the VPN"));
+                "Authenticated CyRevision services inside the VPN")
+            {
+                LocalAddress = profile.LocalAddress
+            });
+        }
+
+        if (options.AllowSecureFileExchange)
+        {
+            if (options.FileExchangePort is < 1024 or > 65535)
+            {
+                throw new InvalidDataException("The secure VPN file-exchange port must be between 1024 and 65535.");
+            }
+            rules.Add(new VpnFirewallRule(
+                prefix + "-Files",
+                "CyRevision secure file exchange over VPN",
+                "TCP",
+                options.FileExchangePort.ToString(),
+                profile.NetworkCidr,
+                "Authenticated file delivery and explicit folder sharing inside the VPN")
+            {
+                LocalAddress = profile.LocalAddress
+            });
         }
 
         return rules;
@@ -323,6 +351,11 @@ public sealed class VpnNetworkSetupService
             steps.Add("Swarm ports 8008-8009 are restricted to the VPN subnet and must never be forwarded by the router.");
         }
 
+        if (options.AllowSecureFileExchange)
+        {
+            steps.Add($"File exchange port {options.FileExchangePort} is restricted to the VPN subnet. The service also binds only to the project VPN address and requires its project token.");
+        }
+
         return steps;
     }
 
@@ -345,7 +378,7 @@ public sealed class VpnNetworkSetupService
         [
             $"Reserve {localAddress} for this computer in the router DHCP settings.",
             $"Create one UDP port-forward: external {profile.ListenPort} -> {localAddress}:{profile.ListenPort}.",
-            "Do not forward Swarm or CyRevision control ports; they are reachable through the VPN only.",
+            "Do not forward Swarm, CyRevision control, or file-exchange ports; they are reachable through the VPN only.",
             $"Set the project public endpoint to your public IP or dynamic-DNS name followed by :{profile.ListenPort}.",
             "Test from another network, for example a phone using mobile data; many routers do not support NAT loopback.",
             "If the router WAN address is private or in 100.64.0.0/10, the connection may use CGNAT; use a public server/relay peer or request a public IP."
@@ -400,10 +433,11 @@ public sealed class VpnNetworkSetupService
         string applyScript = string.Join("; ", rules.Select(rule =>
         {
             string remote = rule.RemoteAddress is null ? string.Empty : $" -RemoteAddress '{rule.RemoteAddress}'";
+            string local = rule.LocalAddress is null ? string.Empty : $" -LocalAddress '{rule.LocalAddress}'";
             return $"Remove-NetFirewallRule -Name '{rule.Name}' -ErrorAction SilentlyContinue; " +
                    $"New-NetFirewallRule -Name '{rule.Name}' -DisplayName '{rule.DisplayName}' " +
                    $"-Group 'CyRevision' -Direction Inbound -Action Allow -Profile Any " +
-                   $"-Protocol {rule.Protocol} -LocalPort '{rule.Ports}'{remote} | Out-Null";
+                   $"-Protocol {rule.Protocol} -LocalPort '{rule.Ports}'{local}{remote} | Out-Null";
         }));
         string removeScript = string.Join("; ", rules.Select(rule =>
             $"Remove-NetFirewallRule -Name '{rule.Name}' -ErrorAction SilentlyContinue"));

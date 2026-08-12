@@ -10,6 +10,13 @@
 - two people may report the same asset: a warning is shown, but nobody is prevented from editing;
 - no Unreal checkout, permission change, or Git LFS lock is created;
 - active markers are renewed every minute and expire after 30 minutes by default.
+- **Tools > Swarm over VPN** configures `CoordinatorRemotingHost`, launches Agent/Coordinator, tests TCP 8008/8009, and includes a complete repair checklist without requiring the desktop client.
+
+## Swarm over VPN
+
+The standalone Swarm window works on Windows and uses the matching Engine `Binaries/DotNET` tools. It stores the chosen coordinator host in Unreal's per-project user settings, backs up `SwarmAgent.Options.xml` before changing its existing `CoordinatorRemotingHost` field, and never changes the modem/router or public network exposure.
+
+The optional CyRevision desktop integration adds project-owned Windows Firewall and local DNS/hosts entries, WireGuard peer/handshake checks, configurable Agent groups/cache paths, and an actionable test report. TCP 8008/8009 must remain restricted to the WireGuard project subnet and must never be forwarded publicly.
 
 ## Connected features
 
@@ -21,7 +28,7 @@ The bridge:
 - uses a random per-project bearer token;
 - never stores the token in Git;
 - lets Unreal notify CyRevision after revision or advisory changes;
-- exposes the extended Git, LFS, Sync, backup, and asset-diff capabilities available in CyRevision.
+- exposes the extended Git, LFS, Sync, backup, asset-diff, Swarm setup, and VPN file-exchange capabilities available in CyRevision.
 
 If CyRevision is closed or its plugin is disabled, the Unreal revision dashboard and local advisory reservations continue to work.
 

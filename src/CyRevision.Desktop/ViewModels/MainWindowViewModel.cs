@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Net.Sockets;
 using System.Text.Json;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -38,6 +39,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly WireGuardRuntimeResolver _wireGuardRuntimeResolver;
     private readonly VpnNetworkSetupService _vpnNetworkSetupService;
     private readonly VpnSyncExchangeService _vpnSyncExchangeService;
+    private readonly ISwarmProfileStore _swarmProfileStore;
+    private readonly SwarmSetupService _swarmSetupService;
+    private readonly IVpnFileExchangeProfileStore _vpnFileExchangeProfileStore;
+    private readonly VpnFileExchangeService _vpnFileExchangeService;
     private readonly LocalizationService _localization;
     private readonly OfflineDocumentationService _documentationService;
     private readonly ApplicationUpdateService _updateService;
@@ -136,6 +141,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private bool _vpnSetupAcceptIncoming;
     private bool _vpnSetupAllowSwarm;
     private bool _vpnSetupAllowControlApi;
+    private bool _vpnSetupAllowFileExchange;
     private bool _vpnCanApplyFirewall;
     private bool _vpnCanOpenRouter;
     private string _vpnSetupSummary = "Run the guided setup to inspect this computer.";
@@ -147,6 +153,32 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _vpnConnectivityStatus = "Tunnel connectivity not tested.";
     private VpnSyncMessageViewModel? _selectedVpnSyncMessage;
     private string _vpnSyncStatus = "Sync exchange not inspected.";
+    private SwarmProjectProfile? _currentSwarmProfile;
+    private SwarmNodeRole _selectedSwarmRole = SwarmNodeRole.Agent;
+    private string _swarmCoordinatorAddress = string.Empty;
+    private string _swarmCoordinatorAlias = string.Empty;
+    private string _swarmAgentPath = string.Empty;
+    private string _swarmCoordinatorPath = string.Empty;
+    private string _swarmOptionsPath = string.Empty;
+    private string _swarmAgentGroup = "Default";
+    private string _swarmAllowedGroup = "DefaultDeployed";
+    private string _swarmAllowedAgents = "*";
+    private string _swarmCacheFolder = string.Empty;
+    private string _swarmStatus = "Select a VPN-enabled project to configure Unreal Swarm.";
+    private string _swarmDiagnostic = "No Swarm connection or configuration test has run.";
+    private VpnFileExchangeCredentials? _currentVpnFileExchange;
+    private VpnFileExchangeHost? _vpnFileExchangeHost;
+    private string _vpnFileListenPort = VpnFileExchangeDefaults.Port.ToString();
+    private string _vpnFileInboxPath = string.Empty;
+    private string _vpnFileSharedFolderPath = string.Empty;
+    private string _vpnFileAccessToken = string.Empty;
+    private bool _vpnFileAllowReceive = true;
+    private bool _vpnFileAllowBrowse = true;
+    private bool _vpnFileAllowDownload = true;
+    private bool _vpnFileStartAutomatically;
+    private VpnPeerViewModel? _selectedVpnFilePeer;
+    private VpnSharedFileViewModel? _selectedVpnSharedFile;
+    private string _vpnFileStatus = "VPN file exchange is not configured.";
     private LanguageOption? _selectedLanguage;
     private IReadOnlyList<DocumentationTopic> _allDocumentationTopics = [];
     private DocumentationTopic? _selectedDocumentationTopic;
@@ -261,6 +293,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         WireGuardRuntimeResolver wireGuardRuntimeResolver,
         VpnNetworkSetupService vpnNetworkSetupService,
         VpnSyncExchangeService vpnSyncExchangeService,
+        ISwarmProfileStore swarmProfileStore,
+        SwarmSetupService swarmSetupService,
+        IVpnFileExchangeProfileStore vpnFileExchangeProfileStore,
+        VpnFileExchangeService vpnFileExchangeService,
         LocalizationService localization,
         OfflineDocumentationService documentationService,
         ApplicationUpdateService updateService,
@@ -285,6 +321,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _wireGuardRuntimeResolver = wireGuardRuntimeResolver;
         _vpnNetworkSetupService = vpnNetworkSetupService;
         _vpnSyncExchangeService = vpnSyncExchangeService;
+        _swarmProfileStore = swarmProfileStore;
+        _swarmSetupService = swarmSetupService;
+        _vpnFileExchangeProfileStore = vpnFileExchangeProfileStore;
+        _vpnFileExchangeService = vpnFileExchangeService;
         _localization = localization;
         _documentationService = documentationService;
         _updateService = updateService;
@@ -588,6 +628,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<VpnSyncMessageViewModel> VpnSyncMessages { get; } = [];
 
+    public ObservableCollection<VpnSharedFileViewModel> VpnSharedFiles { get; } = [];
+
     public IReadOnlyList<RetentionMode> RetentionModes { get; } = Enum.GetValues<RetentionMode>();
 
     public IReadOnlyList<ProjectPreset> Presets { get; } = ProjectPresets.All;
@@ -596,6 +638,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public IReadOnlyList<VpnNodeCapabilities> VpnCapabilities { get; } =
         Enum.GetValues<VpnNodeCapabilities>().Where(value => value != VpnNodeCapabilities.None).ToArray();
+
+    public IReadOnlyList<SwarmNodeRole> SwarmRoles { get; } = Enum.GetValues<SwarmNodeRole>();
 
     public IReadOnlyList<LanguageOption> Languages => _localization.Languages;
 
@@ -1111,6 +1155,18 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    public bool VpnSetupAllowFileExchange
+    {
+        get => _vpnSetupAllowFileExchange;
+        set
+        {
+            if (SetProperty(ref _vpnSetupAllowFileExchange, value))
+            {
+                InvalidateVpnSetupPlan();
+            }
+        }
+    }
+
     public bool VpnCanApplyFirewall
     {
         get => _vpnCanApplyFirewall;
@@ -1176,6 +1232,160 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         get => _vpnSyncStatus;
         private set => SetProperty(ref _vpnSyncStatus, value);
     }
+
+    public SwarmNodeRole SelectedSwarmRole
+    {
+        get => _selectedSwarmRole;
+        set
+        {
+            if (SetProperty(ref _selectedSwarmRole, value))
+            {
+                OnPropertyChanged(nameof(SwarmHostsCoordinator));
+            }
+        }
+    }
+
+    public bool SwarmHostsCoordinator => SelectedSwarmRole == SwarmNodeRole.CoordinatorAndAgent;
+
+    public string SwarmCoordinatorAddress
+    {
+        get => _swarmCoordinatorAddress;
+        set => SetProperty(ref _swarmCoordinatorAddress, value);
+    }
+
+    public string SwarmCoordinatorAlias
+    {
+        get => _swarmCoordinatorAlias;
+        set => SetProperty(ref _swarmCoordinatorAlias, value);
+    }
+
+    public string SwarmAgentPath
+    {
+        get => _swarmAgentPath;
+        set => SetProperty(ref _swarmAgentPath, value);
+    }
+
+    public string SwarmCoordinatorPath
+    {
+        get => _swarmCoordinatorPath;
+        set => SetProperty(ref _swarmCoordinatorPath, value);
+    }
+
+    public string SwarmOptionsPath
+    {
+        get => _swarmOptionsPath;
+        set => SetProperty(ref _swarmOptionsPath, value);
+    }
+
+    public string SwarmAgentGroup
+    {
+        get => _swarmAgentGroup;
+        set => SetProperty(ref _swarmAgentGroup, value);
+    }
+
+    public string SwarmAllowedGroup
+    {
+        get => _swarmAllowedGroup;
+        set => SetProperty(ref _swarmAllowedGroup, value);
+    }
+
+    public string SwarmAllowedAgents
+    {
+        get => _swarmAllowedAgents;
+        set => SetProperty(ref _swarmAllowedAgents, value);
+    }
+
+    public string SwarmCacheFolder
+    {
+        get => _swarmCacheFolder;
+        set => SetProperty(ref _swarmCacheFolder, value);
+    }
+
+    public string SwarmStatus
+    {
+        get => _swarmStatus;
+        private set => SetProperty(ref _swarmStatus, value);
+    }
+
+    public string SwarmDiagnostic
+    {
+        get => _swarmDiagnostic;
+        private set => SetProperty(ref _swarmDiagnostic, value);
+    }
+
+    public string VpnFileListenPort
+    {
+        get => _vpnFileListenPort;
+        set
+        {
+            if (SetProperty(ref _vpnFileListenPort, value))
+            {
+                InvalidateVpnSetupPlan();
+            }
+        }
+    }
+
+    public string VpnFileInboxPath
+    {
+        get => _vpnFileInboxPath;
+        set => SetProperty(ref _vpnFileInboxPath, value);
+    }
+
+    public string VpnFileSharedFolderPath
+    {
+        get => _vpnFileSharedFolderPath;
+        set => SetProperty(ref _vpnFileSharedFolderPath, value);
+    }
+
+    public string VpnFileAccessToken
+    {
+        get => _vpnFileAccessToken;
+        set => SetProperty(ref _vpnFileAccessToken, value);
+    }
+
+    public bool VpnFileAllowReceive
+    {
+        get => _vpnFileAllowReceive;
+        set => SetProperty(ref _vpnFileAllowReceive, value);
+    }
+
+    public bool VpnFileAllowBrowse
+    {
+        get => _vpnFileAllowBrowse;
+        set => SetProperty(ref _vpnFileAllowBrowse, value);
+    }
+
+    public bool VpnFileAllowDownload
+    {
+        get => _vpnFileAllowDownload;
+        set => SetProperty(ref _vpnFileAllowDownload, value);
+    }
+
+    public bool VpnFileStartAutomatically
+    {
+        get => _vpnFileStartAutomatically;
+        set => SetProperty(ref _vpnFileStartAutomatically, value);
+    }
+
+    public VpnPeerViewModel? SelectedVpnFilePeer
+    {
+        get => _selectedVpnFilePeer;
+        set => SetProperty(ref _selectedVpnFilePeer, value);
+    }
+
+    public VpnSharedFileViewModel? SelectedVpnSharedFile
+    {
+        get => _selectedVpnSharedFile;
+        set => SetProperty(ref _selectedVpnSharedFile, value);
+    }
+
+    public string VpnFileStatus
+    {
+        get => _vpnFileStatus;
+        private set => SetProperty(ref _vpnFileStatus, value);
+    }
+
+    public bool VpnFileHostRunning => _vpnFileExchangeHost?.IsRunning == true;
 
     public string DiscordWebhookUrl
     {
@@ -3777,6 +3987,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             _currentVpnProfile = profile;
             ApplyVpnProfile(profile);
             await RefreshVpnStatusCoreAsync();
+            await LoadSwarmAndFileExchangeCoreAsync(profile);
         }, "WireGuard est configuré pour ce projet");
     }
 
@@ -4035,6 +4246,225 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             ApplyVpnProfile(_currentVpnProfile);
         }, $"Pair VPN {selected.DisplayName} retiré");
     }
+
+    public void SetSwarmAgentPath(string path) => SwarmAgentPath = path;
+
+    public void SetSwarmCoordinatorPath(string path) => SwarmCoordinatorPath = path;
+
+    public void SetSwarmOptionsPath(string path) => SwarmOptionsPath = path;
+
+    public void SetSwarmCacheFolder(string path) => SwarmCacheFolder = path;
+
+    public async Task SaveSwarmAsync() => await RunOperationAsync(
+        "Saving the Unreal Swarm VPN sessionâ€¦",
+        async () =>
+        {
+            SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
+            SwarmStatus = $"{profile.Role} · coordinator {profile.CoordinatorAddress} · TCP 8008/8009 over VPN";
+        },
+        "Unreal Swarm VPN session saved");
+
+    public async Task DiagnoseSwarmAsync() => await RunOperationAsync(
+        "Testing Swarm, VPN, DNS, firewall and coordinator portsâ€¦",
+        async () =>
+        {
+            VpnProjectProfile vpn = await SaveVpnFormCoreAsync();
+            SwarmProjectProfile swarm = await SaveSwarmFormCoreAsync();
+            SwarmDiagnosticReport report = await _swarmSetupService.DiagnoseAsync(swarm, vpn);
+            SwarmDiagnostic = report.Summary + Environment.NewLine + Environment.NewLine + string.Join(
+                Environment.NewLine + Environment.NewLine,
+                report.Checks.Select(check =>
+                {
+                    string icon = check.State switch
+                    {
+                        SwarmCheckState.Passed => "PASS",
+                        SwarmCheckState.Warning => "WARN",
+                        SwarmCheckState.Failed => "FAIL",
+                        _ => "SKIP"
+                    };
+                    string remediation = string.IsNullOrWhiteSpace(check.Remediation)
+                        ? string.Empty
+                        : Environment.NewLine + "Fix: " + check.Remediation;
+                    return $"[{icon}] {check.Name} · {check.Detail}{remediation}";
+                }));
+            SwarmStatus = report.Ready
+                ? "Swarm over VPN is ready."
+                : "Swarm setup needs attention; follow the exact fixes in the diagnostic report.";
+        },
+        "Swarm VPN diagnostic completed");
+
+    public async Task ApplySwarmOptionsAsync() => await RunOperationAsync(
+        "Applying Swarm Agent settings with backupâ€¦",
+        async () =>
+        {
+            SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
+            SwarmOptionsUpdateResult result = await _swarmSetupService.UpdateAgentOptionsAsync(profile);
+            SwarmStatus = $"Updated {string.Join(", ", result.UpdatedFields)}. Backup: {result.BackupPath}";
+        },
+        "Swarm Agent configuration applied");
+
+    public async Task ApplySwarmDnsAsync() => await RunOperationAsync(
+        "Applying the project-owned local Swarm DNS aliasâ€¦",
+        async () =>
+        {
+            SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
+            await _swarmSetupService.ApplyLocalDnsAliasAsync(profile);
+            SwarmStatus = $"Local alias {profile.CoordinatorAlias} -> {profile.CoordinatorAddress} applied and DNS cache flushed.";
+        },
+        "Local Swarm DNS alias applied");
+
+    public async Task RemoveSwarmDnsAsync() => await RunOperationAsync(
+        "Removing only the CyRevision Swarm DNS blockâ€¦",
+        async () =>
+        {
+            SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
+            await _swarmSetupService.RemoveLocalDnsAliasAsync(profile);
+            SwarmStatus = $"Local alias block for {profile.CoordinatorAlias} removed.";
+        },
+        "Local Swarm DNS alias removed");
+
+    public async Task LaunchSwarmAgentAsync() => await RunOperationAsync(
+        "Launching Swarm Agentâ€¦",
+        async () =>
+        {
+            SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
+            _swarmSetupService.LaunchAgent(profile);
+            await Task.CompletedTask;
+        },
+        "Swarm Agent launched");
+
+    public async Task LaunchSwarmCoordinatorAsync() => await RunOperationAsync(
+        "Launching Swarm Coordinatorâ€¦",
+        async () =>
+        {
+            SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
+            _swarmSetupService.LaunchCoordinator(profile);
+            await Task.CompletedTask;
+        },
+        "Swarm Coordinator launched");
+
+    public void SetVpnFileInboxPath(string path) => VpnFileInboxPath = path;
+
+    public void SetVpnFileSharedFolderPath(string path) => VpnFileSharedFolderPath = path;
+
+    public async Task SaveVpnFileExchangeAsync() => await RunOperationAsync(
+        "Saving secure VPN file exchangeâ€¦",
+        async () =>
+        {
+            VpnFileExchangeCredentials credentials = await SaveVpnFileExchangeFormCoreAsync();
+            VpnFileStatus = $"Saved · binds only to {credentials.Profile.ListenAddress}:{credentials.Profile.Port} · project token required";
+        },
+        "Secure VPN file exchange saved");
+
+    public async Task StartVpnFileExchangeAsync() => await RunOperationAsync(
+        "Starting the VPN-only file endpointâ€¦",
+        async () =>
+        {
+            VpnProjectProfile vpn = await SaveVpnFormCoreAsync();
+            VpnFileExchangeCredentials credentials = await SaveVpnFileExchangeFormCoreAsync();
+            if (_vpnFileExchangeHost is not null)
+            {
+                await _vpnFileExchangeHost.DisposeAsync();
+            }
+            _vpnFileExchangeHost = _vpnFileExchangeService.CreateHost(credentials, vpn);
+            _vpnFileExchangeHost.Start();
+            VpnFileStatus = $"Listening on {_vpnFileExchangeHost.Endpoint} only · WireGuard encrypted · token authenticated";
+            OnPropertyChanged(nameof(VpnFileHostRunning));
+        },
+        "VPN file endpoint started");
+
+    public async Task StopVpnFileExchangeAsync() => await RunOperationAsync(
+        "Stopping the VPN file endpointâ€¦",
+        async () =>
+        {
+            if (_vpnFileExchangeHost is not null)
+            {
+                await _vpnFileExchangeHost.DisposeAsync();
+                _vpnFileExchangeHost = null;
+            }
+            VpnFileStatus = "VPN file endpoint stopped. Shared and received files remain on disk.";
+            OnPropertyChanged(nameof(VpnFileHostRunning));
+        },
+        "VPN file endpoint stopped");
+
+    public async Task TestVpnFilePeerAsync() => await RunOperationAsync(
+        "Testing the selected VPN file peerâ€¦",
+        async () =>
+        {
+            VpnPeerViewModel peer = SelectedVpnFilePeer
+                                    ?? throw new InvalidOperationException("Select a VPN peer first.");
+            VpnFileExchangeCredentials credentials = await SaveVpnFileExchangeFormCoreAsync();
+            VpnFileStatus = await _vpnFileExchangeService.TestAsync(
+                peer.TunnelAddress, credentials.Profile.Port, credentials.AccessToken);
+        },
+        "VPN file peer authenticated");
+
+    public async Task RefreshVpnSharedFilesAsync() => await RunOperationAsync(
+        "Reading the selected peer shared folderâ€¦",
+        async () =>
+        {
+            VpnPeerViewModel peer = SelectedVpnFilePeer
+                                    ?? throw new InvalidOperationException("Select a VPN peer first.");
+            VpnFileExchangeCredentials credentials = await SaveVpnFileExchangeFormCoreAsync();
+            IReadOnlyList<VpnSharedFile> files = await _vpnFileExchangeService.ListAsync(
+                peer.TunnelAddress, credentials.Profile.Port, credentials.AccessToken);
+            ReplaceCollection(VpnSharedFiles, files.Select(file => new VpnSharedFileViewModel(file)));
+            SelectedVpnSharedFile = VpnSharedFiles.FirstOrDefault();
+            VpnFileStatus = $"{files.Count} shared file(s) exposed by {peer.DisplayName}.";
+        },
+        "Remote shared folder refreshed");
+
+    public async Task SendVpnFileAsync(string path) => await RunOperationAsync(
+        "Sending and verifying the file through WireGuardâ€¦",
+        async () =>
+        {
+            VpnPeerViewModel peer = SelectedVpnFilePeer
+                                    ?? throw new InvalidOperationException("Select a VPN peer first.");
+            VpnFileExchangeCredentials credentials = await SaveVpnFileExchangeFormCoreAsync();
+            VpnFileTransferResult result = await _vpnFileExchangeService.SendFileAsync(
+                peer.TunnelAddress, credentials.Profile.Port, credentials.AccessToken, path);
+            VpnFileStatus = $"Sent {result.Name} · {result.Size:N0} bytes · SHA-256 {result.Sha256[..12]}â€¦";
+        },
+        "VPN file sent and verified");
+
+    public async Task DownloadVpnSharedFileAsync(string destinationPath) => await RunOperationAsync(
+        "Downloading and verifying the shared file through WireGuardâ€¦",
+        async () =>
+        {
+            VpnPeerViewModel peer = SelectedVpnFilePeer
+                                    ?? throw new InvalidOperationException("Select a VPN peer first.");
+            VpnSharedFileViewModel remote = SelectedVpnSharedFile
+                                            ?? throw new InvalidOperationException("Select a shared file first.");
+            VpnFileExchangeCredentials credentials = await SaveVpnFileExchangeFormCoreAsync();
+            VpnFileTransferResult result = await _vpnFileExchangeService.DownloadFileAsync(
+                peer.TunnelAddress,
+                credentials.Profile.Port,
+                credentials.AccessToken,
+                remote.RelativePath,
+                destinationPath);
+            VpnFileStatus = $"Received {result.Name} · SHA-256 {result.Sha256[..12]}â€¦ · {result.DestinationPath}";
+        },
+        "Shared file downloaded and verified");
+
+    public async Task RotateVpnFileTokenAsync() => await RunOperationAsync(
+        "Rotating the project file-exchange tokenâ€¦",
+        async () =>
+        {
+            if (SelectedProject is null)
+            {
+                throw new InvalidOperationException("Select a project first.");
+            }
+            if (_vpnFileExchangeHost is not null)
+            {
+                await _vpnFileExchangeHost.DisposeAsync();
+                _vpnFileExchangeHost = null;
+            }
+            _currentVpnFileExchange = await _vpnFileExchangeProfileStore.RotateTokenAsync(SelectedProject.Id);
+            ApplyVpnFileExchangeProfile(_currentVpnFileExchange);
+            VpnFileStatus = "Token rotated and endpoint stopped. Copy the new token to authorized peers, then restart the endpoint.";
+            OnPropertyChanged(nameof(VpnFileHostRunning));
+        },
+        "VPN file token rotated");
 
     public async Task ConnectDiscordAgentAsync()
     {
@@ -4725,6 +5155,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private async Task LoadVpnProfileCoreAsync()
     {
+        if (_vpnFileExchangeHost is not null)
+        {
+            await _vpnFileExchangeHost.DisposeAsync();
+            _vpnFileExchangeHost = null;
+            OnPropertyChanged(nameof(VpnFileHostRunning));
+        }
         if (SelectedProject is null)
         {
             _currentVpnProfile = null;
@@ -4752,6 +5188,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         ApplyVpnProfile(_currentVpnProfile);
         await RefreshVpnStatusCoreAsync();
         await RefreshVpnSyncMessagesCoreAsync();
+        await LoadSwarmAndFileExchangeCoreAsync(_currentVpnProfile);
     }
 
     private async Task LoadDiscordProfileCoreAsync()
@@ -5154,6 +5591,147 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private async Task LoadSwarmAndFileExchangeCoreAsync(VpnProjectProfile vpnProfile)
+    {
+        _currentSwarmProfile = await _swarmProfileStore.GetAsync(vpnProfile.ProjectId)
+                               ?? SwarmProfileFactory.CreateDefault(vpnProfile);
+        ApplySwarmProfile(_currentSwarmProfile);
+
+        _currentVpnFileExchange = await _vpnFileExchangeProfileStore.GetOrCreateAsync(
+            vpnProfile,
+            Path.Combine(_applicationPaths.VpnDirectory, "transfers"));
+        ApplyVpnFileExchangeProfile(_currentVpnFileExchange);
+        VpnSetupAllowFileExchange = _currentVpnFileExchange.Profile.AllowReceive ||
+                                    _currentVpnFileExchange.Profile.AllowBrowse ||
+                                    _currentVpnFileExchange.Profile.AllowDownload;
+        if (_currentVpnFileExchange.Profile.StartAutomatically)
+        {
+            try
+            {
+                _vpnFileExchangeHost = _vpnFileExchangeService.CreateHost(_currentVpnFileExchange, vpnProfile);
+                _vpnFileExchangeHost.Start();
+                VpnFileStatus = $"Listening on {_vpnFileExchangeHost.Endpoint} only · automatic project endpoint";
+                OnPropertyChanged(nameof(VpnFileHostRunning));
+            }
+            catch (Exception exception) when (exception is SocketException or InvalidOperationException)
+            {
+                VpnFileStatus = "Automatic endpoint could not start: " + exception.Message;
+            }
+        }
+    }
+
+    private async Task<SwarmProjectProfile> SaveSwarmFormCoreAsync()
+    {
+        if (SelectedProject is null || _currentVpnProfile is null)
+        {
+            throw new InvalidOperationException("Configure the project VPN before configuring Unreal Swarm.");
+        }
+
+        string coordinatorAddress = SelectedSwarmRole == SwarmNodeRole.CoordinatorAndAgent
+            ? _currentVpnProfile.LocalAddress
+            : SwarmCoordinatorAddress.Trim();
+        SwarmProjectProfile profile = new(
+            SelectedProject.Id,
+            SelectedSwarmRole,
+            coordinatorAddress,
+            SwarmCoordinatorAlias.Trim(),
+            SwarmAgentPath.Trim(),
+            SwarmCoordinatorPath.Trim(),
+            SwarmOptionsPath.Trim(),
+            SwarmAgentGroup.Trim(),
+            SwarmAllowedGroup.Trim(),
+            SwarmAllowedAgents.Trim(),
+            SwarmCacheFolder.Trim(),
+            DateTimeOffset.UtcNow);
+        SwarmSetupService.ValidateProfile(profile);
+        (uint network, int prefix) = VpnProfileValidator.ParseCidr(_currentVpnProfile.NetworkCidr);
+        uint mask = uint.MaxValue << (32 - prefix);
+        uint coordinator = VpnProfileValidator.ToUInt32(System.Net.IPAddress.Parse(profile.CoordinatorAddress));
+        if ((coordinator & mask) != network)
+        {
+            throw new InvalidDataException("The Swarm Coordinator address must be inside the project VPN subnet.");
+        }
+
+        VpnNodeCapabilities capabilities = _currentVpnProfile.LocalCapabilities &
+                                           ~(VpnNodeCapabilities.SwarmAgent | VpnNodeCapabilities.SwarmCoordinator);
+        capabilities |= VpnNodeCapabilities.SwarmAgent;
+        if (profile.Role == SwarmNodeRole.CoordinatorAndAgent)
+        {
+            capabilities |= VpnNodeCapabilities.SwarmCoordinator;
+        }
+        _currentVpnProfile = _currentVpnProfile with
+        {
+            LocalCapabilities = capabilities,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        await _vpnProfileStore.SaveAsync(_currentVpnProfile);
+        await _swarmProfileStore.SaveAsync(profile);
+        _currentSwarmProfile = profile;
+        ApplySwarmProfile(profile);
+        ApplyVpnProfile(_currentVpnProfile);
+        VpnSetupAllowSwarm = true;
+        return profile;
+    }
+
+    private async Task<VpnFileExchangeCredentials> SaveVpnFileExchangeFormCoreAsync()
+    {
+        if (SelectedProject is null || _currentVpnProfile is null)
+        {
+            throw new InvalidOperationException("Configure the project VPN before configuring file exchange.");
+        }
+        if (!int.TryParse(VpnFileListenPort, out int port))
+        {
+            throw new InvalidDataException("The VPN file-exchange port is invalid.");
+        }
+        VpnFileExchangeProfile profile = new(
+            SelectedProject.Id,
+            _currentVpnProfile.LocalAddress,
+            port,
+            VpnFileInboxPath.Trim(),
+            VpnFileSharedFolderPath.Trim(),
+            VpnFileAllowReceive,
+            VpnFileAllowBrowse,
+            VpnFileAllowDownload,
+            VpnFileExchangeDefaults.MaxFileBytes,
+            VpnFileStartAutomatically,
+            DateTimeOffset.UtcNow);
+        VpnFileExchangeCredentials credentials = new(profile, VpnFileAccessToken.Trim());
+        VpnFileExchangeService.ValidateProfile(profile, credentials.AccessToken);
+        await _vpnFileExchangeProfileStore.SaveAsync(credentials);
+        _currentVpnFileExchange = credentials;
+        ApplyVpnFileExchangeProfile(credentials);
+        VpnSetupAllowFileExchange = profile.AllowReceive || profile.AllowBrowse || profile.AllowDownload;
+        return credentials;
+    }
+
+    private void ApplySwarmProfile(SwarmProjectProfile profile)
+    {
+        SelectedSwarmRole = profile.Role;
+        SwarmCoordinatorAddress = profile.CoordinatorAddress;
+        SwarmCoordinatorAlias = profile.CoordinatorAlias;
+        SwarmAgentPath = profile.SwarmAgentPath;
+        SwarmCoordinatorPath = profile.SwarmCoordinatorPath;
+        SwarmOptionsPath = profile.OptionsPath;
+        SwarmAgentGroup = profile.AgentGroupName;
+        SwarmAllowedGroup = profile.AllowedRemoteAgentGroup;
+        SwarmAllowedAgents = profile.AllowedRemoteAgentNames;
+        SwarmCacheFolder = profile.CacheFolder;
+        SwarmStatus = $"{profile.Role} · coordinator {profile.CoordinatorAddress} · not tested";
+    }
+
+    private void ApplyVpnFileExchangeProfile(VpnFileExchangeCredentials credentials)
+    {
+        VpnFileListenPort = credentials.Profile.Port.ToString();
+        VpnFileInboxPath = credentials.Profile.InboxPath;
+        VpnFileSharedFolderPath = credentials.Profile.SharedFolderPath;
+        VpnFileAccessToken = credentials.AccessToken;
+        VpnFileAllowReceive = credentials.Profile.AllowReceive;
+        VpnFileAllowBrowse = credentials.Profile.AllowBrowse;
+        VpnFileAllowDownload = credentials.Profile.AllowDownload;
+        VpnFileStartAutomatically = credentials.Profile.StartAutomatically;
+        VpnFileStatus = $"Stopped · ready on {credentials.Profile.ListenAddress}:{credentials.Profile.Port} · project token stored locally";
+    }
+
     private async Task<VpnProjectProfile> SaveVpnFormCoreAsync()
     {
         if (SelectedProject is null || _currentVpnProfile is null)
@@ -5205,6 +5783,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         SelectedVpnCapability = profile.LocalCapabilities;
         ReplaceCollection(VpnPeers, profile.Peers.Select(peer => new VpnPeerViewModel(peer)));
         SelectedVpnPeer = VpnPeers.FirstOrDefault();
+        SelectedVpnFilePeer = VpnPeers.FirstOrDefault(peer =>
+                                  peer.Peer.Capabilities.HasFlag(VpnNodeCapabilities.ServiceHost))
+                              ?? VpnPeers.FirstOrDefault();
     }
 
     private void ApplyVpnStatus(VpnEngineStatus status)
@@ -5250,6 +5831,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         VpnSetupAcceptIncoming = false;
         VpnSetupAllowSwarm = false;
         VpnSetupAllowControlApi = false;
+        VpnSetupAllowFileExchange = false;
         VpnCanApplyFirewall = false;
         VpnCanOpenRouter = false;
         VpnSetupSummary = "Run the guided setup to inspect this computer.";
@@ -5262,6 +5844,32 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         VpnSyncMessages.Clear();
         SelectedVpnSyncMessage = null;
         VpnSyncStatus = "Sync exchange not inspected.";
+        _currentSwarmProfile = null;
+        SelectedSwarmRole = SwarmNodeRole.Agent;
+        SwarmCoordinatorAddress = string.Empty;
+        SwarmCoordinatorAlias = string.Empty;
+        SwarmAgentPath = string.Empty;
+        SwarmCoordinatorPath = string.Empty;
+        SwarmOptionsPath = string.Empty;
+        SwarmAgentGroup = "Default";
+        SwarmAllowedGroup = "DefaultDeployed";
+        SwarmAllowedAgents = "*";
+        SwarmCacheFolder = string.Empty;
+        SwarmStatus = "Configure the project VPN before creating a Swarm session.";
+        SwarmDiagnostic = "No Swarm connection or configuration test has run.";
+        _currentVpnFileExchange = null;
+        VpnFileListenPort = VpnFileExchangeDefaults.Port.ToString();
+        VpnFileInboxPath = string.Empty;
+        VpnFileSharedFolderPath = string.Empty;
+        VpnFileAccessToken = string.Empty;
+        VpnFileAllowReceive = true;
+        VpnFileAllowBrowse = true;
+        VpnFileAllowDownload = true;
+        VpnFileStartAutomatically = false;
+        SelectedVpnFilePeer = null;
+        VpnSharedFiles.Clear();
+        SelectedVpnSharedFile = null;
+        VpnFileStatus = "VPN file exchange is not configured.";
     }
 
     private VpnSetupOptions CreateVpnSetupOptions()
@@ -5282,7 +5890,15 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             features |= VpnSetupFeatures.CyRevisionControlApi;
         }
 
-        return new VpnSetupOptions(features);
+        if (VpnSetupAllowFileExchange)
+        {
+            features |= VpnSetupFeatures.SecureFileExchange;
+        }
+
+        int filePort = int.TryParse(VpnFileListenPort, out int parsed)
+            ? parsed
+            : VpnFileExchangeDefaults.Port;
+        return new VpnSetupOptions(features) { FileExchangePort = filePort };
     }
 
     private void InvalidateVpnSetupPlan()
@@ -6149,6 +6765,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _aiAgentCancellation?.Cancel();
         _aiAgentCancellation?.Dispose();
         await StopSyncCoreAsync();
+        if (_vpnFileExchangeHost is not null)
+        {
+            await _vpnFileExchangeHost.DisposeAsync();
+            _vpnFileExchangeHost = null;
+        }
         DetachUnrealPluginEvents();
         await _pluginManager.DisposeAsync();
         _discordAgent.StatusChanged -= OnDiscordAgentStatusChanged;

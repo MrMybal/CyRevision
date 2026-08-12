@@ -96,6 +96,14 @@
     "keywords": ["pull request", "PR", "GitHub", "review", "merge", "squash", "rebase", "checkout", "comment"]
   },
   {
+    "id": "swarm-and-vpn-files",
+    "category": "VPN and Unreal Engine",
+    "title": "Swarm sessions and secure VPN files",
+    "summary": "Configure Unreal Swarm over WireGuard and exchange files without exposing a public file share.",
+    "body": "SWARM SESSION\nOpen Swarm over VPN after configuring the project tunnel. Choose Agent or CoordinatorAndAgent, select the matching Unreal executables and existing SwarmAgent.Options.xml, then set coordinator VPN IPv4, local alias, groups, agent filter and optional cache. Apply Agent configuration closes no process: close Swarm Agent yourself first. CyRevision creates a timestamped backup and edits only known fields already present in the XML.\n\nDNS AND FIREWALL\nApply local DNS alias replaces only a marked block belonging to this project in the Windows hosts file. The firewall assistant creates deterministic TCP 8008-8009 rules limited to the WireGuard subnet. Never forward Swarm ports on the modem/router.\n\nFULL DIAGNOSIS\nRun full diagnosis checks Windows support, the assigned VPN address, executable paths, Agent XML, DNS resolution, project firewall, and both Coordinator ports. Every warning or failure includes a concrete repair step. CyRevisionUnreal also provides Tools > Swarm over VPN for autonomous configuration, process launch and port tests.\n\nVPN FILE ENDPOINT\nVPN files binds only to the project WireGuard IPv4 and refuses source addresses outside the project CIDR. Every command requires the 256-bit project token. Choose a private inbox and an explicit shared root, then grant receive, browse and download separately. Send the token to authorized peers through a different trusted channel.\n\nTRANSFER SAFETY\nUploads never overwrite an existing file. Uploads and downloads verify the announced size and SHA-256 before an atomic move. Partial files are removed after failure. Absolute paths, parent traversal, junctions and symbolic links cannot escape the shared root. Rotate token immediately revokes old copies and stops the endpoint until restarted.",
+    "keywords": ["swarm", "coordinator", "agent", "wireguard", "vpn", "dns", "firewall", "file", "folder", "transfer", "sha-256"]
+  },
+  {
     "id": "troubleshooting",
     "category": "Support",
     "title": "Troubleshooting and safety",

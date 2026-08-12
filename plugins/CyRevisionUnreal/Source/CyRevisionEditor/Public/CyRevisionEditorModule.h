@@ -13,6 +13,7 @@ struct FAssetData;
 struct FCyRevisionSoftReservation;
 struct FToolMenuSection;
 class FCyRevisionRevisionTools;
+class FCyRevisionSwarmTools;
 
 class FCyRevisionEditorModule final : public IModuleInterface
 {
@@ -41,5 +42,6 @@ private:
     TSharedPtr<SListView<TSharedPtr<FCyRevisionSoftReservation>>> ReservationList;
     TSharedPtr<STextBlock> ReservationStatusText;
     TUniquePtr<FCyRevisionRevisionTools> RevisionTools;
+    TUniquePtr<FCyRevisionSwarmTools> SwarmTools;
     FTSTicker::FDelegateHandle HeartbeatHandle;
 };

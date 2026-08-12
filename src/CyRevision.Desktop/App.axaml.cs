@@ -61,11 +61,15 @@ public partial class App : Application
             WireGuardRuntimeResolver vpnRuntimeResolver = new();
             VpnNetworkSetupService vpnNetworkSetup = new();
             VpnSyncExchangeService vpnSyncExchange = new();
+            JsonSwarmProfileStore swarmProfiles = new(paths.VpnDirectory);
+            SwarmSetupService swarmSetup = new(vpnNetworkSetup);
+            JsonVpnFileExchangeProfileStore vpnFileProfiles = new(paths.VpnDirectory);
+            VpnFileExchangeService vpnFileExchange = new();
             string? initialProjectPath = ReadProjectArgument(desktop.Args);
             MainWindowViewModel viewModel = new(
                 catalog, gitService, paths, syncProfiles, gitExchange, assetDiff,
                 vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine, vpnRuntimeResolver,
-                vpnNetworkSetup, vpnSyncExchange,
+                vpnNetworkSetup, vpnSyncExchange, swarmProfiles, swarmSetup, vpnFileProfiles, vpnFileExchange,
                 localization, documentation, updates, discordStore, discordAgent, discordConnections,
                 pluginManager, new CodeWorkspaceService(), pullRequests, initialProjectPath);
 

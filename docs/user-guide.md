@@ -62,6 +62,10 @@ Indiquez un endpoint public `hôte:port` sur le nœud qui reçoit les connexions
 
 Pour Unreal Swarm, utilisez de préférence un coordinateur Windows permanent comme nœud invitant. CyRevision affiche son IP VPN ; renseignez-la dans `CoordinatorRemotingHost` et autorisez TCP 8008/8009. Le guide complet se trouve dans [wireguard-vpn.md](wireguard-vpn.md).
 
+L'onglet **Swarm over VPN** automatise maintenant ce workflow : rôle Agent/Coordinator, chemins Swarm, groupes, cache, sauvegarde et mise à jour du XML, alias DNS local réversible, lancement des processus et test complet avec correction par échec. Le plugin Unreal propose le même point d'entrée en mode autonome sous **Tools > Swarm over VPN**.
+
+L'onglet **VPN files** crée une inbox privée et un dossier partagé explicite entre pairs WireGuard. Enregistrez le profil, appliquez la règle pare-feu VPN, démarrez l'endpoint puis choisissez un pair pour tester, envoyer, parcourir ou télécharger. Copiez le jeton de projet uniquement aux appareils autorisés via un canal distinct ; sa rotation arrête l'endpoint et invalide immédiatement les anciennes copies.
+
 ## Sauvegardes
 
 Dans **Sauvegardes**, choisissez un dossier local, NAS ou volume monté, puis la stratégie :
