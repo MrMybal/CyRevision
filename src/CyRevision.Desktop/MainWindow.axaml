@@ -978,6 +978,8 @@
                 </TabItem>
 
                 <TabItem Header="Git LFS">
+                    <TabControl Margin="0,8,0,0">
+                        <TabItem Header="Time Machine">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="285,*,350" ColumnSpacing="8">
                         <Border Classes="card" Padding="12">
                             <Grid RowDefinitions="Auto,150,Auto,*">
@@ -1072,6 +1074,74 @@
                             </Grid>
                         </Border>
                     </Grid>
+                        </TabItem>
+                        <TabItem Header="Storage &amp; safe cleanup">
+                            <Grid Margin="0,8,0,0" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
+                                <Border Classes="card" Padding="12">
+                                    <Grid ColumnDefinitions="1.2*,Auto,1.2*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="7">
+                                        <StackPanel Grid.ColumnSpan="4" Margin="0,0,0,4">
+                                            <TextBlock Text="External Git LFS storage and retention policy" FontSize="16" FontWeight="SemiBold" />
+                                            <TextBlock Text="Local refs, stashes, indexes, and worktrees are always protected. Cleanup requires proof on a remote, peer, or verified archive." FontSize="10" Classes="muted" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <TextBox Grid.Row="1" Text="{Binding LfsExternalStoragePath}" PlaceholderText="External lfs.storage directory" />
+                                        <Button Grid.Row="1" Grid.Column="1" Classes="secondary" Content="Browse..." Click="OnPickLfsExternalStorageClick" />
+                                        <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding LfsManagementArchivePath}" PlaceholderText="Verified archive directory" />
+                                        <Button Grid.Row="1" Grid.Column="3" Classes="secondary" Content="Browse..." Click="OnPickLfsManagementArchiveClick" />
+                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="10">
+                                            <TextBlock Text="Remote" VerticalAlignment="Center" Classes="muted" />
+                                            <TextBox Width="110" Text="{Binding LfsCleanupRemoteName}" />
+                                            <CheckBox Content="Verify remote" IsChecked="{Binding LfsVerifyRemote}" VerticalAlignment="Center" />
+                                            <TextBlock Text="Required copies" VerticalAlignment="Center" Classes="muted" />
+                                            <TextBox Width="55" Text="{Binding LfsRequiredCopies}" />
+                                            <TextBlock Text="Grace days" VerticalAlignment="Center" Classes="muted" />
+                                            <TextBox Width="55" Text="{Binding LfsCleanupGraceDays}" />
+                                            <TextBlock Text="Peer proof max age (h)" VerticalAlignment="Center" Classes="muted" />
+                                            <TextBox Width="65" Text="{Binding LfsPeerProofMaximumAgeHours}" />
+                                            <Button Classes="secondary" Content="Save policy" Click="OnSaveLfsManagementClick" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Row="1" Classes="card" Padding="12">
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding LfsStorageSummary}" TextWrapping="Wrap" />
+                                            <TextBlock Text="Dry-run first: CyRevision never calls git lfs prune without remote verification." FontSize="10" Foreground="#78D7B7" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="primary" Content="Analyze" Click="OnAnalyzeLfsStorageClick" />
+                                        <Button Grid.Column="2" Classes="secondary" Content="Archive candidates" Click="OnArchiveLfsCandidatesClick" />
+                                        <Button Grid.Column="3" Classes="danger" Content="Clean verified objects..." Click="OnExecuteLfsCleanupClick" />
+                                    </Grid>
+                                </Border>
+                                <Grid Grid.Row="2" ColumnDefinitions="1.55*,1*" ColumnSpacing="8">
+                                    <Border Classes="card" Padding="10">
+                                        <DataGrid ItemsSource="{Binding LfsCleanupItems}" AutoGenerateColumns="False" IsReadOnly="True"
+                                                  GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="OID" Binding="{Binding OidSha256}" Width="185" />
+                                                <DataGridTextColumn Header="Bytes" Binding="{Binding Size}" Width="90" />
+                                                <DataGridTextColumn Header="Copies" Binding="{Binding Evidence.Count}" Width="65" />
+                                                <DataGridTextColumn Header="Decision" Binding="{Binding Decision}" Width="*" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </Border>
+                                    <Border Grid.Column="1" Classes="card" Padding="12">
+                                        <Grid RowDefinitions="Auto,*,Auto">
+                                            <TextBlock Text="Remote verification report" FontWeight="SemiBold" />
+                                            <TextBox Grid.Row="1" Margin="0,8" Text="{Binding LfsRemoteVerification}" IsReadOnly="True"
+                                                     AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Mono,Consolas"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                            <StackPanel Grid.Row="2" Spacing="7">
+                                                <CheckBox Content="After verification, remove the old object cache" IsChecked="{Binding LfsRemoveOriginalAfterRelocation}" />
+                                                <Button Classes="secondary" Content="Relocate and activate external storage..." Click="OnRelocateLfsStorageClick" />
+                                                <TextBlock Text="A destination ownership marker prevents multiple repositories from sharing one lfs.storage directory." FontSize="10" Classes="muted" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                                <TextBlock Grid.Row="3" Text="If a branch or PR exists only locally, its LFS objects remain protected. In decentralized mode, at least the configured number of fresh peer or archive copies is required." FontSize="10" Foreground="#E5A94D" TextWrapping="Wrap" />
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
                 </TabItem>
 
                 <TabItem Header="Sauvegardes">
@@ -1300,6 +1370,8 @@
                                                           IsChecked="{Binding VpnSetupAllowControlApi}" Margin="0,2,14,2" />
                                                 <CheckBox Content="Secure file exchange over VPN"
                                                           IsChecked="{Binding VpnSetupAllowFileExchange}" Margin="0,2,14,2" />
+                                                <CheckBox Content="Remote build agent over VPN"
+                                                          IsChecked="{Binding VpnSetupAllowRemoteBuild}" Margin="0,2,14,2" />
                                             </WrapPanel>
                                             <WrapPanel Orientation="Horizontal">
                                                 <Button Classes="primary" Content="1 · Diagnose this computer"
@@ -1598,6 +1670,69 @@
                                 </DataGrid>
                                 <TextBlock Grid.Row="4" Text="No SMB share, no public listener, no automatic overwrite and no implicit repository access."
                                            Margin="0,8,0,0" TextWrapping="Wrap" FontSize="10.5" Classes="muted" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Remote builds">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="0.9*,1.25*" ColumnSpacing="8">
+                        <Border Classes="card" Padding="14">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*" RowSpacing="8">
+                                <StackPanel>
+                                    <TextBlock Text="VPN remote build agent" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock Text="Run a locally allowlisted recipe on a CI/build machine without pushing a branch or polluting a Git remote." FontSize="10" Classes="muted" TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="Project ID for agent.json:" FontSize="10" Foreground="#78D7B7" />
+                                        <TextBlock Text="{Binding SelectedProject.Id}" FontSize="10" FontFamily="Cascadia Mono,Consolas" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <TextBlock Text="Endpoint" VerticalAlignment="Center" Classes="muted" />
+                                    <TextBox Grid.Column="1" Text="{Binding RemoteBuildEndpoint}" PlaceholderText="http://10.70.0.10:47841" />
+                                </Grid>
+                                <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <TextBlock Text="Agent token" VerticalAlignment="Center" Classes="muted" />
+                                    <TextBox Grid.Column="1" Text="{Binding RemoteBuildAccessToken}" PasswordChar="●" />
+                                </Grid>
+                                <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto,*" ColumnSpacing="8">
+                                    <TextBlock Text="Recipe ID" VerticalAlignment="Center" Classes="muted" />
+                                    <TextBox Grid.Column="1" Text="{Binding RemoteBuildRecipeId}" PlaceholderText="unreal-win64-development" />
+                                    <TextBlock Grid.Column="2" Text="Source" VerticalAlignment="Center" Classes="muted" />
+                                    <ComboBox Grid.Column="3" ItemsSource="{Binding RemoteBuildSourceModes}" SelectedItem="{Binding SelectedRemoteBuildSourceMode}" />
+                                </Grid>
+                                <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBox Text="{Binding RemoteBuildArtifactDestination}" PlaceholderText="Downloaded artifact directory" />
+                                    <Button Grid.Column="1" Classes="secondary" Content="Browse..." Click="OnPickRemoteBuildArtifactsClick" />
+                                </Grid>
+                                <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="10">
+                                    <CheckBox Content="Trust plain HTTP only on private/VPN IP" IsChecked="{Binding RemoteBuildAllowPrivateHttp}" />
+                                    <TextBlock Text="Max upload (GB)" VerticalAlignment="Center" Classes="muted" />
+                                    <TextBox Width="70" Text="{Binding RemoteBuildMaximumUploadGb}" />
+                                </StackPanel>
+                                <StackPanel Grid.Row="6" Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="secondary" Content="Save" Click="OnSaveRemoteBuildClick" />
+                                    <Button Classes="secondary" Content="Test agent" Click="OnTestRemoteBuildClick" />
+                                    <Button Classes="primary" Content="Start remote build" Click="OnStartRemoteBuildClick" />
+                                    <Button Classes="danger" Content="Cancel" Click="OnCancelRemoteBuildClick" IsEnabled="{Binding IsRemoteBuildRunning}" />
+                                </StackPanel>
+                                <StackPanel Grid.Row="7" Margin="0,12,0,0" Spacing="6">
+                                    <TextBlock Text="Security model" FontWeight="SemiBold" />
+                                    <TextBlock Text="• The agent owns agent.json and the executable, arguments, timeout, workspace, and artifact allowlist." FontSize="10" Classes="muted" TextWrapping="Wrap" />
+                                    <TextBlock Text="• Existing workspace mode transfers no source; Uploaded snapshot sends tracked and non-ignored files without .git or build caches." FontSize="10" Classes="muted" TextWrapping="Wrap" />
+                                    <TextBlock Text="• Bind the agent to its WireGuard IP and never forward port 47841 on the router." FontSize="10" Foreground="#E5A94D" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <Border Grid.Column="1" Classes="card" Padding="14">
+                            <Grid RowDefinitions="Auto,*">
+                                <StackPanel>
+                                    <TextBlock Text="Build status and live log" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding RemoteBuildStatus}" FontSize="11" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <TextBox Grid.Row="1" Margin="0,12,0,0" Text="{Binding RemoteBuildLog}" IsReadOnly="True"
+                                         AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Mono,Consolas"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                             </Grid>
                         </Border>
                     </Grid>

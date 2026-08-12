@@ -886,6 +886,67 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnPickLfsExternalStorageClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select the dedicated external Git LFS storage directory");
+        if (path is not null) _viewModel.SetLfsExternalStoragePath(path);
+    }
+
+    private async void OnPickLfsManagementArchiveClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select the verified Git LFS retention archive");
+        if (path is not null) _viewModel.SetLfsManagementArchivePath(path);
+    }
+
+    private async void OnSaveLfsManagementClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveLfsManagementAsync();
+
+    private async void OnAnalyzeLfsStorageClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.AnalyzeLfsStorageAsync();
+
+    private async void OnArchiveLfsCandidatesClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ArchiveLfsCandidatesAsync();
+
+    private async void OnExecuteLfsCleanupClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Clean verified LFS objects"),
+                Translate("CyRevision will delete only objects from the current LFS cache that are no longer referenced locally and have the required fresh remote, peer, or archive evidence. Re-analyze after any branch change."),
+                Translate("Clean verified objects")))
+        {
+            await _viewModel.ExecuteLfsCleanupAsync();
+        }
+    }
+
+    private async void OnRelocateLfsStorageClick(object? sender, RoutedEventArgs e)
+    {
+        if (!_viewModel.LfsRemoveOriginalAfterRelocation || await ShowConfirmationAsync(
+                Translate("Relocate Git LFS storage"),
+                Translate("Every LFS object is copied and SHA-256 verified before lfs.storage is changed. After activation, the old object cache will be removed to reclaim space."),
+                Translate("Relocate and remove old cache")))
+        {
+            await _viewModel.RelocateLfsStorageAsync();
+        }
+    }
+
+    private async void OnPickRemoteBuildArtifactsClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select the downloaded remote-build artifact directory");
+        if (path is not null) _viewModel.SetRemoteBuildArtifactDestination(path);
+    }
+
+    private async void OnSaveRemoteBuildClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveRemoteBuildAsync();
+
+    private async void OnTestRemoteBuildClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.TestRemoteBuildAsync();
+
+    private async void OnStartRemoteBuildClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.StartRemoteBuildAsync();
+
+    private async void OnCancelRemoteBuildClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CancelRemoteBuildAsync();
+
     private async void OnSaveDiscordAgentClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SaveDiscordAgentAsync();
 

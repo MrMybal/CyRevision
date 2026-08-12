@@ -953,7 +953,8 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             return [];
         }
 
-        string gitCommonDirectory = await GetGitCommonDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        LfsStoragePaths lfsStorage = await LfsStoragePathResolver.ResolveAsync(
+            _processRunner, _gitExecutable, repositoryPath, cancellationToken).ConfigureAwait(false);
         List<LfsTrackedFile> files = [];
         foreach (string line in result.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
@@ -975,7 +976,7 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
                 continue;
             }
 
-            string objectPath = GetLfsObjectPath(gitCommonDirectory, pointer.OidSha256);
+            string objectPath = lfsStorage.GetObjectPath(pointer.OidSha256);
             files.Add(new LfsTrackedFile(
                 path,
                 ClassifyFile(path),
@@ -999,7 +1000,8 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
                 maximumCount,
                 cancellationToken)
             .ConfigureAwait(false);
-        string gitCommonDirectory = await GetGitCommonDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
+        LfsStoragePaths lfsStorage = await LfsStoragePathResolver.ResolveAsync(
+            _processRunner, _gitExecutable, repositoryPath, cancellationToken).ConfigureAwait(false);
         List<LfsFileVersion> versions = [];
         HashSet<string> seenObjects = new(StringComparer.OrdinalIgnoreCase);
         foreach (GitFileRevision entry in history)
@@ -1015,7 +1017,7 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
                 continue;
             }
 
-            string objectPath = GetLfsObjectPath(gitCommonDirectory, pointer.OidSha256);
+            string objectPath = lfsStorage.GetObjectPath(pointer.OidSha256);
             bool isAvailable = File.Exists(objectPath);
             versions.Add(new LfsFileVersion(
                 relativePath,
@@ -1040,8 +1042,9 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         string? sourcePath = version.LocalObjectPath;
         if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
         {
-            string commonDirectory = await GetGitCommonDirectoryAsync(repositoryPath, cancellationToken).ConfigureAwait(false);
-            sourcePath = GetLfsObjectPath(commonDirectory, version.Pointer.OidSha256);
+            LfsStoragePaths lfsStorage = await LfsStoragePathResolver.ResolveAsync(
+                _processRunner, _gitExecutable, repositoryPath, cancellationToken).ConfigureAwait(false);
+            sourcePath = lfsStorage.GetObjectPath(version.Pointer.OidSha256);
         }
 
         if (!File.Exists(sourcePath))
@@ -1231,21 +1234,6 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
 
         return new LfsPointerInfo(match.Groups["oid"].Value.ToLowerInvariant(), size);
     }
-
-    private async Task<string> GetGitCommonDirectoryAsync(
-        string repositoryPath,
-        CancellationToken cancellationToken)
-    {
-        string value = (await RunGitAsync(
-                repositoryPath,
-                ["rev-parse", "--git-common-dir"],
-                cancellationToken)
-            .ConfigureAwait(false)).Trim();
-        return Path.GetFullPath(Path.IsPathRooted(value) ? value : Path.Combine(repositoryPath, value));
-    }
-
-    private static string GetLfsObjectPath(string gitCommonDirectory, string oid) =>
-        Path.Combine(gitCommonDirectory, "lfs", "objects", oid[..2], oid.Substring(2, 2), oid);
 
     private async Task<string> RunGitAsync(
         string workingDirectory,

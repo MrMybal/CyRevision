@@ -18,6 +18,7 @@ using CyRevision.Discord.Control;
 using CyRevision.Git;
 using CyRevision.Plugin.Abstractions;
 using CyRevision.PullRequests;
+using CyRevision.RemoteBuild;
 using CyRevision.Security;
 using CyRevision.Sync;
 using CyRevision.Vpn;
@@ -43,6 +44,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly SwarmSetupService _swarmSetupService;
     private readonly IVpnFileExchangeProfileStore _vpnFileExchangeProfileStore;
     private readonly VpnFileExchangeService _vpnFileExchangeService;
+    private readonly ILfsManagementProfileStore _lfsManagementProfileStore;
+    private readonly LfsStorageManager _lfsStorageManager;
+    private readonly JsonRemoteBuildConnectionStore _remoteBuildConnectionStore;
+    private readonly RemoteBuildSnapshotBuilder _remoteBuildSnapshotBuilder;
     private readonly LocalizationService _localization;
     private readonly OfflineDocumentationService _documentationService;
     private readonly ApplicationUpdateService _updateService;
@@ -124,6 +129,18 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private bool _smartSyncReplicateBackups;
     private string _smartSyncPlanSummary = "Plan calculé localement — aucun transfert lancé.";
     private string _peerLfsTransferSummary = "Aucun inventaire de pair vérifié pour le moment.";
+    private LfsManagementProfile? _currentLfsManagementProfile;
+    private LfsCleanupPlan? _lfsCleanupPlan;
+    private string _lfsExternalStoragePath = string.Empty;
+    private string _lfsManagementArchivePath = string.Empty;
+    private string _lfsCleanupRemoteName = "origin";
+    private string _lfsRequiredCopies = "1";
+    private string _lfsCleanupGraceDays = "7";
+    private string _lfsPeerProofMaximumAgeHours = "24";
+    private bool _lfsVerifyRemote = true;
+    private bool _lfsRemoveOriginalAfterRelocation;
+    private string _lfsStorageSummary = "Analyze the repository before cleaning LFS storage.";
+    private string _lfsRemoteVerification = "Remote verification has not run.";
     private VpnProjectProfile? _currentVpnProfile;
     private string _vpnState = "VPN non configuré";
     private string _vpnDetails = "WireGuard reste indépendant de Git et de Sync.";
@@ -142,6 +159,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private bool _vpnSetupAllowSwarm;
     private bool _vpnSetupAllowControlApi;
     private bool _vpnSetupAllowFileExchange;
+    private bool _vpnSetupAllowRemoteBuild;
     private bool _vpnCanApplyFirewall;
     private bool _vpnCanOpenRouter;
     private string _vpnSetupSummary = "Run the guided setup to inspect this computer.";
@@ -179,6 +197,18 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private VpnPeerViewModel? _selectedVpnFilePeer;
     private VpnSharedFileViewModel? _selectedVpnSharedFile;
     private string _vpnFileStatus = "VPN file exchange is not configured.";
+    private RemoteBuildCredentials? _currentRemoteBuildCredentials;
+    private RemoteBuildJobStatus? _currentRemoteBuildJob;
+    private CancellationTokenSource? _remoteBuildCancellation;
+    private string _remoteBuildEndpoint = "http://127.0.0.1:47841";
+    private string _remoteBuildAccessToken = string.Empty;
+    private string _remoteBuildRecipeId = string.Empty;
+    private RemoteBuildSourceMode _selectedRemoteBuildSourceMode = RemoteBuildSourceMode.ExistingWorkspace;
+    private string _remoteBuildArtifactDestination = string.Empty;
+    private string _remoteBuildMaximumUploadGb = "100";
+    private bool _remoteBuildAllowPrivateHttp;
+    private string _remoteBuildStatus = "Remote build agent is not configured.";
+    private string _remoteBuildLog = "No remote build has run.";
     private LanguageOption? _selectedLanguage;
     private IReadOnlyList<DocumentationTopic> _allDocumentationTopics = [];
     private DocumentationTopic? _selectedDocumentationTopic;
@@ -297,6 +327,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         SwarmSetupService swarmSetupService,
         IVpnFileExchangeProfileStore vpnFileExchangeProfileStore,
         VpnFileExchangeService vpnFileExchangeService,
+        ILfsManagementProfileStore lfsManagementProfileStore,
+        LfsStorageManager lfsStorageManager,
+        JsonRemoteBuildConnectionStore remoteBuildConnectionStore,
+        RemoteBuildSnapshotBuilder remoteBuildSnapshotBuilder,
         LocalizationService localization,
         OfflineDocumentationService documentationService,
         ApplicationUpdateService updateService,
@@ -325,6 +359,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _swarmSetupService = swarmSetupService;
         _vpnFileExchangeProfileStore = vpnFileExchangeProfileStore;
         _vpnFileExchangeService = vpnFileExchangeService;
+        _lfsManagementProfileStore = lfsManagementProfileStore;
+        _lfsStorageManager = lfsStorageManager;
+        _remoteBuildConnectionStore = remoteBuildConnectionStore;
+        _remoteBuildSnapshotBuilder = remoteBuildSnapshotBuilder;
         _localization = localization;
         _documentationService = documentationService;
         _updateService = updateService;
@@ -358,6 +396,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<LfsTrackedFile> LfsFiles { get; } = [];
 
     public ObservableCollection<LfsFileVersion> LfsVersions { get; } = [];
+
+    public ObservableCollection<LfsCleanupItem> LfsCleanupItems { get; } = [];
 
     public ObservableCollection<SmartSyncPlanItem> SmartSyncPlanItems { get; } = [];
 
@@ -624,6 +664,122 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         private set => SetProperty(ref _peerLfsTransferSummary, value);
     }
 
+    public string LfsExternalStoragePath
+    {
+        get => _lfsExternalStoragePath;
+        set => SetProperty(ref _lfsExternalStoragePath, value);
+    }
+
+    public string LfsManagementArchivePath
+    {
+        get => _lfsManagementArchivePath;
+        set => SetProperty(ref _lfsManagementArchivePath, value);
+    }
+
+    public string LfsCleanupRemoteName
+    {
+        get => _lfsCleanupRemoteName;
+        set => SetProperty(ref _lfsCleanupRemoteName, value);
+    }
+
+    public string LfsRequiredCopies
+    {
+        get => _lfsRequiredCopies;
+        set => SetProperty(ref _lfsRequiredCopies, value);
+    }
+
+    public string LfsCleanupGraceDays
+    {
+        get => _lfsCleanupGraceDays;
+        set => SetProperty(ref _lfsCleanupGraceDays, value);
+    }
+
+    public string LfsPeerProofMaximumAgeHours
+    {
+        get => _lfsPeerProofMaximumAgeHours;
+        set => SetProperty(ref _lfsPeerProofMaximumAgeHours, value);
+    }
+
+    public bool LfsVerifyRemote
+    {
+        get => _lfsVerifyRemote;
+        set => SetProperty(ref _lfsVerifyRemote, value);
+    }
+
+    public bool LfsRemoveOriginalAfterRelocation
+    {
+        get => _lfsRemoveOriginalAfterRelocation;
+        set => SetProperty(ref _lfsRemoveOriginalAfterRelocation, value);
+    }
+
+    public string LfsStorageSummary
+    {
+        get => _lfsStorageSummary;
+        private set => SetProperty(ref _lfsStorageSummary, value);
+    }
+
+    public string LfsRemoteVerification
+    {
+        get => _lfsRemoteVerification;
+        private set => SetProperty(ref _lfsRemoteVerification, value);
+    }
+
+    public string RemoteBuildEndpoint
+    {
+        get => _remoteBuildEndpoint;
+        set => SetProperty(ref _remoteBuildEndpoint, value);
+    }
+
+    public string RemoteBuildAccessToken
+    {
+        get => _remoteBuildAccessToken;
+        set => SetProperty(ref _remoteBuildAccessToken, value);
+    }
+
+    public string RemoteBuildRecipeId
+    {
+        get => _remoteBuildRecipeId;
+        set => SetProperty(ref _remoteBuildRecipeId, value);
+    }
+
+    public RemoteBuildSourceMode SelectedRemoteBuildSourceMode
+    {
+        get => _selectedRemoteBuildSourceMode;
+        set => SetProperty(ref _selectedRemoteBuildSourceMode, value);
+    }
+
+    public string RemoteBuildArtifactDestination
+    {
+        get => _remoteBuildArtifactDestination;
+        set => SetProperty(ref _remoteBuildArtifactDestination, value);
+    }
+
+    public string RemoteBuildMaximumUploadGb
+    {
+        get => _remoteBuildMaximumUploadGb;
+        set => SetProperty(ref _remoteBuildMaximumUploadGb, value);
+    }
+
+    public bool RemoteBuildAllowPrivateHttp
+    {
+        get => _remoteBuildAllowPrivateHttp;
+        set => SetProperty(ref _remoteBuildAllowPrivateHttp, value);
+    }
+
+    public string RemoteBuildStatus
+    {
+        get => _remoteBuildStatus;
+        private set => SetProperty(ref _remoteBuildStatus, value);
+    }
+
+    public string RemoteBuildLog
+    {
+        get => _remoteBuildLog;
+        private set => SetProperty(ref _remoteBuildLog, value);
+    }
+
+    public bool IsRemoteBuildRunning => _remoteBuildCancellation is not null;
+
     public ObservableCollection<VpnPeerViewModel> VpnPeers { get; } = [];
 
     public ObservableCollection<VpnSyncMessageViewModel> VpnSyncMessages { get; } = [];
@@ -644,6 +800,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<LanguageOption> Languages => _localization.Languages;
 
     public IReadOnlyList<LfsHistoryTransferMode> LfsHistoryModes { get; } = Enum.GetValues<LfsHistoryTransferMode>();
+
+    public IReadOnlyList<RemoteBuildSourceMode> RemoteBuildSourceModes { get; } = Enum.GetValues<RemoteBuildSourceMode>();
 
     public LanguageOption? SelectedLanguage
     {
@@ -1164,6 +1322,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             {
                 InvalidateVpnSetupPlan();
             }
+        }
+    }
+
+    public bool VpnSetupAllowRemoteBuild
+    {
+        get => _vpnSetupAllowRemoteBuild;
+        set
+        {
+            if (SetProperty(ref _vpnSetupAllowRemoteBuild, value))
+                InvalidateVpnSetupPlan();
         }
     }
 
@@ -3454,6 +3622,230 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, $"{pattern} est maintenant suivi par Git LFS");
     }
 
+    public void SetLfsExternalStoragePath(string path) => LfsExternalStoragePath = Path.GetFullPath(path);
+
+    public void SetLfsManagementArchivePath(string path) => LfsManagementArchivePath = Path.GetFullPath(path);
+
+    public async Task SaveLfsManagementAsync()
+    {
+        if (SelectedProject is null)
+            return;
+        await RunOperationAsync("Saving safe LFS storage policy...", async () =>
+        {
+            LfsManagementProfile profile = BuildLfsManagementProfile();
+            await _lfsManagementProfileStore.SaveAsync(profile);
+            _currentLfsManagementProfile = profile;
+        }, "Safe LFS storage policy saved");
+    }
+
+    public async Task AnalyzeLfsStorageAsync()
+    {
+        if (SelectedProject is null || !SelectedProject.Definition.Features.GitEnabled)
+            return;
+        await RunOperationAsync("Analyzing local LFS objects and retention evidence...", async () =>
+        {
+            LfsManagementProfile profile = BuildLfsManagementProfile();
+            await _lfsManagementProfileStore.SaveAsync(profile);
+            _currentLfsManagementProfile = profile;
+            PeerLfsAvailabilityCache peers = await _gitPeerExchangeService.GetCachedLfsAvailabilityAsync(
+                GetGitExchangeStatePath(SelectedProject.Id), SelectedProject.Id);
+            _lfsCleanupPlan = await _lfsStorageManager.AnalyzeAsync(
+                SelectedProject.RootPath, profile, peers);
+            ReplaceCollection(LfsCleanupItems, _lfsCleanupPlan.Objects);
+            LfsStorageSummary = $"{_lfsCleanupPlan.Objects.Count} local object(s) · " +
+                                $"{_lfsCleanupPlan.ReclaimableCount} safely reclaimable · " +
+                                $"{FormatByteSize(_lfsCleanupPlan.ReclaimableBytes)} · storage {_lfsCleanupPlan.StoragePath}";
+            LfsRemoteVerification = _lfsCleanupPlan.RemoteVerificationOutput;
+        }, "LFS safety analysis complete");
+    }
+
+    public async Task ArchiveLfsCandidatesAsync()
+    {
+        if (_lfsCleanupPlan is null || string.IsNullOrWhiteSpace(LfsManagementArchivePath))
+        {
+            LfsStorageSummary = "Analyze first and choose a verified LFS archive directory.";
+            return;
+        }
+        await RunOperationAsync("Creating verified LFS archive copies...", async () =>
+        {
+            LfsArchiveResult result = await _lfsStorageManager.ArchiveUnreferencedAsync(
+                _lfsCleanupPlan, LfsManagementArchivePath);
+            LfsStorageSummary = $"Archived {result.ArchivedObjects} object(s), {FormatByteSize(result.ArchivedBytes)}. Analyze again before cleanup.";
+            _lfsCleanupPlan = null;
+            LfsCleanupItems.Clear();
+        }, "Verified LFS archive updated");
+    }
+
+    public async Task ExecuteLfsCleanupAsync()
+    {
+        if (_lfsCleanupPlan is null || _lfsCleanupPlan.ReclaimableCount == 0)
+        {
+            LfsStorageSummary = "No verified LFS objects are currently eligible for cleanup.";
+            return;
+        }
+        await RunOperationAsync("Deleting only LFS objects with verified retention evidence...", async () =>
+        {
+            LfsCleanupResult result = await _lfsStorageManager.ExecuteAsync(_lfsCleanupPlan);
+            LfsStorageSummary = $"Reclaimed {FormatByteSize(result.ReclaimedBytes)} from {result.DeletedObjects} object(s); " +
+                                $"{result.SkippedObjects} re-protected · audit {result.AuditPath}";
+            _lfsCleanupPlan = null;
+            LfsCleanupItems.Clear();
+            await RefreshCoreAsync();
+        }, "Safe LFS cleanup complete");
+    }
+
+    public async Task RelocateLfsStorageAsync()
+    {
+        if (SelectedProject is null || string.IsNullOrWhiteSpace(LfsExternalStoragePath))
+        {
+            LfsStorageSummary = "Choose an external LFS storage directory.";
+            return;
+        }
+        await RunOperationAsync("Copying and verifying LFS storage before activation...", async () =>
+        {
+            LfsRelocationResult result = await _lfsStorageManager.RelocateAsync(
+                SelectedProject.RootPath,
+                LfsExternalStoragePath,
+                LfsRemoveOriginalAfterRelocation);
+            LfsStorageSummary = $"Active LFS storage: {result.ActiveStoragePath} · {result.CopiedObjects} verified object(s) · " +
+                                (result.OriginalObjectsRemoved ? "old object cache removed" : "old cache retained");
+            await RefreshCoreAsync();
+        }, "External LFS storage activated");
+    }
+
+    public void SetRemoteBuildArtifactDestination(string path) =>
+        RemoteBuildArtifactDestination = Path.GetFullPath(path);
+
+    public async Task SaveRemoteBuildAsync()
+    {
+        if (SelectedProject is null)
+            return;
+        await RunOperationAsync("Saving remote build connection...", async () =>
+        {
+            RemoteBuildCredentials credentials = BuildRemoteBuildCredentials();
+            await _remoteBuildConnectionStore.SaveAsync(credentials);
+            _currentRemoteBuildCredentials = credentials;
+        }, "Remote build connection saved");
+    }
+
+    public async Task TestRemoteBuildAsync()
+    {
+        if (SelectedProject is null)
+            return;
+        await RunOperationAsync("Testing remote build agent...", async () =>
+        {
+            RemoteBuildCredentials credentials = BuildRemoteBuildCredentials();
+            using RemoteBuildClient client = new(credentials);
+            RemoteBuildAgentStatus health = await client.GetHealthAsync();
+            IReadOnlyList<RemoteBuildProjectDescriptor> projects = await client.GetProjectsAsync();
+            RemoteBuildProjectDescriptor project = projects.FirstOrDefault(item => item.ProjectId == SelectedProject.Id)
+                                                   ?? throw new InvalidOperationException(
+                                                       "Agent is reachable, but this project ID is not allowlisted in agent.json.");
+            string recipes = string.Join(", ", project.Recipes.Select(recipe => recipe.Id));
+            RemoteBuildStatus = $"{health.Service} {health.Version} · {health.RunningJobs} running · recipes: {recipes}";
+        }, "Remote build agent connection verified");
+    }
+
+    public async Task StartRemoteBuildAsync()
+    {
+        if (SelectedProject is null || _remoteBuildCancellation is not null)
+            return;
+        Guid projectId = SelectedProject.Id;
+        string projectName = SelectedProject.Name;
+        string projectRoot = SelectedProject.RootPath;
+        RemoteBuildCredentials credentials;
+        try
+        {
+            credentials = BuildRemoteBuildCredentials();
+            await _remoteBuildConnectionStore.SaveAsync(credentials);
+        }
+        catch (Exception exception)
+        {
+            RemoteBuildStatus = exception.Message;
+            return;
+        }
+
+        _currentRemoteBuildCredentials = credentials;
+        _remoteBuildCancellation = new CancellationTokenSource();
+        OnPropertyChanged(nameof(IsRemoteBuildRunning));
+        string? snapshotPath = null;
+        try
+        {
+            RemoteBuildStatus = "Preparing remote build request...";
+            string revision = _allExplorerRevisions.FirstOrDefault()?.Hash ?? string.Empty;
+            if (credentials.Profile.SourceMode == RemoteBuildSourceMode.UploadedSnapshot)
+            {
+                string snapshots = Path.Combine(_applicationPaths.CacheDirectory, "remote-build", "snapshots");
+                Directory.CreateDirectory(snapshots);
+                snapshotPath = Path.Combine(snapshots, Guid.NewGuid().ToString("N") + ".zip");
+                RemoteBuildSnapshotResult snapshot = await _remoteBuildSnapshotBuilder.CreateAsync(
+                    projectRoot,
+                    snapshotPath,
+                    credentials.Profile.MaximumUploadBytes,
+                    _remoteBuildCancellation.Token);
+                revision = snapshot.Revision;
+                RemoteBuildStatus = $"Uploading {snapshot.FileCount} file(s), {FormatByteSize(snapshot.SourceBytes)}...";
+            }
+
+            using RemoteBuildClient client = new(credentials);
+            _currentRemoteBuildJob = await client.StartAsync(
+                credentials.Profile, snapshotPath, revision, _remoteBuildCancellation.Token);
+            while (_currentRemoteBuildJob.State is RemoteBuildJobState.Queued or RemoteBuildJobState.Preparing or
+                   RemoteBuildJobState.Running or RemoteBuildJobState.Packaging)
+            {
+                RemoteBuildStatus = $"{_currentRemoteBuildJob.State}: {_currentRemoteBuildJob.Message}";
+                RemoteBuildLog = _currentRemoteBuildJob.LogTail;
+                await Task.Delay(TimeSpan.FromSeconds(2), _remoteBuildCancellation.Token);
+                _currentRemoteBuildJob = await client.GetJobAsync(
+                    projectId, _currentRemoteBuildJob.JobId, _remoteBuildCancellation.Token);
+            }
+
+            RemoteBuildLog = _currentRemoteBuildJob.LogTail;
+            RemoteBuildStatus = $"{_currentRemoteBuildJob.State}: {_currentRemoteBuildJob.Message}";
+            if (_currentRemoteBuildJob.State == RemoteBuildJobState.Succeeded)
+            {
+                string name = $"{SanitizeFileName(projectName)}-{DateTimeOffset.Now:yyyyMMdd-HHmmss}-{_currentRemoteBuildJob.JobId.ToString("N")[..8]}.zip";
+                string destination = Path.Combine(credentials.Profile.ArtifactDestination, name);
+                string downloaded = await client.DownloadArtifactsAsync(
+                    projectId, _currentRemoteBuildJob.JobId, destination, _remoteBuildCancellation.Token);
+                RemoteBuildStatus = $"Remote build succeeded · artifacts: {downloaded}";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            RemoteBuildStatus = "Remote build monitoring cancelled.";
+        }
+        catch (Exception exception)
+        {
+            RemoteBuildStatus = exception.Message;
+        }
+        finally
+        {
+            if (snapshotPath is not null)
+                File.Delete(snapshotPath);
+            _remoteBuildCancellation.Dispose();
+            _remoteBuildCancellation = null;
+            OnPropertyChanged(nameof(IsRemoteBuildRunning));
+        }
+    }
+
+    public async Task CancelRemoteBuildAsync()
+    {
+        if (SelectedProject is not null && _currentRemoteBuildCredentials is not null && _currentRemoteBuildJob is not null)
+        {
+            try
+            {
+                using RemoteBuildClient client = new(_currentRemoteBuildCredentials);
+                await client.CancelAsync(SelectedProject.Id, _currentRemoteBuildJob.JobId);
+            }
+            catch (Exception exception)
+            {
+                RemoteBuildStatus = exception.Message;
+            }
+        }
+        _remoteBuildCancellation?.Cancel();
+    }
+
     public async Task SetBackupStoreAsync(string path)
     {
         if (SelectedProject is null)
@@ -4764,6 +5156,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await _projectCatalog.UpsertAsync(updated);
             StatusMessage = "Chargement du dépôt…";
             await RefreshCoreAsync();
+            await LoadLfsManagementCoreAsync();
+            await LoadRemoteBuildCoreAsync();
             await LoadBackupsCoreAsync();
             await LoadSyncProfileCoreAsync();
             await LoadVpnProfileCoreAsync();
@@ -5121,6 +5515,68 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             SelectedLfsFile = selectedLfsFile;
         }
         UpdateSmartSyncPlan();
+    }
+
+    private async Task LoadLfsManagementCoreAsync()
+    {
+        LfsCleanupItems.Clear();
+        _lfsCleanupPlan = null;
+        if (SelectedProject is null)
+        {
+            _currentLfsManagementProfile = null;
+            return;
+        }
+
+        LfsManagementProfile profile = await _lfsManagementProfileStore.GetAsync(SelectedProject.Id)
+                                       ?? LfsManagementProfile.CreateDefault(SelectedProject.Id) with
+                                       {
+                                           ArchivePath = Path.Combine(
+                                               _applicationPaths.DataDirectory,
+                                               "lfs-archives",
+                                               SelectedProject.Id.ToString("N"))
+                                       };
+        _currentLfsManagementProfile = profile;
+        LfsExternalStoragePath = profile.ExternalStoragePath;
+        LfsManagementArchivePath = profile.ArchivePath;
+        LfsCleanupRemoteName = profile.RemoteName;
+        LfsRequiredCopies = profile.RequiredVerifiedCopies.ToString();
+        LfsCleanupGraceDays = profile.GracePeriodDays.ToString();
+        LfsPeerProofMaximumAgeHours = profile.PeerProofMaximumAgeHours.ToString();
+        LfsVerifyRemote = profile.VerifyRemote;
+        LfsStorageSummary = "Analyze the repository to classify protected, verified, and blocked LFS objects.";
+        LfsRemoteVerification = "Remote verification has not run.";
+    }
+
+    private async Task LoadRemoteBuildCoreAsync()
+    {
+        _remoteBuildCancellation?.Cancel();
+        if (SelectedProject is null)
+        {
+            _currentRemoteBuildCredentials = null;
+            return;
+        }
+
+        string defaultDestination = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "Downloads",
+            "CyRevision Builds",
+            SanitizeFileName(SelectedProject.Name));
+        RemoteBuildCredentials credentials = await _remoteBuildConnectionStore.GetAsync(SelectedProject.Id)
+                                             ?? new RemoteBuildCredentials(
+                                                 RemoteBuildConnectionProfile.CreateDefault(
+                                                     SelectedProject.Id, defaultDestination),
+                                                 string.Empty);
+        _currentRemoteBuildCredentials = credentials;
+        RemoteBuildEndpoint = credentials.Profile.Endpoint;
+        RemoteBuildAccessToken = credentials.AccessToken;
+        RemoteBuildRecipeId = credentials.Profile.RecipeId;
+        SelectedRemoteBuildSourceMode = credentials.Profile.SourceMode;
+        RemoteBuildArtifactDestination = credentials.Profile.ArtifactDestination;
+        RemoteBuildMaximumUploadGb = Math.Max(1, credentials.Profile.MaximumUploadBytes / (1024L * 1024 * 1024)).ToString();
+        RemoteBuildAllowPrivateHttp = credentials.Profile.AllowPrivateHttp;
+        RemoteBuildStatus = string.IsNullOrWhiteSpace(credentials.Profile.RecipeId)
+            ? "Configure an allowlisted recipe ID from the remote agent."
+            : "Remote build connection loaded; test it before starting a job.";
     }
 
     private async Task LoadSyncProfileCoreAsync()
@@ -5832,6 +6288,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         VpnSetupAllowSwarm = false;
         VpnSetupAllowControlApi = false;
         VpnSetupAllowFileExchange = false;
+        VpnSetupAllowRemoteBuild = false;
         VpnCanApplyFirewall = false;
         VpnCanOpenRouter = false;
         VpnSetupSummary = "Run the guided setup to inspect this computer.";
@@ -5895,10 +6352,22 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             features |= VpnSetupFeatures.SecureFileExchange;
         }
 
+        if (VpnSetupAllowRemoteBuild)
+        {
+            features |= VpnSetupFeatures.RemoteBuildAgent;
+        }
+
         int filePort = int.TryParse(VpnFileListenPort, out int parsed)
             ? parsed
             : VpnFileExchangeDefaults.Port;
-        return new VpnSetupOptions(features) { FileExchangePort = filePort };
+        int buildPort = Uri.TryCreate(RemoteBuildEndpoint, UriKind.Absolute, out Uri? buildEndpoint) && buildEndpoint.Port > 0
+            ? buildEndpoint.Port
+            : VpnNetworkSetupService.RemoteBuildPort;
+        return new VpnSetupOptions(features)
+        {
+            FileExchangePort = filePort,
+            RemoteBuildPort = buildPort
+        };
     }
 
     private void InvalidateVpnSetupPlan()
@@ -6253,7 +6722,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
 
         string archiveRoot = Path.GetFullPath(project.ColdArchivePath);
-        string objectPath = Path.Combine(archiveRoot, "objects", oidSha256[..2], oidSha256);
+        string objectPath = Path.Combine(archiveRoot, "objects", oidSha256[..2], oidSha256.Substring(2, 2), oidSha256);
+        if (!File.Exists(objectPath))
+        {
+            objectPath = Path.Combine(archiveRoot, "objects", oidSha256[..2], oidSha256);
+        }
         if (!File.Exists(objectPath))
         {
             return null;
@@ -6285,6 +6758,53 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         };
         SyncDetails = $"{status.ConnectedPeers} pair(s) connecté(s) · {FormatByteSize(status.PendingBytes)} en attente" +
                       (string.IsNullOrWhiteSpace(status.Message) ? string.Empty : $" · {status.Message}");
+    }
+
+    private LfsManagementProfile BuildLfsManagementProfile()
+    {
+        if (SelectedProject is null)
+            throw new InvalidOperationException("Select a project first.");
+        int copies = int.TryParse(LfsRequiredCopies, out int parsedCopies) ? parsedCopies : 1;
+        int grace = int.TryParse(LfsCleanupGraceDays, out int parsedGrace) ? parsedGrace : 7;
+        int peerAge = int.TryParse(LfsPeerProofMaximumAgeHours, out int parsedPeerAge) ? parsedPeerAge : 24;
+        LfsManagementProfile profile = new(
+            SelectedProject.Id,
+            string.IsNullOrWhiteSpace(LfsExternalStoragePath) ? string.Empty : Path.GetFullPath(LfsExternalStoragePath),
+            string.IsNullOrWhiteSpace(LfsManagementArchivePath) ? string.Empty : Path.GetFullPath(LfsManagementArchivePath),
+            string.IsNullOrWhiteSpace(LfsCleanupRemoteName) ? "origin" : LfsCleanupRemoteName.Trim(),
+            copies,
+            grace,
+            peerAge,
+            LfsVerifyRemote);
+        profile.Validate();
+        return profile;
+    }
+
+    private RemoteBuildCredentials BuildRemoteBuildCredentials()
+    {
+        if (SelectedProject is null)
+            throw new InvalidOperationException("Select a project first.");
+        if (!long.TryParse(RemoteBuildMaximumUploadGb, out long maximumGb) || maximumGb is < 1 or > 2048)
+            throw new InvalidOperationException("Remote build upload limit must be between 1 and 2048 GB.");
+        if (string.IsNullOrWhiteSpace(RemoteBuildAccessToken))
+            throw new InvalidOperationException("Paste the build agent token through a trusted channel.");
+        RemoteBuildConnectionProfile profile = new(
+            SelectedProject.Id,
+            RemoteBuildEndpoint.Trim(),
+            RemoteBuildRecipeId.Trim(),
+            SelectedRemoteBuildSourceMode,
+            Path.GetFullPath(RemoteBuildArtifactDestination),
+            checked(maximumGb * 1024L * 1024 * 1024),
+            RemoteBuildAllowPrivateHttp);
+        _ = CyRevision.RemoteBuild.RemoteBuildEndpoint.Create(profile.Endpoint, profile.AllowPrivateHttp);
+        return new RemoteBuildCredentials(profile, RemoteBuildAccessToken.Trim());
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        char[] invalid = Path.GetInvalidFileNameChars();
+        string result = new(value.Select(character => invalid.Contains(character) ? '-' : character).ToArray());
+        return string.IsNullOrWhiteSpace(result) ? "project" : result.Trim();
     }
 
     private static string FormatByteSize(long bytes)
@@ -6760,6 +7280,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _remoteBuildCancellation?.Cancel();
         _codeSearchCancellation?.Cancel();
         _codeSearchCancellation?.Dispose();
         _aiAgentCancellation?.Cancel();

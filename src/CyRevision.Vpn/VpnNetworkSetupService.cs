@@ -9,6 +9,7 @@ namespace CyRevision.Vpn;
 public sealed class VpnNetworkSetupService
 {
     public const int CyRevisionControlPort = 47831;
+    public const int RemoteBuildPort = 47841;
 
     public async Task<VpnSetupPlan> InspectAsync(
         VpnProjectProfile profile,
@@ -42,9 +43,11 @@ public sealed class VpnNetworkSetupService
             VpnSetupFeatures.AcceptIncomingTunnel |
             VpnSetupFeatures.UnrealSwarm |
             VpnSetupFeatures.CyRevisionControlApi |
-            VpnSetupFeatures.SecureFileExchange)
+            VpnSetupFeatures.SecureFileExchange |
+            VpnSetupFeatures.RemoteBuildAgent)
         {
-            FileExchangePort = options.FileExchangePort
+            FileExchangePort = options.FileExchangePort,
+            RemoteBuildPort = options.RemoteBuildPort
         };
         List<VpnFirewallRule> allProjectRules = BuildRules(profile, allOptions);
         (_, IReadOnlyList<VpnFirewallCommand> remove, bool cleanupAutomatic) =
@@ -306,6 +309,22 @@ public sealed class VpnNetworkSetupService
             });
         }
 
+        if (options.AllowRemoteBuildAgent)
+        {
+            if (options.RemoteBuildPort is < 1024 or > 65535)
+                throw new InvalidDataException("The remote build agent port must be between 1024 and 65535.");
+            rules.Add(new VpnFirewallRule(
+                prefix + "-BuildAgent",
+                "CyRevision remote build agent over VPN",
+                "TCP",
+                options.RemoteBuildPort.ToString(),
+                profile.NetworkCidr,
+                "Authenticated allowlisted build jobs and artifact delivery inside the VPN")
+            {
+                LocalAddress = profile.LocalAddress
+            });
+        }
+
         return rules;
     }
 
@@ -356,6 +375,9 @@ public sealed class VpnNetworkSetupService
             steps.Add($"File exchange port {options.FileExchangePort} is restricted to the VPN subnet. The service also binds only to the project VPN address and requires its project token.");
         }
 
+        if (options.AllowRemoteBuildAgent)
+            steps.Add($"Remote build port {options.RemoteBuildPort} is restricted to the VPN address and subnet. Recipes remain locally allowlisted on the build machine.");
+
         return steps;
     }
 
@@ -378,7 +400,7 @@ public sealed class VpnNetworkSetupService
         [
             $"Reserve {localAddress} for this computer in the router DHCP settings.",
             $"Create one UDP port-forward: external {profile.ListenPort} -> {localAddress}:{profile.ListenPort}.",
-            "Do not forward Swarm, CyRevision control, or file-exchange ports; they are reachable through the VPN only.",
+            "Do not forward Swarm, CyRevision control, file-exchange, or remote-build ports; they are reachable through the VPN only.",
             $"Set the project public endpoint to your public IP or dynamic-DNS name followed by :{profile.ListenPort}.",
             "Test from another network, for example a phone using mobile data; many routers do not support NAT loopback.",
             "If the router WAN address is private or in 100.64.0.0/10, the connection may use CGNAT; use a public server/relay peer or request a public IP."

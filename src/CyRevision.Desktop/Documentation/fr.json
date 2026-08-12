@@ -104,6 +104,22 @@
     "keywords": ["swarm", "coordinator", "agent", "wireguard", "vpn", "dns", "pare-feu", "fichier", "dossier", "transfert", "sha-256"]
   },
   {
+    "id": "safe-lfs-storage",
+    "category": "Git LFS",
+    "title": "Stockage et nettoyage LFS sûr",
+    "summary": "Déplacer le cache LFS et récupérer de l'espace sans supprimer la dernière copie d'un objet.",
+    "body": "CLASSIFICATION\nOuvrez Git LFS > Storage & safe cleanup puis lancez Analyze. Les objets référencés par une branche locale, un stash, un index ou un worktree sont protégés, y compris les commits non publiés. Un objet devient éligible uniquement s'il est orphelin, hors délai de grâce et dispose du nombre demandé de copies vérifiées. Sinon il reste bloqué.\n\nPREUVES DE CONSERVATION\nUne copie remote est acceptée après le dry-run Git LFS avec vérification du remote et des objets inaccessibles. Une copie pair exige un inventaire signé récent et un objet réellement publié. Une archive utilise le manifeste CyRevision et son SHA-256 est revérifié avant suppression. Sans remote, conservez au moins une copie sur un pair ou dans une archive.\n\nPR ET BRANCHES SUPPRIMÉES\nLa suppression d'une branche sur une forge ne retire pas sa référence locale. Ses objets restent protégés jusqu'à la suppression volontaire de cette branche locale. Une PR uniquement locale ou une branche non poussée est toujours conservée.\n\nSTOCKAGE EXTERNE\nChoisissez un dossier vide dédié. CyRevision copie et vérifie tous les objets avant de configurer lfs.storage localement. Un marqueur empêche le partage dangereux entre plusieurs dépôts. Gardez l'ancien cache lors du premier essai.\n\nNETTOYAGE\nArchive candidates crée les copies sans supprimer. Relancez Analyze puis confirmez la purge. Le plan expire après quinze minutes, les références sont relues et un audit est écrit sous .git/cyrevision/lfs-cleanup.",
+    "keywords": ["git lfs", "stockage", "nettoyage", "archive", "pair", "remote", "branche", "pull request", "disque"]
+  },
+  {
+    "id": "remote-builds",
+    "category": "Build et VPN",
+    "title": "Compilation distante via VPN",
+    "summary": "Compiler sur une machine CI et récupérer les artefacts sans publier une branche temporaire.",
+    "body": "INSTALLATION DE L'AGENT\nInstallez BuildAgent sur la machine CI puis lancez CyRevision.Build.Agent --print-token. Le premier lancement crée un token et un agent.json vide. Ajoutez l'identifiant exact du projet et les recettes. L'opérateur du serveur choisit l'exécutable, les arguments, le timeout, le workspace et les artefacts ; le client ne peut transmettre aucune commande.\n\nRÉSEAU\nLe test local utilise 127.0.0.1:47841. Pour un pair distant, liez l'agent à son IPv4 WireGuard, ajoutez --allow-private-http et activez Remote build agent over VPN dans l'assistant pare-feu. Ne redirigez jamais TCP 47841 sur le modem.\n\nMODES SOURCE\nExistingWorkspace ne transfère aucun code et utilise le workspace configuré. UploadedSnapshot envoie les fichiers Git suivis et non ignorés, sans .git ni caches générés, puis les extrait dans un job isolé avec contrôle des chemins et tailles.\n\nEXÉCUTION\nDans Remote builds, saisissez l'endpoint VPN, le token, la recette, le mode et le dossier d'artefacts. Test agent affiche les recettes autorisées. Start remote build suit les logs, permet l'annulation et télécharge le ZIP final. Aucun commit ou branche temporaire n'est envoyé au remote.",
+    "keywords": ["compilation distante", "CI", "agent", "VPN", "WireGuard", "Unreal", "artefact", "recette"]
+  },
+  {
     "id": "troubleshooting",
     "category": "Assistance",
     "title": "Dépannage et sécurité",

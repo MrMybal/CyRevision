@@ -14,6 +14,7 @@ using CyRevision.Discord;
 using CyRevision.Discord.Control;
 using CyRevision.Git;
 using CyRevision.PullRequests;
+using CyRevision.RemoteBuild;
 using CyRevision.Sync;
 using CyRevision.Vpn;
 
@@ -65,11 +66,16 @@ public partial class App : Application
             SwarmSetupService swarmSetup = new(vpnNetworkSetup);
             JsonVpnFileExchangeProfileStore vpnFileProfiles = new(paths.VpnDirectory);
             VpnFileExchangeService vpnFileExchange = new();
+            JsonLfsManagementProfileStore lfsManagementProfiles = new(paths.LfsManagementDirectory);
+            LfsStorageManager lfsStorageManager = new();
+            JsonRemoteBuildConnectionStore remoteBuildConnections = new(paths.RemoteBuildDirectory);
+            RemoteBuildSnapshotBuilder remoteBuildSnapshots = new();
             string? initialProjectPath = ReadProjectArgument(desktop.Args);
             MainWindowViewModel viewModel = new(
                 catalog, gitService, paths, syncProfiles, gitExchange, assetDiff,
                 vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine, vpnRuntimeResolver,
                 vpnNetworkSetup, vpnSyncExchange, swarmProfiles, swarmSetup, vpnFileProfiles, vpnFileExchange,
+                lfsManagementProfiles, lfsStorageManager, remoteBuildConnections, remoteBuildSnapshots,
                 localization, documentation, updates, discordStore, discordAgent, discordConnections,
                 pluginManager, new CodeWorkspaceService(), pullRequests, initialProjectPath);
 
