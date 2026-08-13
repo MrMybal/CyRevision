@@ -71,6 +71,9 @@ public sealed class UiLocalizer : IDisposable
                 case TextBox textBox:
                     Localize(textBox, TextBox.PlaceholderTextProperty, textBox.PlaceholderText);
                     break;
+                case MenuItem menuItem when menuItem.Header is string header:
+                    Localize(menuItem, MenuItem.HeaderProperty, header);
+                    break;
                 case ContentControl contentControl when contentControl.Content is string content:
                     Localize(contentControl, ContentControl.ContentProperty, content);
                     break;

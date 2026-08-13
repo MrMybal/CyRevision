@@ -106,11 +106,161 @@
             <Setter Property="Foreground" Value="#F2F3F5" />
             <Setter Property="BorderBrush" Value="#6C7078" />
         </Style>
+        <Style Selector="ToggleButton.workspaceCategory">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#A9ABB2" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="12,6,12,5" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="ToggleButton.workspaceCategory:pointerover">
+            <Setter Property="Foreground" Value="#F2F3F5" />
+            <Setter Property="Background" Value="#2B2D30" />
+        </Style>
+        <Style Selector="ToggleButton.workspaceCategory:checked">
+            <Setter Property="Foreground" Value="#7DE2CC" />
+            <Setter Property="BorderBrush" Value="#4EC9B0" />
+            <Setter Property="Background" Value="#26282B" />
+        </Style>
+        <Style Selector="Menu.topMenu">
+            <Setter Property="Background" Value="#242529" />
+            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="Padding" Value="7,0" />
+        </Style>
+        <Style Selector="Menu.topMenu MenuItem">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Padding" Value="9,4" />
+        </Style>
+        <Style Selector="Menu.topMenu MenuItem:pointerover">
+            <Setter Property="Background" Value="#393B40" />
+        </Style>
+        <Style Selector="TreeView.compactTree TreeViewItem">
+            <Setter Property="MinHeight" Value="23" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="10.5" />
+        </Style>
+        <Style Selector="DataGrid.historyCompact DataGridRow">
+            <Setter Property="MinHeight" Value="25" />
+        </Style>
+        <Style Selector="DataGrid.historyCompact DataGridCell">
+            <Setter Property="Padding" Value="5,1" />
+            <Setter Property="FontSize" Value="10.5" />
+        </Style>
+        <Style Selector="DataGrid.historyCompact DataGridColumnHeader">
+            <Setter Property="MinHeight" Value="25" />
+            <Setter Property="Padding" Value="5,2" />
+            <Setter Property="FontSize" Value="9.5" />
+        </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="52,*,28" ColumnDefinitions="226,*">
-        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="208,*,Auto" Margin="12,0">
+    <Grid RowDefinitions="28,48,*,26" ColumnDefinitions="204,*">
+        <Menu Grid.Row="0" Grid.ColumnSpan="2" Classes="topMenu">
+            <MenuItem Header="File">
+                <MenuItem Header="Add folder..." HotKey="Ctrl+Shift+O" Click="OnAddFolderClick" />
+                <MenuItem Header="Open repository..." HotKey="Ctrl+O" Click="OnAddExistingClick" />
+                <MenuItem Header="Create repository..." HotKey="Ctrl+N" Click="OnCreateGitClick" />
+                <Separator />
+                <MenuItem Header="Remove selected project" IsEnabled="{Binding HasSelectedProject}" Click="OnRemoveProjectClick" />
+                <Separator />
+                <MenuItem Header="Exit" HotKey="Ctrl+Q" Click="OnExitClick" />
+            </MenuItem>
+            <MenuItem Header="Edit">
+                <MenuItem Header="Find in files..." Click="OnOpenGlobalSearchClick" />
+                <Separator />
+                <MenuItem Header="Refresh project" HotKey="F5" IsEnabled="{Binding HasSelectedProject}" Click="OnRefreshClick" />
+            </MenuItem>
+            <MenuItem Header="View">
+                <MenuItem Header="Project overview" Click="OnShowProjectWorkspaceClick" />
+                <MenuItem Header="Changes" Click="OnShowChangesWorkspaceClick" />
+                <MenuItem Header="Code explorer" Click="OnShowCodeWorkspaceClick" />
+                <MenuItem Header="History" Click="OnShowHistoryWorkspaceClick" />
+                <MenuItem Header="Git graphs" Click="OnShowGitGraphsWorkspaceClick" />
+                <Separator />
+                <MenuItem Header="Open detached workspace">
+                    <MenuItem Header="History explorer" Click="OnOpenDetachedHistoryClick" />
+                    <MenuItem Header="Code explorer" Click="OnOpenDetachedCodeClick" />
+                    <MenuItem Header="Multi restore" Click="OnOpenDetachedMultiRestoreClick" />
+                    <MenuItem Header="Branch compare &amp; cherry-pick" Click="OnOpenDetachedCherryPickClick" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="Workspace layout">
+                    <MenuItem Header="Save current layout" Click="OnSaveWorkspaceLayoutClick" />
+                    <MenuItem Header="Reset layout" Click="OnResetWorkspaceLayoutClick" />
+                    <Separator />
+                    <MenuItem Header="Changes: Review" Click="OnBalancedChangesLayoutClick" />
+                    <MenuItem Header="Changes: Diff focus" Click="OnDiffFocusChangesLayoutClick" />
+                    <MenuItem Header="Code: Balanced" Click="OnBalancedCodeLayoutClick" />
+                    <MenuItem Header="Code: Editor focus" Click="OnEditorFocusCodeLayoutClick" />
+                    <MenuItem Header="Code: Search focus" Click="OnSearchFocusCodeLayoutClick" />
+                    <MenuItem Header="History: Columns" Click="OnColumnsHistoryLayoutClick" />
+                    <MenuItem Header="History: Review" Click="OnReviewHistoryLayoutClick" />
+                    <MenuItem Header="History: Diff focus" Click="OnDiffFocusedHistoryLayoutClick" />
+                </MenuItem>
+            </MenuItem>
+            <MenuItem Header="Git" IsEnabled="{Binding HasSelectedProject}">
+                <MenuItem Header="Refresh" Click="OnRefreshClick" />
+                <Separator />
+                <MenuItem Header="Stage all" Click="OnStageAllClick" />
+                <MenuItem Header="Unstage all" Click="OnUnstageAllClick" />
+                <MenuItem Header="Commit changes..." Click="OnShowChangesWorkspaceClick" />
+                <Separator />
+                <MenuItem Header="Fetch" Click="OnFetchClick" />
+                <MenuItem Header="Pull" Click="OnPullClick" />
+                <MenuItem Header="Push" Click="OnPushClick" />
+                <Separator />
+                <MenuItem Header="Branches" Click="OnShowBranchesWorkspaceClick" />
+                <MenuItem Header="Compare branches &amp; cherry-pick" Click="OnShowCherryPickWorkspaceClick" />
+                <MenuItem Header="Multi restore composer" Click="OnShowMultiRestoreWorkspaceClick" />
+                <MenuItem Header="Pull Requests" Click="OnShowPullRequestsWorkspaceClick" />
+                <MenuItem Header="File locks" Click="OnShowLfsLocksWorkspaceClick" />
+                <MenuItem Header="Git LFS" Click="OnShowGitLfsWorkspaceClick" />
+            </MenuItem>
+            <MenuItem Header="Tools">
+                <MenuItem Header="System integration">
+                    <MenuItem x:Name="LaunchAtLoginMenuItem"
+                              Header="Launch at system login"
+                              ToggleType="CheckBox"
+                              Click="OnToggleLaunchAtLoginClick" />
+                    <MenuItem x:Name="StartHiddenAtLoginMenuItem"
+                              Header="Start hidden in tray"
+                              ToggleType="CheckBox"
+                              Click="OnToggleStartHiddenAtLoginClick" />
+                    <MenuItem x:Name="CloseToTrayMenuItem"
+                              Header="Close window to tray"
+                              ToggleType="CheckBox"
+                              Click="OnToggleCloseToTrayClick" />
+                    <MenuItem x:Name="ShowTrayIconMenuItem"
+                              Header="Show system tray icon"
+                              ToggleType="CheckBox"
+                              Click="OnToggleShowTrayIconClick" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="Backups" Click="OnShowBackupsWorkspaceClick" />
+                <MenuItem Header="Synchronization" Click="OnShowSynchronizationWorkspaceClick" />
+                <Separator />
+                <MenuItem Header="WireGuard VPN" Click="OnShowVpnWorkspaceClick" />
+                <MenuItem Header="Swarm over VPN" Click="OnShowSwarmWorkspaceClick" />
+                <MenuItem Header="VPN files" Click="OnShowVpnFilesWorkspaceClick" />
+                <MenuItem Header="Remote builds" Click="OnShowRemoteBuildsWorkspaceClick" />
+                <Separator />
+                <MenuItem Header="Discord agent" Click="OnShowDiscordWorkspaceClick" />
+                <MenuItem Header="AI assistant" Click="OnShowAiWorkspaceClick" />
+                <MenuItem Header="MCP" Click="OnShowMcpWorkspaceClick" />
+                <MenuItem Header="Plugins" Click="OnShowPluginsWorkspaceClick" />
+            </MenuItem>
+            <MenuItem Header="Help">
+                <MenuItem Header="Offline documentation" Click="OnShowHelpWorkspaceClick" />
+                <MenuItem Header="Check for updates" Click="OnCheckForUpdatesClick" />
+                <Separator />
+                <MenuItem Header="About CyRevision" Click="OnAboutClick" />
+            </MenuItem>
+        </Menu>
+
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="190,*,Auto" Margin="10,0">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <Border Width="30" Height="30" CornerRadius="6" ClipToBounds="True" Background="#17191D">
                         <Image Source="/Assets/Branding/cyrevision-icon-master.png" Stretch="UniformToFill" />
@@ -142,41 +292,43 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="0" Background="#25272A" BorderBrush="#393B40" BorderThickness="0,0,1,0">
-            <Grid RowDefinitions="Auto,*,Auto" Margin="10,12">
-                <Grid ColumnDefinitions="*,Auto" Margin="5,0,2,7">
-                    <TextBlock Text="PROJETS" FontSize="10" FontWeight="Bold" Classes="muted" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Classes="danger" Content="Retirer" Click="OnRemoveProjectClick" IsEnabled="{Binding HasSelectedProject}" />
+        <Border Grid.Row="2" Grid.RowSpan="2" Grid.Column="0" Background="#25272A" BorderBrush="#393B40" BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto,*,Auto" Margin="6,8">
+                <Grid ColumnDefinitions="*,Auto" Margin="4,0,2,5">
+                    <TextBlock Text="PROJECTS" FontSize="9" FontWeight="Bold" Classes="muted" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="danger" Content="Remove" Padding="7,3" MinHeight="23"
+                            Click="OnRemoveProjectClick" IsEnabled="{Binding HasSelectedProject}" />
                 </Grid>
 
                 <ListBox Grid.Row="1" ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}" Background="Transparent" BorderThickness="0">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid Margin="6" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
-                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                <Border Grid.Column="1" Background="#242C47" CornerRadius="5" Padding="6,2">
-                                    <TextBlock Text="{Binding Mode}" FontSize="10" Foreground="#B8C1D8" />
+                            <Grid Margin="4,3" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                <Border Grid.Column="1" Background="#242C47" CornerRadius="4" Padding="5,1">
+                                    <TextBlock Text="{Binding Mode}" FontSize="8.5" Foreground="#B8C1D8" />
                                 </Border>
-                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding RootPath}" FontSize="10" Classes="muted" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding RootPath}" FontSize="8.5" Classes="muted"
+                                           TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <Border Grid.Row="2" Background="#151D31" CornerRadius="10" Padding="13">
-                    <StackPanel Spacing="7">
+                <Border Grid.Row="2" Background="#151D31" CornerRadius="6" Padding="8">
+                    <StackPanel Spacing="4">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Border Width="8" Height="8" CornerRadius="4" Background="#758098" VerticalAlignment="Center" />
                             <TextBlock Text="{Binding SyncState}" FontWeight="SemiBold" />
                         </StackPanel>
-                        <TextBlock Text="{Binding SyncDetails}" TextWrapping="Wrap" FontSize="11" Classes="muted" />
-                        <TextBlock Text="Syncthing personnel non géré" FontSize="11" Foreground="#78D7B7" />
+                        <TextBlock Text="{Binding SyncDetails}" TextWrapping="Wrap" FontSize="9" Classes="muted" />
+                        <TextBlock Text="Personal Syncthing is not managed" FontSize="9" Foreground="#78D7B7" />
                     </StackPanel>
                 </Border>
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Grid.Column="1" Margin="14,10" RowDefinitions="Auto,*">
+        <Grid Grid.Row="2" Grid.Column="1" Margin="10,7" RowDefinitions="Auto,Auto,*">
             <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
                 <StackPanel>
                     <TextBlock Text="{Binding ChangeSummary}" FontSize="18" FontWeight="Bold" />
@@ -190,8 +342,24 @@
                 </StackPanel>
             </Grid>
 
-            <TabControl x:Name="WorkspaceTabs" Grid.Row="1">
-                <TabItem Header="Projet">
+            <Border Grid.Row="1" Background="#242529" BorderBrush="#393B40" BorderThickness="1"
+                    CornerRadius="5" Margin="0,0,0,5" Padding="4,0">
+                <StackPanel Orientation="Horizontal" Spacing="2">
+                    <ToggleButton x:Name="OverviewCategoryToggle" Classes="workspaceCategory" Content="Overview"
+                                  Click="OnOverviewCategoryClick" />
+                    <ToggleButton x:Name="GitCategoryToggle" Classes="workspaceCategory" Content="Git"
+                                  Click="OnGitCategoryClick" />
+                    <ToggleButton x:Name="CodeCategoryToggle" Classes="workspaceCategory" Content="Code &amp; Assets"
+                                  Click="OnCodeCategoryClick" />
+                    <ToggleButton x:Name="NetworkCategoryToggle" Classes="workspaceCategory" Content="Team &amp; Network"
+                                  Click="OnNetworkCategoryClick" />
+                    <ToggleButton x:Name="ExtensionsCategoryToggle" Classes="workspaceCategory" Content="Extensions &amp; Help"
+                                  Click="OnExtensionsCategoryClick" />
+                </StackPanel>
+            </Border>
+
+            <TabControl x:Name="WorkspaceTabs" Grid.Row="2">
+                <TabItem x:Name="ProjectWorkspaceTab" Header="Projet">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.15*,1*" ColumnSpacing="8">
                         <Border Classes="card">
                             <StackPanel Spacing="10">
@@ -225,7 +393,99 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Modifications">
+                <TabItem x:Name="MembersWorkspaceTab" Header="Members">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="8">
+                        <Border Classes="card" Padding="10">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Project members" FontSize="16" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding ProjectMembersSummary}" Classes="muted" FontSize="10.5" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Classes="secondary" Content="Refresh status"
+                                        Click="OnRefreshProjectMembersClick" />
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="1*,7,1*,7,1*">
+                            <Border Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="42,*">
+                                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="Sync identities" FontWeight="SemiBold" />
+                                            <TextBlock Text="Authorized devices and live connection state" Classes="muted" FontSize="9" />
+                                        </StackPanel>
+                                    </Border>
+                                    <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SyncProjectMembers}"
+                                              AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
+                                              GridLinesVisibility="Horizontal" Background="Transparent">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="*" />
+                                            <DataGridTextColumn Header="Role" Binding="{Binding Role}" Width="82" />
+                                            <DataGridTemplateColumn Header="Status" Width="88">
+                                                <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                    <TextBlock Text="{Binding Status}" Foreground="{Binding StatusColor}" />
+                                                </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTextColumn Header="Identity" Binding="{Binding Identity}" Width="100" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+                            <GridSplitter Grid.Column="1" Width="7" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                          Background="#45484E" Cursor="SizeWestEast" />
+
+                            <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="42,*">
+                                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="Git contributors" FontWeight="SemiBold" />
+                                            <TextBlock Text="Authors found in the loaded repository history" Classes="muted" FontSize="9" />
+                                        </StackPanel>
+                                    </Border>
+                                    <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding GitProjectMembers}"
+                                              AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
+                                              GridLinesVisibility="Horizontal" Background="Transparent">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Author" Binding="{Binding DisplayName}" Width="*" />
+                                            <DataGridTextColumn Header="Activity" Binding="{Binding Status}" Width="84" />
+                                            <DataGridTextColumn Header="Last commit" Binding="{Binding LastActivity}" Width="112" />
+                                            <DataGridTextColumn Header="Email" Binding="{Binding Identity}" Width="130" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+                            <GridSplitter Grid.Column="3" Width="7" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                          Background="#45484E" Cursor="SizeWestEast" />
+
+                            <Border Grid.Column="4" Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="42,*">
+                                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="VPN peers" FontWeight="SemiBold" />
+                                            <TextBlock Text="WireGuard capabilities and handshake state" Classes="muted" FontSize="9" />
+                                        </StackPanel>
+                                    </Border>
+                                    <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding VpnProjectMembers}"
+                                              AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
+                                              GridLinesVisibility="Horizontal" Background="Transparent">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Peer" Binding="{Binding DisplayName}" Width="*" />
+                                            <DataGridTemplateColumn Header="Status" Width="88">
+                                                <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                    <TextBlock Text="{Binding Status}" Foreground="{Binding StatusColor}" />
+                                                </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTextColumn Header="Address" Binding="{Binding Identity}" Width="100" />
+                                            <DataGridTextColumn Header="Capabilities" Binding="{Binding Role}" Width="120" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem x:Name="ChangesWorkspaceTab" Header="Modifications">
                     <Grid x:Name="ChangesWorkspaceGrid" Margin="0,8,0,0"
                           ColumnDefinitions="1.05*,8,1.35*" RowDefinitions="Auto,*,Auto" RowSpacing="8">
                         <Border Grid.ColumnSpan="3" Background="#26282B" BorderBrush="#393B40" BorderThickness="1"
@@ -346,31 +606,33 @@
                         <Grid x:Name="CodeDockWorkspaceGrid" Grid.Row="3" ColumnDefinitions="0.8*,8,1.45*,8,1*">
                             <Border x:Name="CodeExplorerPanel" Classes="card" Padding="0" ClipToBounds="True" MinWidth="190">
                                 <Grid RowDefinitions="Auto,Auto,*">
-                                    <Grid Margin="10,9,10,5" ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                        <TextBlock Text="Project explorer" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                        <Button Grid.Column="1" Classes="secondary" Content="Refresh" Click="OnRefreshCodeWorkspaceClick" />
+                                    <Grid Margin="7,6,7,3" ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="Project" FontSize="11.5" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding CodeWorkspaceSummary}" FontSize="8.5" Classes="muted"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="secondary" Content="↻" Width="27" Padding="5,3"
+                                                Click="OnRefreshCodeWorkspaceClick" ToolTip.Tip="Refresh project tree" />
                                     </Grid>
-                                    <Grid Grid.Row="1" Margin="10,2,10,7" ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                        <TextBox Text="{Binding CodeTreeFilter}" PlaceholderText="Filter paths…" />
-                                        <CheckBox Grid.Column="1" Content="Hidden" IsChecked="{Binding CodeIncludeHidden}"
+                                    <Grid Grid.Row="1" Margin="7,2,7,4" ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                                        <TextBox Text="{Binding CodeTreeFilter}" PlaceholderText="Filter files…" MinHeight="25" FontSize="10" />
+                                        <CheckBox Grid.Column="1" Content="Hidden" FontSize="9.5" IsChecked="{Binding CodeIncludeHidden}"
                                                   VerticalAlignment="Center" />
                                     </Grid>
                                     <TreeView Grid.Row="2" ItemsSource="{Binding CodeTree}" SelectedItem="{Binding SelectedCodeNode}"
-                                              Background="Transparent" BorderThickness="0" Margin="4,0,4,6">
+                                              Classes="compactTree" Background="Transparent" BorderThickness="0" Margin="2,0,3,4">
                                         <TreeView.ItemTemplate>
                                             <TreeDataTemplate ItemsSource="{Binding Children}">
-                                                <Grid ColumnDefinitions="28,*,Auto" Margin="2,3">
-                                                    <Border Width="24" Height="20" CornerRadius="3" Background="#31343A">
-                                                        <TextBlock Text="{Binding Icon}" FontSize="9" FontWeight="Bold"
-                                                                   Foreground="#7DE2CC" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                <Grid ColumnDefinitions="22,*,Auto" Margin="1,1" ToolTip.Tip="{Binding RelativePath}">
+                                                    <Border Width="18" Height="18" CornerRadius="3" Background="#31343A">
+                                                        <TextBlock Text="{Binding Icon}" FontSize="8" FontWeight="Bold"
+                                                                   Foreground="{Binding AccentColor}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                     </Border>
-                                                    <StackPanel Grid.Column="1" Margin="6,0" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Text="{Binding RelativePath}" FontSize="9" Classes="muted"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                    <TextBlock Grid.Column="2" Text="{Binding Detail}" FontSize="9" Classes="muted"
-                                                               VerticalAlignment="Center" Margin="5,0" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                                                               Foreground="{Binding AccentColor}" VerticalAlignment="Center" Margin="4,0" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding Detail}" FontSize="8.5" Classes="muted"
+                                                               VerticalAlignment="Center" Margin="4,0,2,0" />
                                                 </Grid>
                                             </TreeDataTemplate>
                                         </TreeView.ItemTemplate>
@@ -394,12 +656,9 @@
                                                 Click="OnCodeSelectionHistoryClick"
                                                 ToolTip.Tip="Select lines in the editor, then follow only those lines through Git" />
                                     </Grid>
-                                    <TextBox x:Name="CodePreview" Grid.Row="1" Text="{Binding CodePreviewText}"
-                                             IsReadOnly="True" AcceptsReturn="True" AcceptsTab="True"
-                                             FontFamily="Cascadia Mono,JetBrains Mono,Consolas" FontSize="11.5"
-                                             TextWrapping="NoWrap" Padding="10,7" BorderThickness="0" CornerRadius="0"
-                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    <controls:SyntaxHighlightedCodeView x:Name="CodePreview" Grid.Row="1"
+                                                                        Text="{Binding CodePreviewText}"
+                                                                        FilePath="{Binding SelectedCodeNode.RelativePath}" />
                                     <GridSplitter x:Name="CodeSymbolsSplitter" Grid.Row="2" Height="8"
                                                   ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
                                                   Background="#4B4D52" Cursor="SizeNorthSouth" />
@@ -462,10 +721,10 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Historique">
+                <TabItem x:Name="HistoryWorkspaceTab" Header="Historique">
                     <Grid Margin="0,8,0,0" RowDefinitions="Auto,Auto,*" RowSpacing="7">
                         <Border Classes="card" Padding="13">
-                            <Grid ColumnDefinitions="*,Auto,250,Auto" ColumnSpacing="10">
+                            <Grid ColumnDefinitions="*,Auto,250,Auto,Auto" ColumnSpacing="10">
                                 <TextBox Text="{Binding ExplorerSearch}" PlaceholderText="Rechercher par message, auteur ou hash…" />
                                 <TextBlock Grid.Column="1" Text="Comparer avec" Classes="muted" VerticalAlignment="Center" />
                                 <ComboBox Grid.Column="2" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedComparisonRevision}">
@@ -482,6 +741,7 @@
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
                                 <Button Grid.Column="3" Classes="primary" Content="Comparer A ↔ B" Click="OnCompareExplorerCommitsClick" />
+                                <Button Grid.Column="4" Classes="secondary" Content="Compose restore…" Click="OnShowMultiRestoreWorkspaceClick" />
                             </Grid>
                         </Border>
 
@@ -535,9 +795,9 @@
                                             <TextBlock Text="Cliquez sur une révision pour l'inspecter." FontSize="9.5" Classes="muted" />
                                         </StackPanel>
                                     </Border>
-                                    <DataGrid Grid.Row="1" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedExplorerRevision}"
+                                    <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedExplorerRevision}"
                                               AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
-                                              Background="Transparent" BorderThickness="0" Margin="10,6,10,10">
+                                              Background="Transparent" BorderThickness="0" Margin="6,3,6,6">
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="Révision" Binding="{Binding ShortHash}" Width="78" />
                                             <DataGridTextColumn Header="Description" Binding="{Binding Subject}" Width="*" />
@@ -558,9 +818,9 @@
                                             <TextBlock Text="{Binding ExplorerSummary}" FontSize="9.5" Classes="muted" TextWrapping="Wrap" />
                                         </StackPanel>
                                     </Border>
-                                    <DataGrid Grid.Row="1" ItemsSource="{Binding ExplorerFiles}" SelectedItem="{Binding SelectedExplorerFile}"
+                                    <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding ExplorerFiles}" SelectedItem="{Binding SelectedExplorerFile}"
                                               AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
-                                              Background="Transparent" BorderThickness="0" Margin="10,6,10,0">
+                                              Background="Transparent" BorderThickness="0" Margin="6,3,6,0">
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="État" Binding="{Binding Kind}" Width="78" />
                                             <DataGridTextColumn Header="Fichier" Binding="{Binding Path}" Width="*" />
@@ -571,9 +831,9 @@
                                         <TextBlock Text="Historique du fichier" FontWeight="SemiBold" VerticalAlignment="Center" />
                                         <Button Grid.Column="1" Classes="secondary" Content="Exporter cette version…" Click="OnExportExplorerFileClick" />
                                     </Grid>
-                                    <DataGrid Grid.Row="3" ItemsSource="{Binding ExplorerFileHistory}" AutoGenerateColumns="False"
+                                    <DataGrid Grid.Row="3" Classes="historyCompact" ItemsSource="{Binding ExplorerFileHistory}" AutoGenerateColumns="False"
                                               IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent"
-                                              BorderThickness="0" Margin="10,0,10,10">
+                                              BorderThickness="0" Margin="6,0,6,6">
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="Révision" Binding="{Binding Revision.ShortHash}" Width="76" />
                                             <DataGridTextColumn Header="Description" Binding="{Binding Revision.Subject}" Width="*" />
@@ -608,7 +868,11 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Branches">
+                <TabItem x:Name="CompositionWorkspaceTab" Header="Compose">
+                    <controls:RevisionCompositionView x:Name="MainRevisionCompositionView" Margin="0,1,0,0" />
+                </TabItem>
+
+                <TabItem x:Name="BranchesWorkspaceTab" Header="Branches">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.1*,1*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*,Auto">
@@ -643,7 +907,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Pull Requests">
+                <TabItem x:Name="PullRequestsWorkspaceTab" Header="Pull Requests">
                     <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="8">
                         <Border Classes="card" Padding="10">
                             <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="8">
@@ -825,7 +1089,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Graphes Git">
+                <TabItem x:Name="GitGraphsWorkspaceTab" Header="Graphes Git">
                     <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="7">
                         <Border Classes="card" Padding="10">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
@@ -977,7 +1241,103 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Git LFS">
+                <TabItem x:Name="LfsLocksWorkspaceTab" Header="File locks">
+                            <Grid Margin="0,8,0,0" RowDefinitions="Auto,*,Auto" RowSpacing="8">
+                                <Border Classes="card" Padding="10">
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="Git LFS file locks" FontSize="16" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding LfsLocksSummary}" Classes="muted" FontSize="10.5"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="secondary" Content="Refresh"
+                                                Click="OnRefreshLfsLocksClick" />
+                                        <Button Grid.Column="2" Classes="secondary" Content="Unlock all mineâ€¦"
+                                                Click="OnUnlockAllMyLfsLocksClick" />
+                                        <Button Grid.Column="3" Classes="danger" Content="Force unlock allâ€¦"
+                                                Click="OnForceUnlockAllLfsLocksClick"
+                                                ToolTip.Tip="Administrative action: also removes locks owned by other users" />
+                                    </Grid>
+                                </Border>
+
+                                <Grid Grid.Row="1" ColumnDefinitions="1.35*,7,1*">
+                                    <Border Classes="card" Padding="0" ClipToBounds="True">
+                                        <Grid RowDefinitions="42,*">
+                                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1"
+                                                    Padding="10,0">
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="All project locks" FontWeight="SemiBold" />
+                                                    <TextBlock Text="Verified remote locks, including files held by teammates"
+                                                               Classes="muted" FontSize="9" />
+                                                </StackPanel>
+                                            </Border>
+                                            <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding LfsLocks}"
+                                                      AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
+                                                      GridLinesVisibility="Horizontal" Background="Transparent">
+                                                <DataGrid.Columns>
+                                                    <DataGridTemplateColumn Header="Owner" Width="92">
+                                                        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                            <TextBlock Text="{Binding Ownership}" Foreground="{Binding OwnershipColor}" />
+                                                        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                    </DataGridTemplateColumn>
+                                                    <DataGridTextColumn Header="File" Binding="{Binding Path}" Width="*" />
+                                                    <DataGridTextColumn Header="Locked by" Binding="{Binding OwnerName}" Width="120" />
+                                                    <DataGridTextColumn Header="Date" Binding="{Binding LockedAtText}" Width="120" />
+                                                    <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="62" />
+                                                    <DataGridTemplateColumn Header="" Width="112">
+                                                        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                            <Button Classes="secondary" Content="{Binding UnlockAction}"
+                                                                    Padding="7,3" MinHeight="23"
+                                                                    Click="OnUnlockLfsLockClick" />
+                                                        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                    </DataGridTemplateColumn>
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+                                        </Grid>
+                                    </Border>
+
+                                    <GridSplitter Grid.Column="1" Width="7" ResizeDirection="Columns"
+                                                  ResizeBehavior="PreviousAndNext" Background="#45484E"
+                                                  Cursor="SizeWestEast" />
+
+                                    <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                                        <Grid RowDefinitions="42,*">
+                                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1"
+                                                    Padding="10,0">
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="Locked by me" FontWeight="SemiBold" />
+                                                    <TextBlock Text="Locks this Git LFS identity can release normally"
+                                                               Classes="muted" FontSize="9" />
+                                                </StackPanel>
+                                            </Border>
+                                            <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding MyLfsLocks}"
+                                                      AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
+                                                      GridLinesVisibility="Horizontal" Background="Transparent">
+                                                <DataGrid.Columns>
+                                                    <DataGridTextColumn Header="File" Binding="{Binding Path}" Width="*" />
+                                                    <DataGridTextColumn Header="Date" Binding="{Binding LockedAtText}" Width="120" />
+                                                    <DataGridTextColumn Header="ID" Binding="{Binding ShortId}" Width="82" />
+                                                    <DataGridTemplateColumn Header="" Width="82">
+                                                        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                            <Button Classes="secondary" Content="Unlock" Padding="7,3" MinHeight="23"
+                                                                    Click="OnUnlockLfsLockClick" />
+                                                        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                    </DataGridTemplateColumn>
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+
+                                <Border Grid.Row="2" Background="#302A1F" BorderBrush="#68552F" BorderThickness="1"
+                                        CornerRadius="5" Padding="9">
+                                    <TextBlock Text="Force unlock is reserved for stale or abandoned locks. It can let two people modify the same binary asset; CyRevision always asks for confirmation before removing another user's lock."
+                                               Foreground="#E5C07B" FontSize="10" TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+                </TabItem>
+
+                <TabItem x:Name="GitLfsWorkspaceTab" Header="Git LFS">
                     <TabControl Margin="0,8,0,0">
                         <TabItem Header="Time Machine">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="285,*,350" ColumnSpacing="8">
@@ -1144,7 +1504,7 @@
                     </TabControl>
                 </TabItem>
 
-                <TabItem Header="Sauvegardes">
+                <TabItem x:Name="BackupsWorkspaceTab" Header="Sauvegardes">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.25*,1*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*,Auto">
@@ -1219,7 +1579,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Synchronisation">
+                <TabItem x:Name="SynchronizationWorkspaceTab" Header="Synchronisation">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1*,1.25*" ColumnSpacing="8">
                         <Border Classes="card">
                             <StackPanel Spacing="10">
@@ -1304,7 +1664,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="VPN WireGuard">
+                <TabItem x:Name="VpnWorkspaceTab" Header="VPN WireGuard">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="0.95*,1.25*" ColumnSpacing="8">
                         <Border Classes="card">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -1487,7 +1847,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Swarm over VPN">
+                <TabItem x:Name="SwarmWorkspaceTab" Header="Swarm over VPN">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.03*,0.97*" ColumnSpacing="8">
                         <Border Classes="card">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -1585,7 +1945,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="VPN files">
+                <TabItem x:Name="VpnFilesWorkspaceTab" Header="VPN files">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="0.92*,1.08*" ColumnSpacing="8">
                         <Border Classes="card">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -1675,7 +2035,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Remote builds">
+                <TabItem x:Name="RemoteBuildsWorkspaceTab" Header="Remote builds">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="0.9*,1.25*" ColumnSpacing="8">
                         <Border Classes="card" Padding="14">
                             <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*" RowSpacing="8">
@@ -1738,7 +2098,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Agent Discord">
+                <TabItem x:Name="DiscordWorkspaceTab" Header="Agent Discord">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.08*,0.92*" ColumnSpacing="8">
                         <Border Classes="card">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -1872,7 +2232,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Travail en cours">
+                <TabItem x:Name="WorkInProgressWorkspaceTab" Header="Travail en cours">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.45*,0.75*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*">
@@ -1914,7 +2274,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Diff assets">
+                <TabItem x:Name="AssetDiffWorkspaceTab" Header="Diff assets">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.1*,1*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="9">
@@ -1949,7 +2309,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="AI Assistant">
+                <TabItem x:Name="AiWorkspaceTab" Header="AI Assistant">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="390,6,*">
                         <Border Classes="card" Padding="12">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -2053,7 +2413,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="MCP">
+                <TabItem x:Name="McpWorkspaceTab" Header="MCP">
                     <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="7">
                         <Border Classes="card" Padding="10">
                             <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="10">
@@ -2244,7 +2604,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Plugins">
+                <TabItem x:Name="PluginsWorkspaceTab" Header="Plugins">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="0.85*,1.4*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
@@ -2341,7 +2701,7 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Aide">
+                <TabItem x:Name="HelpWorkspaceTab" Header="Aide">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="310,*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10">
@@ -2437,7 +2797,7 @@
             </TabControl>
         </Grid>
 
-        <Border Grid.Row="2" Grid.Column="1" Background="#25272A" BorderBrush="#393B40" BorderThickness="0,1,0,0">
+        <Border Grid.Row="3" Grid.Column="1" Background="#25272A" BorderBrush="#393B40" BorderThickness="0,1,0,0">
             <Grid ColumnDefinitions="*,Auto" Margin="12,0">
                 <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" FontSize="9.5" Classes="muted" />
                 <TextBlock Grid.Column="1" Text="Git actif · Sync sur demande" VerticalAlignment="Center" FontSize="9.5" Foreground="#78D7B7" />

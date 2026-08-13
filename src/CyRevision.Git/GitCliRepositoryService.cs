@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace CyRevision.Git;
@@ -937,6 +939,121 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             .Where(line => line.Length > 0 && !line.StartsWith('#') && line.Contains("filter=lfs", StringComparison.Ordinal))
             .Select(line => new LfsTrackedPattern(line.Split((char[]?)null, 2)[0], ".gitattributes"))
             .ToArray();
+    }
+
+    public async Task<IReadOnlyList<LfsFileLock>> GetLfsLocksAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default)
+    {
+        ProcessResult verified = await RunGitResultAsync(
+                repositoryPath,
+                ["lfs", "locks", "--verify", "--json", "--limit=1000"],
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (verified.Succeeded)
+        {
+            return ParseLfsLocksJson(verified.StandardOutput);
+        }
+
+        ProcessResult cached = await RunGitResultAsync(
+                repositoryPath,
+                ["lfs", "locks", "--cached", "--json", "--limit=1000"],
+                cancellationToken)
+            .ConfigureAwait(false);
+        ProcessResult local = await RunGitResultAsync(
+                repositoryPath,
+                ["lfs", "locks", "--local", "--json", "--limit=1000"],
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!cached.Succeeded && !local.Succeeded)
+        {
+            EnsureSuccess(verified, "Unable to read Git LFS locks from the remote.");
+        }
+
+        Dictionary<string, LfsFileLock> locks = new(StringComparer.Ordinal);
+        if (cached.Succeeded)
+        {
+            foreach (LfsFileLock item in ParseLfsLocksJson(cached.StandardOutput, defaultOurs: false, isCached: true))
+            {
+                locks[item.Id] = item;
+            }
+        }
+        if (local.Succeeded)
+        {
+            foreach (LfsFileLock item in ParseLfsLocksJson(local.StandardOutput, defaultOurs: true, isCached: true))
+            {
+                locks[item.Id] = item;
+            }
+        }
+
+        return locks.Values.OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    public async Task UnlockLfsFileAsync(
+        string repositoryPath,
+        string lockId,
+        bool force = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(lockId);
+        List<string> arguments = ["lfs", "unlock", "--json"];
+        if (force)
+        {
+            arguments.Add("--force");
+        }
+        arguments.Add("--id=" + lockId.Trim());
+        ProcessResult result = await RunGitResultAsync(repositoryPath, arguments, cancellationToken).ConfigureAwait(false);
+        EnsureSuccess(result, force
+            ? "Unable to force-unlock the Git LFS file."
+            : "Unable to unlock the Git LFS file.");
+    }
+
+    public static IReadOnlyList<LfsFileLock> ParseLfsLocksJson(
+        string json,
+        bool defaultOurs = false,
+        bool isCached = false)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        JsonObject root = JsonNode.Parse(json) as JsonObject
+                          ?? throw new JsonException("Git LFS returned an invalid lock response.");
+        Dictionary<string, LfsFileLock> result = new(StringComparer.Ordinal);
+        AddLocks(root["ours"] as JsonArray, isOurs: true);
+        AddLocks(root["theirs"] as JsonArray, isOurs: false);
+        AddLocks(root["locks"] as JsonArray, defaultOurs);
+        return result.Values.OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase).ToArray();
+
+        void AddLocks(JsonArray? array, bool isOurs)
+        {
+            if (array is null)
+            {
+                return;
+            }
+
+            foreach (JsonNode? node in array)
+            {
+                JsonObject? item = node as JsonObject;
+                string? id = item?["id"]?.GetValue<string>();
+                string? path = item?["path"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(path))
+                {
+                    continue;
+                }
+
+                string owner = item?["owner"]?["name"]?.GetValue<string>() ?? "Unknown user";
+                DateTimeOffset? lockedAt = DateTimeOffset.TryParse(
+                    item?["locked_at"]?.GetValue<string>(),
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out DateTimeOffset parsed)
+                    ? parsed
+                    : null;
+                result[id] = new LfsFileLock(id, path, owner, lockedAt, isOurs, isCached);
+            }
+        }
     }
 
     public async Task<IReadOnlyList<LfsTrackedFile>> GetLfsTrackedFilesAsync(

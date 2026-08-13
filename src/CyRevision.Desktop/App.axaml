@@ -7,4 +7,34 @@
         <FluentTheme />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
     </Application.Styles>
+
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon Icon="/Assets/Branding/cyrevision.ico"
+                      ToolTipText="CyRevision Alpha"
+                      Clicked="OnTrayIconClicked">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Open CyRevision" Click="OnTrayOpenClick" />
+                        <NativeMenuItem Header="Hide window" Click="OnTrayHideClick" />
+                        <NativeMenuItem Header="Refresh project" Click="OnTrayRefreshClick" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="No project selected" IsEnabled="False" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Launch at system login"
+                                        ToggleType="CheckBox"
+                                        Click="OnTrayLaunchAtLoginClick" />
+                        <NativeMenuItem Header="Start hidden in tray"
+                                        ToggleType="CheckBox"
+                                        Click="OnTrayStartHiddenClick" />
+                        <NativeMenuItem Header="Close window to tray"
+                                        ToggleType="CheckBox"
+                                        Click="OnTrayCloseToTrayClick" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Quit CyRevision" Click="OnTrayQuitClick" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
 </Application>

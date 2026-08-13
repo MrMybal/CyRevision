@@ -7,10 +7,21 @@ using Avalonia.Platform.Storage;
 using System.Diagnostics;
 using CyRevision.Desktop.Controls;
 using CyRevision.Desktop.Localization;
+using CyRevision.Desktop.SystemIntegration;
 using CyRevision.Desktop.ViewModels;
 using CyRevision.Desktop.Workspace;
+using CyRevision.Git;
 
 namespace CyRevision.Desktop;
+
+internal enum WorkspaceCategory
+{
+    Overview,
+    Git,
+    Code,
+    Network,
+    Extensions
+}
 
 public partial class MainWindow : Window
 {
@@ -18,11 +29,18 @@ public partial class MainWindow : Window
     private UiLocalizer? _uiLocalizer;
     private LocalizationService? _localization;
     private FocusedDiffWindow? _focusedDiffWindow;
+    private readonly List<DetachedWorkspaceWindow> _detachedWorkspaceWindows = [];
     private WorkspaceLayoutPreferencesStore? _workspaceLayoutStore;
     private WorkspaceLayoutPreferences _layoutPreferences = WorkspaceLayoutPreferences.Default;
     private HistoryLayoutMode _historyLayout = HistoryLayoutMode.Columns;
     private ChangesLayoutMode _changesLayout = ChangesLayoutMode.Balanced;
     private CodeLayoutMode _codeLayout = CodeLayoutMode.Balanced;
+    private WorkspaceCategory _workspaceCategory = WorkspaceCategory.Overview;
+    private Action<DesktopBehaviorSetting>? _desktopBehaviorToggle;
+
+    public bool StartHidden { get; set; }
+
+    public event EventHandler? ExitRequested;
 
     public MainWindow()
     {
@@ -48,6 +66,7 @@ public partial class MainWindow : Window
         ApplyHistoryLayout(_layoutPreferences.HistoryLayout, false);
         ApplyChangesLayout(_layoutPreferences.ChangesLayout, false, true);
         ApplyCodeLayout(_layoutPreferences.CodeLayout, false, true);
+        ApplyWorkspaceCategory(WorkspaceCategory.Overview, selectDefault: true);
         foreach (GridSplitter splitter in new[]
                  {
                      ChangesWorkspaceSplitter,
@@ -69,13 +88,37 @@ public partial class MainWindow : Window
     private async void OnOpened(object? sender, EventArgs e)
     {
         Opened -= OnOpened;
+        if (StartHidden)
+        {
+            ShowInTaskbar = false;
+            Hide();
+        }
+
         await _viewModel.InitializeAsync();
+    }
+
+    internal void ConfigureDesktopBehavior(
+        DesktopBehaviorPreferences preferences,
+        Action<DesktopBehaviorSetting> toggle)
+    {
+        _desktopBehaviorToggle = toggle;
+        LaunchAtLoginMenuItem.IsChecked = preferences.LaunchAtLogin;
+        StartHiddenAtLoginMenuItem.IsChecked = preferences.StartHiddenAtLogin;
+        StartHiddenAtLoginMenuItem.IsEnabled = preferences.LaunchAtLogin && preferences.ShowTrayIcon;
+        CloseToTrayMenuItem.IsChecked = preferences.CloseToTray;
+        ShowTrayIconMenuItem.IsChecked = preferences.ShowTrayIcon;
+        CloseToTrayMenuItem.IsEnabled = preferences.ShowTrayIcon;
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
         _focusedDiffWindow?.Close();
         _focusedDiffWindow = null;
+        foreach (DetachedWorkspaceWindow window in _detachedWorkspaceWindows.ToArray())
+        {
+            window.Close();
+        }
+        _detachedWorkspaceWindows.Clear();
         _uiLocalizer?.Dispose();
     }
 
@@ -478,13 +521,223 @@ public partial class MainWindow : Window
         window.Show(this);
     }
 
+    private void NavigateToWorkspace(TabItem tab, Control? focusTarget = null)
+    {
+        ApplyWorkspaceCategory(CategoryFor(tab), selectDefault: false);
+        WorkspaceTabs.SelectedItem = tab;
+        (focusTarget ?? tab).Focus();
+    }
+
+    private void OnOverviewCategoryClick(object? sender, RoutedEventArgs e) =>
+        ApplyWorkspaceCategory(WorkspaceCategory.Overview, selectDefault: true);
+
+    private void OnGitCategoryClick(object? sender, RoutedEventArgs e) =>
+        ApplyWorkspaceCategory(WorkspaceCategory.Git, selectDefault: true);
+
+    private void OnCodeCategoryClick(object? sender, RoutedEventArgs e) =>
+        ApplyWorkspaceCategory(WorkspaceCategory.Code, selectDefault: true);
+
+    private void OnNetworkCategoryClick(object? sender, RoutedEventArgs e) =>
+        ApplyWorkspaceCategory(WorkspaceCategory.Network, selectDefault: true);
+
+    private void OnExtensionsCategoryClick(object? sender, RoutedEventArgs e) =>
+        ApplyWorkspaceCategory(WorkspaceCategory.Extensions, selectDefault: true);
+
+    private void ApplyWorkspaceCategory(WorkspaceCategory category, bool selectDefault)
+    {
+        _workspaceCategory = category;
+        OverviewCategoryToggle.IsChecked = category == WorkspaceCategory.Overview;
+        GitCategoryToggle.IsChecked = category == WorkspaceCategory.Git;
+        CodeCategoryToggle.IsChecked = category == WorkspaceCategory.Code;
+        NetworkCategoryToggle.IsChecked = category == WorkspaceCategory.Network;
+        ExtensionsCategoryToggle.IsChecked = category == WorkspaceCategory.Extensions;
+
+        TabItem[] visibleTabs = TabsFor(category);
+        foreach (TabItem tab in AllWorkspaceTabs())
+        {
+            tab.IsVisible = visibleTabs.Contains(tab);
+        }
+
+        if (selectDefault || WorkspaceTabs.SelectedItem is not TabItem selected || !visibleTabs.Contains(selected))
+        {
+            WorkspaceTabs.SelectedItem = visibleTabs[0];
+        }
+    }
+
+    private WorkspaceCategory CategoryFor(TabItem tab)
+    {
+        foreach (WorkspaceCategory category in Enum.GetValues<WorkspaceCategory>())
+        {
+            if (TabsFor(category).Contains(tab))
+            {
+                return category;
+            }
+        }
+
+        return _workspaceCategory;
+    }
+
+    private TabItem[] TabsFor(WorkspaceCategory category) => category switch
+    {
+        WorkspaceCategory.Overview => [ProjectWorkspaceTab, MembersWorkspaceTab],
+        WorkspaceCategory.Git =>
+        [
+            ChangesWorkspaceTab, HistoryWorkspaceTab, CompositionWorkspaceTab, BranchesWorkspaceTab,
+            PullRequestsWorkspaceTab, GitGraphsWorkspaceTab, LfsLocksWorkspaceTab, GitLfsWorkspaceTab,
+            BackupsWorkspaceTab
+        ],
+        WorkspaceCategory.Code => [CodeWorkspaceTab, AssetDiffWorkspaceTab, AiWorkspaceTab, McpWorkspaceTab],
+        WorkspaceCategory.Network =>
+        [
+            SynchronizationWorkspaceTab, VpnWorkspaceTab, SwarmWorkspaceTab, VpnFilesWorkspaceTab,
+            RemoteBuildsWorkspaceTab, DiscordWorkspaceTab, WorkInProgressWorkspaceTab
+        ],
+        _ => [PluginsWorkspaceTab, HelpWorkspaceTab]
+    };
+
+    private TabItem[] AllWorkspaceTabs() =>
+    [
+        ProjectWorkspaceTab, MembersWorkspaceTab, ChangesWorkspaceTab, CodeWorkspaceTab, HistoryWorkspaceTab,
+        CompositionWorkspaceTab, BranchesWorkspaceTab, PullRequestsWorkspaceTab, GitGraphsWorkspaceTab,
+        LfsLocksWorkspaceTab, GitLfsWorkspaceTab, BackupsWorkspaceTab, SynchronizationWorkspaceTab, VpnWorkspaceTab,
+        SwarmWorkspaceTab, VpnFilesWorkspaceTab, RemoteBuildsWorkspaceTab, DiscordWorkspaceTab,
+        WorkInProgressWorkspaceTab, AssetDiffWorkspaceTab, AiWorkspaceTab, McpWorkspaceTab,
+        PluginsWorkspaceTab, HelpWorkspaceTab
+    ];
+
+    private void OnShowProjectWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(ProjectWorkspaceTab);
+
+    private async void OnRefreshProjectMembersClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshProjectMembersAsync();
+
+    private void OnShowChangesWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(ChangesWorkspaceTab);
+
+    private void OnShowCodeWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(CodeWorkspaceTab);
+
+    private void OnShowHistoryWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(HistoryWorkspaceTab);
+
+    private void OnShowMultiRestoreWorkspaceClick(object? sender, RoutedEventArgs e)
+    {
+        NavigateToWorkspace(CompositionWorkspaceTab);
+        MainRevisionCompositionView.SelectSection(RevisionCompositionSection.MultiRestore);
+        _ = _viewModel.LoadMultiRestoreCommitAsync(_viewModel.SelectedExplorerRevision);
+    }
+
+    private void OnShowCherryPickWorkspaceClick(object? sender, RoutedEventArgs e)
+    {
+        NavigateToWorkspace(CompositionWorkspaceTab);
+        MainRevisionCompositionView.SelectSection(RevisionCompositionSection.CherryPick);
+    }
+
+    private void OnOpenDetachedHistoryClick(object? sender, RoutedEventArgs e) =>
+        OpenDetachedWorkspace(DetachedWorkspaceSection.History);
+
+    private void OnOpenDetachedCodeClick(object? sender, RoutedEventArgs e) =>
+        OpenDetachedWorkspace(DetachedWorkspaceSection.Code);
+
+    private void OnOpenDetachedMultiRestoreClick(object? sender, RoutedEventArgs e)
+    {
+        _ = _viewModel.LoadMultiRestoreCommitAsync(_viewModel.SelectedExplorerRevision);
+        OpenDetachedWorkspace(DetachedWorkspaceSection.MultiRestore);
+    }
+
+    private void OnOpenDetachedCherryPickClick(object? sender, RoutedEventArgs e) =>
+        OpenDetachedWorkspace(DetachedWorkspaceSection.CherryPick);
+
+    private void OpenDetachedWorkspace(DetachedWorkspaceSection section)
+    {
+        if (_localization is null)
+        {
+            return;
+        }
+
+        DetachedWorkspaceWindow window = new(_viewModel, _localization, section);
+        window.Closed += (_, _) => _detachedWorkspaceWindows.Remove(window);
+        _detachedWorkspaceWindows.Add(window);
+        window.Show(this);
+    }
+
+    private void OnShowGitGraphsWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(GitGraphsWorkspaceTab);
+
+    private void OnShowBranchesWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(BranchesWorkspaceTab);
+
+    private void OnShowPullRequestsWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(PullRequestsWorkspaceTab);
+
+    private void OnShowGitLfsWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(GitLfsWorkspaceTab);
+
+    private void OnShowLfsLocksWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(LfsLocksWorkspaceTab);
+
+    private void OnShowBackupsWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(BackupsWorkspaceTab);
+
+    private void OnShowSynchronizationWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(SynchronizationWorkspaceTab);
+
+    private void OnShowVpnWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(VpnWorkspaceTab);
+
+    private void OnShowSwarmWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(SwarmWorkspaceTab);
+
+    private void OnShowVpnFilesWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(VpnFilesWorkspaceTab);
+
+    private void OnShowRemoteBuildsWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(RemoteBuildsWorkspaceTab);
+
+    private void OnShowDiscordWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(DiscordWorkspaceTab);
+
+    private void OnShowAiWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(AiWorkspaceTab);
+
+    private void OnShowMcpWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(McpWorkspaceTab);
+
+    private void OnShowPluginsWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(PluginsWorkspaceTab);
+
+    private void OnShowHelpWorkspaceClick(object? sender, RoutedEventArgs e) =>
+        NavigateToWorkspace(HelpWorkspaceTab);
+
+    private void OnOpenGlobalSearchClick(object? sender, RoutedEventArgs e)
+    {
+        NavigateToWorkspace(CodeWorkspaceTab, GlobalCodeSearch);
+        GlobalCodeSearch.SelectAll();
+    }
+
+    private void OnExitClick(object? sender, RoutedEventArgs e) =>
+        ExitRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnToggleLaunchAtLoginClick(object? sender, RoutedEventArgs e) =>
+        _desktopBehaviorToggle?.Invoke(DesktopBehaviorSetting.LaunchAtLogin);
+
+    private void OnToggleStartHiddenAtLoginClick(object? sender, RoutedEventArgs e) =>
+        _desktopBehaviorToggle?.Invoke(DesktopBehaviorSetting.StartHiddenAtLogin);
+
+    private void OnToggleCloseToTrayClick(object? sender, RoutedEventArgs e) =>
+        _desktopBehaviorToggle?.Invoke(DesktopBehaviorSetting.CloseToTray);
+
+    private void OnToggleShowTrayIconClick(object? sender, RoutedEventArgs e) =>
+        _desktopBehaviorToggle?.Invoke(DesktopBehaviorSetting.ShowTrayIcon);
+
+    private async void OnAboutClick(object? sender, RoutedEventArgs e) => await ShowAboutAsync();
+
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
         KeyModifiers required = KeyModifiers.Control | KeyModifiers.Shift;
         if (e.Key == Key.F && (e.KeyModifiers & required) == required)
         {
-            WorkspaceTabs.SelectedItem = CodeWorkspaceTab;
-            GlobalCodeSearch.Focus();
+            NavigateToWorkspace(CodeWorkspaceTab, GlobalCodeSearch);
             GlobalCodeSearch.SelectAll();
             e.Handled = true;
         }
@@ -653,6 +906,51 @@ public partial class MainWindow : Window
     }
 
     private async void OnTrackLfsClick(object? sender, RoutedEventArgs e) => await _viewModel.TrackLfsPatternAsync();
+
+    private async void OnRefreshLfsLocksClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshLfsLocksAsync();
+
+    private async void OnUnlockLfsLockClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: LfsFileLock fileLock })
+        {
+            return;
+        }
+
+        bool force = !fileLock.IsOurs;
+        string message = force
+            ? $"'{fileLock.Path}' is locked by {fileLock.OwnerName}. Force unlock can allow concurrent edits to the same binary file. Remove this teammate's lock?"
+            : $"Remove your Git LFS lock from '{fileLock.Path}'? The file itself will not be modified.";
+        if (await ShowConfirmationAsync(
+                force ? "Force unlock Git LFS file" : "Unlock Git LFS file",
+                message,
+                force ? "Force unlock" : "Unlock"))
+        {
+            await _viewModel.UnlockLfsLockAsync(fileLock, force);
+        }
+    }
+
+    private async void OnUnlockAllMyLfsLocksClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                "Unlock all my Git LFS files",
+                "Remove every Git LFS lock owned by your current identity? Files and Git history will not be modified.",
+                "Unlock all mine"))
+        {
+            await _viewModel.UnlockAllLfsLocksAsync(forceEveryLock: false);
+        }
+    }
+
+    private async void OnForceUnlockAllLfsLocksClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                "Force unlock every Git LFS file",
+                "This removes every visible project lock, including locks owned by teammates. Use it only for stale or abandoned locks. Continue?",
+                "Force unlock all"))
+        {
+            await _viewModel.UnlockAllLfsLocksAsync(forceEveryLock: true);
+        }
+    }
 
     private async void OnExportLfsVersionClick(object? sender, RoutedEventArgs e)
     {
@@ -1089,6 +1387,109 @@ public partial class MainWindow : Window
             FileName = releaseUri.AbsoluteUri,
             UseShellExecute = true
         });
+    }
+
+    private async Task ShowAboutAsync()
+    {
+        string version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "Alpha";
+        Button close = new()
+        {
+            Content = Translate("Close"),
+            Padding = new Avalonia.Thickness(18, 8),
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#3574F0")),
+            Foreground = Avalonia.Media.Brushes.White
+        };
+        Window dialog = new()
+        {
+            Title = Translate("About CyRevision"),
+            Width = 440,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#1E1F22")),
+            Content = new StackPanel
+            {
+                Margin = new Avalonia.Thickness(24),
+                Spacing = 13,
+                Children =
+                {
+                    new Image
+                    {
+                        Source = new Avalonia.Media.Imaging.Bitmap(
+                            Avalonia.Platform.AssetLoader.Open(new Uri("avares://CyRevision.Desktop/Assets/Branding/cyrevision-icon-master.png"))),
+                        Width = 62,
+                        Height = 62,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+                    },
+                    new TextBlock
+                    {
+                        Text = "CyRevision",
+                        FontSize = 24,
+                        FontWeight = Avalonia.Media.FontWeight.SemiBold
+                    },
+                    new TextBlock
+                    {
+                        Text = $"Alpha · {Translate("Version")} {version}",
+                        Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#9B9DA3"))
+                    },
+                    new TextBlock
+                    {
+                        Text = Translate("Decentralized Git, LFS, synchronization, backup, VPN, and production tools."),
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                        Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#DFE1E5"))
+                    },
+                    close
+                }
+            }
+        };
+        close.Click += (_, _) => dialog.Close();
+        await dialog.ShowDialog(this);
+    }
+
+    internal async Task ShowSystemIntegrationErrorAsync(string details)
+    {
+        await ShowMessageAsync(
+            Translate("System integration error"),
+            Translate("CyRevision could not update the system startup setting.") + Environment.NewLine + details);
+    }
+
+    private async Task ShowMessageAsync(string title, string message)
+    {
+        Button close = new()
+        {
+            Content = Translate("Close"),
+            Padding = new Avalonia.Thickness(18, 8),
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#3574F0")),
+            Foreground = Avalonia.Media.Brushes.White
+        };
+        Window dialog = new()
+        {
+            Title = title,
+            Width = 520,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#1E1F22")),
+            Content = new StackPanel
+            {
+                Margin = new Avalonia.Thickness(24),
+                Spacing = 18,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                        Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#DFE1E5"))
+                    },
+                    close
+                }
+            }
+        };
+        close.Click += (_, _) => dialog.Close();
+        await dialog.ShowDialog(this);
     }
 
     private async Task<string?> PickFolderAsync(string title)

@@ -10,6 +10,15 @@ public sealed record SyncthingRuntimeStatus(
     long PendingBytes,
     string? Version = null);
 
+public sealed record SyncthingPeerConnectionStatus(
+    string DeviceId,
+    bool Connected,
+    string? Address,
+    DateTimeOffset? LastSeenAt,
+    long IncomingBytes,
+    long OutgoingBytes,
+    string? ConnectionType);
+
 public sealed record SyncthingDeviceConfiguration(
     string DeviceId,
     string Name,
@@ -102,6 +111,41 @@ public sealed class SyncthingApiClient : IDisposable
             connected,
             pendingBytes,
             status["version"]?.GetValue<string>());
+    }
+
+    public async Task<IReadOnlyList<SyncthingPeerConnectionStatus>> GetPeerConnectionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        JsonObject root = await GetObjectAsync("rest/system/connections", cancellationToken);
+        if (root["connections"] is not JsonObject connections)
+        {
+            return [];
+        }
+
+        List<SyncthingPeerConnectionStatus> result = [];
+        foreach ((string deviceId, JsonNode? node) in connections)
+        {
+            if (node is not JsonObject connection)
+            {
+                continue;
+            }
+
+            DateTimeOffset? lastSeen = DateTimeOffset.TryParse(
+                connection["at"]?.GetValue<string>(),
+                out DateTimeOffset parsed)
+                ? parsed
+                : null;
+            result.Add(new SyncthingPeerConnectionStatus(
+                deviceId,
+                connection["connected"]?.GetValue<bool>() == true,
+                connection["address"]?.GetValue<string>(),
+                lastSeen,
+                connection["inBytesTotal"]?.GetValue<long>() ?? 0,
+                connection["outBytesTotal"]?.GetValue<long>() ?? 0,
+                connection["type"]?.GetValue<string>()));
+        }
+
+        return result;
     }
 
     public Task PauseAsync(CancellationToken cancellationToken = default) =>

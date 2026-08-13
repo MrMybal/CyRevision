@@ -92,10 +92,25 @@ sed \
   "$repository_root/installer/macos/Info.plist.in" > "$bundle_root/Contents/Info.plist"
 plutil -lint "$bundle_root/Contents/Info.plist"
 
-# Ad-hoc signing keeps the bundle internally consistent. A Developer ID signature
-# and notarization can be enabled later through protected CI secrets.
-codesign --force --deep --sign - "$bundle_root"
-codesign --verify --deep --strict "$bundle_root"
+# Ad-hoc signing keeps the bundle internally consistent. Sign actual Mach-O
+# files explicitly: --deep incorrectly treats runtime plugin directories such
+# as Plugins/CyRevision.AIIntegration as nested macOS bundles.
+while IFS= read -r -d '' candidate; do
+  if file -b "$candidate" | grep -q 'Mach-O'; then
+    codesign --force --sign - "$candidate"
+  fi
+done < <(find "$bundle_root/Contents/MacOS" -type f -print0)
+
+# Sign the application envelope only after every native component. A Developer
+# ID identity and notarization can later replace this ad-hoc identity in CI.
+codesign --force --sign - "$bundle_root"
+
+while IFS= read -r -d '' candidate; do
+  if file -b "$candidate" | grep -q 'Mach-O'; then
+    codesign --verify --strict --verbose=2 "$candidate"
+  fi
+done < <(find "$bundle_root/Contents/MacOS" -type f -print0)
+codesign --verify --strict --verbose=2 "$bundle_root"
 
 ditto -c -k --sequesterRsrc --keepParent "$bundle_root" "$portable_archive"
 mkdir -p "$dmg_stage"

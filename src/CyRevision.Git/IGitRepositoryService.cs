@@ -65,6 +65,26 @@ public interface IGitRepositoryService
         string toRevision,
         CancellationToken cancellationToken = default);
 
+    Task<GitBranchComparison> CompareBranchesAsync(
+        string repositoryPath,
+        string sourceBranch,
+        string targetBranch,
+        CancellationToken cancellationToken = default);
+
+    Task<GitCherryPickPlan> CreateCherryPickPlanAsync(
+        string repositoryPath,
+        string sourceBranch,
+        string targetBranch,
+        IReadOnlyList<string> orderedCommitHashes,
+        GitCherryPickMode mode,
+        string? combinedCommitMessage = null,
+        CancellationToken cancellationToken = default);
+
+    Task<GitCherryPickResult> ApplyCherryPickPlanAsync(
+        string repositoryPath,
+        GitCherryPickPlan plan,
+        CancellationToken cancellationToken = default);
+
     Task<string> GetCommitDiffAsync(
         string repositoryPath,
         string revision,
@@ -121,6 +141,18 @@ public interface IGitRepositoryService
         string revision,
         CancellationToken cancellationToken = default);
 
+    Task<GitMultiRestorePlan> CreateMultiRestorePlanAsync(
+        string repositoryPath,
+        string commitHash,
+        IReadOnlyList<GitMultiRestoreSelection> selections,
+        CancellationToken cancellationToken = default);
+
+    Task<GitMultiRestoreResult> ApplyMultiRestorePlanAsync(
+        string repositoryPath,
+        GitMultiRestorePlan plan,
+        bool overwriteLocalChanges,
+        CancellationToken cancellationToken = default);
+
     Task ExportFileFromRevisionAsync(
         string repositoryPath,
         string relativePath,
@@ -168,6 +200,16 @@ public interface IGitRepositoryService
 
     Task<IReadOnlyList<LfsTrackedPattern>> GetLfsPatternsAsync(
         string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<LfsFileLock>> GetLfsLocksAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task UnlockLfsFileAsync(
+        string repositoryPath,
+        string lockId,
+        bool force = false,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<LfsTrackedFile>> GetLfsTrackedFilesAsync(
