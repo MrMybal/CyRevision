@@ -120,6 +120,22 @@
     "keywords": ["compilation distante", "CI", "agent", "VPN", "WireGuard", "Unreal", "artefact", "recette"]
   },
   {
+    "id": "tray-and-startup",
+    "category": "Bases",
+    "title": "Zone de notification et lancement automatique",
+    "summary": "Conserver les services facultatifs en arrière-plan après avoir masqué la fenêtre.",
+    "body": "ZONE DE NOTIFICATION\nCyRevision affiche une icône native sous Windows, macOS et les bureaux Linux compatibles. Un clic affiche ou masque la fenêtre. Le menu indique le projet sélectionné et propose l'actualisation, les préférences de démarrage et une commande Quitter explicite.\n\nFERMER ET QUITTER\nClose window to tray garde CyRevision actif avec le bouton de fermeture de la fenêtre. Utilisez File > Exit ou Quit CyRevision depuis l'icône pour arrêter réellement l'application et ses services. Désactiver l'icône désactive également la fermeture vers le tray et le démarrage masqué.\n\nLANCEMENT AUTOMATIQUE\nLaunch at system login enregistre CyRevision uniquement pour l'utilisateur courant : clé Run Windows, entrée XDG autostart Linux ou LaunchAgent macOS. Start hidden in tray ajoute --background afin de ne pas ouvrir la fenêtre à la connexion. L'enregistrement vise toujours l'exécutable actuellement lancé. Une version portable doit donc rester au même emplacement.\n\nNOTE LINUX\nL'icône exige la prise en charge StatusNotifier/AppIndicator par le bureau. Si elle n'apparaît pas, désactivez le démarrage masqué afin que la fenêtre reste accessible.",
+    "keywords": ["tray", "zone de notification", "démarrage", "session", "arrière-plan", "windows", "linux", "macos", "quitter"]
+  },
+  {
+    "id": "revision-composition",
+    "category": "Git",
+    "title": "Restauration multiple et composition cherry-pick",
+    "summary": "Composer des versions de fichiers ou une suite de commits avec un aperçu de sécurité avant toute modification.",
+    "body": "RESTAURATION MULTIPLE\nOuvrez Compose > Multi restore, choisissez un commit et chargez ses fichiers. Cochez uniquement les fichiers à inclure. BeforeCommit choisit l'état précédant immédiatement le commit ; AtCommit choisit sa version exacte. Ajouts, suppressions et renommages deviennent des opérations explicites de restauration ou suppression.\n\nAPERÇU DE SÉCURITÉ\nCréez l'aperçu avant d'appliquer. Il expire après quinze minutes, vérifie que HEAD n'a pas avancé, détecte les modifications locales et bloque les objets Git LFS absents. Une copie de récupération horodatée est écrite dans les données Git avant toute modification. L'index reste inchangé et aucun commit ou push n'est créé.\n\nCOMPARAISON DE BRANCHES\nOuvrez Branch compare & cherry-pick, choisissez une source et une cible locale existante. Les commits source uniquement, cible uniquement et équivalents par patch sont séparés ; un changement déjà intégré reste donc visible même si son hash diffère. Les commits cochés sont appliqués dans l'ordre affiché.\n\nMODES CHERRY-PICK\nKeepCommits conserve chaque commit. CombineIntoOne applique leur contenu puis crée un seul commit avec le message fourni. Les commits de merge sont bloqués tant qu'un parent principal explicite n'est pas disponible.\n\nISOLATION ET CONFLITS\nSi la cible n'est pas la branche active, CyRevision utilise un worktree temporaire sans changer la branche affichée. Un conflit annule l'opération et restaure le point de départ de la cible. Aucun push n'est automatique.\n\nFENÊTRES DÉTACHABLES\nView > Open detached workspace ouvre des fenêtres History, Code, Multi Restore ou Cherry-pick supplémentaires. Plusieurs fenêtres peuvent rester ouvertes sur différents écrans ; leurs données et leur sélection restent liées à la fenêtre principale.",
+    "keywords": ["restauration multiple", "revert", "version fichier", "comparaison branche", "cherry-pick", "worktree", "conflit", "fenêtre détachée"]
+  },
+  {
     "id": "troubleshooting",
     "category": "Assistance",
     "title": "Dépannage et sécurité",

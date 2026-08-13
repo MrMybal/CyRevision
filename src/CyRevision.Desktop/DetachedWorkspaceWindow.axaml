@@ -1,0 +1,197 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:CyRevision.Desktop.Controls"
+        x:Class="CyRevision.Desktop.DetachedWorkspaceWindow"
+        x:CompileBindings="False"
+        Title="CyRevision Workspace"
+        Icon="/Assets/Branding/cyrevision.ico"
+        Width="1460" Height="880" MinWidth="850" MinHeight="520"
+        Background="#1E1F22" WindowStartupLocation="CenterOwner">
+    <Window.Styles>
+        <Style Selector="Border.toolCard">
+            <Setter Property="Background" Value="#25272B" />
+            <Setter Property="BorderBrush" Value="#3A3D43" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="5" />
+        </Style>
+        <Style Selector="Button.toolButton">
+            <Setter Property="Background" Value="#34373D" />
+            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="Padding" Value="9,5" />
+            <Setter Property="MinHeight" Value="27" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="Button.toolPrimary">
+            <Setter Property="Background" Value="#3574F0" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="MinHeight" Value="27" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="DataGrid.compact DataGridRow"><Setter Property="MinHeight" Value="26" /></Style>
+        <Style Selector="DataGrid.compact DataGridCell"><Setter Property="Padding" Value="5,2" /><Setter Property="FontSize" Value="10.5" /></Style>
+        <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#9B9DA3" /></Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="42,*">
+        <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                <Image Source="/Assets/Branding/cyrevision-icon-master.png" Width="24" Height="24" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="Detached workspace" FontSize="12" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding RepositoryPath}" FontSize="9" Classes="muted" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <CheckBox x:Name="AlwaysOnTopToggle" Grid.Column="2" Content="Always on top" VerticalAlignment="Center"
+                          Click="OnAlwaysOnTopClick" />
+                <Button Grid.Column="3" Classes="toolButton" Content="Close" Click="OnCloseClick" />
+            </Grid>
+        </Border>
+
+        <TabControl x:Name="DetachedTabs" Grid.Row="1" Margin="9">
+            <TabItem x:Name="DetachedHistoryTab" Header="History explorer">
+                <Grid Margin="0,7,0,0" RowDefinitions="Auto,*" RowSpacing="7">
+                    <Border Classes="toolCard" Padding="8">
+                        <Grid ColumnDefinitions="*,Auto,260,Auto" ColumnSpacing="8">
+                            <TextBox Text="{Binding ExplorerSearch}" PlaceholderText="Search message, author, or hash…" />
+                            <TextBlock Grid.Column="1" Text="Compare with" Classes="muted" VerticalAlignment="Center" />
+                            <ComboBox Grid.Column="2" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedComparisonRevision}">
+                                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Subject}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Button Grid.Column="3" Classes="toolPrimary" Content="Compare A ↔ B" Click="OnCompareHistoryClick" />
+                        </Grid>
+                    </Border>
+                    <Grid Grid.Row="1" ColumnDefinitions="0.85*,7,1.05*,7,1.4*">
+                        <Border Classes="toolCard" Padding="0" ClipToBounds="True">
+                            <Grid RowDefinitions="34,*">
+                                <TextBlock Text="Timeline" FontSize="12" FontWeight="SemiBold" Margin="9,0" VerticalAlignment="Center" />
+                                <DataGrid Grid.Row="1" Classes="compact" ItemsSource="{Binding History}"
+                                          SelectedItem="{Binding SelectedExplorerRevision}" AutoGenerateColumns="False"
+                                          IsReadOnly="True" GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Rev" Binding="{Binding ShortHash}" Width="68" />
+                                        <DataGridTextColumn Header="Description" Binding="{Binding Subject}" Width="*" />
+                                        <DataGridTextColumn Header="Author" Binding="{Binding AuthorName}" Width="95" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+                        <GridSplitter Grid.Column="1" Width="7" Background="#45484E" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+                        <Border Grid.Column="2" Classes="toolCard" Padding="0" ClipToBounds="True">
+                            <Grid RowDefinitions="34,1.2*,30,0.7*">
+                                <TextBlock Text="Revision files" FontSize="12" FontWeight="SemiBold" Margin="9,0" VerticalAlignment="Center" />
+                                <DataGrid Grid.Row="1" Classes="compact" ItemsSource="{Binding ExplorerFiles}"
+                                          SelectedItem="{Binding SelectedExplorerFile}" AutoGenerateColumns="False"
+                                          IsReadOnly="True" GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="State" Binding="{Binding Kind}" Width="68" />
+                                        <DataGridTextColumn Header="File" Binding="{Binding Path}" Width="*" />
+                                        <DataGridTextColumn Header="Change" Binding="{Binding ChangeSummary}" Width="82" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <TextBlock Grid.Row="2" Text="File history" FontWeight="SemiBold" FontSize="10.5" Margin="9,0" VerticalAlignment="Center" />
+                                <DataGrid Grid.Row="3" Classes="compact" ItemsSource="{Binding ExplorerFileHistory}"
+                                          AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                          BorderThickness="0" Background="Transparent">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Rev" Binding="{Binding Revision.ShortHash}" Width="68" />
+                                        <DataGridTextColumn Header="Description" Binding="{Binding Revision.Subject}" Width="*" />
+                                        <DataGridTextColumn Header="Date" Binding="{Binding Revision.AuthoredAt}" Width="125" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+                        <GridSplitter Grid.Column="3" Width="7" Background="#45484E" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+                        <Border Grid.Column="4" Classes="toolCard" Padding="0" ClipToBounds="True">
+                            <Grid RowDefinitions="34,*">
+                                <Grid Margin="9,0" ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Focused diff" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Read-only" Foreground="#78D7B7" FontSize="9" VerticalAlignment="Center" />
+                                </Grid>
+                                <controls:CodeDiffView Grid.Row="1" DiffText="{Binding ExplorerDiff}" FilePath="{Binding SelectedExplorerFile.Path}" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="DetachedCodeTab" Header="Code explorer">
+                <Grid Margin="0,7,0,0" RowDefinitions="Auto,*" RowSpacing="7">
+                    <Border Classes="toolCard" Padding="8">
+                        <Grid ColumnDefinitions="*,130,Auto,Auto" ColumnSpacing="7">
+                            <TextBox x:Name="DetachedCodeSearch" Text="{Binding CodeSearchQuery}"
+                                     PlaceholderText="Search text, symbol, or pattern…" KeyDown="OnCodeSearchKeyDown" />
+                            <TextBox Grid.Column="1" Text="{Binding CodeFilePatterns}" PlaceholderText="*.cs;*.cpp" />
+                            <Button Grid.Column="2" Classes="toolPrimary" Content="Search" Click="OnCodeSearchClick" />
+                            <Button Grid.Column="3" Classes="toolButton" Content="Refresh tree" Click="OnRefreshCodeClick" />
+                        </Grid>
+                    </Border>
+                    <Grid Grid.Row="1" ColumnDefinitions="0.65*,7,1.45*,7,0.9*">
+                        <Border Classes="toolCard" Padding="0" ClipToBounds="True">
+                            <Grid RowDefinitions="30,30,*">
+                                <TextBlock Text="Project" FontSize="11.5" FontWeight="SemiBold" Margin="8,0" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="1" Text="{Binding CodeTreeFilter}" PlaceholderText="Filter files…" Margin="6,2" FontSize="10" />
+                                <TreeView Grid.Row="2" ItemsSource="{Binding CodeTree}" SelectedItem="{Binding SelectedCodeNode}"
+                                          Background="Transparent" BorderThickness="0" Margin="2">
+                                    <TreeView.ItemTemplate>
+                                        <TreeDataTemplate ItemsSource="{Binding Children}">
+                                            <Grid ColumnDefinitions="22,*,Auto" Margin="1" ToolTip.Tip="{Binding RelativePath}">
+                                                <TextBlock Text="{Binding Icon}" FontSize="8" Foreground="{Binding AccentColor}" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="{Binding AccentColor}"
+                                                           FontSize="10.5" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Detail}" FontSize="8.5" Classes="muted" Margin="4,0" />
+                                            </Grid>
+                                        </TreeDataTemplate>
+                                    </TreeView.ItemTemplate>
+                                </TreeView>
+                            </Grid>
+                        </Border>
+                        <GridSplitter Grid.Column="1" Width="7" Background="#45484E" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+                        <Border Grid.Column="2" Classes="toolCard" Padding="0" ClipToBounds="True">
+                            <Grid RowDefinitions="34,*">
+                                <StackPanel Margin="8,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Editor preview" FontSize="11.5" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding CodePreviewSummary}" FontSize="8.5" Classes="muted" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <controls:SyntaxHighlightedCodeView x:Name="DetachedCodePreview" Grid.Row="1"
+                                                                    Text="{Binding CodePreviewText}"
+                                                                    FilePath="{Binding SelectedCodeNode.RelativePath}" />
+                            </Grid>
+                        </Border>
+                        <GridSplitter Grid.Column="3" Width="7" Background="#45484E" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+                        <Border Grid.Column="4" Classes="toolCard" Padding="0" ClipToBounds="True">
+                            <TabControl>
+                                <TabItem Header="Search results">
+                                    <DataGrid Classes="compact" ItemsSource="{Binding CodeSearchResults}"
+                                              SelectedItem="{Binding SelectedCodeSearchResult}" AutoGenerateColumns="False"
+                                              IsReadOnly="True" GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="135" />
+                                            <DataGridTextColumn Header="Preview" Binding="{Binding Preview}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="Symbols">
+                                    <DataGrid Classes="compact" ItemsSource="{Binding CodeSymbols}" SelectedItem="{Binding SelectedCodeSymbol}"
+                                              AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                              BorderThickness="0" Background="Transparent">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="72" />
+                                            <DataGridTextColumn Header="Symbol" Binding="{Binding Name}" Width="*" />
+                                            <DataGridTextColumn Header="Line" Binding="{Binding LineNumber}" Width="55" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                            </TabControl>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="DetachedCompositionTab" Header="Revision composition">
+                <controls:RevisionCompositionView x:Name="DetachedCompositionView" />
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

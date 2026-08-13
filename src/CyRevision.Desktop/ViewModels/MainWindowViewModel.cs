@@ -107,6 +107,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private IReadOnlyList<GitDailyActivity> _gitDailyActivity = [];
     private IReadOnlyList<GitFileActivity> _gitHotFiles = [];
     private string _gitInsightsSummary = "Analyse d'activité non lancée.";
+    private string _projectMembersSummary = "No project selected.";
     private IReadOnlyList<GitFileActivity> _unrealDependencyFiles = [];
     private IReadOnlyList<GitFileRelation> _unrealDependencyRelations = [];
     private IReadOnlyList<UnrealAssetNode> _unrealAssets = [];
@@ -120,9 +121,27 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _explorerDiff = "Le diff de la révision apparaîtra ici.";
     private string? _comparisonFromHash;
     private string? _comparisonToHash;
+    private GitRevision? _multiRestoreCommit;
+    private string? _multiRestoreLoadedHash;
+    private MultiRestoreFileViewModel? _selectedMultiRestoreFile;
+    private GitMultiRestorePlan? _multiRestorePlan;
+    private string _multiRestoreSummary = "Choose a commit to compose a safe multi-file restore.";
+    private string _multiRestoreDiff = "Select a file to review the change before composing the restore.";
+    private bool _multiRestoreOverwriteLocalChanges;
+    private GitBranch? _branchCompareSource;
+    private GitBranch? _branchCompareTarget;
+    private CherryPickCommitViewModel? _selectedCherryPickCommit;
+    private GitBranchComparison? _branchComparison;
+    private GitCherryPickPlan? _cherryPickPlan;
+    private GitCherryPickMode _selectedCherryPickMode = GitCherryPickMode.KeepCommits;
+    private string _combinedCherryPickMessage = string.Empty;
+    private string _branchComparisonSummary = "Choose a source and target branch to compare their commits.";
+    private string _cherryPickPlanSummary = "Compare branches, then select the source-only commits to apply.";
+    private string _cherryPickDiff = "Select a commit to inspect its patch.";
     private LfsTrackedFile? _selectedLfsFile;
     private LfsFileVersion? _selectedLfsVersion;
     private string _lfsTimelineSummary = "Sélectionnez un fichier LFS pour afficher ses versions.";
+    private string _lfsLocksSummary = "Git LFS locks have not been loaded.";
     private Bitmap? _lfsPreview;
     private LfsHistoryTransferMode _selectedLfsHistoryMode = LfsHistoryTransferMode.OnDemand;
     private string _smartSyncRecentVersionCount = "3";
@@ -389,9 +408,23 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<LfsTrackedPattern> LfsPatterns { get; } = [];
 
+    public ObservableCollection<LfsFileLock> LfsLocks { get; } = [];
+
+    public ObservableCollection<LfsFileLock> MyLfsLocks { get; } = [];
+
     public ObservableCollection<GitCommitFileChange> ExplorerFiles { get; } = [];
 
     public ObservableCollection<GitFileRevision> ExplorerFileHistory { get; } = [];
+
+    public ObservableCollection<MultiRestoreFileViewModel> MultiRestoreFiles { get; } = [];
+
+    public ObservableCollection<GitMultiRestoreOperation> MultiRestoreOperations { get; } = [];
+
+    public ObservableCollection<CherryPickCommitViewModel> BranchComparisonCommits { get; } = [];
+
+    public ObservableCollection<GitBranch> BranchCompareSources { get; } = [];
+
+    public ObservableCollection<GitBranch> BranchCompareTargets { get; } = [];
 
     public ObservableCollection<LfsTrackedFile> LfsFiles { get; } = [];
 
@@ -404,6 +437,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<BackupSnapshotViewModel> Backups { get; } = [];
 
     public ObservableCollection<PeerMemberViewModel> PeerMembers { get; } = [];
+
+    public ObservableCollection<ProjectParticipantViewModel> SyncProjectMembers { get; } = [];
+
+    public ObservableCollection<ProjectParticipantViewModel> GitProjectMembers { get; } = [];
+
+    public ObservableCollection<ProjectParticipantViewModel> VpnProjectMembers { get; } = [];
 
     public ObservableCollection<AdvisoryReservationViewModel> AdvisoryReservations { get; } = [];
 
@@ -485,6 +524,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _gitInsightsSummary;
         private set => SetProperty(ref _gitInsightsSummary, value);
+    }
+
+    public string ProjectMembersSummary
+    {
+        get => _projectMembersSummary;
+        private set => SetProperty(ref _projectMembersSummary, value);
     }
 
     public IReadOnlyList<GitFileActivity> UnrealDependencyFiles
@@ -570,6 +615,145 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         private set => SetProperty(ref _explorerDiff, value);
     }
 
+    public GitRevision? MultiRestoreCommit
+    {
+        get => _multiRestoreCommit;
+        set
+        {
+            if (SetProperty(ref _multiRestoreCommit, value) &&
+                value is not null &&
+                !string.Equals(_multiRestoreLoadedHash, value.Hash, StringComparison.Ordinal))
+            {
+                _ = LoadMultiRestoreCommitAsync(value);
+            }
+        }
+    }
+
+    public MultiRestoreFileViewModel? SelectedMultiRestoreFile
+    {
+        get => _selectedMultiRestoreFile;
+        set
+        {
+            if (SetProperty(ref _selectedMultiRestoreFile, value))
+            {
+                _ = LoadMultiRestoreDiffAsync(value);
+            }
+        }
+    }
+
+    public string MultiRestoreSummary
+    {
+        get => _multiRestoreSummary;
+        private set => SetProperty(ref _multiRestoreSummary, value);
+    }
+
+    public string MultiRestoreDiff
+    {
+        get => _multiRestoreDiff;
+        private set => SetProperty(ref _multiRestoreDiff, value);
+    }
+
+    public bool MultiRestoreOverwriteLocalChanges
+    {
+        get => _multiRestoreOverwriteLocalChanges;
+        set
+        {
+            if (SetProperty(ref _multiRestoreOverwriteLocalChanges, value))
+            {
+                OnPropertyChanged(nameof(CanApplyMultiRestore));
+            }
+        }
+    }
+
+    public bool CanApplyMultiRestore =>
+        _multiRestorePlan?.CanApply == true &&
+        (!_multiRestorePlan.HasLocalChanges || MultiRestoreOverwriteLocalChanges);
+
+    public GitBranch? BranchCompareSource
+    {
+        get => _branchCompareSource;
+        set
+        {
+            if (SetProperty(ref _branchCompareSource, value))
+            {
+                InvalidateCherryPickPlan();
+            }
+        }
+    }
+
+    public GitBranch? BranchCompareTarget
+    {
+        get => _branchCompareTarget;
+        set
+        {
+            if (SetProperty(ref _branchCompareTarget, value))
+            {
+                InvalidateCherryPickPlan();
+            }
+        }
+    }
+
+    public CherryPickCommitViewModel? SelectedCherryPickCommit
+    {
+        get => _selectedCherryPickCommit;
+        set
+        {
+            if (SetProperty(ref _selectedCherryPickCommit, value))
+            {
+                _ = LoadCherryPickDiffAsync(value);
+            }
+        }
+    }
+
+    public GitCherryPickMode SelectedCherryPickMode
+    {
+        get => _selectedCherryPickMode;
+        set
+        {
+            if (SetProperty(ref _selectedCherryPickMode, value))
+            {
+                InvalidateCherryPickPlan();
+                OnPropertyChanged(nameof(CombinesCherryPickCommits));
+            }
+        }
+    }
+
+    public IReadOnlyList<GitCherryPickMode> CherryPickModes { get; } = Enum.GetValues<GitCherryPickMode>();
+
+    public bool CombinesCherryPickCommits => SelectedCherryPickMode == GitCherryPickMode.CombineIntoOne;
+
+    public string CombinedCherryPickMessage
+    {
+        get => _combinedCherryPickMessage;
+        set
+        {
+            if (SetProperty(ref _combinedCherryPickMessage, value))
+            {
+                InvalidateCherryPickPlan();
+            }
+        }
+    }
+
+    public string BranchComparisonSummary
+    {
+        get => _branchComparisonSummary;
+        private set => SetProperty(ref _branchComparisonSummary, value);
+    }
+
+    public string CherryPickPlanSummary
+    {
+        get => _cherryPickPlanSummary;
+        private set => SetProperty(ref _cherryPickPlanSummary, value);
+    }
+
+    public string CherryPickDiff
+    {
+        get => _cherryPickDiff;
+        private set => SetProperty(ref _cherryPickDiff, value);
+    }
+
+    public bool CanApplyCherryPick => _cherryPickPlan?.CanApply == true;
+
     public LfsTrackedFile? SelectedLfsFile
     {
         get => _selectedLfsFile;
@@ -601,6 +785,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _lfsTimelineSummary;
         private set => SetProperty(ref _lfsTimelineSummary, value);
+    }
+
+    public string LfsLocksSummary
+    {
+        get => _lfsLocksSummary;
+        private set => SetProperty(ref _lfsLocksSummary, value);
     }
 
     public Bitmap? LfsPreview
@@ -3349,6 +3539,284 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, "Comparaison prête — aucune donnée modifiée");
     }
 
+    public async Task LoadMultiRestoreCommitAsync(GitRevision? revision = null)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        GitRevision? selected = revision ?? MultiRestoreCommit ?? SelectedExplorerRevision ?? History.FirstOrDefault();
+        if (selected is null)
+        {
+            StatusMessage = "No commit is available for multi restore.";
+            return;
+        }
+
+        await RunOperationAsync("Loading the multi restore composer…", async () =>
+        {
+            GitCommitDetails details = await _gitService.GetCommitDetailsAsync(SelectedProject.RootPath, selected.Hash);
+            foreach (MultiRestoreFileViewModel previous in MultiRestoreFiles)
+            {
+                previous.CompositionChanged -= OnMultiRestoreCompositionChanged;
+            }
+
+            MultiRestoreFiles.Clear();
+            foreach (GitCommitFileChange change in details.Files)
+            {
+                MultiRestoreFileViewModel item = new(change);
+                item.CompositionChanged += OnMultiRestoreCompositionChanged;
+                MultiRestoreFiles.Add(item);
+            }
+
+            _multiRestoreLoadedHash = details.Revision.Hash;
+            MultiRestoreCommit = details.Revision;
+            SelectedMultiRestoreFile = MultiRestoreFiles.FirstOrDefault();
+            InvalidateMultiRestorePlan();
+            MultiRestoreSummary = $"{details.Revision.ShortHash} · {details.Revision.Subject} · " +
+                                  $"{details.Files.Count} changed file(s). Select only the versions to compose.";
+        }, "Multi restore composer ready — no file changed");
+    }
+
+    public void SelectAllMultiRestoreFiles(bool selected)
+    {
+        foreach (MultiRestoreFileViewModel item in MultiRestoreFiles)
+        {
+            item.IsSelected = selected;
+        }
+        InvalidateMultiRestorePlan();
+    }
+
+    public async Task PreviewMultiRestoreAsync()
+    {
+        if (SelectedProject is null || MultiRestoreCommit is null)
+        {
+            return;
+        }
+
+        GitMultiRestoreSelection[] selections = MultiRestoreFiles
+            .Where(item => item.IsSelected)
+            .Select(item => new GitMultiRestoreSelection(item.Path, item.RestorePoint))
+            .ToArray();
+        await RunOperationAsync("Building the multi restore safety preview…", async () =>
+        {
+            GitMultiRestorePlan plan = await _gitService.CreateMultiRestorePlanAsync(
+                SelectedProject.RootPath,
+                MultiRestoreCommit.Hash,
+                selections);
+            _multiRestorePlan = plan;
+            ReplaceCollection(MultiRestoreOperations, plan.Operations);
+            MultiRestoreSummary = $"{plan.Operations.Count} operation(s) · " +
+                                  $"{plan.Operations.Count(item => item.Kind == GitMultiRestoreOperationKind.Restore)} restore · " +
+                                  $"{plan.Operations.Count(item => item.Kind == GitMultiRestoreOperationKind.Delete)} delete" +
+                                  (plan.HasLocalChanges ? " · local changes detected" : "") +
+                                  (plan.Warnings.Count > 0 ? Environment.NewLine + string.Join(Environment.NewLine, plan.Warnings) : string.Empty);
+            OnPropertyChanged(nameof(CanApplyMultiRestore));
+        }, "Safety preview ready — no file changed");
+    }
+
+    public async Task ApplyMultiRestoreAsync()
+    {
+        if (SelectedProject is null || _multiRestorePlan is null || !CanApplyMultiRestore)
+        {
+            return;
+        }
+
+        GitMultiRestorePlan plan = _multiRestorePlan;
+        await RunOperationAsync("Applying the composed file versions…", async () =>
+        {
+            GitMultiRestoreResult result = await _gitService.ApplyMultiRestorePlanAsync(
+                SelectedProject.RootPath,
+                plan,
+                MultiRestoreOverwriteLocalChanges);
+            _multiRestorePlan = null;
+            MultiRestoreOperations.Clear();
+            OnPropertyChanged(nameof(CanApplyMultiRestore));
+            MultiRestoreSummary = $"Applied {result.ChangedPaths.Count} path(s). Safety backup: {result.BackupDirectory}";
+            await RefreshCoreAsync();
+        }, "Multi restore applied to the working tree — review the Changes tab before committing");
+    }
+
+    public async Task CompareBranchesForCompositionAsync()
+    {
+        if (SelectedProject is null || BranchCompareSource is null || BranchCompareTarget is null)
+        {
+            StatusMessage = "Choose both a source and a target branch.";
+            return;
+        }
+        if (BranchCompareSource.Name.Equals(BranchCompareTarget.Name, StringComparison.Ordinal))
+        {
+            StatusMessage = "Source and target must be different branches.";
+            return;
+        }
+
+        await RunOperationAsync("Comparing branch histories and patch equivalence…", async () =>
+        {
+            GitBranchComparison comparison = await _gitService.CompareBranchesAsync(
+                SelectedProject.RootPath,
+                BranchCompareSource.Name,
+                BranchCompareTarget.Name);
+            _branchComparison = comparison;
+            foreach (CherryPickCommitViewModel previous in BranchComparisonCommits)
+            {
+                previous.CompositionChanged -= OnCherryPickCompositionChanged;
+            }
+
+            BranchComparisonCommits.Clear();
+            foreach (GitBranchComparisonCommit commit in comparison.Commits.OrderBy(item => item.Revision.AuthoredAt))
+            {
+                CherryPickCommitViewModel item = new(commit);
+                item.CompositionChanged += OnCherryPickCompositionChanged;
+                BranchComparisonCommits.Add(item);
+            }
+
+            SelectedCherryPickCommit = BranchComparisonCommits.FirstOrDefault(item => item.CanCherryPick)
+                                       ?? BranchComparisonCommits.FirstOrDefault();
+            BranchComparisonSummary = $"{comparison.SourceBranch} → {comparison.TargetBranch} · " +
+                                      $"{comparison.SourceOnlyCount} source-only · {comparison.TargetOnlyCount} target-only · " +
+                                      $"{comparison.EquivalentCount} patch-equivalent";
+            InvalidateCherryPickPlan();
+        }, "Branch comparison ready — read-only analysis");
+    }
+
+    public void SelectAllSourceOnlyCommits(bool selected)
+    {
+        foreach (CherryPickCommitViewModel item in BranchComparisonCommits.Where(item => item.CanCherryPick))
+        {
+            item.IsSelected = selected;
+        }
+        InvalidateCherryPickPlan();
+    }
+
+    public void MoveSelectedCherryPickCommit(int offset)
+    {
+        if (SelectedCherryPickCommit is null || !SelectedCherryPickCommit.CanCherryPick || offset == 0)
+        {
+            return;
+        }
+
+        int currentIndex = BranchComparisonCommits.IndexOf(SelectedCherryPickCommit);
+        int targetIndex = currentIndex + Math.Sign(offset);
+        if (targetIndex < 0 || targetIndex >= BranchComparisonCommits.Count ||
+            !BranchComparisonCommits[targetIndex].CanCherryPick)
+        {
+            return;
+        }
+
+        BranchComparisonCommits.Move(currentIndex, targetIndex);
+        InvalidateCherryPickPlan();
+    }
+
+    public async Task PreviewCherryPickAsync()
+    {
+        if (SelectedProject is null || BranchCompareSource is null || BranchCompareTarget is null)
+        {
+            return;
+        }
+
+        string[] commits = BranchComparisonCommits
+            .Where(item => item.CanCherryPick && item.IsSelected)
+            .Select(item => item.Hash)
+            .ToArray();
+        await RunOperationAsync("Building the cherry-pick safety preview…", async () =>
+        {
+            GitCherryPickPlan plan = await _gitService.CreateCherryPickPlanAsync(
+                SelectedProject.RootPath,
+                BranchCompareSource.Name,
+                BranchCompareTarget.Name,
+                commits,
+                SelectedCherryPickMode,
+                CombinedCherryPickMessage);
+            _cherryPickPlan = plan;
+            CherryPickPlanSummary = $"{plan.OrderedCommits.Count} commit(s) → {plan.TargetBranch} · " +
+                                    (plan.UsesTemporaryWorktree ? "isolated temporary worktree" : "active clean worktree") +
+                                    (plan.Mode == GitCherryPickMode.CombineIntoOne ? " · combine into one commit" : " · keep original commits") +
+                                    (plan.Warnings.Count > 0 ? Environment.NewLine + string.Join(Environment.NewLine, plan.Warnings) : string.Empty);
+            OnPropertyChanged(nameof(CanApplyCherryPick));
+        }, "Cherry-pick preview ready — nothing applied or pushed");
+    }
+
+    public async Task ApplyCherryPickAsync()
+    {
+        if (SelectedProject is null || _cherryPickPlan is null || !CanApplyCherryPick)
+        {
+            return;
+        }
+
+        GitCherryPickPlan plan = _cherryPickPlan;
+        await RunOperationAsync("Applying the cherry-pick composition…", async () =>
+        {
+            GitCherryPickResult result = await _gitService.ApplyCherryPickPlanAsync(SelectedProject.RootPath, plan);
+            _cherryPickPlan = null;
+            OnPropertyChanged(nameof(CanApplyCherryPick));
+            CherryPickPlanSummary = $"Applied {result.AppliedCommitCount} commit(s) to {result.TargetBranch}. " +
+                                    "The branch was updated locally; nothing was pushed.";
+            await RefreshCoreAsync();
+        }, "Cherry-pick composition completed locally — push remains manual");
+    }
+
+    private async Task LoadMultiRestoreDiffAsync(MultiRestoreFileViewModel? item)
+    {
+        if (SelectedProject is null || MultiRestoreCommit is null || item is null)
+        {
+            MultiRestoreDiff = "Select a file to inspect its commit patch.";
+            return;
+        }
+
+        try
+        {
+            MultiRestoreDiff = await _gitService.GetCommitDiffAsync(
+                SelectedProject.RootPath,
+                MultiRestoreCommit.Hash,
+                item.Path);
+            if (string.IsNullOrWhiteSpace(MultiRestoreDiff))
+            {
+                MultiRestoreDiff = item.IsLfsObject
+                    ? "Git LFS object — the safety preview verifies that the selected object exists locally."
+                    : "No textual patch is available for this file.";
+            }
+        }
+        catch (Exception exception)
+        {
+            MultiRestoreDiff = exception.Message;
+        }
+    }
+
+    private async Task LoadCherryPickDiffAsync(CherryPickCommitViewModel? item)
+    {
+        if (SelectedProject is null || item is null)
+        {
+            CherryPickDiff = "Select a commit to inspect its patch.";
+            return;
+        }
+
+        try
+        {
+            CherryPickDiff = await _gitService.GetCommitDiffAsync(SelectedProject.RootPath, item.Hash);
+        }
+        catch (Exception exception)
+        {
+            CherryPickDiff = exception.Message;
+        }
+    }
+
+    private void OnMultiRestoreCompositionChanged(object? sender, EventArgs e) => InvalidateMultiRestorePlan();
+
+    private void InvalidateMultiRestorePlan()
+    {
+        _multiRestorePlan = null;
+        MultiRestoreOperations.Clear();
+        OnPropertyChanged(nameof(CanApplyMultiRestore));
+    }
+
+    private void OnCherryPickCompositionChanged(object? sender, EventArgs e) => InvalidateCherryPickPlan();
+
+    private void InvalidateCherryPickPlan()
+    {
+        _cherryPickPlan = null;
+        OnPropertyChanged(nameof(CanApplyCherryPick));
+    }
+
     public async Task ExportSelectedExplorerFileAsync(string destinationPath)
     {
         if (SelectedProject is null || SelectedExplorerRevision is null || SelectedExplorerFile is null)
@@ -3620,6 +4088,80 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await _gitService.TrackLfsPatternAsync(SelectedProject.RootPath, pattern);
             await RefreshCoreAsync();
         }, $"{pattern} est maintenant suivi par Git LFS");
+    }
+
+    public Task RefreshLfsLocksAsync() => RunOperationAsync(
+        "Refreshing Git LFS locksâ€¦",
+        LoadLfsLocksCoreAsync,
+        "Git LFS locks refreshed");
+
+    public async Task UnlockLfsLockAsync(LfsFileLock fileLock, bool force)
+    {
+        ArgumentNullException.ThrowIfNull(fileLock);
+        if (SelectedProject is null)
+        {
+            return;
+        }
+        if (!fileLock.IsOurs && !force)
+        {
+            StatusMessage = "A lock owned by another user requires an explicit force unlock.";
+            return;
+        }
+
+        await RunOperationAsync(
+            force ? $"Force-unlocking {fileLock.Path}â€¦" : $"Unlocking {fileLock.Path}â€¦",
+            async () =>
+            {
+                await _gitService.UnlockLfsFileAsync(SelectedProject.RootPath, fileLock.Id, force);
+                await LoadLfsLocksCoreAsync();
+            },
+            $"Git LFS lock removed: {fileLock.Path}");
+    }
+
+    public async Task UnlockAllLfsLocksAsync(bool forceEveryLock)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        LfsFileLock[] targets = (forceEveryLock ? LfsLocks : MyLfsLocks).ToArray();
+        if (targets.Length == 0)
+        {
+            StatusMessage = forceEveryLock ? "No Git LFS lock to remove." : "You do not own any Git LFS lock.";
+            return;
+        }
+
+        await RunOperationAsync(
+            forceEveryLock ? "Force-unlocking every Git LFS fileâ€¦" : "Unlocking all of your Git LFS filesâ€¦",
+            async () =>
+            {
+                List<string> failures = [];
+                int removed = 0;
+                foreach (LfsFileLock item in targets)
+                {
+                    try
+                    {
+                        await _gitService.UnlockLfsFileAsync(
+                            SelectedProject.RootPath,
+                            item.Id,
+                            force: forceEveryLock);
+                        removed++;
+                    }
+                    catch (Exception exception)
+                    {
+                        failures.Add($"{item.Path}: {exception.Message}");
+                    }
+                }
+
+                await LoadLfsLocksCoreAsync();
+                if (failures.Count > 0)
+                {
+                    throw new GitOperationException(
+                        $"Removed {removed}/{targets.Length} lock(s). " + string.Join(" | ", failures.Take(3)));
+                }
+            },
+            forceEveryLock ? "Every visible Git LFS lock was removed" : "All of your Git LFS locks were removed");
     }
 
     public void SetLfsExternalStoragePath(string path) => LfsExternalStoragePath = Path.GetFullPath(path);
@@ -5128,6 +5670,116 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, "Discord webhook removed from local settings");
     }
 
+    public Task RefreshProjectMembersAsync() =>
+        RunOperationAsync(
+            "Refreshing project membersâ€¦",
+            () => RefreshProjectMembersCoreAsync(testConnections: true),
+            "Project member overview refreshed");
+
+    private async Task RefreshProjectMembersCoreAsync(bool testConnections)
+    {
+        SyncProjectMembers.Clear();
+        GitProjectMembers.Clear();
+        VpnProjectMembers.Clear();
+        if (SelectedProject is null)
+        {
+            ProjectMembersSummary = "No project selected.";
+            return;
+        }
+
+        await LoadPeerMembersCoreAsync();
+        Dictionary<string, SyncthingPeerConnectionStatus> syncConnections = new(StringComparer.OrdinalIgnoreCase);
+        if (_currentSyncProfile is not null &&
+            _syncEngine?.Status.State is SyncEngineState.Running or SyncEngineState.Paused)
+        {
+            try
+            {
+                using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
+                foreach (SyncthingPeerConnectionStatus connection in await api.GetPeerConnectionsAsync())
+                {
+                    syncConnections[connection.DeviceId] = connection;
+                }
+            }
+            catch
+            {
+                // Authorized identities remain visible when the local Sync API is unavailable.
+            }
+        }
+
+        foreach (PeerMemberViewModel member in PeerMembers)
+        {
+            string deviceId = member.Certificate.Device.SyncthingDeviceId;
+            syncConnections.TryGetValue(deviceId, out SyncthingPeerConnectionStatus? connection);
+            bool online = connection?.Connected == true;
+            SyncProjectMembers.Add(new ProjectParticipantViewModel(
+                member.DisplayName,
+                member.DeviceIdShort,
+                member.Role,
+                online ? "Connected" : _syncEngine is null ? "Sync stopped" : "Offline",
+                connection?.LastSeenAt?.ToLocalTime().ToString("g") ?? member.Certificate.IssuedAt.ToLocalTime().ToString("g"),
+                connection?.Address ?? "Authorized project device",
+                online ? "#78D7B7" : "#A9ABB2",
+                online));
+        }
+
+        foreach (IGrouping<string, GitRevision> contributor in History
+                     .GroupBy(revision => string.IsNullOrWhiteSpace(revision.AuthorEmail)
+                         ? revision.AuthorName
+                         : revision.AuthorEmail,
+                         StringComparer.OrdinalIgnoreCase)
+                     .OrderByDescending(group => group.Count()))
+        {
+            GitRevision latest = contributor.OrderByDescending(revision => revision.AuthoredAt).First();
+            GitProjectMembers.Add(new ProjectParticipantViewModel(
+                latest.AuthorName,
+                string.IsNullOrWhiteSpace(latest.AuthorEmail) ? "No email" : latest.AuthorEmail,
+                "Contributor",
+                $"{contributor.Count()} commit(s)",
+                latest.AuthoredAt.ToLocalTime().ToString("g"),
+                latest.Subject,
+                "#61AFEF",
+                false));
+        }
+
+        IReadOnlyDictionary<Guid, VpnPeerConnectivity> vpnConnectivity = new Dictionary<Guid, VpnPeerConnectivity>();
+        if (testConnections && _currentVpnProfile is not null)
+        {
+            try
+            {
+                VpnEngineStatus status = await _wireGuardEngine.GetStatusAsync(_currentVpnProfile);
+                if (status.State == VpnRuntimeState.Running)
+                {
+                    VpnConnectivityReport report = await _vpnNetworkSetupService.TestConnectivityAsync(_currentVpnProfile);
+                    vpnConnectivity = report.Peers.ToDictionary(peer => peer.PeerId);
+                }
+            }
+            catch
+            {
+                // Configured peers remain visible even if WireGuard cannot be queried.
+            }
+        }
+
+        foreach (VpnPeerViewModel peer in VpnPeers)
+        {
+            vpnConnectivity.TryGetValue(peer.PeerId, out VpnPeerConnectivity? connectivity);
+            bool online = connectivity?.RecentHandshake == true;
+            VpnProjectMembers.Add(new ProjectParticipantViewModel(
+                peer.DisplayName,
+                peer.TunnelAddress,
+                peer.Capabilities,
+                !peer.Peer.Enabled ? "Disabled" : online ? "Connected" : "Configured",
+                connectivity?.LastHandshakeAt?.ToLocalTime().ToString("g") ?? "â€”",
+                peer.Endpoint,
+                online ? "#78D7B7" : peer.Peer.Enabled ? "#E5C07B" : "#7E8189",
+                online));
+        }
+
+        ProjectMembersSummary =
+            $"Sync {SyncProjectMembers.Count(member => member.IsOnline)}/{SyncProjectMembers.Count} online Â· " +
+            $"Git {GitProjectMembers.Count} contributor(s) Â· " +
+            $"VPN {VpnProjectMembers.Count(member => member.IsOnline)}/{VpnProjectMembers.Count} connected";
+    }
+
     private async Task LoadSelectedProjectAsync()
     {
         await _discordAgent.StopAsync();
@@ -5157,6 +5809,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             StatusMessage = "Chargement du dépôt…";
             await RefreshCoreAsync();
             await LoadLfsManagementCoreAsync();
+            await LoadLfsLocksCoreAsync();
             await LoadRemoteBuildCoreAsync();
             await LoadBackupsCoreAsync();
             await LoadSyncProfileCoreAsync();
@@ -5166,6 +5819,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await RefreshCodeWorkspaceAsync();
             await LoadAiMcpProfileCoreAsync();
             await ResolvePullRequestRepositoryAsync();
+            await RefreshProjectMembersCoreAsync(testConnections: false);
             StatusMessage = "Dépôt chargé";
         }
         catch (Exception exception)
@@ -5251,6 +5905,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             ExplorerSummary = exception.Message;
             ExplorerFiles.Clear();
             ExplorerFileHistory.Clear();
+            MultiRestoreFiles.Clear();
+            MultiRestoreOperations.Clear();
+            BranchComparisonCommits.Clear();
+            BranchCompareSources.Clear();
+            BranchCompareTargets.Clear();
             ExplorerDiff = exception.Message;
         }
     }
@@ -5460,6 +6119,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             History.Clear();
             Branches.Clear();
             LfsPatterns.Clear();
+            LfsLocks.Clear();
+            MyLfsLocks.Clear();
+            LfsLocksSummary = "Git is disabled for this project.";
             ExplorerFiles.Clear();
             ExplorerFileHistory.Clear();
             LfsFiles.Clear();
@@ -5490,6 +6152,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _allExplorerRevisions = (await historyTask).ToArray();
         ApplyExplorerFilter();
         ReplaceCollection(Branches, await branchesTask);
+        RefreshCompositionBranches();
         ReplaceCollection(LfsPatterns, await lfsTask);
         ReplaceCollection(LfsFiles, await lfsFilesTask);
         SelectedBranch = Branches.FirstOrDefault(branch => branch.IsCurrent);
@@ -5515,6 +6178,32 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             SelectedLfsFile = selectedLfsFile;
         }
         UpdateSmartSyncPlan();
+    }
+
+    private async Task LoadLfsLocksCoreAsync()
+    {
+        LfsLocks.Clear();
+        MyLfsLocks.Clear();
+        if (SelectedProject is null || !SelectedProject.Definition.Features.GitEnabled)
+        {
+            LfsLocksSummary = "Git is disabled for this project.";
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<LfsFileLock> locks = await _gitService.GetLfsLocksAsync(SelectedProject.RootPath);
+            ReplaceCollection(LfsLocks, locks);
+            ReplaceCollection(MyLfsLocks, locks.Where(item => item.IsOurs));
+            int others = locks.Count - MyLfsLocks.Count;
+            bool cached = locks.Any(item => item.IsCached);
+            LfsLocksSummary = $"{locks.Count} project lock(s) Â· {MyLfsLocks.Count} mine Â· {others} other user(s)" +
+                              (cached ? " Â· cached/offline data" : " Â· verified with the LFS server");
+        }
+        catch (Exception exception)
+        {
+            LfsLocksSummary = "Unable to load Git LFS locks: " + exception.Message;
+        }
     }
 
     private async Task LoadLfsManagementCoreAsync()
@@ -6488,7 +7177,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private async Task LoadPeerMembersCoreAsync()
     {
-        if (SelectedProject is null || _syncEngine is null || string.IsNullOrWhiteSpace(_syncEngine.DeviceId))
+        if (SelectedProject is null)
+        {
+            PeerMembers.Clear();
+            SelectedPeerMember = null;
+            return;
+        }
+
+        string identityDirectory = Path.Combine(GetProjectSecurityPath(SelectedProject.Id), "local-device");
+        if (!File.Exists(Path.Combine(identityDirectory, "device-identity.json")) ||
+            !File.Exists(Path.Combine(identityDirectory, "device-signing-key.pk8")))
         {
             PeerMembers.Clear();
             SelectedPeerMember = null;
@@ -6497,7 +7195,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
         using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(
             SelectedProject.Definition,
-            _syncEngine.DeviceId);
+            _syncEngine?.DeviceId ?? "offline");
         JsonPeerAdmissionService admission = CreateAdmissionService(SelectedProject.Id, identity);
         IReadOnlyList<MembershipCertificate> members = await admission.GetMembersAsync(SelectedProject.Id);
         ReplaceCollection(
@@ -7059,6 +7757,21 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     }
 
+    private void RefreshCompositionBranches()
+    {
+        string? previousSource = BranchCompareSource?.Name;
+        string? previousTarget = BranchCompareTarget?.Name;
+        ReplaceCollection(BranchCompareSources, Branches);
+        ReplaceCollection(BranchCompareTargets, Branches.Where(branch => !branch.IsRemote));
+
+        BranchCompareSource = BranchCompareSources.FirstOrDefault(branch => branch.Name == previousSource)
+                              ?? BranchCompareSources.FirstOrDefault(branch => branch.IsCurrent)
+                              ?? BranchCompareSources.FirstOrDefault();
+        BranchCompareTarget = BranchCompareTargets.FirstOrDefault(branch => branch.Name == previousTarget)
+                              ?? BranchCompareTargets.FirstOrDefault(branch => !branch.IsCurrent)
+                              ?? BranchCompareTargets.FirstOrDefault();
+    }
+
     private async Task RunOperationAsync(string progressMessage, Func<Task> operation, string successMessage)
     {
         if (IsBusy)
@@ -7094,8 +7807,40 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         LfsPatterns.Clear();
         ExplorerFiles.Clear();
         ExplorerFileHistory.Clear();
+        foreach (MultiRestoreFileViewModel item in MultiRestoreFiles)
+        {
+            item.CompositionChanged -= OnMultiRestoreCompositionChanged;
+        }
+        foreach (CherryPickCommitViewModel item in BranchComparisonCommits)
+        {
+            item.CompositionChanged -= OnCherryPickCompositionChanged;
+        }
+        MultiRestoreFiles.Clear();
+        MultiRestoreOperations.Clear();
+        BranchComparisonCommits.Clear();
+        BranchCompareSources.Clear();
+        BranchCompareTargets.Clear();
+        MultiRestoreCommit = null;
+        _multiRestoreLoadedHash = null;
+        SelectedMultiRestoreFile = null;
+        SelectedCherryPickCommit = null;
+        BranchCompareSource = null;
+        BranchCompareTarget = null;
+        _multiRestorePlan = null;
+        _branchComparison = null;
+        _cherryPickPlan = null;
+        MultiRestoreSummary = "Choose a commit to compose a safe multi-file restore.";
+        MultiRestoreDiff = "Select a file to review the change before composing the restore.";
+        BranchComparisonSummary = "Choose a source and target branch to compare their commits.";
+        CherryPickPlanSummary = "Compare branches, then select the source-only commits to apply.";
+        CherryPickDiff = "Select a commit to inspect its patch.";
+        OnPropertyChanged(nameof(CanApplyMultiRestore));
+        OnPropertyChanged(nameof(CanApplyCherryPick));
         LfsFiles.Clear();
         LfsVersions.Clear();
+        LfsLocks.Clear();
+        MyLfsLocks.Clear();
+        LfsLocksSummary = "Git LFS locks have not been loaded.";
         SmartSyncPlanItems.Clear();
         SmartSyncPlanSummary = "Aucun projet sélectionné.";
         _allExplorerRevisions = [];
@@ -7125,6 +7870,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         ReservationSummary = "Aucun projet sélectionné.";
         _currentVpnProfile = null;
         ClearVpnView();
+        SyncProjectMembers.Clear();
+        GitProjectMembers.Clear();
+        VpnProjectMembers.Clear();
+        ProjectMembersSummary = "No project selected.";
         DiffText = "Sélectionnez un projet Git.";
         ClearGitGraphView();
         ClearCodeWorkspace();

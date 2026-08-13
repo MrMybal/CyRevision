@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## 0.1.8 Alpha â€” 2026-08-13
+
+- reorganized the desktop into clear Overview, Git, Code & Assets, Team & Network, and Extensions categories while keeping direct menu navigation;
+- added a project-wide member overview for authorized Sync identities, Git contributors, and configured VPN peers with live or last-known status;
+- added Rider-style syntax coloring to the code explorer, file-type coloring in the project tree, and a denser revision history;
+- expanded Multi Restore with a permanent commit timeline, automatic file loading, resizable panes, and multiple composition layouts;
+- added a dedicated top-level Git File locks workspace listing verified project locks and personal locks, with individual unlock, unlock-all-mine, confirmed administrative force unlock, and clearly marked offline cache fallback;
+
+- added a safe per-file Multi Restore composer with before/at-commit choices, rename/add/delete planning, local-change confirmation, LFS availability checks, expiring previews, timestamped recovery copies, and no implicit index or commit changes;
+- added patch-equivalent branch comparison and an ordered cherry-pick composer with keep-or-combine modes, automatic rollback, no automatic push, and temporary worktrees for inactive target branches;
+- added reusable detachable History, Code, Multi Restore, and Cherry-pick workspaces for multi-monitor use, plus a denser Rider-style project tree and project sidebar;
+- added a native Windows/macOS/Linux system tray with project status, window show/hide, refresh, explicit shutdown, close-to-tray behavior, background login startup, and per-user Windows Run, XDG autostart, or macOS LaunchAgent registration;
+- added safe Git LFS storage management with custom per-repository `lfs.storage`, verified relocation, protected local-only refs/worktrees, dry-run remote checks, signed-peer/archive retention evidence, auditable cleanup and fail-closed last-copy prevention;
+- added an optional cross-platform remote build agent with VPN-only firewall setup, bearer authentication, locally allowlisted recipes, isolated source snapshots without `.git` or build caches, existing synchronized workspace mode, job logs/cancellation and artifact retrieval without publishing a remote branch;
+- added an Unreal Swarm over VPN workspace with Agent/Coordinator roles, project-scoped local DNS aliases, least-privilege firewall setup, safe SwarmAgent XML updates with backups, launch controls, and actionable end-to-end diagnostics for VPN, DNS, processes and TCP 8008/8009;
+- added autonomous Swarm controls to the bundled CyRevisionUnreal Editor plugin, including Agent/Coordinator launch, CoordinatorRemotingHost configuration, port tests and a complete manual recovery checklist;
+- added secure VPN file delivery and explicit folder sharing with a VPN-address-only listener, 256-bit project token, VPN-subnet admission, non-overwriting inbox, SHA-256 verification, transfer size limits, and traversal/symlink protection.
+
+## 0.1.7 Alpha — 2026-08-12
+
+- fixed macOS packaging for runtime-loaded .NET plugins by signing each Mach-O component explicitly instead of recursively treating plugin directories as native application bundles;
+- added strict per-component and application-envelope signature verification before creating the portable archive and DMG.
+
 ## 0.1.6 Alpha — 2026-08-12
 
 - integrated GitHub pull request manager with remote detection, filters, creation, draft support, files, colored patches, conversations, reviews, safe checkout, close/reopen, and confirmed merge/squash/rebase operations;

@@ -1,0 +1,268 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:CyRevision.Desktop.Controls"
+             x:Class="CyRevision.Desktop.Controls.RevisionCompositionView"
+             x:CompileBindings="False">
+    <UserControl.Styles>
+        <Style Selector="Border.compCard">
+            <Setter Property="Background" Value="#25272B" />
+            <Setter Property="BorderBrush" Value="#3A3D43" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="5" />
+        </Style>
+        <Style Selector="Button.compPrimary">
+            <Setter Property="Background" Value="#3574F0" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Padding" Value="11,6" />
+            <Setter Property="MinHeight" Value="27" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="Button.compSecondary">
+            <Setter Property="Background" Value="#34373D" />
+            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="Padding" Value="9,5" />
+            <Setter Property="MinHeight" Value="27" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="DataGrid.compact DataGridRow">
+            <Setter Property="MinHeight" Value="27" />
+        </Style>
+        <Style Selector="DataGrid.compact DataGridCell">
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="FontSize" Value="10.5" />
+        </Style>
+        <Style Selector="TextBlock.compMuted">
+            <Setter Property="Foreground" Value="#9B9DA3" />
+            <Setter Property="FontSize" Value="9.5" />
+        </Style>
+    </UserControl.Styles>
+
+    <TabControl x:Name="CompositionTabs" Padding="0">
+        <TabItem x:Name="MultiRestoreTab" Header="Multi restore">
+            <Grid Margin="0,7,0,0" RowDefinitions="Auto,*,Auto" RowSpacing="7">
+                <Border Classes="compCard" Padding="9">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,1,Auto,300,Auto,1,Auto,Auto,*,Auto" ColumnSpacing="7">
+                        <TextBlock Text="COMMIT" FontSize="9" FontWeight="Bold" Foreground="#8B8E96"
+                                   VerticalAlignment="Center" />
+                        <ToggleButton x:Name="MultiRestoreColumnsLayoutToggle" Grid.Column="1" Classes="layoutChoice"
+                                      Content="Columns" Click="OnMultiRestoreColumnsLayoutClick" />
+                        <ToggleButton x:Name="MultiRestoreFilesLayoutToggle" Grid.Column="2" Classes="layoutChoice"
+                                      Content="Files" Click="OnMultiRestoreFilesLayoutClick" />
+                        <Border Grid.Column="3" Width="1" Height="20" Background="#45484E" Margin="3,0" />
+                        <TextBlock Grid.Column="4" Text="SELECTED" FontSize="9" FontWeight="Bold" Foreground="#8B8E96"
+                                   VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="5" ItemsSource="{Binding History}" SelectedItem="{Binding MultiRestoreCommit}"
+                                  MinHeight="27">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="62,*" ColumnSpacing="7">
+                                        <TextBlock Text="{Binding ShortHash}" Foreground="#78D7B7" FontFamily="Cascadia Mono, Consolas" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Subject}" TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Grid.Column="6" Classes="compPrimary" Content="Load" Click="OnLoadMultiRestoreClick" />
+                        <Border Grid.Column="7" Width="1" Height="20" Background="#45484E" Margin="3,0" />
+                        <Button Grid.Column="8" Classes="compSecondary" Content="Select all" Click="OnSelectAllRestoreClick" />
+                        <Button Grid.Column="9" Classes="compSecondary" Content="Clear" Click="OnClearRestoreClick" />
+                        <TextBlock Grid.Column="10" Text="Select a commit, then compose each file version independently."
+                                   Classes="compMuted" VerticalAlignment="Center" Margin="5,0" />
+                        <Button Grid.Column="11" Classes="compPrimary" Content="Safety preview" Click="OnPreviewMultiRestoreClick" />
+                    </Grid>
+                </Border>
+
+                <Grid x:Name="MultiRestoreWorkspaceGrid" Grid.Row="1" ColumnDefinitions="0.72*,7,1.18*,7,1*">
+                    <Border x:Name="MultiRestoreTimelinePanel" Classes="compCard" Padding="0" ClipToBounds="True">
+                        <Grid RowDefinitions="38,*">
+                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Commits" FontWeight="SemiBold" FontSize="12" />
+                                    <TextBlock Text="Select one to load its files" Classes="compMuted" />
+                                </StackPanel>
+                            </Border>
+                            <DataGrid Grid.Row="1" Classes="compact" ItemsSource="{Binding History}"
+                                      SelectedItem="{Binding MultiRestoreCommit}" AutoGenerateColumns="False"
+                                      IsReadOnly="True" GridLinesVisibility="Horizontal" BorderThickness="0"
+                                      Background="Transparent">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Hash" Binding="{Binding ShortHash}" Width="62" />
+                                    <DataGridTextColumn Header="Description" Binding="{Binding Subject}" Width="*" />
+                                    <DataGridTextColumn Header="Author" Binding="{Binding AuthorName}" Width="90" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter x:Name="MultiRestoreTimelineSplitter" Grid.Column="1" Width="7"
+                                  ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                  Background="#45484E" Cursor="SizeWestEast" />
+
+                    <Border x:Name="MultiRestoreFilesPanel" Grid.Column="2" Classes="compCard" Padding="0" ClipToBounds="True">
+                        <Grid RowDefinitions="38,1.25*,34,0.75*">
+                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="File composition" FontWeight="SemiBold" FontSize="12" />
+                                        <TextBlock Text="Only checked files are included" Classes="compMuted" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding MultiRestoreFiles.Count, StringFormat={}{0} files}"
+                                               Classes="compMuted" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                            <DataGrid Grid.Row="1" Classes="compact" ItemsSource="{Binding MultiRestoreFiles}"
+                                      SelectedItem="{Binding SelectedMultiRestoreFile}" AutoGenerateColumns="False"
+                                      GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
+                                <DataGrid.Columns>
+                                    <DataGridCheckBoxColumn Header="Use" Binding="{Binding IsSelected}" Width="46" />
+                                    <DataGridTextColumn Header="State" Binding="{Binding Kind}" Width="72" IsReadOnly="True" />
+                                    <DataGridTextColumn Header="File" Binding="{Binding Path}" Width="*" IsReadOnly="True" />
+                                    <DataGridTemplateColumn Header="Restore version" Width="154">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <ComboBox ItemsSource="{Binding RestorePoints}" SelectedItem="{Binding RestorePoint}"
+                                                          MinHeight="23" FontSize="10" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                            <Border Grid.Row="2" Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,1"
+                                    Padding="10,0">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Planned working-tree operations" FontWeight="SemiBold" FontSize="11"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Index and commits remain untouched" Foreground="#78D7B7"
+                                               FontSize="9.5" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                            <DataGrid Grid.Row="3" Classes="compact" ItemsSource="{Binding MultiRestoreOperations}"
+                                      AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                      BorderThickness="0" Background="Transparent">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Action" Binding="{Binding Kind}" Width="70" />
+                                    <DataGridTextColumn Header="Working-tree path" Binding="{Binding WorkingTreePath}" Width="*" />
+                                    <DataGridCheckBoxColumn Header="Local changes" Binding="{Binding HasLocalChanges}" Width="92" />
+                                    <DataGridCheckBoxColumn Header="LFS ready" Binding="{Binding IsLfsObjectAvailable}" Width="72" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter x:Name="MultiRestoreFilesSplitter" Grid.Column="3" Width="7" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                  Background="#45484E" Cursor="SizeWestEast" />
+
+                    <Border x:Name="MultiRestoreDiffPanel" Grid.Column="4" Classes="compCard" Padding="0" ClipToBounds="True">
+                        <Grid RowDefinitions="38,*">
+                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Selected file patch" FontWeight="SemiBold" FontSize="12" />
+                                    <TextBlock Text="{Binding SelectedMultiRestoreFile.Path}" Classes="compMuted" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Border>
+                            <controls:CodeDiffView Grid.Row="1" DiffText="{Binding MultiRestoreDiff}"
+                                                   FilePath="{Binding SelectedMultiRestoreFile.Path}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <Border Grid.Row="2" Classes="compCard" Padding="9">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding MultiRestoreSummary}" FontSize="10.5" TextWrapping="Wrap" />
+                            <TextBlock Text="A timestamped safety backup is written before any selected file changes."
+                                       Classes="compMuted" Margin="0,2,0,0" />
+                        </StackPanel>
+                        <CheckBox Grid.Column="1" Content="Overwrite selected paths with local changes"
+                                  IsChecked="{Binding MultiRestoreOverwriteLocalChanges}" VerticalAlignment="Center" />
+                        <Button Grid.Column="2" Classes="compPrimary" Content="Apply to working tree"
+                                IsEnabled="{Binding CanApplyMultiRestore}" Click="OnApplyMultiRestoreClick" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </TabItem>
+
+        <TabItem x:Name="CherryPickTab" Header="Branch compare &amp; cherry-pick">
+            <Grid Margin="0,7,0,0" RowDefinitions="Auto,*,Auto" RowSpacing="7">
+                <Border Classes="compCard" Padding="9">
+                    <Grid ColumnDefinitions="Auto,220,Auto,220,Auto,*" ColumnSpacing="8">
+                        <TextBlock Text="SOURCE" FontSize="9" FontWeight="Bold" Foreground="#8B8E96" VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding BranchCompareSources}"
+                                  SelectedItem="{Binding BranchCompareSource}" DisplayMemberBinding="{Binding Name}" />
+                        <TextBlock Grid.Column="2" Text="→ TARGET" FontSize="9" FontWeight="Bold" Foreground="#8B8E96"
+                                   VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="3" ItemsSource="{Binding BranchCompareTargets}"
+                                  SelectedItem="{Binding BranchCompareTarget}" DisplayMemberBinding="{Binding Name}" />
+                        <Button Grid.Column="4" Classes="compPrimary" Content="Compare branches" Click="OnCompareBranchesClick" />
+                        <TextBlock Grid.Column="5" Text="{Binding BranchComparisonSummary}" Classes="compMuted"
+                                   VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="1" ColumnDefinitions="1.28*,7,1*">
+                    <Border Classes="compCard" Padding="0" ClipToBounds="True">
+                        <Grid RowDefinitions="38,*">
+                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Commit composition order" FontWeight="SemiBold" FontSize="12" />
+                                        <TextBlock Text="Oldest selected commit is applied first" Classes="compMuted" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="compSecondary" Content="Source only" Click="OnSelectSourceOnlyClick" />
+                                    <Button Grid.Column="2" Classes="compSecondary" Content="Clear" Click="OnClearCherryPickClick" />
+                                    <Button Grid.Column="3" Classes="compSecondary" Content="↑" Width="30" Click="OnMoveCherryPickUpClick" />
+                                    <Button Grid.Column="4" Classes="compSecondary" Content="↓" Width="30" Click="OnMoveCherryPickDownClick" />
+                                </Grid>
+                            </Border>
+                            <DataGrid Grid.Row="1" Classes="compact" ItemsSource="{Binding BranchComparisonCommits}"
+                                      SelectedItem="{Binding SelectedCherryPickCommit}" AutoGenerateColumns="False"
+                                      GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
+                                <DataGrid.Columns>
+                                    <DataGridCheckBoxColumn Header="Pick" Binding="{Binding IsSelected}" Width="46" />
+                                    <DataGridTextColumn Header="Included" Binding="{Binding Presence}" Width="94" IsReadOnly="True" />
+                                    <DataGridTextColumn Header="Hash" Binding="{Binding ShortHash}" Width="68" IsReadOnly="True" />
+                                    <DataGridTextColumn Header="Description" Binding="{Binding Subject}" Width="*" IsReadOnly="True" />
+                                    <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="100" IsReadOnly="True" />
+                                    <DataGridTextColumn Header="Date" Binding="{Binding Date}" Width="130" IsReadOnly="True" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter Grid.Column="1" Width="7" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                  Background="#45484E" Cursor="SizeWestEast" />
+
+                    <Border Grid.Column="2" Classes="compCard" Padding="0" ClipToBounds="True">
+                        <Grid RowDefinitions="38,*">
+                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Selected commit patch" FontWeight="SemiBold" FontSize="12" />
+                                    <TextBlock Text="{Binding SelectedCherryPickCommit.Subject}" Classes="compMuted" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Border>
+                            <controls:CodeDiffView Grid.Row="1" DiffText="{Binding CherryPickDiff}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <Border Grid.Row="2" Classes="compCard" Padding="9">
+                    <Grid ColumnDefinitions="Auto,170,Auto,260,*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Text="MODE" FontSize="9" FontWeight="Bold" Foreground="#8B8E96" VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding CherryPickModes}" SelectedItem="{Binding SelectedCherryPickMode}" />
+                        <TextBlock Grid.Column="2" Text="MESSAGE" FontSize="9" FontWeight="Bold" Foreground="#8B8E96"
+                                   IsVisible="{Binding CombinesCherryPickCommits}" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="3" Text="{Binding CombinedCherryPickMessage}"
+                                 IsVisible="{Binding CombinesCherryPickCommits}" PlaceholderText="Combined commit message" />
+                        <TextBlock Grid.Column="4" Text="{Binding CherryPickPlanSummary}" FontSize="10" TextWrapping="Wrap"
+                                   VerticalAlignment="Center" Margin="5,0" />
+                        <Button Grid.Column="5" Classes="compSecondary" Content="Preview operation" Click="OnPreviewCherryPickClick" />
+                        <Button Grid.Column="6" Classes="compPrimary" Content="Apply locally"
+                                IsEnabled="{Binding CanApplyCherryPick}" Click="OnApplyCherryPickClick" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </TabItem>
+    </TabControl>
+</UserControl>

@@ -31,6 +31,7 @@ public sealed class CodeTreeNode
     public ObservableCollection<CodeTreeNode> Children { get; }
     public string Icon => IsDirectory ? "▸" : LanguageIcon(Language);
     public string Detail => IsDirectory ? $"{Children.Count} item(s)" : $"{FormatSize(Size)} · {Language}";
+    public string AccentColor => IsDirectory ? "#D7BA7D" : LanguageColor(Language);
 
     private static string LanguageIcon(string language) => language switch
     {
@@ -42,6 +43,19 @@ public sealed class CodeTreeNode
         "Markdown" => "M↓",
         "Unreal" => "UE",
         _ => "·"
+    };
+
+    private static string LanguageColor(string language) => language switch
+    {
+        "C#" => "#B77FDB",
+        "C/C++" => "#5DADE2",
+        "Python" => "#E5C07B",
+        "JavaScript" or "TypeScript" => "#E8D44D",
+        "JSON" => "#9CDC8C",
+        "Markdown" => "#61AFEF",
+        "Unreal" => "#4EC9B0",
+        "XML" => "#CE9178",
+        _ => "#A9B7C6"
     };
 
     private static string FormatSize(long size)

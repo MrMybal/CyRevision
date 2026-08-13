@@ -12,10 +12,12 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 
 ## Current capabilities
 
-- Native Avalonia desktop application for Windows, Linux, and macOS.
+- Native Avalonia desktop application for Windows, Linux, and macOS, with a system tray, close-to-tray behavior, and per-user launch-at-login integration.
 - Five project modes: **Git**, **Git + Sync**, **Sync**, **Sync + Versions**, and **Backup**.
 - Integrated GitHub pull request manager with repository detection, filters, request creation, files and patches, conversations, reviews, safe local checkout, state changes, and confirmed merge operations. Provider adapters keep the module open to other forges.
 - Local Git workflows: status, staging, commits, branches, merges, remotes, Git LFS, an interactive history explorer, A ↔ B comparisons, and per-file history.
+- Safe Multi Restore composer: select several files from one commit, independently choose the version before or at that commit, preview restore/delete operations, protect local changes, verify LFS availability, and create a timestamped recovery copy without touching the index or creating a commit.
+- Branch comparison and cherry-pick composer with patch-equivalence detection, explicit commit ordering, separate or combined commit modes, conflict rollback, and temporary Git worktrees for updating an inactive local target branch without switching the displayed project or pushing automatically.
 - LFS Time Machine with object history, local/peer/archive availability, signed on-demand requests, resumable transfers, texture previews, export, and confirmed restore operations.
 - Optional safe LFS storage manager with dedicated `lfs.storage` relocation, dry-run classification, local-ref protection, verified remote/peer/archive evidence, audit logs, and blocked deletion when the local machine may hold the last copy.
 - Optional Git visualizations for commit history, co-change relations, team activity, and simplified engine-independent Unreal dependencies.
@@ -37,6 +39,7 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 - Extensible localization: English is the default, French is included, and additional JSON catalogs can be added to the desktop client and web dashboard.
 - Searchable offline documentation bundled with the desktop application in English and French.
 - Rider-style Code workspace with a full project tree, fast Ctrl+Shift+F search, file patterns, symbol outline, text preview, and Git history for files, folders, or selected lines.
+- Compact Rider-style project navigation plus freely resizable detached History, Code, Multi Restore, and Cherry-pick workspaces for multi-monitor review.
 - Optional AI Workspace plugin for Codex CLI, OpenAI Responses API, compatible APIs, Ollama, and LM Studio, with explicit read/edit/network/stage/commit permissions and no automatic push.
 - Project-scoped MCP manager for STDIO and Streamable HTTP servers, local-only profiles, environment-based secrets, server/tool allow and deny lists, approval modes, timeouts, unmanaged-server isolation, and an emergency block switch.
 - Built-in stable-release updater with platform package selection and mandatory SHA-256 verification; commits, drafts, and prereleases are ignored.
@@ -72,7 +75,7 @@ Publish on Windows:
 Build a self-contained Windows installer and portable release locally:
 
 ```powershell
-./scripts/build-release.cmd 0.1.6
+./scripts/build-release.cmd 0.1.8
 ```
 
 Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).

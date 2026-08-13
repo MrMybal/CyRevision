@@ -48,6 +48,22 @@ public sealed record GitToolAvailability(
 
 public sealed record LfsTrackedPattern(string Pattern, string SourceFile);
 
+public sealed record LfsFileLock(
+    string Id,
+    string Path,
+    string OwnerName,
+    DateTimeOffset? LockedAt,
+    bool IsOurs,
+    bool IsCached = false)
+{
+    public string Ownership => IsOurs ? "Mine" : "Other user";
+    public string Source => IsCached ? "Cached" : "Live";
+    public string LockedAtText => LockedAt?.ToLocalTime().ToString("g") ?? "Unknown";
+    public string ShortId => Id.Length > 10 ? Id[..10] + "â€¦" : Id;
+    public string UnlockAction => IsOurs ? "Unlock" : "Force unlockâ€¦";
+    public string OwnershipColor => IsOurs ? "#78D7B7" : "#E5C07B";
+}
+
 public sealed record GitGraphCommit(
     string Hash,
     string ShortHash,

@@ -14,6 +14,25 @@ Le remote `origin` est facultatif : il peut pointer vers GitHub, GitLab, Forgejo
 
 L’onglet **Git graphs** ajoute deux visualisations locales optionnelles : un réseau nodal des commits et une carte des relations entre fichiers modifiés ensemble. Vous pouvez limiter le nombre de commits et de fichiers, ainsi que choisir d’inclure toutes les branches. L’analyse est strictement en lecture seule et ne lance aucun fetch. Voir [git-visualizations.md](git-visualizations.md).
 
+### Composer une restauration de plusieurs fichiers
+
+Ouvrez **Compose > Multi restore**, choisissez un commit puis cliquez **Load commit**. Chaque fichier peut être inclus séparément et recevoir l’une des deux sources suivantes :
+
+- **BeforeCommit** remet le fichier dans l’état précédant le commit choisi ;
+- **AtCommit** reprend exactement la version contenue dans ce commit.
+
+Cette composition gère également les ajouts, suppressions et renommages : l’aperçu indique explicitement quels chemins seront restaurés ou supprimés. Cliquez **Build safety preview** avant l’application. CyRevision revalide `HEAD`, les modifications locales et la présence des objets LFS, puis crée une sauvegarde horodatée sous les données Git. L’index et l’historique ne sont jamais modifiés et aucun commit n’est créé automatiquement. Après l’application, vérifiez le résultat dans **Changes** avant de créer votre propre commit.
+
+### Comparer des branches et composer un cherry-pick
+
+Dans **Compose > Branch compare & cherry-pick**, choisissez une branche source et une branche locale cible. La comparaison distingue les commits propres à la source, ceux propres à la cible et les patches déjà équivalents même lorsque leurs hashes diffèrent. Cochez les commits source, réordonnez-les si nécessaire puis choisissez de conserver les commits séparés ou de les combiner en un seul commit.
+
+L’aperçu refuse un arbre de travail cible sale, une branche cible modifiée depuis l’analyse ou un commit de merge sans parent principal explicite. Lorsque la cible n’est pas la branche affichée, CyRevision utilise un worktree temporaire et retire celui-ci après l’opération. En cas de conflit, le cherry-pick est annulé et la branche revient à son point de départ. L’opération reste locale : aucun push n’est lancé.
+
+### Fenêtres détachables
+
+Le menu **View > Open detached workspace** peut ouvrir autant de fenêtres History, Code, Multi Restore ou Cherry-pick que nécessaire. Elles partagent en direct le projet sélectionné, sont redimensionnables et peuvent rester au premier plan. Ce mode permet de conserver un diff ou un explorateur sur un second écran pendant que la fenêtre principale reste sur les modifications ou la synchronisation.
+
 Dans **Git LFS**, ajoutez par exemple :
 
 ```text
@@ -75,6 +94,12 @@ Utilisez **Archive candidates** pour créer une copie SHA-256 avant la purge, pu
 ## Compilation distante
 
 Installez `CyRevision.Build.Agent` sur la machine CI, générez son token et déclarez localement les projets et recettes autorisées dans `agent.json`. Dans **Remote builds**, saisissez son adresse WireGuard, le token, l'identifiant de recette et le dossier de réception. **ExistingWorkspace** ne transfère aucun code et exige que le workspace distant soit synchronisé ; **UploadedSnapshot** transmet l'état de travail Git sans `.git` ni caches générés. Les logs sont suivis dans l'interface et le ZIP d'artefacts est rapatrié après réussite, sans branche ou commit temporaire sur le remote.
+
+## Zone de notification et lancement automatique
+
+CyRevision installe une icône native dans la zone de notification sous Windows, macOS et les bureaux Linux compatibles. Un clic affiche ou masque la fenêtre. Le menu permet d'actualiser le projet, de modifier le lancement automatique et de quitter réellement l'application.
+
+Dans **Tools > System integration**, activez ou désactivez le lancement à l'ouverture de session, le démarrage masqué et la fermeture de la fenêtre vers le tray. Le lancement est enregistré pour l'utilisateur courant uniquement : clé `Run` sous Windows, fichier XDG autostart sous Linux et `LaunchAgent` sous macOS. Une installation portable doit rester au même emplacement. Sous Linux, désactivez le démarrage masqué si le bureau ne prend pas en charge StatusNotifier/AppIndicator.
 
 ## Sauvegardes
 

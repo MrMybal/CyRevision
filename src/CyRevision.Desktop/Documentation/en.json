@@ -120,6 +120,22 @@
     "keywords": ["remote build", "CI", "agent", "VPN", "WireGuard", "Unreal", "compile", "artifact", "recipe"]
   },
   {
+    "id": "tray-and-startup",
+    "category": "Basics",
+    "title": "System tray and automatic startup",
+    "summary": "Keep optional background services available after hiding the main window.",
+    "body": "SYSTEM TRAY\nCyRevision exposes a native system tray icon on Windows, macOS, and supported Linux desktops. Click the icon to show or hide the main window. The tray menu shows the selected project and provides Refresh, startup preferences, and an explicit Quit action.\n\nCLOSE AND QUIT\nClose window to tray keeps CyRevision running when the window close button is used. Use File > Exit or Quit CyRevision from the tray to stop the application and dispose its managed services. Disabling the tray also disables close-to-tray and hidden startup.\n\nAUTOMATIC STARTUP\nLaunch at system login registers CyRevision for the current user only: the Windows Run key, a Linux XDG autostart desktop entry, or a macOS LaunchAgent. Start hidden in tray adds --background so login does not open the main window. The registration always targets the installed executable currently running. Portable builds therefore must stay at the same path.\n\nLINUX NOTE\nTray icons require desktop support for StatusNotifier/AppIndicator. If a Linux desktop does not display tray icons, disable hidden startup so the main window remains reachable.",
+    "keywords": ["tray", "startup", "login", "background", "windows", "linux", "macos", "quit"]
+  },
+  {
+    "id": "revision-composition",
+    "category": "Git",
+    "title": "Multi Restore and cherry-pick composition",
+    "summary": "Compose file versions or ordered commits with a safety preview before changing the working tree or a local branch.",
+    "body": "MULTI RESTORE\nOpen Compose > Multi restore, choose a commit, and load its changed files. Check only the files to include. BeforeCommit selects the state immediately before that commit; AtCommit selects the version stored by the commit. Adds, deletes, and renames become explicit restore or delete operations.\n\nSAFETY PREVIEW\nBuild safety preview before applying. The preview expires after fifteen minutes, verifies that HEAD has not moved, detects local changes, and blocks missing Git LFS objects. Application writes a timestamped recovery copy under the Git common directory before changing any path. The index is not modified and no commit or push is created.\n\nBRANCH COMPARISON\nOpen Branch compare & cherry-pick, choose a source and an existing local target. Source-only, target-only, and patch-equivalent commits are shown separately, so an already applied change can be recognized even when its hash differs. Selected source-only commits are applied in the displayed order.\n\nCHERRY-PICK MODES\nKeepCommits preserves individual commits. CombineIntoOne applies their content and creates one commit with the supplied message. Merge commits are blocked until an explicit mainline workflow is available.\n\nISOLATION AND CONFLICTS\nIf the target is not the active branch, CyRevision uses a temporary worktree and leaves the displayed branch untouched. A conflict aborts the operation and restores the target tip. Nothing is pushed automatically.\n\nDETACHED WINDOWS\nView > Open detached workspace opens additional History, Code, Multi Restore, or Cherry-pick windows. Open several at once for multiple monitors; their project data and selection stay linked to the main window.",
+    "keywords": ["multi restore", "revert", "file version", "branch compare", "cherry-pick", "worktree", "conflict", "detached window"]
+  },
+  {
     "id": "troubleshooting",
     "category": "Support",
     "title": "Troubleshooting and safety",
