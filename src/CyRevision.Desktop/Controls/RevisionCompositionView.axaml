@@ -43,7 +43,7 @@
         <TabItem x:Name="MultiRestoreTab" Header="Multi restore">
             <Grid Margin="0,7,0,0" RowDefinitions="Auto,*,Auto" RowSpacing="7">
                 <Border Classes="compCard" Padding="9">
-                    <Grid ColumnDefinitions="Auto,Auto,Auto,1,Auto,300,Auto,1,Auto,Auto,*,Auto" ColumnSpacing="7">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,1,Auto,300,Auto,Auto,1,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="7">
                         <TextBlock Text="COMMIT" FontSize="9" FontWeight="Bold" Foreground="#8B8E96"
                                    VerticalAlignment="Center" />
                         <ToggleButton x:Name="MultiRestoreColumnsLayoutToggle" Grid.Column="1" Classes="layoutChoice"
@@ -65,12 +65,17 @@
                             </ComboBox.ItemTemplate>
                         </ComboBox>
                         <Button Grid.Column="6" Classes="compPrimary" Content="Load" Click="OnLoadMultiRestoreClick" />
-                        <Border Grid.Column="7" Width="1" Height="20" Background="#45484E" Margin="3,0" />
-                        <Button Grid.Column="8" Classes="compSecondary" Content="Select all" Click="OnSelectAllRestoreClick" />
-                        <Button Grid.Column="9" Classes="compSecondary" Content="Clear" Click="OnClearRestoreClick" />
-                        <TextBlock Grid.Column="10" Text="Select a commit, then compose each file version independently."
+                        <Button Grid.Column="7" Classes="compSecondary" Content="Commit Explorer ↗"
+                                Click="OnOpenMultiRestoreCommitExplorerClick" />
+                        <Border Grid.Column="8" Width="1" Height="20" Background="#45484E" Margin="3,0" />
+                        <Button Grid.Column="9" Classes="compSecondary" Content="Select all" Click="OnSelectAllRestoreClick" />
+                        <Button Grid.Column="10" Classes="compSecondary" Content="Clear" Click="OnClearRestoreClick" />
+                        <TextBlock Grid.Column="11" Text="Select a commit, then compose each file version independently."
                                    Classes="compMuted" VerticalAlignment="Center" Margin="5,0" />
-                        <Button Grid.Column="11" Classes="compPrimary" Content="Safety preview" Click="OnPreviewMultiRestoreClick" />
+                        <Button Grid.Column="12" Classes="compPrimary" Content="Safety preview" Click="OnPreviewMultiRestoreClick" />
+                        <ToggleButton x:Name="MultiRestoreDiffToggle" Grid.Column="13" Classes="layoutChoice"
+                                      Content="Diff" Click="OnMultiRestoreDiffToggleClick" />
+                        <Button Grid.Column="14" Classes="compSecondary" Content="Open ↗" Click="OnOpenMultiRestoreDiffClick" />
                     </Grid>
                 </Border>
 
@@ -155,14 +160,20 @@
                                   Background="#45484E" Cursor="SizeWestEast" />
 
                     <Border x:Name="MultiRestoreDiffPanel" Grid.Column="4" Classes="compCard" Padding="0" ClipToBounds="True">
-                        <Grid RowDefinitions="38,*">
+                        <Grid RowDefinitions="38,Auto,*">
                             <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="Selected file patch" FontWeight="SemiBold" FontSize="12" />
                                     <TextBlock Text="{Binding SelectedMultiRestoreFile.Path}" Classes="compMuted" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </Border>
-                            <controls:CodeDiffView Grid.Row="1" DiffText="{Binding MultiRestoreDiff}"
+                            <Border Grid.Row="1" IsVisible="{Binding IsMultiRestoreDiffLoading}" Background="#202633" Padding="8,4">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <TextBlock Text="Loading diff…" Classes="compMuted" />
+                                    <ProgressBar Grid.Column="1" IsIndeterminate="True" Height="4" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                            <controls:CodeDiffView Grid.Row="2" DiffText="{Binding MultiRestoreDiff}"
                                                    FilePath="{Binding SelectedMultiRestoreFile.Path}" />
                         </Grid>
                     </Border>
@@ -187,7 +198,7 @@
         <TabItem x:Name="CherryPickTab" Header="Branch compare &amp; cherry-pick">
             <Grid Margin="0,7,0,0" RowDefinitions="Auto,*,Auto" RowSpacing="7">
                 <Border Classes="compCard" Padding="9">
-                    <Grid ColumnDefinitions="Auto,220,Auto,220,Auto,*" ColumnSpacing="8">
+                    <Grid ColumnDefinitions="Auto,220,Auto,220,Auto,*,Auto,Auto" ColumnSpacing="8">
                         <TextBlock Text="SOURCE" FontSize="9" FontWeight="Bold" Foreground="#8B8E96" VerticalAlignment="Center" />
                         <ComboBox Grid.Column="1" ItemsSource="{Binding BranchCompareSources}"
                                   SelectedItem="{Binding BranchCompareSource}" DisplayMemberBinding="{Binding Name}" />
@@ -198,6 +209,9 @@
                         <Button Grid.Column="4" Classes="compPrimary" Content="Compare branches" Click="OnCompareBranchesClick" />
                         <TextBlock Grid.Column="5" Text="{Binding BranchComparisonSummary}" Classes="compMuted"
                                    VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis" />
+                        <ToggleButton x:Name="CherryPickDiffToggle" Grid.Column="6" Classes="layoutChoice"
+                                      Content="Diff" Click="OnCherryPickDiffToggleClick" />
+                        <Button Grid.Column="7" Classes="compSecondary" Content="Open ↗" Click="OnOpenCherryPickDiffClick" />
                     </Grid>
                 </Border>
 
@@ -231,18 +245,24 @@
                         </Grid>
                     </Border>
 
-                    <GridSplitter Grid.Column="1" Width="7" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                    <GridSplitter x:Name="CherryPickDiffSplitter" Grid.Column="1" Width="7" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                                   Background="#45484E" Cursor="SizeWestEast" />
 
-                    <Border Grid.Column="2" Classes="compCard" Padding="0" ClipToBounds="True">
-                        <Grid RowDefinitions="38,*">
+                    <Border x:Name="CherryPickDiffPanel" Grid.Column="2" Classes="compCard" Padding="0" ClipToBounds="True">
+                        <Grid RowDefinitions="38,Auto,*">
                             <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="Selected commit patch" FontWeight="SemiBold" FontSize="12" />
                                     <TextBlock Text="{Binding SelectedCherryPickCommit.Subject}" Classes="compMuted" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </Border>
-                            <controls:CodeDiffView Grid.Row="1" DiffText="{Binding CherryPickDiff}" />
+                            <Border Grid.Row="1" IsVisible="{Binding IsCherryPickDiffLoading}" Background="#202633" Padding="8,4">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <TextBlock Text="Loading diff…" Classes="compMuted" />
+                                    <ProgressBar Grid.Column="1" IsIndeterminate="True" Height="4" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                            <controls:CodeDiffView Grid.Row="2" DiffText="{Binding CherryPickDiff}" />
                         </Grid>
                     </Border>
                 </Grid>

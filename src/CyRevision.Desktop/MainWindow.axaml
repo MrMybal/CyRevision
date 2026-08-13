@@ -176,6 +176,7 @@
                 <MenuItem Header="Project overview" Click="OnShowProjectWorkspaceClick" />
                 <MenuItem Header="Changes" Click="OnShowChangesWorkspaceClick" />
                 <MenuItem Header="Code explorer" Click="OnShowCodeWorkspaceClick" />
+                <MenuItem Header="Repository console &amp; logs" Click="OnShowConsoleWorkspaceClick" />
                 <MenuItem Header="History" Click="OnShowHistoryWorkspaceClick" />
                 <MenuItem Header="Git graphs" Click="OnShowGitGraphsWorkspaceClick" />
                 <Separator />
@@ -212,6 +213,7 @@
                 <MenuItem Header="Push" Click="OnPushClick" />
                 <Separator />
                 <MenuItem Header="Branches" Click="OnShowBranchesWorkspaceClick" />
+                <MenuItem Header="Commit Explorer window…" Click="OnOpenCommitExplorerWindowClick" />
                 <MenuItem Header="Compare branches &amp; cherry-pick" Click="OnShowCherryPickWorkspaceClick" />
                 <MenuItem Header="Multi restore composer" Click="OnShowMultiRestoreWorkspaceClick" />
                 <MenuItem Header="Pull Requests" Click="OnShowPullRequestsWorkspaceClick" />
@@ -219,6 +221,8 @@
                 <MenuItem Header="Git LFS" Click="OnShowGitLfsWorkspaceClick" />
             </MenuItem>
             <MenuItem Header="Tools">
+                <MenuItem Header="Repository console &amp; logs" Click="OnShowConsoleWorkspaceClick" />
+                <Separator />
                 <MenuItem Header="System integration">
                     <MenuItem x:Name="LaunchAtLoginMenuItem"
                               Header="Launch at system login"
@@ -272,7 +276,12 @@
                     </Border>
                 </StackPanel>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding CurrentBranch}" FontSize="12" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="{Binding CurrentProjectName}" FontSize="13" FontWeight="Bold" Foreground="#F2F3F5" />
+                        <Border Background="#203B38" CornerRadius="4" Padding="7,1">
+                            <TextBlock Text="{Binding CurrentBranch}" FontSize="13" FontWeight="Bold" Foreground="#78D7B7" />
+                        </Border>
+                    </StackPanel>
                     <TextBlock Text="{Binding RepositoryPath}" FontSize="9.5" Classes="muted" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -303,13 +312,21 @@
                 <ListBox Grid.Row="1" ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}" Background="Transparent" BorderThickness="0">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid Margin="4,3" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                            <Grid Margin="4,3" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,3">
                                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" TextTrimming="CharacterEllipsis" />
                                 <Border Grid.Column="1" Background="#242C47" CornerRadius="4" Padding="5,1">
                                     <TextBlock Text="{Binding Mode}" FontSize="8.5" Foreground="#B8C1D8" />
                                 </Border>
                                 <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding RootPath}" FontSize="8.5" Classes="muted"
                                            TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
+                                <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*" Margin="0,2,0,1" ColumnSpacing="6">
+                                    <TextBlock Text="{Binding BranchName}" FontSize="10.5" FontWeight="Bold"
+                                               Foreground="{Binding StatusColor}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1" Text="{Binding LoadDetail}" FontSize="8" Classes="muted"
+                                               TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" />
+                                </Grid>
+                                <ProgressBar Grid.Row="3" Grid.ColumnSpan="2" Minimum="0" Maximum="100"
+                                             Value="{Binding LoadProgress}" IsVisible="{Binding IsLoading}" Height="2" />
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
@@ -328,15 +345,16 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="2" Grid.Column="1" Margin="10,7" RowDefinitions="Auto,Auto,*">
+        <Grid Grid.Row="2" Grid.Column="1" Margin="10,7" RowDefinitions="Auto,Auto,Auto,*">
             <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
                 <StackPanel>
-                    <TextBlock Text="{Binding ChangeSummary}" FontSize="18" FontWeight="Bold" />
+                    <TextBlock Text="{Binding ChangeSummary}" FontSize="21" FontWeight="Bold"
+                               Foreground="{Binding ChangeSummaryColor}" />
                     <TextBlock Text="{Binding ToolStatus}" FontSize="9.5" Classes="muted" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
                     <Button Classes="secondary" Content="Actualiser" Click="OnRefreshClick" />
-                    <Button Classes="secondary" Content="Fetch" Click="OnFetchClick" />
+                    <Button Classes="secondary" Content="Fetch remotes" Click="OnFetchClick" />
                     <Button Classes="secondary" Content="Pull" Click="OnPullClick" />
                     <Button Classes="primary" Content="Push" Click="OnPushClick" />
                 </StackPanel>
@@ -358,7 +376,19 @@
                 </StackPanel>
             </Border>
 
-            <TabControl x:Name="WorkspaceTabs" Grid.Row="2">
+            <Border Grid.Row="2" IsVisible="{Binding IsLongOperationActive}" Background="#202633"
+                    BorderBrush="#35435C" BorderThickness="1" CornerRadius="5" Padding="7,4" Margin="0,0,0,5">
+                <Grid ColumnDefinitions="220,*,Auto" ColumnSpacing="9">
+                    <TextBlock Text="{Binding LongOperationStage}" Foreground="#B8C7E6" FontSize="9.5"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding LongOperationProgress}"
+                                 IsIndeterminate="{Binding IsLongOperationIndeterminate}" Height="6" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="{Binding CurrentProjectName}" Foreground="#78D7B7"
+                               FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+
+            <TabControl x:Name="WorkspaceTabs" Grid.Row="3">
                 <TabItem x:Name="ProjectWorkspaceTab" Header="Projet">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.15*,1*" ColumnSpacing="8">
                         <Border Classes="card">
@@ -490,7 +520,7 @@
                           ColumnDefinitions="1.05*,8,1.35*" RowDefinitions="Auto,*,Auto" RowSpacing="8">
                         <Border Grid.ColumnSpan="3" Background="#26282B" BorderBrush="#393B40" BorderThickness="1"
                                 CornerRadius="6" Padding="7,5">
-                            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
                                 <TextBlock Text="LAYOUT" FontSize="9" FontWeight="Bold" Foreground="#7E8189"
                                            VerticalAlignment="Center" Margin="3,0,2,0" />
                                 <ToggleButton x:Name="ChangesBalancedLayoutToggle" Grid.Column="1" Classes="layoutChoice"
@@ -501,27 +531,134 @@
                                               ToolTip.Tip="Give more space to the diff viewer" />
                                 <TextBlock Grid.Column="3" Text="Drag the divider to resize panels. Layout sizes are saved locally."
                                            FontSize="9.5" Classes="muted" VerticalAlignment="Center" Margin="8,0" />
-                                <Button Grid.Column="4" Classes="secondary" Content="Save layout" Click="OnSaveWorkspaceLayoutClick" />
-                                <Button Grid.Column="5" Classes="secondary" Content="Reset" Click="OnResetWorkspaceLayoutClick" />
+                                <ToggleButton x:Name="ChangesDiffToggle" Grid.Column="4" Classes="layoutChoice" Content="Diff"
+                                              Click="OnChangesDiffToggleClick" ToolTip.Tip="Show or hide the inline diff preview" />
+                                <Button Grid.Column="5" Classes="secondary" Content="Open diff ↗" Click="OnOpenChangesDiffWindowClick" />
+                                <Button Grid.Column="6" Classes="secondary" Content="Save layout" Click="OnSaveWorkspaceLayoutClick" />
+                                <Button Grid.Column="7" Classes="secondary" Content="Reset" Click="OnResetWorkspaceLayoutClick" />
                             </Grid>
                         </Border>
 
-                        <Border x:Name="ChangesListPanel" Grid.Row="1" Classes="card" MinWidth="220">
-                            <Grid RowDefinitions="Auto,*">
-                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,10">
-                                    <Button Classes="secondary" Content="Tout indexer" Click="OnStageAllClick" />
-                                    <Button Classes="secondary" Content="Retirer de l'index" Click="OnUnstageAllClick" />
-                                </StackPanel>
-                                <DataGrid Grid.Row="1" ItemsSource="{Binding Changes}" SelectedItem="{Binding SelectedChange}"
-                                          AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
-                                          Background="Transparent" BorderThickness="0">
-                                    <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Fichier" Binding="{Binding Path}" Width="*" />
-                                        <DataGridTextColumn Header="État" Binding="{Binding State}" Width="90" />
-                                        <DataGridTextColumn Header="Zone" Binding="{Binding Area}" Width="75" />
-                                        <DataGridTextColumn Header="" Binding="{Binding Lfs}" Width="45" />
-                                    </DataGrid.Columns>
-                                </DataGrid>
+                        <Border x:Name="ChangesListPanel" Grid.Row="1" Classes="card" Padding="0" ClipToBounds="True" MinWidth="300">
+                            <Grid RowDefinitions="42,28,34,*,32">
+                                <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="5">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="Commit editor" FontSize="13" FontWeight="SemiBold" />
+                                            <TextBlock Text="Choose exactly what is committed" Classes="muted" FontSize="8.5" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="secondary" Content="Scan untracked" Click="OnScanAllUntrackedClick" Padding="8,4"
+                                                ToolTip.Tip="Expand every untracked folder. This can take time on very large Unreal projects." />
+                                        <Button Grid.Column="2" Classes="secondary" Content="Include all" Click="OnIncludeAllChangesClick" Padding="8,4" />
+                                        <Button Grid.Column="3" Classes="secondary" Content="Keep all" Click="OnKeepAllChangesClick" Padding="8,4" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Grid.Row="1" Background="#232427" BorderBrush="#34363A" BorderThickness="0,0,0,1" Padding="9,0">
+                                    <TextBlock Text="{Binding ChangePreparationSummary}" Classes="muted" FontSize="9"
+                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                </Border>
+
+                                <Grid Grid.Row="2" ColumnDefinitions="*,112" ColumnSpacing="6" Margin="6,4">
+                                    <TextBox Text="{Binding ChangeSearch, UpdateSourceTrigger=PropertyChanged}"
+                                             PlaceholderText="Search files, folders, state, lock owner or area…" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding ChangeSortOptions}"
+                                              SelectedItem="{Binding ChangeSort}" ToolTip.Tip="Sort change list" />
+                                </Grid>
+
+                                <TabControl Grid.Row="3" Padding="0" Background="Transparent">
+                                    <TabItem Header="List">
+                                        <DataGrid ItemsSource="{Binding FilteredPreparedChanges}" SelectedItem="{Binding SelectedChange}"
+                                                  Classes="historyCompact" AutoGenerateColumns="False" IsReadOnly="True"
+                                                  GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                            <DataGrid.Columns>
+                                                <DataGridTemplateColumn Header="" Width="31">
+                                                    <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                        <CheckBox IsChecked="{Binding IsIncluded, Mode=TwoWay}"
+                                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                  ToolTip.Tip="Include this file in the next commit" />
+                                                    </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+                                                <DataGridTemplateColumn Header="File" Width="*">
+                                                    <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                        <Grid RowDefinitions="Auto,Auto" Margin="1,2">
+                                                            <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                                                            <TextBlock Grid.Row="1" Text="{Binding DirectoryPath}" TextTrimming="CharacterEllipsis"
+                                                                       Classes="muted" FontSize="8.5" />
+                                                        </Grid>
+                                                    </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+                                                <DataGridTemplateColumn Header="State" Width="74">
+                                                    <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                        <TextBlock Text="{Binding State}" Foreground="{Binding StatusColor}" />
+                                                    </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+                                                <DataGridTemplateColumn Header="Lock" Width="105">
+                                                    <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                        <TextBlock Text="{Binding LockShort}" Foreground="{Binding LockColor}"
+                                                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding LockOwner}" />
+                                                    </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+                                                <DataGridTextColumn Header="Area" Binding="{Binding Area}" Width="78" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </TabItem>
+
+                                    <TabItem Header="Folders">
+                                        <TreeView x:Name="ChangesFolderTree" ItemsSource="{Binding ChangeTree}"
+                                                  SelectedItem="{Binding SelectedChangeTreeNode, Mode=TwoWay}"
+                                                  SelectionChanged="OnChangeTreeSelectionChanged"
+                                                  Classes="compactTree" Background="Transparent" BorderThickness="0" Margin="3">
+                                            <TreeView.ItemTemplate>
+                                                <TreeDataTemplate ItemsSource="{Binding Children}">
+                                                    <Grid ColumnDefinitions="16,20,*,Auto" Height="22" Margin="0" ToolTip.Tip="{Binding RelativePath}">
+                                                        <TextBlock Text="{Binding Icon}" Foreground="{Binding AccentColor}"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        <CheckBox Grid.Column="1" IsVisible="{Binding HasChange}" IsEnabled="{Binding CanInclude}"
+                                                                  IsChecked="{Binding Change.IsIncluded, Mode=TwoWay}"
+                                                                  VerticalAlignment="Center" Margin="0,0,4,0" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding Name}" Foreground="{Binding AccentColor}"
+                                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" Margin="4,0,2,0">
+                                                            <TextBlock Text="{Binding Change.PreparationState}" Foreground="{Binding Change.PreparationColor}" FontSize="8.5" />
+                                                            <TextBlock Text="{Binding Change.LockShort}" Foreground="{Binding Change.LockColor}" FontSize="8.5" />
+                                                            <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="8" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </TreeDataTemplate>
+                                            </TreeView.ItemTemplate>
+                                        </TreeView>
+                                    </TabItem>
+
+                                    <TabItem Header="Local only">
+                                        <Grid RowDefinitions="Auto,*">
+                                            <Border Background="#24262A" Padding="9,6">
+                                                <TextBlock Text="Persistent per-project list. These untracked files are never committed; .gitignore is unchanged."
+                                                           Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                                            </Border>
+                                            <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredLocalOnlyChanges}" SelectedItem="{Binding SelectedChange}"
+                                                      Classes="historyCompact" AutoGenerateColumns="False" IsReadOnly="True"
+                                                      GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                <DataGrid.Columns>
+                                                    <DataGridTextColumn Header="File" Binding="{Binding FileName}" Width="*" />
+                                                    <DataGridTextColumn Header="Folder" Binding="{Binding DirectoryPath}" Width="1.4*" />
+                                                    <DataGridTextColumn Header="Lock" Binding="{Binding LockShort}" Width="95" />
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+                                        </Grid>
+                                    </TabItem>
+                                </TabControl>
+
+                                <Border Grid.Row="4" Background="#232427" BorderBrush="#34363A" BorderThickness="0,1,0,0" Padding="5,2">
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="5">
+                                        <Button Classes="secondary" Content="Set local" Click="OnSetSelectedChangeLocalClick"
+                                                Padding="6,2" MinHeight="22" FontSize="9.5" ToolTip.Tip="Move the selected untracked file to the local-only list" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Restore to list" Click="OnRestoreSelectedLocalChangeClick"
+                                                Padding="6,2" MinHeight="22" FontSize="9.5" ToolTip.Tip="Return a local-only file to commit preparation" />
+                                        <Button Grid.Column="3" Classes="danger" Content="Rollback…" Click="OnRollbackSelectedChangeClick"
+                                                Padding="6,2" MinHeight="22" FontSize="9.5" />
+                                    </Grid>
+                                </Border>
                             </Grid>
                         </Border>
 
@@ -529,22 +666,150 @@
                                       ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
                                       Background="#4B4D52" Cursor="SizeWestEast" />
 
-                        <Border x:Name="ChangesDiffPanel" Grid.Row="1" Grid.Column="2" Classes="card" MinWidth="320">
-                            <Grid RowDefinitions="Auto,*">
-                                <TextBlock Text="Diff" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,10" />
-                                <controls:CodeDiffView Grid.Row="1"
+                        <Border x:Name="ChangesDiffPanel" Grid.Row="1" Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True" MinWidth="360">
+                            <Grid RowDefinitions="42,28,*">
+                                <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="Diff preview" FontSize="13" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding SelectedChange.Path}" Classes="muted" FontSize="8.5" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedChange.PreparationState}"
+                                                   Foreground="{Binding SelectedChange.PreparationColor}" FontWeight="SemiBold"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Row="1" Background="#232427" BorderBrush="#34363A" BorderThickness="0,0,0,1" Padding="9,0">
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="9">
+                                        <TextBlock Text="{Binding SelectedChange.State}" Foreground="{Binding SelectedChange.StatusColor}" FontSize="9" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedChange.Area}" Classes="muted" FontSize="9" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Text="{Binding SelectedChange.LockOwner}" Foreground="{Binding SelectedChange.LockColor}"
+                                                   FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                                <controls:CodeDiffView Grid.Row="2"
                                                        DiffText="{Binding DiffText}"
                                                        FilePath="{Binding SelectedChange.Path}" />
                             </Grid>
                         </Border>
 
-                        <Border Grid.Row="2" Grid.ColumnSpan="3" Classes="card">
-                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12">
-                                <TextBlock Text="Nouvelle révision" FontWeight="SemiBold" />
-                                <TextBox Grid.Row="1" Text="{Binding CommitMessage}" PlaceholderText="Décrire clairement les changements…" Margin="0,8,0,0" />
-                                <Button Grid.Row="1" Grid.Column="1" Classes="primary" Content="Créer la révision" Click="OnCommitClick" Margin="0,8,0,0" />
+                        <Border Grid.Row="2" Grid.ColumnSpan="3" Classes="card" Padding="9">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="7">
+                                <TextBlock Text="Commit" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding ChangePreparationSummary}" Classes="muted" FontSize="9.5"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                <Button Grid.Row="1" Grid.Column="2" Classes="secondary" Content="Stage selected" Click="OnStageAllClick" />
+                                <Button Grid.Row="1" Grid.Column="3" Classes="danger" Content="Rollback selected…" Click="OnRollbackIncludedChangesClick" />
+                                <Button Grid.Row="1" Grid.Column="4" Classes="primary" Content="Commit selected" Click="OnCommitClick"
+                                        IsEnabled="{Binding CanCommitPreparedChanges}" />
+                                <TextBox Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding CommitMessage}"
+                                         PlaceholderText="Describe the selected changes…" />
                             </Grid>
                         </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem x:Name="SolutionExplorerWorkspaceTab" Header="Solution Explorer">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,Auto,*" RowSpacing="7">
+                        <Border Classes="card" Padding="9">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto,140,1,Auto,Auto,Auto" ColumnSpacing="7">
+                                <TextBox Text="{Binding CodeTreeFilter, UpdateSourceTrigger=PropertyChanged}"
+                                         PlaceholderText="Search files or folders in the project…" />
+                                <CheckBox Grid.Column="1" Content="Hidden" IsChecked="{Binding CodeIncludeHidden}"
+                                          VerticalAlignment="Center" />
+                                <Button Grid.Column="2" Classes="primary" Content="Refresh" Click="OnRefreshCodeWorkspaceClick" />
+                                <TextBlock Grid.Column="3" Text="AUTO" Classes="muted" FontSize="9" FontWeight="Bold"
+                                           VerticalAlignment="Center" />
+                                <ComboBox Grid.Column="4" ItemsSource="{Binding CodeAutoRefreshFrequencies}"
+                                          SelectedItem="{Binding CodeAutoRefreshFrequency}" />
+                                <Border Grid.Column="5" Width="1" Background="#4B4D52" Margin="3,0" />
+                                <TextBlock Grid.Column="6" Text="VIEW" Classes="muted" FontSize="9" FontWeight="Bold"
+                                           VerticalAlignment="Center" />
+                                <ToggleButton x:Name="SolutionTreeLayoutToggle" Grid.Column="7" Classes="layoutChoice"
+                                              Content="Tree" IsChecked="True" Click="OnSolutionTreeLayoutClick" />
+                                <ToggleButton x:Name="SolutionListLayoutToggle" Grid.Column="8" Classes="layoutChoice"
+                                              Content="List" Click="OnSolutionListLayoutClick" />
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="1" IsVisible="{Binding IsCodeWorkspaceLoading}" Background="#202633"
+                                BorderBrush="#393B40" BorderThickness="1" CornerRadius="4" Padding="9,5">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                <TextBlock Text="Indexing project files…" Classes="muted" VerticalAlignment="Center" />
+                                <ProgressBar Grid.Column="1" IsIndeterminate="True" Height="5" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="2" ColumnDefinitions="0.9*,8,1.4*">
+                            <Border Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="38,*">
+                                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="Project files" FontWeight="SemiBold" FontSize="12" />
+                                                <TextBlock Text="{Binding CodeWorkspaceSummary}" Classes="muted" FontSize="8.5"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding CodeWorkspaceLastUpdatedText}" Foreground="#78D7B7"
+                                                           FontSize="8.5" HorizontalAlignment="Right" />
+                                                <TextBlock Text="Caches and build outputs excluded" Classes="muted"
+                                                           FontSize="8" HorizontalAlignment="Right" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
+                                    <TreeView x:Name="SolutionTreePanel" Grid.Row="1" ItemsSource="{Binding CodeTree}"
+                                              SelectedItem="{Binding SelectedCodeNode}" Classes="compactTree"
+                                              Background="Transparent" BorderThickness="0" Margin="3">
+                                        <TreeView.ItemTemplate>
+                                            <TreeDataTemplate ItemsSource="{Binding Children}">
+                                                <Grid ColumnDefinitions="22,*,Auto" Margin="1,1" ToolTip.Tip="{Binding RelativePath}">
+                                                    <Border Width="18" Height="18" CornerRadius="3" Background="#31343A">
+                                                        <TextBlock Text="{Binding Icon}" FontSize="8" FontWeight="Bold"
+                                                                   Foreground="{Binding AccentColor}" HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="{Binding AccentColor}"
+                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="4,0" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding Detail}" Classes="muted" FontSize="8.5"
+                                                               VerticalAlignment="Center" Margin="4,0" />
+                                                </Grid>
+                                            </TreeDataTemplate>
+                                        </TreeView.ItemTemplate>
+                                    </TreeView>
+
+                                    <DataGrid x:Name="SolutionListPanel" Grid.Row="1" ItemsSource="{Binding CodeFileList}"
+                                              SelectedItem="{Binding SelectedCodeNode}" IsVisible="False"
+                                              AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                              Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="File" Binding="{Binding Name}" Width="190" />
+                                            <DataGridTextColumn Header="Path" Binding="{Binding RelativePath}" Width="*" />
+                                            <DataGridTextColumn Header="Type" Binding="{Binding Language}" Width="90" />
+                                            <DataGridTextColumn Header="Size" Binding="{Binding Detail}" Width="110" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+
+                            <GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                          Background="#4B4D52" Cursor="SizeWestEast" />
+
+                            <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="42,*">
+                                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="File preview" FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Text="{Binding CodePreviewSummary}" Classes="muted" FontSize="9"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Border>
+                                    <controls:SyntaxHighlightedCodeView Grid.Row="1" Text="{Binding CodePreviewText}"
+                                                                        FilePath="{Binding SelectedCodeNode.RelativePath}" />
+                                </Grid>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </TabItem>
 
@@ -721,10 +986,153 @@
                     </Grid>
                 </TabItem>
 
+                <TabItem x:Name="ConsoleWorkspaceTab" Header="Console &amp; Logs">
+                    <TabControl x:Name="ConsoleAndLogsTabs" Margin="0,8,0,0">
+                        <TabItem Header="Repository console">
+                            <Grid Margin="5" RowDefinitions="Auto,*,Auto" RowSpacing="7">
+                                <Border Classes="card" Padding="9">
+                                    <Grid ColumnDefinitions="*,Auto,150,Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="7" RowSpacing="4">
+                                        <StackPanel>
+                                            <TextBlock Text="Repository console" FontSize="15" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding RepositoryConsoleWorkingDirectory}" Foreground="#78D7B7"
+                                                       FontFamily="Cascadia Mono, Consolas" FontSize="10" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="Shell" Classes="muted" VerticalAlignment="Center" />
+                                        <ComboBox Grid.Column="2" ItemsSource="{Binding RepositoryShells}"
+                                                  SelectedItem="{Binding SelectedRepositoryShell}" />
+                                        <Button Grid.Column="3" Classes="secondary" Content="Clear output"
+                                                Click="OnClearRepositoryConsoleOutputClick" />
+                                        <Button Grid.Column="4" Classes="danger" Content="Stop"
+                                                IsEnabled="{Binding CanStopRepositoryCommand}" Click="OnStopRepositoryCommandClick" />
+                                        <Button Grid.Column="5" Classes="primary" Content="Run"
+                                                IsEnabled="{Binding CanRunRepositoryCommand}" Click="OnRunRepositoryCommandClick" />
+                                        <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="Commands run in the selected project root with your user permissions. They may modify files or Git."
+                                                   Foreground="#F2C66D" FontSize="9.5" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Row="1" Grid.Column="3" Grid.ColumnSpan="3"
+                                                   Text="{Binding RepositoryConsoleStatus}" Classes="muted"
+                                                   HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+
+                                <Grid Grid.Row="1" ColumnDefinitions="*,8,360">
+                                    <Border Classes="card" Padding="0" ClipToBounds="True">
+                                        <Grid RowDefinitions="36,*">
+                                            <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="10,0">
+                                                <TextBlock Text="Output" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            </Border>
+                                            <TextBox x:Name="RepositoryConsoleOutputBox" Grid.Row="1"
+                                                     Text="{Binding RepositoryConsoleOutput}" IsReadOnly="True"
+                                                     AcceptsReturn="True" TextWrapping="NoWrap"
+                                                     FontFamily="Cascadia Mono, Consolas" FontSize="11"
+                                                     Background="#0D111A" BorderThickness="0" Padding="9"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                     TextChanged="OnRepositoryConsoleOutputTextChanged" />
+                                        </Grid>
+                                    </Border>
+
+                                    <GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns"
+                                                  ResizeBehavior="PreviousAndNext" Background="#4B4D52" Cursor="SizeWestEast" />
+
+                                    <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                                        <Grid RowDefinitions="Auto,*,Auto">
+                                            <StackPanel Margin="8,7,8,4" Spacing="5">
+                                                <TextBlock Text="Persistent history for this project" FontWeight="SemiBold" />
+                                                <TextBox Text="{Binding RepositoryConsoleHistorySearch, UpdateSourceTrigger=PropertyChanged}"
+                                                         PlaceholderText="Search previous commands…" />
+                                            </StackPanel>
+                                            <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredRepositoryCommandHistory}"
+                                                      SelectedItem="{Binding SelectedRepositoryCommand}"
+                                                      DoubleTapped="OnRepositoryCommandHistoryDoubleTapped"
+                                                      AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                                      Background="Transparent" BorderThickness="0">
+                                                <DataGrid.Columns>
+                                                    <DataGridTextColumn Header="Command" Binding="{Binding Command}" Width="*" />
+                                                    <DataGridTextColumn Header="Shell" Binding="{Binding Shell}" Width="92" />
+                                                    <DataGridTextColumn Header="Date" Binding="{Binding TimeText}" Width="118" />
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+                                            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="7" Margin="8,5,8,8">
+                                                <Button Classes="secondary" Content="Use selected" Click="OnUseRepositoryCommandClick" />
+                                                <Button Classes="danger" Content="Clear history" Click="OnClearRepositoryConsoleHistoryClick" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+
+                                <Border Grid.Row="2" Classes="card" Padding="8">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                        <TextBlock Text=">" Foreground="#78D7B7" FontFamily="Cascadia Mono, Consolas"
+                                                   FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
+                                        <TextBox x:Name="RepositoryConsoleInput" Grid.Column="1"
+                                                 Text="{Binding RepositoryConsoleCommand, UpdateSourceTrigger=PropertyChanged}"
+                                                 PlaceholderText="Enter a command · Enter to run · Up/Down for history"
+                                                 FontFamily="Cascadia Mono, Consolas" KeyDown="OnRepositoryConsoleInputKeyDown" />
+                                        <Button Grid.Column="2" Classes="primary" Content="Run"
+                                                IsEnabled="{Binding CanRunRepositoryCommand}" Click="OnRunRepositoryCommandClick" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Application log">
+                            <Grid Margin="5" RowDefinitions="Auto,*,170" RowSpacing="7">
+                                <Border Classes="card" Padding="9">
+                                    <Grid ColumnDefinitions="*,145,Auto,Auto,Auto" ColumnSpacing="7" RowDefinitions="Auto,Auto">
+                                        <TextBox Text="{Binding ApplicationLogSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                 PlaceholderText="Search log message or area…" />
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding ApplicationLogLevelFilters}"
+                                                  SelectedItem="{Binding ApplicationLogLevelFilter}" />
+                                        <Button Grid.Column="2" Classes="secondary" Content="Refresh" Click="OnRefreshApplicationLogsClick" />
+                                        <Button Grid.Column="3" Classes="secondary" Content="Open log folder ↗" Click="OnOpenApplicationLogFolderClick" />
+                                        <Button Grid.Column="4" Classes="secondary" Content="Clear view" Click="OnClearApplicationLogViewClick" />
+                                        <StackPanel Grid.Row="1" Grid.ColumnSpan="5" Orientation="Horizontal" Spacing="10">
+                                            <TextBlock Text="{Binding ApplicationLogProjectSummary}" Foreground="#78D7B7"
+                                                       FontSize="9" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding CurrentApplicationLogPath}"
+                                                       Classes="muted" FontSize="9" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <Border Grid.Row="1" Classes="card" Padding="0" ClipToBounds="True">
+                                    <DataGrid ItemsSource="{Binding FilteredApplicationLogEntries}"
+                                              SelectedItem="{Binding SelectedApplicationLogEntry}"
+                                              AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                              Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="165" />
+                                            <DataGridTemplateColumn Header="Level" Width="105">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding LevelText}" Foreground="{Binding LevelColor}" FontWeight="SemiBold" />
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTextColumn Header="Area" Binding="{Binding Area}" Width="125" />
+                                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Border>
+
+                                <Border Grid.Row="2" Classes="card" Padding="9">
+                                    <Grid RowDefinitions="Auto,*">
+                                        <TextBlock Text="Selected log details" FontWeight="SemiBold" />
+                                        <TextBox Grid.Row="1" Text="{Binding SelectedApplicationLogEntry.Message}"
+                                                 IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                                                 FontFamily="Cascadia Mono, Consolas"
+                                                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
+                </TabItem>
+
                 <TabItem x:Name="HistoryWorkspaceTab" Header="Historique">
                     <Grid Margin="0,8,0,0" RowDefinitions="Auto,Auto,*" RowSpacing="7">
                         <Border Classes="card" Padding="13">
-                            <Grid ColumnDefinitions="*,Auto,250,Auto,Auto" ColumnSpacing="10">
+                            <Grid ColumnDefinitions="*,Auto,250,Auto,Auto,Auto" ColumnSpacing="10">
                                 <TextBox Text="{Binding ExplorerSearch}" PlaceholderText="Rechercher par message, auteur ou hash…" />
                                 <TextBlock Grid.Column="1" Text="Comparer avec" Classes="muted" VerticalAlignment="Center" />
                                 <ComboBox Grid.Column="2" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedComparisonRevision}">
@@ -742,12 +1150,14 @@
                                 </ComboBox>
                                 <Button Grid.Column="3" Classes="primary" Content="Comparer A ↔ B" Click="OnCompareExplorerCommitsClick" />
                                 <Button Grid.Column="4" Classes="secondary" Content="Compose restore…" Click="OnShowMultiRestoreWorkspaceClick" />
+                                <Button Grid.Column="5" Classes="secondary" Content="Fetch remotes" Click="OnFetchClick"
+                                        ToolTip.Tip="Fetch remote refs, then include them in the history list" />
                             </Grid>
                         </Border>
 
                         <Border Grid.Row="1" Background="#26282B" BorderBrush="#393B40" BorderThickness="1"
                                 CornerRadius="6" Padding="7,5">
-                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,1,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="6">
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,1,Auto,Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
                                 <TextBlock Text="LAYOUT" FontSize="9" FontWeight="Bold" Foreground="#7E8189"
                                            VerticalAlignment="Center" Margin="3,0,2,0" />
                                 <ToggleButton x:Name="HistoryColumnsLayoutToggle" Grid.Column="1" Classes="layoutChoice"
@@ -782,6 +1192,9 @@
 
                                 <Button Grid.Column="10" Classes="secondary" Content="Ouvrir le diff dans une fenêtre ↗"
                                         Click="OnOpenFocusedDiffWindowClick" ToolTip.Tip="Ouvrir le diff ciblé dans une fenêtre redimensionnable" />
+                                <Button Grid.Column="11" Classes="secondary" Content="Commit Explorer ↗"
+                                        Click="OnOpenCommitExplorerWindowClick"
+                                        ToolTip.Tip="Open commits, committed files and a live diff in a separate window" />
                             </Grid>
                         </Border>
 
@@ -792,7 +1205,10 @@
                                     <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="12,9">
                                         <StackPanel>
                                             <TextBlock Text="Chronologie" FontSize="14" FontWeight="SemiBold" />
-                                            <TextBlock Text="Cliquez sur une révision pour l'inspecter." FontSize="9.5" Classes="muted" />
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <TextBlock Text="Cliquez sur une révision pour l'inspecter." FontSize="9.5" Classes="muted" />
+                                                <TextBlock Text="{Binding HistoryScope}" FontSize="9.5" Foreground="#61AFEF" FontWeight="SemiBold" />
+                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
                                     <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedExplorerRevision}"
@@ -847,7 +1263,7 @@
                                           Background="#4B4D52" Cursor="SizeWestEast" />
 
                             <Border x:Name="HistoryDiffPanel" Grid.Column="4" Classes="card" Padding="0" ClipToBounds="True">
-                                <Grid RowDefinitions="Auto,*">
+                                <Grid RowDefinitions="Auto,Auto,*">
                                     <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="12,8">
                                         <Grid ColumnDefinitions="*,Auto">
                                             <StackPanel>
@@ -859,7 +1275,13 @@
                                                     ToolTip.Tip="Ouvrir le diff ciblé dans une fenêtre redimensionnable" />
                                         </Grid>
                                     </Border>
-                                    <controls:CodeDiffView Grid.Row="1"
+                                    <Border Grid.Row="1" IsVisible="{Binding IsExplorerAnyLoading}" Background="#202633" Padding="8,4">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                            <TextBlock Text="Loading diff…" Classes="muted" FontSize="9" />
+                                            <ProgressBar Grid.Column="1" IsIndeterminate="True" Height="4" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+                                    <controls:CodeDiffView Grid.Row="2"
                                                            DiffText="{Binding ExplorerDiff}"
                                                            FilePath="{Binding SelectedExplorerFile.Path}" />
                                 </Grid>
@@ -875,34 +1297,115 @@
                 <TabItem x:Name="BranchesWorkspaceTab" Header="Branches">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.1*,1*" ColumnSpacing="8">
                         <Border Classes="card">
-                            <Grid RowDefinitions="Auto,*,Auto">
-                                <TextBlock Text="Branches locales" FontSize="16" FontWeight="SemiBold" />
-                                <ListBox Grid.Row="1" Margin="0,12" ItemsSource="{Binding Branches}" SelectedItem="{Binding SelectedBranch}">
+                            <Grid RowDefinitions="Auto,34,*,Auto">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel>
+                                        <TextBlock Text="Local and remote branches" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="Remote refs are read-only until you create or switch to a local branch"
+                                                   FontSize="9" Classes="muted" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="secondary" Content="Fetch remotes" Click="OnFetchClick" />
+                                </Grid>
+                                <Grid Grid.Row="1" ColumnDefinitions="*,105" ColumnSpacing="6" Margin="0,5,0,3">
+                                    <TextBox Text="{Binding BranchSearch, UpdateSourceTrigger=PropertyChanged}"
+                                             PlaceholderText="Search branch, remote or status…" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding BranchSortOptions}"
+                                              SelectedItem="{Binding BranchSort}" />
+                                </Grid>
+                                <ListBox Grid.Row="2" Margin="0,3" ItemsSource="{Binding FilteredBranches}" SelectedItem="{Binding SelectedBranch}">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid ColumnDefinitions="*,Auto" Margin="6">
-                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="5,3" ColumnSpacing="8">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{Binding DisplayColor}"
+                                                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding TipSubject}" />
                                                 <TextBlock Grid.Column="1" Text="{Binding ShortCommitHash}" Classes="muted" />
+                                                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6">
+                                                    <TextBlock Text="{Binding Scope}" Foreground="{Binding DisplayColor}" FontSize="8.5" />
+                                                    <TextBlock Text="{Binding PublicationStatus}" Foreground="{Binding PublicationColor}" FontSize="8.5" />
+                                                    <TextBlock Text="{Binding SyncStatus}" Foreground="{Binding PublicationColor}" FontSize="8.5" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TipUpdateText}"
+                                                           Classes="muted" FontSize="8.5" HorizontalAlignment="Right" />
                                             </Grid>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
-                                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
-                                    <Button Classes="secondary" Content="Basculer / créer locale" Click="OnCheckoutBranchClick" />
-                                    <Button Classes="primary" Content="Intégrer" Click="OnMergeBranchClick" />
+                                <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6">
+                                    <Button Classes="secondary" Content="Switch / create local" Click="OnCheckoutBranchClick" />
+                                    <Button Classes="primary" Content="Merge" Click="OnMergeBranchClick" />
                                 </StackPanel>
                             </Grid>
                         </Border>
                         <Border Grid.Column="1" Classes="card">
-                            <StackPanel Spacing="10">
-                                <TextBlock Text="Créer une branche" FontSize="16" FontWeight="SemiBold" />
-                                <TextBox x:Name="NewBranchName" PlaceholderText="feature/nom" />
-                                <Button Classes="primary" Content="Créer et basculer" Click="OnCreateBranchClick" HorizontalAlignment="Left" />
-                                <Border Height="1" Background="#29324A" Margin="0,10" />
-                                <TextBlock Text="Remote standard" FontSize="16" FontWeight="SemiBold" />
-                                <TextBox Text="{Binding RemoteUrl}" PlaceholderText="ssh://, https:// ou chemin local" />
-                                <Button Classes="secondary" Content="Enregistrer origin" Click="OnSaveRemoteClick" HorizontalAlignment="Left" />
-                            </StackPanel>
+                            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="7">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="Selected branch commits" FontSize="15" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding SelectedBranchSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="secondary" Content="Open selected commit ↗"
+                                            Click="OnOpenSelectedBranchCommitClick"
+                                            ToolTip.Tip="Open the selected commit, its files and diffs in the external Commit Explorer" />
+                                </Grid>
+                                <Border Grid.Row="1" Background="#24262A" CornerRadius="5" Padding="8">
+                                    <Grid ColumnDefinitions="1*,1*,1*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Text="COMPARISON BASE" Classes="muted" FontSize="8" />
+                                            <TextBlock Text="{Binding SelectedBranchDetails.ComparisonBaseText}" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="COMMITS AHEAD" Classes="muted" FontSize="8" />
+                                            <TextBlock Text="{Binding SelectedBranchDetails.UniqueCommitText}" Foreground="#78D7B7"
+                                                       FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="CREATED BY (INFERRED)" Classes="muted" FontSize="8" />
+                                            <TextBlock Text="{Binding SelectedBranchDetails.CreatorText}" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1">
+                                            <TextBlock Text="ESTIMATED CREATION" Classes="muted" FontSize="8" />
+                                            <TextBlock Text="{Binding SelectedBranchDetails.CreatedText}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="1">
+                                            <TextBlock Text="LAST UPDATE" Classes="muted" FontSize="8" />
+                                            <TextBlock Text="{Binding SelectedBranchDetails.UpdatedText}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="2">
+                                            <TextBlock Text="LAST COMMIT" Classes="muted" FontSize="8" />
+                                            <TextBlock Text="{Binding SelectedBranchDetails.LastSubject}" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding SelectedBranchDetails.LastAuthorName}" />
+                                            <TextBlock Text="{Binding SelectedBranchDetails.LastAuthorName}" Classes="muted" FontSize="8.5" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <DataGrid x:Name="SelectedBranchCommitGrid" Grid.Row="2"
+                                          ItemsSource="{Binding SelectedBranchHistory}"
+                                          SelectedItem="{Binding SelectedBranchRevision, Mode=TwoWay}"
+                                          DoubleTapped="OnSelectedBranchCommitDoubleTapped"
+                                          Classes="historyCompact"
+                                          AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                          Background="Transparent" BorderThickness="0">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Commit" Binding="{Binding ShortHash}" Width="72" />
+                                        <DataGridTextColumn Header="Description" Binding="{Binding Subject}" Width="*" />
+                                        <DataGridTextColumn Header="Author" Binding="{Binding AuthorName}" Width="105" />
+                                        <DataGridTextColumn Header="Date" Binding="{Binding AuthoredAt}" Width="130" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <Border Grid.Row="3" Background="#24262A" CornerRadius="5" Padding="8">
+                                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="7" RowSpacing="5">
+                                        <TextBlock Text="Create branch" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Column="1" Text="Remote origin" FontWeight="SemiBold" />
+                                        <TextBox Grid.Row="1" x:Name="NewBranchName" PlaceholderText="feature/name" />
+                                        <TextBox Grid.Row="1" Grid.Column="1" Width="250" Text="{Binding RemoteUrl}" PlaceholderText="https:// or ssh://" />
+                                        <Button Grid.Row="2" Classes="primary" Content="Create and switch" Click="OnCreateBranchClick" HorizontalAlignment="Left" />
+                                        <Button Grid.Row="2" Grid.Column="1" Classes="secondary" Content="Save origin" Click="OnSaveRemoteClick" HorizontalAlignment="Left" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
                         </Border>
                     </Grid>
                 </TabItem>
@@ -910,7 +1413,7 @@
                 <TabItem x:Name="PullRequestsWorkspaceTab" Header="Pull Requests">
                     <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="8">
                         <Border Classes="card" Padding="10">
-                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="8">
+                            <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="8">
                                 <StackPanel Spacing="2">
                                     <TextBlock Text="Pull Request Manager" FontSize="16" FontWeight="SemiBold" />
                                     <StackPanel Orientation="Horizontal" Spacing="8">
@@ -924,7 +1427,7 @@
                                     <Button Classes="secondary" Content="Detect remote" Click="OnResolvePullRequestRepositoryClick" />
                                     <Button Classes="primary" Content="Refresh" Click="OnRefreshPullRequestsClick" />
                                 </StackPanel>
-                                <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,170,Auto,230,Auto,230,*"
+                                <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,170,Auto,230,Auto,230,*,Auto"
                                       ColumnSpacing="7">
                                     <TextBlock Text="API" Classes="muted" VerticalAlignment="Center" />
                                     <TextBox Grid.Column="1" Text="{Binding PullRequestApiBaseUrl}"
@@ -937,7 +1440,17 @@
                                              PlaceholderText="Never saved" />
                                     <TextBlock Grid.Column="6" Text="{Binding PullRequestAuthenticationState}" FontSize="9.5"
                                                Foreground="#F2C66D" VerticalAlignment="Center" Margin="8,0" />
+                                    <Button Grid.Column="7" Classes="secondary" Content="Token help ↗"
+                                            Click="OnOpenGitHubTokenHelpClick"
+                                            ToolTip.Tip="Private repositories require a GitHub token with repository and pull-request access" />
                                 </Grid>
+                                <Border Grid.Row="2" Grid.ColumnSpan="2" IsVisible="{Binding IsPullRequestLoading}"
+                                        Background="#202633" CornerRadius="4" Padding="8,4">
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                        <TextBlock Text="Loading pull request data…" Classes="muted" FontSize="9" />
+                                        <ProgressBar Grid.Column="1" IsIndeterminate="True" Height="4" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
                             </Grid>
                         </Border>
 
@@ -945,7 +1458,10 @@
                             <Border Classes="card" Padding="0" ClipToBounds="True" MinWidth="310">
                                 <TabControl>
                                     <TabItem Header="Requests">
-                                        <DataGrid ItemsSource="{Binding PullRequests}" SelectedItem="{Binding SelectedPullRequest}"
+                                        <Grid RowDefinitions="34,*">
+                                            <TextBox Margin="4" Text="{Binding PullRequestSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                     PlaceholderText="Search pull requests by number, title, author, branch or state…" />
+                                        <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredPullRequests}" SelectedItem="{Binding SelectedPullRequest}"
                                                   AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
                                                   Background="Transparent" BorderThickness="0" Margin="4">
                                             <DataGrid.Columns>
@@ -956,6 +1472,7 @@
                                                 <DataGridTextColumn Header="Updated" Binding="{Binding UpdatedText}" Width="125" />
                                             </DataGrid.Columns>
                                         </DataGrid>
+                                        </Grid>
                                     </TabItem>
                                     <TabItem Header="Create">
                                         <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -1007,6 +1524,9 @@
                                                 <TextBlock Text="{Binding PullRequestDetailsSummary}" FontSize="10" Foreground="#78D7B7" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                <Button Classes="secondary" Content="Commit Explorer ↗"
+                                                        Click="OnOpenPullRequestCommitExplorerClick"
+                                                        IsEnabled="{Binding HasSelectedPullRequest}" />
                                                 <Button Classes="secondary" Content="Open ↗" Click="OnOpenPullRequestClick"
                                                         IsEnabled="{Binding HasSelectedPullRequest}" />
                                                 <Button Classes="secondary" Content="Checkout" Click="OnCheckoutPullRequestClick"
@@ -1028,7 +1548,24 @@
 
                                     <TabControl Grid.Row="1">
                                         <TabItem Header="Files and patch">
-                                            <Grid ColumnDefinitions="0.78*,8,1.22*" Margin="4">
+                                            <Grid RowDefinitions="30,*" Margin="4">
+                                                <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+                                                    <TextBlock Text="LAYOUT" Classes="muted" FontSize="9" FontWeight="Bold"
+                                                               VerticalAlignment="Center" />
+                                                    <ToggleButton x:Name="PullRequestBalancedLayoutToggle" Grid.Column="1"
+                                                                  Classes="layoutChoice" Content="Balanced" IsChecked="True"
+                                                                  Click="OnPullRequestBalancedLayoutClick" />
+                                                    <ToggleButton x:Name="PullRequestDiffFocusLayoutToggle" Grid.Column="2"
+                                                                  Classes="layoutChoice" Content="Diff focus"
+                                                                  Click="OnPullRequestDiffFocusLayoutClick" />
+                                                    <TextBlock Text="Select a file to inspect its provider patch" Classes="muted" FontSize="9"
+                                                               Grid.Column="3" VerticalAlignment="Center" />
+                                                    <ToggleButton x:Name="PullRequestDiffToggle" Grid.Column="4" Classes="layoutChoice"
+                                                                  Content="Diff" Click="OnPullRequestDiffToggleClick" />
+                                                    <Button Grid.Column="5" Classes="secondary" Content="Open diff ↗"
+                                                            Click="OnOpenPullRequestDiffWindowClick" />
+                                                </Grid>
+                                            <Grid x:Name="PullRequestFilesWorkspaceGrid" Grid.Row="1" ColumnDefinitions="0.78*,8,1.22*">
                                                 <DataGrid ItemsSource="{Binding PullRequestFiles}" SelectedItem="{Binding SelectedPullRequestFile}"
                                                           AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
                                                           Background="Transparent" BorderThickness="0">
@@ -1038,11 +1575,12 @@
                                                         <DataGridTextColumn Header="Change" Binding="{Binding ChangeText}" Width="95" />
                                                     </DataGrid.Columns>
                                                 </DataGrid>
-                                                <GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns"
+                                                <GridSplitter x:Name="PullRequestDiffSplitter" Grid.Column="1" Width="8" ResizeDirection="Columns"
                                                               ResizeBehavior="PreviousAndNext" ShowsPreview="False"
                                                               Background="#4B4D52" Cursor="SizeWestEast" />
-                                                <controls:CodeDiffView Grid.Column="2" DiffText="{Binding PullRequestPatch}"
+                                                <controls:CodeDiffView x:Name="PullRequestDiffPanel" Grid.Column="2" DiffText="{Binding PullRequestPatch}"
                                                                        FilePath="{Binding SelectedPullRequestFile.Path}" />
+                                            </Grid>
                                             </Grid>
                                         </TabItem>
                                         <TabItem Header="Conversation">
@@ -1244,7 +1782,7 @@
                 <TabItem x:Name="LfsLocksWorkspaceTab" Header="File locks">
                             <Grid Margin="0,8,0,0" RowDefinitions="Auto,*,Auto" RowSpacing="8">
                                 <Border Classes="card" Padding="10">
-                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                         <StackPanel Spacing="2">
                                             <TextBlock Text="Git LFS file locks" FontSize="16" FontWeight="SemiBold" />
                                             <TextBlock Text="{Binding LfsLocksSummary}" Classes="muted" FontSize="10.5"
@@ -1252,38 +1790,68 @@
                                         </StackPanel>
                                         <Button Grid.Column="1" Classes="secondary" Content="Refresh"
                                                 Click="OnRefreshLfsLocksClick" />
-                                        <Button Grid.Column="2" Classes="secondary" Content="Unlock all mineâ€¦"
-                                                Click="OnUnlockAllMyLfsLocksClick" />
-                                        <Button Grid.Column="3" Classes="danger" Content="Force unlock allâ€¦"
-                                                Click="OnForceUnlockAllLfsLocksClick"
-                                                ToolTip.Tip="Administrative action: also removes locks owned by other users" />
                                     </Grid>
                                 </Border>
 
                                 <Grid Grid.Row="1" ColumnDefinitions="1.35*,7,1*">
                                     <Border Classes="card" Padding="0" ClipToBounds="True">
-                                        <Grid RowDefinitions="42,*">
+                                        <Grid RowDefinitions="42,34,*">
                                             <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1"
                                                     Padding="10,0">
+                                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                                                 <StackPanel VerticalAlignment="Center">
                                                     <TextBlock Text="All project locks" FontWeight="SemiBold" />
                                                     <TextBlock Text="Verified remote locks, including files held by teammates"
                                                                Classes="muted" FontSize="9" />
                                                 </StackPanel>
+                                                <Button Grid.Column="1" Classes="danger"
+                                                        IsVisible="{Binding HasSelectedProjectLocks}" Click="OnUnlockSelectedProjectLocksClick"
+                                                        Padding="7,3" MinHeight="23">
+                                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                                        <TextBlock Text="Unlock selected" />
+                                                        <TextBlock Text="{Binding SelectedProjectLockCount}" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Grid.Column="2" Classes="danger" Content="Force unlock all…"
+                                                        Click="OnForceUnlockAllLfsLocksClick" Padding="7,3" MinHeight="23"
+                                                        ToolTip.Tip="Administrative action: also removes locks owned by other users" />
+                                                </Grid>
                                             </Border>
-                                            <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding LfsLocks}"
+                                            <Grid Grid.Row="1" ColumnDefinitions="*,120,Auto" ColumnSpacing="6" Margin="5,4">
+                                                <TextBox Text="{Binding AllLfsLockSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                         PlaceholderText="Search all locks by file, folder, owner, locked by, source or ID…" />
+                                                <ComboBox Grid.Column="1" ItemsSource="{Binding LfsLockSortOptions}"
+                                                          SelectedItem="{Binding AllLfsLockSort}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding FilteredLfsLocks.Count}" Classes="muted"
+                                                           VerticalAlignment="Center" ToolTip.Tip="Visible locks" />
+                                            </Grid>
+                                            <TabControl Grid.Row="2" Padding="0" Background="Transparent">
+                                            <TabItem Header="List">
+                                            <DataGrid x:Name="AllLfsLocksGrid" Classes="historyCompact" ItemsSource="{Binding FilteredLfsLocks}"
                                                       AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
-                                                      GridLinesVisibility="Horizontal" Background="Transparent">
+                                                      GridLinesVisibility="Horizontal" Background="Transparent"
+                                                      SelectionMode="Extended" SelectionChanged="OnAllLfsLocksSelectionChanged">
                                                 <DataGrid.Columns>
-                                                    <DataGridTemplateColumn Header="Owner" Width="92">
+                                                    <DataGridTemplateColumn Header="Owner" Width="92" SortMemberPath="Ownership">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                                             <TextBlock Text="{Binding Ownership}" Foreground="{Binding OwnershipColor}" />
                                                         </DataTemplate></DataGridTemplateColumn.CellTemplate>
                                                     </DataGridTemplateColumn>
-                                                    <DataGridTextColumn Header="File" Binding="{Binding Path}" Width="*" />
-                                                    <DataGridTextColumn Header="Locked by" Binding="{Binding OwnerName}" Width="120" />
-                                                    <DataGridTextColumn Header="Date" Binding="{Binding LockedAtText}" Width="120" />
-                                                    <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="62" />
+                                                    <DataGridTemplateColumn Header="File" Width="*" SortMemberPath="Path">
+                                                        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                            <TextBlock Text="{Binding Path}" Foreground="{Binding FileColor}"
+                                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Path}" />
+                                                        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                    </DataGridTemplateColumn>
+                                                    <DataGridTemplateColumn Header="Locked by" Width="120" SortMemberPath="OwnerName">
+                                                        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                            <TextBlock Text="{Binding OwnerName}" Foreground="{Binding OwnerColor}"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                    </DataGridTemplateColumn>
+                                                    <DataGridTextColumn Header="Date" Binding="{Binding LockedAtText}" SortMemberPath="LockedAt" Width="120" />
+                                                    <DataGridTextColumn Header="Source" Binding="{Binding Source}" SortMemberPath="Source" Width="62" />
+                                                    <DataGridTextColumn Header="ID" Binding="{Binding ShortId}" SortMemberPath="Id" Width="82" />
                                                     <DataGridTemplateColumn Header="" Width="112">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                                             <Button Classes="secondary" Content="{Binding UnlockAction}"
@@ -1293,6 +1861,26 @@
                                                     </DataGridTemplateColumn>
                                                 </DataGrid.Columns>
                                             </DataGrid>
+                                            </TabItem>
+                                            <TabItem Header="Folders">
+                                                <TreeView ItemsSource="{Binding LfsLockTree}" Classes="compactTree"
+                                                          Background="Transparent" BorderThickness="0" Margin="2">
+                                                    <TreeView.ItemTemplate>
+                                                        <TreeDataTemplate ItemsSource="{Binding Children}">
+                                                            <Grid ColumnDefinitions="16,*,Auto" Height="22" Margin="0"
+                                                                  ToolTip.Tip="{Binding RelativePath}">
+                                                                <TextBlock Text="{Binding Icon}" Foreground="{Binding AccentColor}"
+                                                                           HorizontalAlignment="Center" />
+                                                                <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="{Binding AccentColor}"
+                                                                           TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Grid.Column="2" Text="{Binding Detail}" Classes="muted"
+                                                                           FontSize="8" Margin="5,0,2,0" />
+                                                            </Grid>
+                                                        </TreeDataTemplate>
+                                                    </TreeView.ItemTemplate>
+                                                </TreeView>
+                                            </TabItem>
+                                            </TabControl>
                                         </Grid>
                                     </Border>
 
@@ -1301,22 +1889,52 @@
                                                   Cursor="SizeWestEast" />
 
                                     <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
-                                        <Grid RowDefinitions="42,*">
+                                        <Grid RowDefinitions="42,34,*">
                                             <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1"
                                                     Padding="10,0">
+                                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                                                 <StackPanel VerticalAlignment="Center">
                                                     <TextBlock Text="Locked by me" FontWeight="SemiBold" />
                                                     <TextBlock Text="Locks this Git LFS identity can release normally"
                                                                Classes="muted" FontSize="9" />
                                                 </StackPanel>
+                                                <Button Grid.Column="1" Classes="secondary"
+                                                        IsVisible="{Binding HasSelectedMyLocks}" Click="OnUnlockSelectedMyLocksClick"
+                                                        Padding="7,3" MinHeight="23">
+                                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                                        <TextBlock Text="Unlock selected" />
+                                                        <TextBlock Text="{Binding SelectedMyLockCount}" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Grid.Column="2" Classes="secondary" Content="Unlock all mine…"
+                                                        Click="OnUnlockAllMyLfsLocksClick" Padding="7,3" MinHeight="23" />
+                                                </Grid>
                                             </Border>
-                                            <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding MyLfsLocks}"
+                                            <Grid Grid.Row="1" ColumnDefinitions="*,120,Auto" ColumnSpacing="6" Margin="5,4">
+                                                <TextBox Text="{Binding MyLfsLockSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                         PlaceholderText="Search my locks by file, folder, owner, source or ID…" />
+                                                <ComboBox Grid.Column="1" ItemsSource="{Binding LfsLockSortOptions}"
+                                                          SelectedItem="{Binding MyLfsLockSort}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding FilteredMyLfsLocks.Count}" Classes="muted"
+                                                           VerticalAlignment="Center" ToolTip.Tip="Visible locks" />
+                                            </Grid>
+                                            <TabControl Grid.Row="2" Padding="0" Background="Transparent">
+                                            <TabItem Header="List">
+                                            <DataGrid x:Name="MyLfsLocksGrid" Classes="historyCompact" ItemsSource="{Binding FilteredMyLfsLocks}"
                                                       AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
-                                                      GridLinesVisibility="Horizontal" Background="Transparent">
+                                                      GridLinesVisibility="Horizontal" Background="Transparent"
+                                                      SelectionMode="Extended" SelectionChanged="OnMyLfsLocksSelectionChanged">
                                                 <DataGrid.Columns>
-                                                    <DataGridTextColumn Header="File" Binding="{Binding Path}" Width="*" />
-                                                    <DataGridTextColumn Header="Date" Binding="{Binding LockedAtText}" Width="120" />
-                                                    <DataGridTextColumn Header="ID" Binding="{Binding ShortId}" Width="82" />
+                                                    <DataGridTemplateColumn Header="File" Width="*" SortMemberPath="Path">
+                                                        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                            <TextBlock Text="{Binding Path}" Foreground="{Binding FileColor}"
+                                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Path}" />
+                                                        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                    </DataGridTemplateColumn>
+                                                    <DataGridTextColumn Header="Locked by" Binding="{Binding OwnerName}" SortMemberPath="OwnerName" Width="92" />
+                                                    <DataGridTextColumn Header="Date" Binding="{Binding LockedAtText}" SortMemberPath="LockedAt" Width="120" />
+                                                    <DataGridTextColumn Header="Source" Binding="{Binding Source}" SortMemberPath="Source" Width="62" />
+                                                    <DataGridTextColumn Header="ID" Binding="{Binding ShortId}" SortMemberPath="Id" Width="82" />
                                                     <DataGridTemplateColumn Header="" Width="82">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                                             <Button Classes="secondary" Content="Unlock" Padding="7,3" MinHeight="23"
@@ -1325,6 +1943,26 @@
                                                     </DataGridTemplateColumn>
                                                 </DataGrid.Columns>
                                             </DataGrid>
+                                            </TabItem>
+                                            <TabItem Header="Folders">
+                                                <TreeView ItemsSource="{Binding MyLfsLockTree}" Classes="compactTree"
+                                                          Background="Transparent" BorderThickness="0" Margin="2">
+                                                    <TreeView.ItemTemplate>
+                                                        <TreeDataTemplate ItemsSource="{Binding Children}">
+                                                            <Grid ColumnDefinitions="16,*,Auto" Height="22" Margin="0"
+                                                                  ToolTip.Tip="{Binding RelativePath}">
+                                                                <TextBlock Text="{Binding Icon}" Foreground="{Binding AccentColor}"
+                                                                           HorizontalAlignment="Center" />
+                                                                <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="{Binding AccentColor}"
+                                                                           TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Grid.Column="2" Text="{Binding Detail}" Classes="muted"
+                                                                           FontSize="8" Margin="5,0,2,0" />
+                                                            </Grid>
+                                                        </TreeDataTemplate>
+                                                    </TreeView.ItemTemplate>
+                                                </TreeView>
+                                            </TabItem>
+                                            </TabControl>
                                         </Grid>
                                     </Border>
                                 </Grid>
@@ -1359,10 +1997,15 @@
                                     <Button Grid.Column="1" Classes="secondary" Content="Ajouter" Click="OnTrackLfsClick" />
                                 </Grid>
                                 <Grid Grid.Row="3" RowDefinitions="Auto,*">
-                                    <StackPanel Margin="5,0,5,7">
-                                        <TextBlock Text="Fichiers versionnés" FontWeight="SemiBold" />
-                                        <TextBlock Text="Objets présents dans HEAD" FontSize="10" Classes="muted" />
-                                    </StackPanel>
+                                    <Grid Margin="5,0,5,7" ColumnDefinitions="*,Auto">
+                                        <StackPanel>
+                                            <TextBlock Text="Fichiers versionnés" FontWeight="SemiBold" />
+                                            <TextBlock Text="On-demand inventory to keep large repositories responsive"
+                                                       FontSize="10" Classes="muted" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="secondary" Content="Load LFS files"
+                                                Click="OnLoadLfsInventoryClick" Padding="8,4" />
+                                    </Grid>
                                     <ListBox Grid.Row="1" ItemsSource="{Binding LfsFiles}" SelectedItem="{Binding SelectedLfsFile}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>

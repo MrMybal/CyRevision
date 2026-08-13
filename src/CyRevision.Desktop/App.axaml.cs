@@ -10,9 +10,11 @@ using CyRevision.Core.Updates;
 using CyRevision.Code;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.Documentation;
+using CyRevision.Desktop.Diagnostics;
 using CyRevision.Desktop.Plugins;
 using CyRevision.Desktop.SystemIntegration;
 using CyRevision.Desktop.ViewModels;
+using CyRevision.Desktop.Workspace;
 using CyRevision.Diff;
 using CyRevision.Discord;
 using CyRevision.Discord.Control;
@@ -33,6 +35,7 @@ public partial class App : Application
     private DesktopBehaviorPreferencesStore? _desktopPreferencesStore;
     private StartupRegistrationService? _startupRegistration;
     private DesktopBehaviorPreferences _desktopPreferences = DesktopBehaviorPreferences.Default;
+    private ApplicationLogService? _applicationLogService;
     private bool _explicitExit;
     private TrayIcon _mainTrayIcon = null!;
     private NativeMenuItem _trayOpenItem = null!;
@@ -57,6 +60,11 @@ public partial class App : Application
             _desktop = desktop;
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             ApplicationPaths paths = ApplicationPaths.CreateDefault();
+            ApplicationLogService applicationLog = new(paths.DataDirectory);
+            _applicationLogService = applicationLog;
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+            applicationLog.Information("Application", "CyRevision starting.");
             LocalizationService localization = new();
             localization.Configure(paths.ConfigurationDirectory);
             _localization = localization;
@@ -109,13 +117,14 @@ public partial class App : Application
             JsonRemoteBuildConnectionStore remoteBuildConnections = new(paths.RemoteBuildDirectory);
             RemoteBuildSnapshotBuilder remoteBuildSnapshots = new();
             string? initialProjectPath = ReadProjectArgument(desktop.Args);
+            RepositoryConsoleService repositoryConsole = new(paths.ConfigurationDirectory);
             MainWindowViewModel viewModel = new(
                 catalog, gitService, paths, syncProfiles, gitExchange, assetDiff,
                 vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine, vpnRuntimeResolver,
                 vpnNetworkSetup, vpnSyncExchange, swarmProfiles, swarmSetup, vpnFileProfiles, vpnFileExchange,
                 lfsManagementProfiles, lfsStorageManager, remoteBuildConnections, remoteBuildSnapshots,
                 localization, documentation, updates, discordStore, discordAgent, discordConnections,
-                pluginManager, new CodeWorkspaceService(), pullRequests, initialProjectPath);
+                pluginManager, new CodeWorkspaceService(), pullRequests, applicationLog, repositoryConsole, initialProjectPath);
             _viewModel = viewModel;
 
             MainWindow mainWindow = new(viewModel, localization, paths.ConfigurationDirectory)
@@ -139,10 +148,29 @@ public partial class App : Application
                 viewModel.PropertyChanged -= OnViewModelPropertyChanged;
                 Task.Run(async () => await viewModel.DisposeAsync()).GetAwaiter().GetResult();
                 catalog.Dispose();
+                applicationLog.Information("Application", "CyRevision stopped normally.");
+                AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
+                TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
+                applicationLog.Dispose();
+                _applicationLogService = null;
             };
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private void OnUnhandledException(object sender, UnhandledExceptionEventArgs eventArgs)
+    {
+        if (eventArgs.ExceptionObject is Exception exception)
+            _applicationLogService?.Error("Unhandled", "An unhandled application exception occurred.", exception);
+        else
+            _applicationLogService?.Error("Unhandled", $"Unhandled error: {eventArgs.ExceptionObject}");
+    }
+
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs eventArgs)
+    {
+        _applicationLogService?.Error("Task", "An unobserved background task failed.", eventArgs.Exception);
+        eventArgs.SetObserved();
     }
 
     private void ApplyStartupRegistrationAtLaunch()

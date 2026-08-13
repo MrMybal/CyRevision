@@ -60,6 +60,8 @@ public sealed class GitHubPullRequestService : IPullRequestService
             cancellationToken);
         IReadOnlyList<JsonElement> files = await GetPagedArrayAsync(
             repository, $"pulls/{number}/files", token, cancellationToken);
+        IReadOnlyList<JsonElement> commits = await GetPagedArrayAsync(
+            repository, $"pulls/{number}/commits", token, cancellationToken);
         IReadOnlyList<JsonElement> reviews = await GetPagedArrayAsync(
             repository, $"pulls/{number}/reviews", token, cancellationToken);
         IReadOnlyList<JsonElement> comments = await GetPagedArrayAsync(
@@ -73,6 +75,7 @@ public sealed class GitHubPullRequestService : IPullRequestService
             GetInt(root, "changed_files"),
             GetInt(root, "commits"),
             GetInt(root, "comments") + GetInt(root, "review_comments"),
+            commits.Select(ParseCommit).ToArray(),
             files.Select(ParseFile).ToArray(),
             reviews.Select(ParseReview).ToArray(),
             comments.Select(ParseComment).ToArray());
@@ -250,6 +253,15 @@ public sealed class GitHubPullRequestService : IPullRequestService
         string payload = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                string authenticationHint = string.IsNullOrWhiteSpace(token)
+                    ? "The repository may be private. Sign in through Git Credential Manager or provide a session token with repository read access."
+                    : "Verify that the token can access this repository and that organization SSO is authorized.";
+                throw new PullRequestProviderException(
+                    response.StatusCode,
+                    $"GitHub API: repository or pull requests not found. {authenticationHint}");
+            }
             throw new PullRequestProviderException(response.StatusCode, ParseError(payload, response.StatusCode));
         }
         return string.IsNullOrWhiteSpace(payload)
@@ -311,6 +323,25 @@ public sealed class GitHubPullRequestService : IPullRequestService
             GetString(item, "body"),
             GetDate(item, "created_at"),
             Uri.TryCreate(htmlUrl, UriKind.Absolute, out Uri? uri) ? uri : null);
+    }
+
+    private static PullRequestCommit ParseCommit(JsonElement item)
+    {
+        JsonElement commit = item.TryGetProperty("commit", out JsonElement nestedCommit)
+            ? nestedCommit
+            : default;
+        JsonElement author = commit.ValueKind == JsonValueKind.Object &&
+                             commit.TryGetProperty("author", out JsonElement nestedAuthor)
+            ? nestedAuthor
+            : default;
+        string message = commit.ValueKind == JsonValueKind.Object ? GetString(commit, "message") : string.Empty;
+        string subject = message.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? message;
+        return new PullRequestCommit(
+            GetString(item, "sha"),
+            author.ValueKind == JsonValueKind.Object ? GetString(author, "name") : GetNestedString(item, "author", "login"),
+            author.ValueKind == JsonValueKind.Object ? GetString(author, "email") : string.Empty,
+            author.ValueKind == JsonValueKind.Object ? GetDate(author, "date") : DateTimeOffset.MinValue,
+            subject);
     }
 
     private static string ParseError(string payload, HttpStatusCode statusCode)

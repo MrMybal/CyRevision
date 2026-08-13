@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.1.9 Alpha — 2026-08-14
+
+- redesigned the Changes workspace for large repositories with dense list and folder views, tracked/untracked/local-only composition, lock ownership, selective staging, rollback and commit controls;
+- expanded branch inspection with local/remote publication and divergence state, search and sorting, inferred creation metadata, selected-branch commits and direct commit-explorer navigation without switching branches;
+- added a standalone Commit Explorer with searchable revisions, committed files, file history, selectable layouts, detachable live diff and reusable entry points from History, Branches, Pull Requests and Compose;
+- expanded Pull Request browsing with provider loading state, remote request discovery, status/details, files, patches, conversations and commit-explorer integration;
+- added a dedicated searchable Git LFS file-lock workspace with list/folder views, independent filters and sorting for project and personal locks, multi-selection and confirmed bulk unlock operations;
+- added a full Solution Explorer with tree/list views, file search, syntax-aware preview, excluded heavy build caches, automatic first load and configurable low-frequency refresh;
+- added project-scoped repository consoles with persistent command history plus searchable daily application logs stored outside repositories;
+- added per-project workspace persistence for the active tab, console/log section and code refresh policy;
+- added in-memory project session snapshots so returning to an already loaded project does not rescan Git, LFS or project tools; explicit Refresh and Fetch remain the source of updates;
+- accelerated text and commit diffs with cancellation of obsolete requests, bounded rendering, per-file/revision caches, independent history loading and faster no-rename Git queries;
+- improved large-project responsiveness with asynchronous loading, visible progress, corrected project/branch identity and safer handling of inaccessible directories.
+
 ## 0.1.8 Alpha â€” 2026-08-13
 
 - reorganized the desktop into clear Overview, Git, Code & Assets, Team & Network, and Extensions categories while keeping direct menu navigation;
