@@ -13,7 +13,8 @@ public sealed class CodeWorkspaceService
     private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         ".git", ".svn", ".hg", ".idea", ".vs", ".cache", "bin", "obj", "Binaries",
-        "Intermediate", "Saved", "DerivedDataCache", "node_modules", "packages", "Library", "Temp"
+        "Intermediate", "Saved", "DerivedDataCache", "node_modules", "packages", "Library", "Temp",
+        "BuildToolsOutput"
     };
 
     public Task<CodeWorkspaceSnapshot> BuildTreeAsync(
@@ -184,6 +185,10 @@ public sealed class CodeWorkspaceService
                 .ToArray();
         }
         catch (UnauthorizedAccessException)
+        {
+            return nodes;
+        }
+        catch (IOException)
         {
             return nodes;
         }

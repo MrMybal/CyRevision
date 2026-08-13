@@ -16,7 +16,9 @@ public sealed class CodeDiffView : UserControl
     public static readonly StyledProperty<string?> FilePathProperty =
         AvaloniaProperty.Register<CodeDiffView, string?>(nameof(FilePath));
 
-    private const int MaximumRenderedLines = 5000;
+    // Thousands of Avalonia controls make very large patches feel frozen. The complete
+    // patch stays cached in the view model; the interactive preview favors responsiveness.
+    private const int MaximumRenderedLines = 2000;
     private static readonly IBrush CanvasBrush = Brush("#0B1020");
     private static readonly IBrush ContextBrush = Brush("#101827");
     private static readonly IBrush AddedBrush = Brush("#123128");

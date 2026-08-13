@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using CyRevision.Desktop.ViewModels;
+using CyRevision.Git;
 
 namespace CyRevision.Desktop.Controls;
 
@@ -19,10 +20,31 @@ public enum MultiRestoreLayoutMode
 
 public partial class RevisionCompositionView : UserControl
 {
+    private MultiRestoreLayoutMode _multiRestoreLayout = MultiRestoreLayoutMode.Columns;
+    private FocusedDiffWindow? _multiRestoreDiffWindow;
+    private FocusedDiffWindow? _cherryPickDiffWindow;
+    private CommitExplorerWindow? _commitExplorerWindow;
+
+    public event EventHandler? DiffVisibilityChanged;
+
+    public bool IsMultiRestoreDiffVisible => MultiRestoreDiffToggle.IsChecked == true;
+    public bool IsCherryPickDiffVisible => CherryPickDiffToggle.IsChecked == true;
+
     public RevisionCompositionView()
     {
         InitializeComponent();
+        MultiRestoreDiffToggle.IsChecked = true;
+        CherryPickDiffToggle.IsChecked = true;
         ApplyMultiRestoreLayout(MultiRestoreLayoutMode.Columns);
+        ApplyCherryPickDiffVisibility();
+    }
+
+    public void SetDiffVisibility(bool multiRestore, bool cherryPick)
+    {
+        MultiRestoreDiffToggle.IsChecked = multiRestore;
+        CherryPickDiffToggle.IsChecked = cherryPick;
+        ApplyMultiRestoreLayout(_multiRestoreLayout);
+        ApplyCherryPickDiffVisibility();
     }
 
     public void SelectSection(RevisionCompositionSection section) =>
@@ -38,17 +60,98 @@ public partial class RevisionCompositionView : UserControl
 
     private void ApplyMultiRestoreLayout(MultiRestoreLayoutMode layout)
     {
+        _multiRestoreLayout = layout;
         MultiRestoreColumnsLayoutToggle.IsChecked = layout == MultiRestoreLayoutMode.Columns;
         MultiRestoreFilesLayoutToggle.IsChecked = layout == MultiRestoreLayoutMode.FilesFocus;
+        bool showDiff = MultiRestoreDiffToggle.IsChecked == true;
+        MultiRestoreDiffPanel.IsVisible = showDiff;
+        MultiRestoreFilesSplitter.IsVisible = showDiff;
         MultiRestoreWorkspaceGrid.ColumnDefinitions[0].Width = new GridLength(
             layout == MultiRestoreLayoutMode.Columns ? 0.72 : 0.48,
             GridUnitType.Star);
         MultiRestoreWorkspaceGrid.ColumnDefinitions[2].Width = new GridLength(
             layout == MultiRestoreLayoutMode.Columns ? 1.18 : 1.55,
             GridUnitType.Star);
-        MultiRestoreWorkspaceGrid.ColumnDefinitions[4].Width = new GridLength(
-            layout == MultiRestoreLayoutMode.Columns ? 1 : 0.82,
-            GridUnitType.Star);
+        MultiRestoreWorkspaceGrid.ColumnDefinitions[3].Width = new GridLength(showDiff ? 7 : 0);
+        MultiRestoreWorkspaceGrid.ColumnDefinitions[4].Width = showDiff
+            ? new GridLength(layout == MultiRestoreLayoutMode.Columns ? 1 : 0.82, GridUnitType.Star)
+            : new GridLength(0);
+    }
+
+    private void OnMultiRestoreDiffToggleClick(object? sender, RoutedEventArgs e)
+    {
+        ApplyMultiRestoreLayout(_multiRestoreLayout);
+        DiffVisibilityChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnCherryPickDiffToggleClick(object? sender, RoutedEventArgs e)
+    {
+        ApplyCherryPickDiffVisibility();
+        DiffVisibilityChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ApplyCherryPickDiffVisibility()
+    {
+        bool showDiff = CherryPickDiffToggle.IsChecked == true;
+        CherryPickDiffPanel.IsVisible = showDiff;
+        CherryPickDiffSplitter.IsVisible = showDiff;
+        if (CherryPickDiffPanel.Parent is Grid grid && grid.ColumnDefinitions.Count >= 3)
+        {
+            grid.ColumnDefinitions[0].Width = new GridLength(1.28, GridUnitType.Star);
+            grid.ColumnDefinitions[1].Width = new GridLength(showDiff ? 7 : 0);
+            grid.ColumnDefinitions[2].Width = showDiff
+                ? new GridLength(1, GridUnitType.Star)
+                : new GridLength(0);
+        }
+    }
+
+    private void OnOpenMultiRestoreDiffClick(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel?.SelectedMultiRestoreFile is not { } file || TopLevel.GetTopLevel(this) is not Window owner) return;
+        if (_multiRestoreDiffWindow is not null)
+        {
+            _multiRestoreDiffWindow.Activate();
+            return;
+        }
+        _multiRestoreDiffWindow = new FocusedDiffWindow(ViewModel, DiffWindowSource.MultiRestore);
+        _multiRestoreDiffWindow.Closed += (_, _) => _multiRestoreDiffWindow = null;
+        _multiRestoreDiffWindow.Show(owner);
+    }
+
+    private void OnOpenCherryPickDiffClick(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel?.SelectedCherryPickCommit is not { } commit || TopLevel.GetTopLevel(this) is not Window owner) return;
+        if (_cherryPickDiffWindow is not null)
+        {
+            _cherryPickDiffWindow.Activate();
+            return;
+        }
+        _cherryPickDiffWindow = new FocusedDiffWindow(ViewModel, DiffWindowSource.CherryPick);
+        _cherryPickDiffWindow.Closed += (_, _) => _cherryPickDiffWindow = null;
+        _cherryPickDiffWindow.Show(owner);
+    }
+
+    private void OnOpenMultiRestoreCommitExplorerClick(object? sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } viewModel || TopLevel.GetTopLevel(this) is not Window owner) return;
+        GitRevision? selected = viewModel.MultiRestoreCommit ?? viewModel.History.FirstOrDefault();
+        if (selected is null) return;
+
+        if (_commitExplorerWindow is null)
+        {
+            _commitExplorerWindow = new CommitExplorerWindow(viewModel, viewModel.History, selected);
+            _commitExplorerWindow.EnableComposeSelection(async (revision, files) =>
+            {
+                await viewModel.AddCommitExplorerFilesToMultiRestoreAsync(revision, files);
+                SelectSection(RevisionCompositionSection.MultiRestore);
+            });
+            _commitExplorerWindow.Closed += (_, _) => _commitExplorerWindow = null;
+            _commitExplorerWindow.Show(owner);
+            return;
+        }
+
+        _commitExplorerWindow.ShowRevisions(viewModel.History, selected);
+        _commitExplorerWindow.Activate();
     }
 
     private async void OnLoadMultiRestoreClick(object? sender, RoutedEventArgs e) =>

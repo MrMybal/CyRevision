@@ -85,6 +85,13 @@ public sealed record PullRequestComment(
     public string CreatedText => CreatedAt.LocalDateTime.ToString("g");
 }
 
+public sealed record PullRequestCommit(
+    string Hash,
+    string AuthorName,
+    string AuthorEmail,
+    DateTimeOffset AuthoredAt,
+    string Subject);
+
 public sealed record PullRequestDetails(
     PullRequestSummary Summary,
     string Body,
@@ -93,6 +100,7 @@ public sealed record PullRequestDetails(
     int ChangedFiles,
     int CommitCount,
     int CommentCount,
+    IReadOnlyList<PullRequestCommit> Commits,
     IReadOnlyList<PullRequestFile> Files,
     IReadOnlyList<PullRequestReview> Reviews,
     IReadOnlyList<PullRequestComment> Comments)

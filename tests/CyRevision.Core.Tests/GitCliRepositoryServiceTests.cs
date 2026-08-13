@@ -89,6 +89,59 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
             "README.md");
         Assert.Equal(3, readmeHistory.Count);
         Assert.Equal("Update documentation on main", readmeHistory[0].Revision.Subject);
+
+        IReadOnlyList<GitRevision> featureHistory = await service.GetHistoryForReferenceAsync(
+            _temporaryDirectory,
+            "feature/graph-test");
+        Assert.Equal("Update code on feature", featureHistory[0].Subject);
+        Assert.DoesNotContain(featureHistory, revision => revision.Subject == "Update documentation on main");
+    }
+
+    [Fact]
+    public void BranchPresentationDistinguishesLocalPublishedAndTrackingStates()
+    {
+        GitBranch local = new("feature/local", "1234567", false);
+        GitBranch ahead = new("feature/published", "7654321", true, false, "origin/feature/published", 3, 0, true);
+        GitBranch remote = new("origin/main", "abcdef0", false, true);
+
+        Assert.False(local.IsPublished);
+        Assert.Equal("Local only", local.PublicationStatus);
+        Assert.Contains("Not published", local.SyncStatus);
+        Assert.True(ahead.IsPublished);
+        Assert.Contains("↑3", ahead.SyncStatus);
+        Assert.Equal("Remote ref", remote.PublicationStatus);
+    }
+
+    [Fact]
+    public async Task StatusExpandsUntrackedFoldersAndDiscardRestoresTrackedAndUntrackedFiles()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable || !tools.LfsAvailable)
+        {
+            return;
+        }
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        string trackedPath = Path.Combine(_temporaryDirectory, "Source", "Tracked.cs");
+        string localPath = Path.Combine(_temporaryDirectory, "Saved", "local.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(trackedPath)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+        await File.WriteAllTextAsync(trackedPath, "original");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Initial", ["Source/Tracked.cs"]);
+
+        await File.WriteAllTextAsync(trackedPath, "modified");
+        await File.WriteAllTextAsync(localPath, "local-only");
+        GitRepositoryStatus status = await service.GetDetailedStatusAsync(_temporaryDirectory);
+        GitChange tracked = Assert.Single(status.Changes, item => item.Path == "Source/Tracked.cs");
+        GitChange untracked = Assert.Single(status.Changes, item => item.Path == "Saved/local.txt");
+
+        await service.DiscardChangesAsync(_temporaryDirectory, [tracked, untracked]);
+
+        Assert.Equal("original", await File.ReadAllTextAsync(trackedPath));
+        Assert.False(File.Exists(localPath));
+        Assert.Empty((await service.GetStatusAsync(_temporaryDirectory)).Changes);
     }
 
     [Fact]
@@ -306,6 +359,41 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
             "main");
         Assert.Equal(0, after.SourceOnlyCount);
         Assert.True(after.EquivalentCount >= 2);
+    }
+
+    [Fact]
+    public async Task BranchDetailsExposeExactTipAndClearlyInferredCreationMetadata()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable || !tools.LfsAvailable)
+        {
+            return;
+        }
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "Base Author", "base@cyrevision.local");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "base.txt"), "base");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Base", ["base.txt"]);
+
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/details");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "first.txt"), "first");
+        await service.CreateRevisionAsync(_temporaryDirectory, "First branch commit", ["first.txt"]);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "Latest Author", "latest@cyrevision.local");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "latest.txt"), "latest");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Latest branch commit", ["latest.txt"]);
+
+        GitBranchDetails details = await service.GetBranchDetailsAsync(
+            _temporaryDirectory,
+            "feature/details");
+
+        Assert.Equal("main", details.ComparisonBase);
+        Assert.Equal(2, details.UniqueCommitCount);
+        Assert.Equal("Base Author", details.InferredCreatorName);
+        Assert.NotNull(details.InferredCreatedAt);
+        Assert.Equal("Latest Author", details.LastAuthorName);
+        Assert.Equal("Latest branch commit", details.LastSubject);
+        Assert.NotNull(details.LastUpdatedAt);
     }
 
     public void Dispose()

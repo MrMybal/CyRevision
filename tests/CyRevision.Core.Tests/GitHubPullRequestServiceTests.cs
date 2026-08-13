@@ -106,6 +106,20 @@ public sealed class GitHubPullRequestServiceTests
         Assert.DoesNotContain("do-not-leak", exception.Message);
     }
 
+    [Fact]
+    public async Task PrivateRepositoryNotFoundExplainsHowToAuthenticate()
+    {
+        RecordingHandler handler = new(_ => Json(HttpStatusCode.NotFound, "{\"message\":\"Not Found\"}"));
+        await using GitHubPullRequestService service = new(handler);
+
+        PullRequestProviderException exception = await Assert.ThrowsAsync<PullRequestProviderException>(() =>
+            service.ListAsync(Repository(), PullRequestStateFilter.All, null));
+
+        Assert.Equal(HttpStatusCode.NotFound, exception.StatusCode);
+        Assert.Contains("private", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("session token", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static PullRequestRepository Repository() => new(
         "GitHub",
         "github.com",

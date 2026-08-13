@@ -1,0 +1,177 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:CyRevision.Desktop.Controls"
+        x:Class="CyRevision.Desktop.CommitExplorerWindow"
+        x:CompileBindings="False"
+        Title="Commit Explorer"
+        Icon="/Assets/Branding/cyrevision.ico"
+        Width="1500"
+        Height="880"
+        MinWidth="980"
+        MinHeight="620"
+        Background="#1E1F22"
+        WindowStartupLocation="CenterOwner">
+    <Window.Styles>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#25272A" />
+            <Setter Property="BorderBrush" Value="#3A3D43" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="5" />
+        </Style>
+        <Style Selector="Button.secondary">
+            <Setter Property="Background" Value="#393B40" />
+            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="9,5" />
+            <Setter Property="MinHeight" Value="26" />
+        </Style>
+        <Style Selector="DataGrid.compact DataGridRow">
+            <Setter Property="MinHeight" Value="25" />
+        </Style>
+        <Style Selector="DataGrid.compact DataGridCell">
+            <Setter Property="Padding" Value="5,2" />
+            <Setter Property="FontSize" Value="10" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="#9B9DA3" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="52,38,36,*,24">
+        <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="12,0">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Commit Explorer" FontSize="15" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <TextBlock Text="{Binding CurrentProjectName}" Foreground="#DFE1E5" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding CurrentBranch}" Foreground="#78D7B7" />
+                        <TextBlock Text="Read-only · selection never switches branches" Classes="muted" FontSize="9" />
+                    </StackPanel>
+                </StackPanel>
+                <CheckBox x:Name="AlwaysOnTopToggle" Grid.Column="1" Content="Always on top"
+                          VerticalAlignment="Center" Click="OnAlwaysOnTopClick" />
+                <Button Grid.Column="2" Classes="secondary" Content="Close" Click="OnCloseClick" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="8,5">
+            <TextBox Text="{Binding ExplorerSearch, UpdateSourceTrigger=PropertyChanged}"
+                     PlaceholderText="Search commit message, author or hash…" />
+            <TextBlock Grid.Column="1" Text="{Binding ExplorerSummary}" Classes="muted"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="650" />
+        </Grid>
+
+        <Border Grid.Row="2" Background="#26282B" BorderBrush="#393B40" BorderThickness="0,1" Padding="8,4">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,1,Auto,Auto,Auto,*" ColumnSpacing="6">
+                <TextBlock Text="LAYOUT" Classes="muted" FontSize="9" FontWeight="Bold" VerticalAlignment="Center" />
+                <ToggleButton x:Name="ColumnsLayoutToggle" Grid.Column="1" Classes="layoutChoice" Content="Columns"
+                              IsChecked="True" Click="OnColumnsLayoutClick" />
+                <ToggleButton x:Name="ReviewLayoutToggle" Grid.Column="2" Classes="layoutChoice" Content="Review"
+                              Click="OnReviewLayoutClick" />
+                <Border Grid.Column="3" Width="1" Background="#4B4D52" Margin="4,0" />
+                <ToggleButton x:Name="DiffToggle" Grid.Column="4" Classes="layoutChoice" Content="Diff"
+                              IsChecked="True" Click="OnDiffToggleClick" />
+                <Button Grid.Column="5" Classes="secondary" Content="Open diff ↗" Click="OnOpenDiffClick" />
+                <Button x:Name="AddToComposeButton" Grid.Column="6" Classes="secondary"
+                        Content="Add selected to Compose" IsVisible="False" Click="OnAddToComposeClick" />
+                <TextBlock Grid.Column="7" Text="Selection and external diff stay synchronized" Classes="muted"
+                           HorizontalAlignment="Right" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <Grid x:Name="ExplorerWorkspaceGrid" Grid.Row="3" Margin="8,3,8,7"
+              ColumnDefinitions="0.9*,7,1.05*,7,1.35*" RowDefinitions="*,7,*">
+            <Border x:Name="CommitsPanel" Classes="card" Padding="0" ClipToBounds="True">
+                <Grid RowDefinitions="36,*">
+                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                        <TextBlock Text="Commits" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </Border>
+                    <DataGrid x:Name="CommitList" Grid.Row="1" Classes="compact"
+                              ItemsSource="{Binding CommitExplorerRevisions}"
+                              SelectedItem="{Binding SelectedCommitExplorerRevision, Mode=TwoWay}" AutoGenerateColumns="False"
+                              IsReadOnly="True" GridLinesVisibility="Horizontal" BorderThickness="0"
+                              Background="Transparent">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Commit" Binding="{Binding ShortHash}" Width="68" />
+                            <DataGridTextColumn Header="Description" Binding="{Binding Subject}" Width="*" />
+                            <DataGridTextColumn Header="Author" Binding="{Binding AuthorName}" Width="100" />
+                            <DataGridTextColumn Header="Date" Binding="{Binding AuthoredAt}" Width="130" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <GridSplitter x:Name="FirstSplitter" Grid.Column="1" Width="7" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                          Background="#4B4D52" Cursor="SizeWestEast" />
+
+            <Border x:Name="FilesPanel" Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                <Grid RowDefinitions="36,*">
+                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Committed files" FontSize="12" FontWeight="SemiBold" />
+                            <TextBlock Text="Select a file to update the diff" Classes="muted" FontSize="8.5" />
+                        </StackPanel>
+                    </Border>
+                    <TabControl Grid.Row="1" Padding="0">
+                        <TabItem Header="Files">
+                            <DataGrid x:Name="FilesList" Classes="compact" ItemsSource="{Binding ExplorerFiles}"
+                                      SelectedItem="{Binding SelectedExplorerFile}" AutoGenerateColumns="False"
+                                      SelectionMode="Extended"
+                                      IsReadOnly="True" GridLinesVisibility="Horizontal" BorderThickness="0"
+                                      Background="Transparent">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="State" Binding="{Binding Kind}" Width="76" />
+                                    <DataGridTextColumn Header="File" Binding="{Binding Path}" Width="*" />
+                                    <DataGridTextColumn Header="Change" Binding="{Binding ChangeSummary}" Width="92" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+                        <TabItem Header="File history">
+                            <DataGrid Classes="compact" ItemsSource="{Binding ExplorerFileHistory}"
+                                      AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                      BorderThickness="0" Background="Transparent">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Commit" Binding="{Binding Revision.ShortHash}" Width="70" />
+                                    <DataGridTextColumn Header="Description" Binding="{Binding Revision.Subject}" Width="*" />
+                                    <DataGridTextColumn Header="Date" Binding="{Binding Revision.AuthoredAt}" Width="130" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+            </Border>
+
+            <GridSplitter x:Name="SecondSplitter" Grid.Column="3" Width="7" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                          Background="#4B4D52" Cursor="SizeWestEast" />
+
+            <Border x:Name="DiffPanel" Grid.Column="4" Classes="card" Padding="0" ClipToBounds="True">
+                <Grid RowDefinitions="36,Auto,*">
+                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Selected file diff" FontSize="12" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding SelectedExplorerFile.Path}" Classes="muted" FontSize="8.5"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="Unified / side-by-side available" Foreground="#78D7B7"
+                                       FontSize="8.5" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                    <Border Grid.Row="1" IsVisible="{Binding IsExplorerAnyLoading}" Background="#202633" Padding="8,4">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                            <TextBlock Text="Loading diff…" Classes="muted" FontSize="9" />
+                            <ProgressBar Grid.Column="1" IsIndeterminate="True" Height="4" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                    <controls:CodeDiffView Grid.Row="2" DiffText="{Binding ExplorerDiff}"
+                                           FilePath="{Binding SelectedExplorerFile.Path}" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="4" Background="#24262A" BorderBrush="#393B40" BorderThickness="0,1,0,0" Padding="8,0">
+            <TextBlock Text="{Binding RepositoryPath}" Classes="muted" FontSize="8.5" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+        </Border>
+    </Grid>
+</Window>

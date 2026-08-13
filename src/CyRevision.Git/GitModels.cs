@@ -38,7 +38,71 @@ public sealed record GitBranch(
     string Name,
     string ShortCommitHash,
     bool IsCurrent,
-    bool IsRemote = false);
+    bool IsRemote = false,
+    string? RemoteName = null,
+    int AheadBy = 0,
+    int BehindBy = 0,
+    bool IsTrackingRemote = false,
+    string TipAuthorName = "Unknown",
+    DateTimeOffset? TipAuthoredAt = null,
+    string TipSubject = "")
+{
+    public string Scope => IsRemote ? "Remote" : IsCurrent ? "Current" : "Local";
+    public string DisplayColor => IsCurrent ? "#78D7B7" : IsRemote ? "#61AFEF" : "#DFE1E5";
+    public bool IsPublished => IsRemote || !string.IsNullOrWhiteSpace(RemoteName);
+    public string PublicationStatus => IsRemote ? "Remote ref" : IsPublished ? "Published" : "Local only";
+    public string SyncStatus => IsRemote
+        ? "Read-only remote reference"
+        : !IsPublished
+            ? "Not published"
+            : !IsTrackingRemote
+                ? "Remote available · not tracking"
+            : AheadBy == 0 && BehindBy == 0
+                ? "Up to date"
+                : AheadBy > 0 && BehindBy > 0
+                    ? $"Diverged · ↑{AheadBy} ↓{BehindBy}"
+                    : AheadBy > 0
+                        ? $"{AheadBy} commit(s) to push · ↑{AheadBy}"
+                        : $"{BehindBy} commit(s) to pull · ↓{BehindBy}";
+    public string TrackingText => IsRemote
+        ? Name
+        : string.IsNullOrWhiteSpace(RemoteName)
+            ? "No remote branch"
+            : !IsTrackingRemote
+                ? $"{RemoteName} · tracking not configured"
+                : $"{RemoteName} · ↑{AheadBy} ↓{BehindBy}";
+    public string PublicationColor => IsRemote
+        ? "#61AFEF"
+        : !IsPublished
+            ? "#E5C07B"
+            : !IsTrackingRemote
+                ? "#F2C66D"
+            : AheadBy == 0 && BehindBy == 0 ? "#78D7B7" : "#F2C66D";
+    public string TipUpdateText => TipAuthoredAt is null
+        ? $"Last commit by {TipAuthorName}"
+        : $"Updated {TipAuthoredAt.Value.ToLocalTime():g} by {TipAuthorName}";
+}
+
+public sealed record GitBranchDetails(
+    string BranchName,
+    string? ComparisonBase,
+    int UniqueCommitCount,
+    string? InferredCreatorName,
+    DateTimeOffset? InferredCreatedAt,
+    string LastAuthorName,
+    DateTimeOffset? LastUpdatedAt,
+    string LastSubject)
+{
+    public string ComparisonBaseText => ComparisonBase ?? "No suitable base detected";
+    public string UniqueCommitText => ComparisonBase is null
+        ? "Unknown"
+        : $"{UniqueCommitCount:N0} commit(s) ahead";
+    public string CreatorText => string.IsNullOrWhiteSpace(InferredCreatorName)
+        ? "Unknown · Git stores no branch creator"
+        : $"{InferredCreatorName} · inferred";
+    public string CreatedText => InferredCreatedAt?.ToLocalTime().ToString("g") ?? "Unknown";
+    public string UpdatedText => LastUpdatedAt?.ToLocalTime().ToString("g") ?? "Unknown";
+}
 
 public sealed record GitToolAvailability(
     bool GitAvailable,
@@ -59,9 +123,18 @@ public sealed record LfsFileLock(
     public string Ownership => IsOurs ? "Mine" : "Other user";
     public string Source => IsCached ? "Cached" : "Live";
     public string LockedAtText => LockedAt?.ToLocalTime().ToString("g") ?? "Unknown";
-    public string ShortId => Id.Length > 10 ? Id[..10] + "â€¦" : Id;
-    public string UnlockAction => IsOurs ? "Unlock" : "Force unlockâ€¦";
+    public string ShortId => Id.Length > 10 ? Id[..10] + "…" : Id;
+    public string UnlockAction => IsOurs ? "Unlock" : "Force unlock…";
     public string OwnershipColor => IsOurs ? "#78D7B7" : "#E5C07B";
+    public string OwnerColor => IsOurs ? "#78D7B7" : "#61AFEF";
+    public string FileColor => System.IO.Path.GetExtension(Path).ToLowerInvariant() switch
+    {
+        ".uasset" or ".umap" => "#C678DD",
+        ".png" or ".jpg" or ".jpeg" or ".tga" or ".exr" => "#E06C75",
+        ".fbx" or ".obj" or ".gltf" or ".glb" => "#E5C07B",
+        ".wav" or ".mp3" or ".ogg" => "#56B6C2",
+        _ => "#DFE1E5"
+    };
 }
 
 public sealed record GitGraphCommit(

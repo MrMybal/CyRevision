@@ -8,6 +8,14 @@ public interface IGitRepositoryService
 
     Task<GitRepositoryStatus> GetStatusAsync(string repositoryPath, CancellationToken cancellationToken = default);
 
+    Task<GitRepositoryStatus> GetQuickStatusAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task<GitRepositoryStatus> GetDetailedStatusAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
     Task ConfigureIdentityAsync(
         string repositoryPath,
         string userName,
@@ -24,6 +32,11 @@ public interface IGitRepositoryService
         IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default);
 
+    Task DiscardChangesAsync(
+        string repositoryPath,
+        IReadOnlyCollection<GitChange> changes,
+        CancellationToken cancellationToken = default);
+
     Task CreateRevisionAsync(
         string repositoryPath,
         string message,
@@ -32,6 +45,17 @@ public interface IGitRepositoryService
 
     Task<IReadOnlyList<GitRevision>> GetHistoryAsync(
         string repositoryPath,
+        int maximumCount = 200,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<GitRevision>> GetHistoryAcrossRefsAsync(
+        string repositoryPath,
+        int maximumCount = 500,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<GitRevision>> GetHistoryForReferenceAsync(
+        string repositoryPath,
+        string reference,
         int maximumCount = 200,
         CancellationToken cancellationToken = default);
 
@@ -106,6 +130,11 @@ public interface IGitRepositoryService
 
     Task<IReadOnlyList<GitBranch>> GetBranchesAsync(
         string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task<GitBranchDetails> GetBranchDetailsAsync(
+        string repositoryPath,
+        string branchName,
         CancellationToken cancellationToken = default);
 
     Task CreateBranchAsync(

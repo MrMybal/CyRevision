@@ -1,6 +1,9 @@
 using System.Collections.ObjectModel;
+using System.Collections;
 using System.Diagnostics;
 using System.Net.Sockets;
+using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -9,9 +12,11 @@ using CyRevision.Core.Configuration;
 using CyRevision.Core.Projects;
 using CyRevision.Core.Updates;
 using CyRevision.Code;
+using CyRevision.Desktop.Diagnostics;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.Documentation;
 using CyRevision.Desktop.Plugins;
+using CyRevision.Desktop.Workspace;
 using CyRevision.Diff;
 using CyRevision.Discord;
 using CyRevision.Discord.Control;
@@ -57,10 +62,25 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly CyRevisionPluginManager _pluginManager;
     private readonly CodeWorkspaceService _codeWorkspaceService;
     private readonly IPullRequestService _pullRequestService;
+    private readonly LocalChangePreferencesStore _localChangePreferencesStore;
+    private readonly ApplicationLogService _applicationLogService;
+    private readonly RepositoryConsoleService _repositoryConsoleService;
     private readonly string? _initialProjectPath;
+    private readonly HashSet<string> _localOnlyChangePaths = new(StringComparer.OrdinalIgnoreCase);
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
+    private int _selectedDiffLoadVersion;
+    private GitChangeTreeNode? _selectedChangeTreeNode;
     private GitBranch? _selectedBranch;
+    private GitRevision? _selectedBranchRevision;
+    private string _changeSearch = string.Empty;
+    private string _changeSort = "File";
+    private string _branchSearch = string.Empty;
+    private string _branchSort = "Name";
+    private string _selectedBranchSummary = "Select a branch to inspect its commits without switching.";
+    private GitBranchDetails? _selectedBranchDetails;
+    private int _selectedBranchHistoryLoadVersion;
+    private bool _isChangesDiffPreviewEnabled = true;
     private BackupSnapshotViewModel? _selectedBackup;
     private bool _isBusy;
     private string _statusMessage = "Initialisation…";
@@ -68,6 +88,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _currentBranch = "—";
     private string _repositoryPath = "Aucun projet ouvert";
     private string _changeSummary = "0 modification";
+    private string _changeSummaryColor = "#A9ABB2";
+    private string _currentProjectName = "No project";
+    private bool _isProjectLoading;
+    private double _projectLoadProgress;
+    private string _projectLoadStage = "No project selected";
+    private bool _includeRemoteHistory;
+    private bool _isLfsInventoryLoaded;
+    private string _changePreparationSummary = "No files selected for commit.";
     private string _commitMessage = string.Empty;
     private string _diffText = "Sélectionnez un fichier pour afficher son diff.";
     private string _lfsPattern = "*.uasset";
@@ -113,9 +141,15 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private IReadOnlyList<UnrealAssetNode> _unrealAssets = [];
     private string _unrealDependencySummary = "Analyse Unreal hors moteur non lancée.";
     private IReadOnlyList<GitRevision> _allExplorerRevisions = [];
+    private IReadOnlyList<GitRevision> _commitExplorerSourceRevisions = [];
     private GitRevision? _selectedExplorerRevision;
+    private GitRevision? _selectedCommitExplorerRevision;
     private GitRevision? _selectedComparisonRevision;
     private GitCommitFileChange? _selectedExplorerFile;
+    private int _explorerRevisionLoadVersion;
+    private int _explorerFileLoadVersion;
+    private bool _isExplorerLoading;
+    private bool _isExplorerDiffLoading;
     private string _explorerSearch = string.Empty;
     private string _explorerSummary = "Sélectionnez une révision pour l'inspecter.";
     private string _explorerDiff = "Le diff de la révision apparaîtra ici.";
@@ -127,6 +161,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private GitMultiRestorePlan? _multiRestorePlan;
     private string _multiRestoreSummary = "Choose a commit to compose a safe multi-file restore.";
     private string _multiRestoreDiff = "Select a file to review the change before composing the restore.";
+    private bool _isMultiRestoreDiffLoading;
+    private int _multiRestoreDiffLoadVersion;
     private bool _multiRestoreOverwriteLocalChanges;
     private GitBranch? _branchCompareSource;
     private GitBranch? _branchCompareTarget;
@@ -138,10 +174,23 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _branchComparisonSummary = "Choose a source and target branch to compare their commits.";
     private string _cherryPickPlanSummary = "Compare branches, then select the source-only commits to apply.";
     private string _cherryPickDiff = "Select a commit to inspect its patch.";
+    private bool _isCherryPickDiffLoading;
+    private int _cherryPickDiffLoadVersion;
     private LfsTrackedFile? _selectedLfsFile;
     private LfsFileVersion? _selectedLfsVersion;
     private string _lfsTimelineSummary = "Sélectionnez un fichier LFS pour afficher ses versions.";
     private string _lfsLocksSummary = "Git LFS locks have not been loaded.";
+    private string _lfsLockSearch = string.Empty;
+    private string _lfsLockSort = "File";
+    private string _allLfsLockSearch = string.Empty;
+    private string _myLfsLockSearch = string.Empty;
+    private string _allLfsLockSort = "File name";
+    private string _myLfsLockSort = "File name";
+    private string _lfsLockFilterSummary = "No locks loaded.";
+    private int _selectedProjectLockCount;
+    private int _selectedMyLockCount;
+    private IReadOnlyList<LfsFileLock> _selectedProjectLocks = [];
+    private IReadOnlyList<LfsFileLock> _selectedMyLocks = [];
     private Bitmap? _lfsPreview;
     private LfsHistoryTransferMode _selectedLfsHistoryMode = LfsHistoryTransferMode.OnDemand;
     private string _smartSyncRecentVersionCount = "3";
@@ -219,6 +268,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private RemoteBuildCredentials? _currentRemoteBuildCredentials;
     private RemoteBuildJobStatus? _currentRemoteBuildJob;
     private CancellationTokenSource? _remoteBuildCancellation;
+    private CancellationTokenSource? _projectLoadCancellation;
+    private int _projectLoadVersion;
     private string _remoteBuildEndpoint = "http://127.0.0.1:47841";
     private string _remoteBuildAccessToken = string.Empty;
     private string _remoteBuildRecipeId = string.Empty;
@@ -272,6 +323,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private UnrealProjectInspection? _unrealProjectInspection;
     private IUnrealIntegrationPlugin? _subscribedUnrealPlugin;
     private CancellationTokenSource? _codeSearchCancellation;
+    private CancellationTokenSource? _codeWorkspaceCancellation;
+    private readonly Dictionary<Guid, CachedCodeWorkspace> _codeWorkspaceCache = [];
+    private readonly Dictionary<Guid, CachedProjectSession> _projectSessionCache = [];
+    private readonly Dictionary<Guid, GitRepositoryStatus> _latestProjectStatuses = [];
+    private readonly HashSet<Guid> _loadedProjectSessions = [];
+    private bool _isRestoringProjectSession;
+    private string _codeAutoRefreshFrequency = "Low · 5 min";
+    private DateTimeOffset? _codeWorkspaceLastUpdated;
     private CancellationTokenSource? _aiAgentCancellation;
     private CodeTreeNode? _selectedCodeNode;
     private CodeSearchResult? _selectedCodeSearchResult;
@@ -288,6 +347,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _codePreviewText = string.Empty;
     private string _codePreviewSummary = "Select a file to preview it.";
     private string _codeSelectionSummary = "Select lines in the preview, then request their Git history.";
+    private bool _isCodeWorkspaceLoading;
     private bool _isAiIntegrationEnabled;
     private AiProviderDescriptor? _selectedAiProvider;
     private string _aiModel = string.Empty;
@@ -308,6 +368,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private bool _aiMcpBlockUnmanagedServers = true;
     private string _aiMcpStatus = "MCP is disabled for this project.";
     private PullRequestRepository? _pullRequestRepository;
+    private string? _pullRequestCredentialToken;
     private PullRequestSummary? _selectedPullRequest;
     private PullRequestFile? _selectedPullRequestFile;
     private PullRequestDetails? _selectedPullRequestDetails;
@@ -315,10 +376,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private PullRequestMergeMethod _pullRequestMergeMethod = PullRequestMergeMethod.Squash;
     private PullRequestReviewAction _pullRequestReviewAction = PullRequestReviewAction.Comment;
     private string _pullRequestStatus = "Select a GitHub-backed project to manage pull requests.";
+    private bool _isPullRequestLoading;
+    private int _pullRequestLoadCount;
+    private string _pullRequestSearch = string.Empty;
     private string _pullRequestApiBaseUrl = string.Empty;
     private string _pullRequestToken = string.Empty;
     private string _pullRequestTokenEnvironmentVariable = "GITHUB_TOKEN";
     private string _pullRequestPatch = "Select a changed file to inspect its patch.";
+    private bool _isPullRequestDiffPreviewEnabled = true;
     private string _newPullRequestTitle = string.Empty;
     private string _newPullRequestBody = string.Empty;
     private string _newPullRequestHeadBranch = string.Empty;
@@ -327,6 +392,26 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _pullRequestComment = string.Empty;
     private string _pullRequestReviewBody = string.Empty;
     private int _pullRequestDetailsLoadVersion;
+    private bool _isWorkingTreeDiffLoading;
+    private CancellationTokenSource? _workingTreeDiffCancellation;
+    private CancellationTokenSource? _explorerFileCancellation;
+    private readonly Dictionary<string, string> _diffCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<GitFileRevision>> _fileHistoryCache = new(StringComparer.Ordinal);
+    private int _workingTreeDiffGeneration;
+    private CancellationTokenSource? _repositoryConsoleCancellation;
+    private readonly Dictionary<Guid, StringBuilder> _repositoryConsoleOutputBuffers = [];
+    private readonly Dictionary<Guid, string> _repositoryConsoleStatuses = [];
+    private string _repositoryConsoleCommand = string.Empty;
+    private string _repositoryConsoleOutput = "Select a project to open its repository console.";
+    private string _repositoryConsoleStatus = "Console ready.";
+    private string _selectedRepositoryShell = OperatingSystem.IsWindows() ? "PowerShell" : "Bash";
+    private bool _isRepositoryConsoleRunning;
+    private string _repositoryConsoleHistorySearch = string.Empty;
+    private RepositoryCommandHistoryEntry? _selectedRepositoryCommand;
+    private int _repositoryHistoryNavigationIndex = -1;
+    private string _applicationLogSearch = string.Empty;
+    private string _applicationLogLevelFilter = "All";
+    private ApplicationLogEntry? _selectedApplicationLogEntry;
 
     public MainWindowViewModel(
         IProjectCatalog projectCatalog,
@@ -359,6 +444,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         CyRevisionPluginManager pluginManager,
         CodeWorkspaceService codeWorkspaceService,
         IPullRequestService pullRequestService,
+        ApplicationLogService applicationLogService,
+        RepositoryConsoleService repositoryConsoleService,
         string? initialProjectPath = null)
     {
         _projectCatalog = projectCatalog;
@@ -391,6 +478,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _pluginManager = pluginManager;
         _codeWorkspaceService = codeWorkspaceService;
         _pullRequestService = pullRequestService;
+        _applicationLogService = applicationLogService;
+        _repositoryConsoleService = repositoryConsoleService;
+        _localChangePreferencesStore = new LocalChangePreferencesStore(applicationPaths.ConfigurationDirectory);
+        _applicationLogService.EntryWritten += OnApplicationLogEntryWritten;
+        ReplaceCollection(ApplicationLogEntries, _applicationLogService.LoadRecent());
+        ApplyApplicationLogFilter();
         _discordAgent.StatusChanged += OnDiscordAgentStatusChanged;
         _selectedLanguage = localization.Languages.FirstOrDefault(language =>
             string.Equals(language.Code, localization.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase));
@@ -402,15 +495,39 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<GitChangeViewModel> Changes { get; } = [];
 
+    public ObservableCollection<GitChangeViewModel> PreparedChanges { get; } = [];
+
+    public ObservableCollection<GitChangeViewModel> FilteredPreparedChanges { get; } = [];
+
+    public ObservableCollection<GitChangeViewModel> LocalOnlyChanges { get; } = [];
+
+    public ObservableCollection<GitChangeViewModel> FilteredLocalOnlyChanges { get; } = [];
+
+    public ObservableCollection<GitChangeTreeNode> ChangeTree { get; } = [];
+
     public ObservableCollection<GitRevision> History { get; } = [];
 
+    public ObservableCollection<GitRevision> CommitExplorerRevisions { get; } = [];
+
     public ObservableCollection<GitBranch> Branches { get; } = [];
+
+    public ObservableCollection<GitBranch> FilteredBranches { get; } = [];
+
+    public ObservableCollection<GitRevision> SelectedBranchHistory { get; } = [];
 
     public ObservableCollection<LfsTrackedPattern> LfsPatterns { get; } = [];
 
     public ObservableCollection<LfsFileLock> LfsLocks { get; } = [];
 
     public ObservableCollection<LfsFileLock> MyLfsLocks { get; } = [];
+
+    public ObservableCollection<LfsFileLock> FilteredLfsLocks { get; } = [];
+
+    public ObservableCollection<LfsFileLock> FilteredMyLfsLocks { get; } = [];
+
+    public ObservableCollection<LfsLockTreeNode> LfsLockTree { get; } = [];
+
+    public ObservableCollection<LfsLockTreeNode> MyLfsLockTree { get; } = [];
 
     public ObservableCollection<GitCommitFileChange> ExplorerFiles { get; } = [];
 
@@ -452,11 +569,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<CodeTreeNode> CodeTree { get; } = [];
 
+    public ObservableCollection<CodeTreeNode> CodeFileList { get; } = [];
+
     public ObservableCollection<CodeSearchResult> CodeSearchResults { get; } = [];
 
     public ObservableCollection<CodeHistoryEntry> CodeHistory { get; } = [];
 
     public ObservableCollection<CodeSymbol> CodeSymbols { get; } = [];
+
+    public IReadOnlyList<string> CodeAutoRefreshFrequencies { get; } =
+        ["Off", "Low · 5 min", "10 min", "30 min"];
 
     public ObservableCollection<AiProviderDescriptor> AiProviders { get; } = [];
 
@@ -464,17 +586,43 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<PullRequestSummary> PullRequests { get; } = [];
 
+    public ObservableCollection<PullRequestSummary> FilteredPullRequests { get; } = [];
+
     public ObservableCollection<PullRequestFile> PullRequestFiles { get; } = [];
 
     public ObservableCollection<PullRequestReview> PullRequestReviews { get; } = [];
 
     public ObservableCollection<PullRequestComment> PullRequestComments { get; } = [];
 
+    public ObservableCollection<GitRevision> PullRequestCommitRevisions { get; } = [];
+
+    public ObservableCollection<RepositoryCommandHistoryEntry> RepositoryCommandHistory { get; } = [];
+
+    public ObservableCollection<RepositoryCommandHistoryEntry> FilteredRepositoryCommandHistory { get; } = [];
+
+    public ObservableCollection<ApplicationLogEntry> ApplicationLogEntries { get; } = [];
+
+    public ObservableCollection<ApplicationLogEntry> FilteredApplicationLogEntries { get; } = [];
+
+    public IReadOnlyList<string> RepositoryShells { get; } = OperatingSystem.IsWindows()
+        ? ["PowerShell", "Command Prompt"]
+        : OperatingSystem.IsMacOS() ? ["Zsh", "Bash"] : ["Bash"];
+
+    public IReadOnlyList<string> ApplicationLogLevelFilters { get; } =
+        ["All", "Debug", "Information", "Warning", "Error"];
+
     public IReadOnlyList<PullRequestStateFilter> PullRequestStateFilters { get; } = Enum.GetValues<PullRequestStateFilter>();
 
     public IReadOnlyList<PullRequestMergeMethod> PullRequestMergeMethods { get; } = Enum.GetValues<PullRequestMergeMethod>();
 
     public IReadOnlyList<PullRequestReviewAction> PullRequestReviewActions { get; } = Enum.GetValues<PullRequestReviewAction>();
+
+    public IReadOnlyList<string> ChangeSortOptions { get; } = ["File", "State", "Lock", "Area"];
+
+    public IReadOnlyList<string> BranchSortOptions { get; } =
+        ["Name", "Status", "Last update", "Last author", "Ahead", "Behind"];
+
+    public IReadOnlyList<string> LfsLockSortOptions { get; } = ["Owner", "File name", "Locked by", "Date", "Source", "ID"];
 
     public IReadOnlyList<AiMcpTransport> AiMcpTransports { get; } = Enum.GetValues<AiMcpTransport>();
 
@@ -568,7 +716,28 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                     SelectedComparisonRevision = History.FirstOrDefault(revision => revision.Hash != value.Hash);
                 }
 
-                _ = LoadExplorerRevisionAsync(value);
+                int loadVersion = Interlocked.Increment(ref _explorerRevisionLoadVersion);
+                _ = LoadExplorerRevisionAsync(value, loadVersion);
+            }
+        }
+    }
+
+    public GitRevision? SelectedCommitExplorerRevision
+    {
+        get => _selectedCommitExplorerRevision;
+        set
+        {
+            if (SetProperty(ref _selectedCommitExplorerRevision, value) && value is not null)
+            {
+                if (SelectedExplorerRevision?.Hash == value.Hash)
+                {
+                    int loadVersion = Interlocked.Increment(ref _explorerRevisionLoadVersion);
+                    _ = LoadExplorerRevisionAsync(value, loadVersion);
+                }
+                else
+                {
+                    SelectedExplorerRevision = value;
+                }
             }
         }
     }
@@ -586,7 +755,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             if (SetProperty(ref _selectedExplorerFile, value))
             {
-                _ = LoadExplorerFileAsync(value);
+                int loadVersion = Interlocked.Increment(ref _explorerFileLoadVersion);
+                _ = LoadExplorerFileAsync(value, loadVersion);
             }
         }
     }
@@ -599,6 +769,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             if (SetProperty(ref _explorerSearch, value))
             {
                 ApplyExplorerFilter();
+                ApplyCommitExplorerFilter();
             }
         }
     }
@@ -614,6 +785,26 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         get => _explorerDiff;
         private set => SetProperty(ref _explorerDiff, value);
     }
+
+    public bool IsExplorerLoading
+    {
+        get => _isExplorerLoading;
+        private set
+        {
+            if (SetProperty(ref _isExplorerLoading, value)) OnPropertyChanged(nameof(IsExplorerAnyLoading));
+        }
+    }
+
+    public bool IsExplorerDiffLoading
+    {
+        get => _isExplorerDiffLoading;
+        private set
+        {
+            if (SetProperty(ref _isExplorerDiffLoading, value)) OnPropertyChanged(nameof(IsExplorerAnyLoading));
+        }
+    }
+
+    public bool IsExplorerAnyLoading => IsExplorerLoading || IsExplorerDiffLoading;
 
     public GitRevision? MultiRestoreCommit
     {
@@ -651,6 +842,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _multiRestoreDiff;
         private set => SetProperty(ref _multiRestoreDiff, value);
+    }
+
+    public bool IsMultiRestoreDiffLoading
+    {
+        get => _isMultiRestoreDiffLoading;
+        private set => SetProperty(ref _isMultiRestoreDiffLoading, value);
     }
 
     public bool MultiRestoreOverwriteLocalChanges
@@ -752,6 +949,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         private set => SetProperty(ref _cherryPickDiff, value);
     }
 
+    public bool IsCherryPickDiffLoading
+    {
+        get => _isCherryPickDiffLoading;
+        private set => SetProperty(ref _isCherryPickDiffLoading, value);
+    }
+
     public bool CanApplyCherryPick => _cherryPickPlan?.CanApply == true;
 
     public LfsTrackedFile? SelectedLfsFile
@@ -791,6 +994,92 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _lfsLocksSummary;
         private set => SetProperty(ref _lfsLocksSummary, value);
+    }
+
+    public string LfsLockSearch
+    {
+        get => _lfsLockSearch;
+        set
+        {
+            if (SetProperty(ref _lfsLockSearch, value))
+            {
+                ApplyLfsLockFilter();
+            }
+        }
+    }
+
+    public string LfsLockSort
+    {
+        get => _lfsLockSort;
+        set
+        {
+            if (SetProperty(ref _lfsLockSort, value)) ApplyLfsLockFilter();
+        }
+    }
+
+    public string AllLfsLockSearch
+    {
+        get => _allLfsLockSearch;
+        set
+        {
+            if (SetProperty(ref _allLfsLockSearch, value)) ApplyLfsLockFilter();
+        }
+    }
+
+    public string MyLfsLockSearch
+    {
+        get => _myLfsLockSearch;
+        set
+        {
+            if (SetProperty(ref _myLfsLockSearch, value)) ApplyLfsLockFilter();
+        }
+    }
+
+    public string AllLfsLockSort
+    {
+        get => _allLfsLockSort;
+        set
+        {
+            if (SetProperty(ref _allLfsLockSort, value)) ApplyLfsLockFilter();
+        }
+    }
+
+    public string MyLfsLockSort
+    {
+        get => _myLfsLockSort;
+        set
+        {
+            if (SetProperty(ref _myLfsLockSort, value)) ApplyLfsLockFilter();
+        }
+    }
+
+    public int SelectedProjectLockCount
+    {
+        get => _selectedProjectLockCount;
+        private set
+        {
+            if (SetProperty(ref _selectedProjectLockCount, value))
+                OnPropertyChanged(nameof(HasSelectedProjectLocks));
+        }
+    }
+
+    public int SelectedMyLockCount
+    {
+        get => _selectedMyLockCount;
+        private set
+        {
+            if (SetProperty(ref _selectedMyLockCount, value))
+                OnPropertyChanged(nameof(HasSelectedMyLocks));
+        }
+    }
+
+    public bool HasSelectedProjectLocks => SelectedProjectLockCount > 0;
+    public bool HasSelectedMyLocks => SelectedMyLockCount > 0;
+
+    public string LfsLockFilterSummary
+    {
+        get => _lfsLockFilterSummary;
+        private set => SetProperty(ref _lfsLockFilterSummary, value);
     }
 
     public Bitmap? LfsPreview
@@ -1104,19 +1393,42 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         get => _selectedProject;
         set
         {
+            if (ReferenceEquals(_selectedProject, value)) return;
+            if (_selectedProject is { } previousProject && _loadedProjectSessions.Contains(previousProject.Id))
+                CacheCurrentProjectSession(previousProject);
             if (!SetProperty(ref _selectedProject, value))
             {
                 return;
             }
 
+            _projectLoadCancellation?.Cancel();
+            _projectLoadCancellation?.Dispose();
+            _projectLoadCancellation = null;
+            _codeWorkspaceCancellation?.Cancel();
+            int loadVersion = Interlocked.Increment(ref _projectLoadVersion);
+            CurrentProjectName = value?.Name ?? "No project";
+            ClearFastGitViewForProjectSwitch(value);
+            bool restoredFromSession = value is not null && RestoreCachedProjectSession(value);
+            if (!restoredFromSession) IncludeRemoteHistory = false;
+            RestoreCodeWorkspaceForProject(value);
+            RestoreRepositoryConsoleForProject(value);
             OnPropertyChanged(nameof(HasSelectedProject));
+            OnPropertyChanged(nameof(RepositoryConsoleWorkingDirectory));
+            OnPropertyChanged(nameof(CanRunRepositoryCommand));
+            LoadRepositoryConsoleHistory();
+            ApplyApplicationLogFilter();
             if (value is not null && Directory.Exists(value.RootPath) &&
                 Directory.EnumerateFiles(value.RootPath, "*.uproject", SearchOption.TopDirectoryOnly).Any())
             {
                 UnrealProjectPath = value.RootPath;
                 RefreshUnrealInspection();
             }
-            _ = LoadSelectedProjectAsync();
+            if (!restoredFromSession)
+            {
+                CancellationTokenSource loadCancellation = new();
+                _projectLoadCancellation = loadCancellation;
+                _ = LoadSelectedProjectAsync(value, loadVersion, loadCancellation);
+            }
         }
     }
 
@@ -1127,7 +1439,23 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             if (SetProperty(ref _selectedChange, value))
             {
-                _ = LoadSelectedDiffAsync();
+                int diffLoadVersion = Interlocked.Increment(ref _selectedDiffLoadVersion);
+                if (IsChangesDiffPreviewEnabled)
+                {
+                    _ = LoadSelectedDiffAsync(SelectedProject, value, diffLoadVersion);
+                }
+            }
+        }
+    }
+
+    public GitChangeTreeNode? SelectedChangeTreeNode
+    {
+        get => _selectedChangeTreeNode;
+        set
+        {
+            if (SetProperty(ref _selectedChangeTreeNode, value) && value?.Change is not null)
+            {
+                SelectedChange = value.Change;
             }
         }
     }
@@ -1135,7 +1463,81 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public GitBranch? SelectedBranch
     {
         get => _selectedBranch;
-        set => SetProperty(ref _selectedBranch, value);
+        set
+        {
+            if (SetProperty(ref _selectedBranch, value))
+            {
+                _ = LoadSelectedBranchHistoryAsync(value);
+            }
+        }
+    }
+
+    public GitRevision? SelectedBranchRevision
+    {
+        get => _selectedBranchRevision;
+        set => SetProperty(ref _selectedBranchRevision, value);
+    }
+
+    public string ChangeSearch
+    {
+        get => _changeSearch;
+        set
+        {
+            if (SetProperty(ref _changeSearch, value)) ApplyChangeFilter();
+        }
+    }
+
+    public string ChangeSort
+    {
+        get => _changeSort;
+        set
+        {
+            if (SetProperty(ref _changeSort, value)) ApplyChangeFilter();
+        }
+    }
+
+    public string BranchSearch
+    {
+        get => _branchSearch;
+        set
+        {
+            if (SetProperty(ref _branchSearch, value)) ApplyBranchFilter();
+        }
+    }
+
+    public string BranchSort
+    {
+        get => _branchSort;
+        set
+        {
+            if (SetProperty(ref _branchSort, value)) ApplyBranchFilter();
+        }
+    }
+
+    public string SelectedBranchSummary
+    {
+        get => _selectedBranchSummary;
+        private set => SetProperty(ref _selectedBranchSummary, value);
+    }
+
+    public GitBranchDetails? SelectedBranchDetails
+    {
+        get => _selectedBranchDetails;
+        private set => SetProperty(ref _selectedBranchDetails, value);
+    }
+
+    public bool IsChangesDiffPreviewEnabled
+    {
+        get => _isChangesDiffPreviewEnabled;
+        set
+        {
+            if (!SetProperty(ref _isChangesDiffPreviewEnabled, value)) return;
+            int version = Interlocked.Increment(ref _selectedDiffLoadVersion);
+            if (value)
+            {
+                _ = LoadSelectedDiffAsync(SelectedProject, SelectedChange, version);
+            }
+        }
     }
 
     public BackupSnapshotViewModel? SelectedBackup
@@ -1149,14 +1551,164 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public bool IsBusy
     {
         get => _isBusy;
-        private set => SetProperty(ref _isBusy, value);
+        private set
+        {
+            if (SetProperty(ref _isBusy, value))
+            {
+                NotifyLongOperationStateChanged();
+            }
+        }
     }
+
+    public bool IsProjectLoading
+    {
+        get => _isProjectLoading;
+        private set
+        {
+            if (SetProperty(ref _isProjectLoading, value))
+            {
+                NotifyLongOperationStateChanged();
+            }
+        }
+    }
+
+    public double ProjectLoadProgress
+    {
+        get => _projectLoadProgress;
+        private set
+        {
+            if (SetProperty(ref _projectLoadProgress, value))
+            {
+                OnPropertyChanged(nameof(LongOperationProgress));
+            }
+        }
+    }
+
+    public string ProjectLoadStage
+    {
+        get => _projectLoadStage;
+        private set
+        {
+            if (SetProperty(ref _projectLoadStage, value))
+            {
+                OnPropertyChanged(nameof(LongOperationStage));
+            }
+        }
+    }
+
+    public bool IsLongOperationActive => IsProjectLoading || IsBusy;
+
+    public bool IsLongOperationIndeterminate => IsBusy && !IsProjectLoading;
+
+    public double LongOperationProgress => IsProjectLoading ? ProjectLoadProgress : 0;
+
+    public string LongOperationStage => IsProjectLoading ? ProjectLoadStage : StatusMessage;
 
     public string StatusMessage
     {
         get => _statusMessage;
-        private set => SetProperty(ref _statusMessage, value);
+        private set
+        {
+            if (SetProperty(ref _statusMessage, value))
+            {
+                OnPropertyChanged(nameof(LongOperationStage));
+            }
+        }
     }
+
+    public string RepositoryConsoleCommand
+    {
+        get => _repositoryConsoleCommand;
+        set
+        {
+            if (SetProperty(ref _repositoryConsoleCommand, value))
+                OnPropertyChanged(nameof(CanRunRepositoryCommand));
+        }
+    }
+
+    public string RepositoryConsoleOutput
+    {
+        get => _repositoryConsoleOutput;
+        private set => SetProperty(ref _repositoryConsoleOutput, value);
+    }
+
+    public string RepositoryConsoleStatus
+    {
+        get => _repositoryConsoleStatus;
+        private set => SetProperty(ref _repositoryConsoleStatus, value);
+    }
+
+    public string RepositoryConsoleWorkingDirectory =>
+        SelectedProject?.RootPath ?? "No project selected";
+
+    public string SelectedRepositoryShell
+    {
+        get => _selectedRepositoryShell;
+        set => SetProperty(ref _selectedRepositoryShell, value);
+    }
+
+    public bool IsRepositoryConsoleRunning
+    {
+        get => _isRepositoryConsoleRunning;
+        private set
+        {
+            if (!SetProperty(ref _isRepositoryConsoleRunning, value)) return;
+            OnPropertyChanged(nameof(CanRunRepositoryCommand));
+            OnPropertyChanged(nameof(CanStopRepositoryCommand));
+        }
+    }
+
+    public bool CanRunRepositoryCommand =>
+        SelectedProject is not null && !IsRepositoryConsoleRunning && !string.IsNullOrWhiteSpace(RepositoryConsoleCommand);
+
+    public bool CanStopRepositoryCommand => IsRepositoryConsoleRunning;
+
+    public string RepositoryConsoleHistorySearch
+    {
+        get => _repositoryConsoleHistorySearch;
+        set
+        {
+            if (SetProperty(ref _repositoryConsoleHistorySearch, value)) ApplyRepositoryConsoleHistoryFilter();
+        }
+    }
+
+    public RepositoryCommandHistoryEntry? SelectedRepositoryCommand
+    {
+        get => _selectedRepositoryCommand;
+        set => SetProperty(ref _selectedRepositoryCommand, value);
+    }
+
+    public string ApplicationLogSearch
+    {
+        get => _applicationLogSearch;
+        set
+        {
+            if (SetProperty(ref _applicationLogSearch, value)) ApplyApplicationLogFilter();
+        }
+    }
+
+    public string ApplicationLogLevelFilter
+    {
+        get => _applicationLogLevelFilter;
+        set
+        {
+            if (SetProperty(ref _applicationLogLevelFilter, value)) ApplyApplicationLogFilter();
+        }
+    }
+
+    public ApplicationLogEntry? SelectedApplicationLogEntry
+    {
+        get => _selectedApplicationLogEntry;
+        set => SetProperty(ref _selectedApplicationLogEntry, value);
+    }
+
+    public string ApplicationLogDirectory => _applicationLogService.LogDirectory;
+
+    public string CurrentApplicationLogPath => _applicationLogService.CurrentLogPath;
+
+    public string ApplicationLogProjectSummary => SelectedProject is null
+        ? "Global application events"
+        : $"Project log · {SelectedProject.Name}";
 
     public string ToolStatus
     {
@@ -1182,10 +1734,62 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         private set => SetProperty(ref _changeSummary, value);
     }
 
+    public string ChangeSummaryColor
+    {
+        get => _changeSummaryColor;
+        private set => SetProperty(ref _changeSummaryColor, value);
+    }
+
+    public string CurrentProjectName
+    {
+        get => _currentProjectName;
+        private set => SetProperty(ref _currentProjectName, value);
+    }
+
+    public string HistoryScope => IncludeRemoteHistory ? "Local + remote refs" : "Current branch";
+
+    public bool IsLfsInventoryLoaded
+    {
+        get => _isLfsInventoryLoaded;
+        private set => SetProperty(ref _isLfsInventoryLoaded, value);
+    }
+
+    public bool IncludeRemoteHistory
+    {
+        get => _includeRemoteHistory;
+        private set
+        {
+            if (SetProperty(ref _includeRemoteHistory, value))
+            {
+                OnPropertyChanged(nameof(HistoryScope));
+            }
+        }
+    }
+
+    public string ChangePreparationSummary
+    {
+        get => _changePreparationSummary;
+        private set => SetProperty(ref _changePreparationSummary, value);
+    }
+
+    public int IncludedChangeCount => Changes.Count(change => change.IsIncluded && !change.IsLocalOnly);
+
+    public int KeptChangeCount => Changes.Count(change => !change.IsIncluded && !change.IsLocalOnly);
+
+    public int ForeignLockedIncludedCount => Changes.Count(change => change.IsIncluded && change.HasForeignLock);
+
+    public bool CanCommitPreparedChanges => IncludedChangeCount > 0 && !string.IsNullOrWhiteSpace(CommitMessage);
+
     public string CommitMessage
     {
         get => _commitMessage;
-        set => SetProperty(ref _commitMessage, value);
+        set
+        {
+            if (SetProperty(ref _commitMessage, value))
+            {
+                OnPropertyChanged(nameof(CanCommitPreparedChanges));
+            }
+        }
     }
 
     public string DiffText
@@ -1981,19 +2585,46 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public string CodeTreeFilter
     {
         get => _codeTreeFilter;
-        set => SetProperty(ref _codeTreeFilter, value);
+        set
+        {
+            if (SetProperty(ref _codeTreeFilter, value)) ApplyCodeWorkspaceFilter();
+        }
     }
 
     public bool CodeIncludeHidden
     {
         get => _codeIncludeHidden;
-        set => SetProperty(ref _codeIncludeHidden, value);
+        set
+        {
+            if (!SetProperty(ref _codeIncludeHidden, value)) return;
+            if (SelectedProject is not null && _codeWorkspaceCache.ContainsKey(SelectedProject.Id))
+                _ = RefreshCodeWorkspaceAsync();
+        }
     }
+
+    public string CodeAutoRefreshFrequency
+    {
+        get => _codeAutoRefreshFrequency;
+        set => SetProperty(ref _codeAutoRefreshFrequency, value);
+    }
+
+    public string CodeWorkspaceLastUpdatedText => _codeWorkspaceLastUpdated is null
+        ? "Not indexed yet"
+        : $"Updated {_codeWorkspaceLastUpdated.Value.ToLocalTime():t}";
+
+    public bool HasLoadedCodeWorkspace =>
+        SelectedProject is not null && _codeWorkspaceCache.ContainsKey(SelectedProject.Id);
 
     public string CodeWorkspaceSummary
     {
         get => _codeWorkspaceSummary;
         private set => SetProperty(ref _codeWorkspaceSummary, value);
+    }
+
+    public bool IsCodeWorkspaceLoading
+    {
+        get => _isCodeWorkspaceLoading;
+        private set => SetProperty(ref _isCodeWorkspaceLoading, value);
     }
 
     public string CodeSearchQuery
@@ -2243,12 +2874,30 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             if (SetProperty(ref _selectedPullRequestFile, value))
             {
-                PullRequestPatch = value is null
-                    ? "Select a changed file to inspect its patch."
-                    : string.IsNullOrWhiteSpace(value.Patch)
-                        ? "GitHub did not provide a text patch for this file. It may be binary or too large."
-                        : value.Patch;
+                if (IsPullRequestDiffPreviewEnabled)
+                {
+                    UpdatePullRequestPatch(value);
+                }
             }
+        }
+    }
+
+    public string PullRequestSearch
+    {
+        get => _pullRequestSearch;
+        set
+        {
+            if (SetProperty(ref _pullRequestSearch, value)) ApplyPullRequestFilter();
+        }
+    }
+
+    public bool IsPullRequestDiffPreviewEnabled
+    {
+        get => _isPullRequestDiffPreviewEnabled;
+        set
+        {
+            if (!SetProperty(ref _isPullRequestDiffPreviewEnabled, value)) return;
+            PullRequestPatch = value ? BuildPullRequestPatch(SelectedPullRequestFile) : "Diff preview hidden.";
         }
     }
 
@@ -2274,6 +2923,18 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _pullRequestStatus;
         private set => SetProperty(ref _pullRequestStatus, value);
+    }
+
+    public bool IsPullRequestLoading
+    {
+        get => _isPullRequestLoading;
+        private set => SetProperty(ref _isPullRequestLoading, value);
+    }
+
+    public bool IsWorkingTreeDiffLoading
+    {
+        get => _isWorkingTreeDiffLoading;
+        private set => SetProperty(ref _isWorkingTreeDiffLoading, value);
     }
 
     public string PullRequestApiBaseUrl
@@ -2304,9 +2965,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public string PullRequestAuthenticationState => !string.IsNullOrWhiteSpace(PullRequestToken)
         ? "Session token ready · never persisted"
-        : !string.IsNullOrWhiteSpace(ResolvePullRequestToken())
+        : !string.IsNullOrWhiteSpace(ResolveEnvironmentPullRequestToken())
             ? $"Using environment variable {PullRequestTokenEnvironmentVariable.Trim()}"
-            : "Public read only · add a token for write operations";
+            : !string.IsNullOrWhiteSpace(_pullRequestCredentialToken)
+                ? "Using Git Credential Manager · session only"
+                : "No authentication · private repositories require Git credentials or a session token";
 
     public string PullRequestRepositoryName => _pullRequestRepository?.FullName ?? "No supported remote detected";
 
@@ -2436,31 +3099,165 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _ = CheckForUpdatesAsync();
     }
 
+    public async Task EnsureCodeWorkspaceLoadedAsync(bool force = false)
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        if (project is null) return;
+        if (!force && _codeWorkspaceCache.TryGetValue(project.Id, out CachedCodeWorkspace? cached))
+        {
+            ApplyCodeWorkspaceSnapshot(cached);
+            return;
+        }
+
+        await RefreshCodeWorkspaceAsync();
+    }
+
+    public bool IsCodeWorkspaceRefreshDue(TimeSpan interval)
+    {
+        if (SelectedProject is null) return false;
+        return !_codeWorkspaceCache.TryGetValue(SelectedProject.Id, out CachedCodeWorkspace? cached) ||
+               DateTimeOffset.UtcNow - cached.UpdatedAt >= interval;
+    }
+
     public async Task RefreshCodeWorkspaceAsync()
     {
-        if (SelectedProject is null)
+        ProjectItemViewModel? project = SelectedProject;
+        if (project is null)
         {
             ClearCodeWorkspace();
             return;
         }
 
+        _codeWorkspaceCancellation?.Cancel();
+        _codeWorkspaceCancellation?.Dispose();
+        CancellationTokenSource cancellation = new();
+        _codeWorkspaceCancellation = cancellation;
+        IsBusy = true;
+        IsCodeWorkspaceLoading = true;
+        StatusMessage = $"Indexing {project.Name} code workspace…";
         CodeWorkspaceSummary = "Indexing workspace…";
         try
         {
             CodeWorkspaceSnapshot snapshot = await _codeWorkspaceService.BuildTreeAsync(
-                SelectedProject.RootPath,
-                CodeTreeFilter,
-                CodeIncludeHidden);
-            ReplaceCollection(CodeTree, snapshot.Roots);
-            CodeWorkspaceSummary = $"{snapshot.FileCount:N0} files · {snapshot.DirectoryCount:N0} folders · " +
-                                   $"indexed in {snapshot.Elapsed.TotalMilliseconds:N0} ms" +
-                                   (snapshot.WasTruncated ? " · safety limit reached" : string.Empty);
-            SelectedCodeNode = FindFirstFile(CodeTree);
+                project.RootPath,
+                string.Empty,
+                CodeIncludeHidden,
+                cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (SelectedProject?.Id != project.Id)
+            {
+                return;
+            }
+            CachedCodeWorkspace cached = new(snapshot, DateTimeOffset.UtcNow, CodeIncludeHidden);
+            _codeWorkspaceCache[project.Id] = cached;
+            ApplyCodeWorkspaceSnapshot(cached);
+            StatusMessage = $"{project.Name} code index ready";
+        }
+        catch (OperationCanceledException)
+        {
+            if (SelectedProject?.Id == project.Id)
+            {
+                CodeWorkspaceSummary = "Code indexing cancelled.";
+            }
         }
         catch (Exception exception)
         {
-            CodeWorkspaceSummary = exception.Message;
+            if (SelectedProject?.Id == project.Id)
+            {
+                CodeWorkspaceSummary = exception.Message;
+                StatusMessage = exception.Message;
+            }
         }
+        finally
+        {
+            if (ReferenceEquals(_codeWorkspaceCancellation, cancellation))
+            {
+                _codeWorkspaceCancellation = null;
+                cancellation.Dispose();
+                IsBusy = false;
+                IsCodeWorkspaceLoading = false;
+            }
+        }
+    }
+
+    private void RestoreCodeWorkspaceForProject(ProjectItemViewModel? project)
+    {
+        CodeTree.Clear();
+        CodeFileList.Clear();
+        SelectedCodeNode = null;
+        CodePreviewText = string.Empty;
+        CodePreviewSummary = "Select a file to preview it.";
+        _codeWorkspaceLastUpdated = null;
+        if (project is not null && _codeWorkspaceCache.TryGetValue(project.Id, out CachedCodeWorkspace? cached))
+        {
+            ApplyCodeWorkspaceSnapshot(cached);
+            return;
+        }
+
+        CodeWorkspaceSummary = project is null
+            ? "Select a project to explore its code."
+            : "Open Solution Explorer to index project files.";
+        OnPropertyChanged(nameof(CodeWorkspaceLastUpdatedText));
+        OnPropertyChanged(nameof(HasLoadedCodeWorkspace));
+    }
+
+    private void ApplyCodeWorkspaceSnapshot(CachedCodeWorkspace cached)
+    {
+        _codeWorkspaceLastUpdated = cached.UpdatedAt;
+        ApplyCodeWorkspaceFilter();
+        CodeWorkspaceSummary = $"{cached.Snapshot.FileCount:N0} files · {cached.Snapshot.DirectoryCount:N0} folders · " +
+                               $"indexed in {cached.Snapshot.Elapsed.TotalMilliseconds:N0} ms" +
+                               (cached.Snapshot.WasTruncated ? " · safety limit reached" : string.Empty);
+        if (SelectedCodeNode is null || CodeFileList.All(node => node.RelativePath != SelectedCodeNode.RelativePath))
+            SelectedCodeNode = FindFirstFile(CodeTree);
+        OnPropertyChanged(nameof(CodeWorkspaceLastUpdatedText));
+        OnPropertyChanged(nameof(HasLoadedCodeWorkspace));
+    }
+
+    private void ApplyCodeWorkspaceFilter()
+    {
+        if (SelectedProject is null ||
+            !_codeWorkspaceCache.TryGetValue(SelectedProject.Id, out CachedCodeWorkspace? cached))
+            return;
+
+        string filter = CodeTreeFilter.Trim();
+        IReadOnlyList<CodeTreeNode> roots = filter.Length == 0
+            ? cached.Snapshot.Roots
+            : cached.Snapshot.Roots
+                .Select(node => FilterCodeTreeNode(node, filter))
+                .Where(node => node is not null)
+                .Cast<CodeTreeNode>()
+                .ToArray();
+        ReplaceCollection(CodeTree, roots);
+        ReplaceCollection(CodeFileList, FlattenCodeFiles(roots));
+    }
+
+    private static CodeTreeNode? FilterCodeTreeNode(CodeTreeNode node, string filter)
+    {
+        bool matches = node.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase) ||
+                       node.RelativePath.Contains(filter, StringComparison.CurrentCultureIgnoreCase);
+        if (!node.IsDirectory) return matches ? node : null;
+
+        CodeTreeNode[] children = node.Children
+            .Select(child => FilterCodeTreeNode(child, filter))
+            .Where(child => child is not null)
+            .Cast<CodeTreeNode>()
+            .ToArray();
+        if (!matches && children.Length == 0) return null;
+        return new CodeTreeNode(node.Name, node.RelativePath, node.FullPath, true, children, node.Size, node.Language);
+    }
+
+    private static IReadOnlyList<CodeTreeNode> FlattenCodeFiles(IEnumerable<CodeTreeNode> roots)
+    {
+        List<CodeTreeNode> files = [];
+        foreach (CodeTreeNode node in roots)
+        {
+            if (node.IsDirectory)
+                files.AddRange(FlattenCodeFiles(node.Children));
+            else
+                files.Add(node);
+        }
+        return files;
     }
 
     public async Task SearchCodeAsync()
@@ -2570,9 +3367,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _pullRequestRepository = repository;
         if (string.IsNullOrWhiteSpace(NewPullRequestHeadBranch)) NewPullRequestHeadBranch = CurrentBranch;
         if (string.IsNullOrWhiteSpace(NewPullRequestBaseBranch)) NewPullRequestBaseBranch = "main";
-        PullRequestStatus = $"{repository.Provider} repository detected · click Refresh to load pull requests.";
+        PullRequestStatus = $"{repository.Provider} repository detected · loading remote pull requests…";
         OnPropertyChanged(nameof(PullRequestRepositoryName));
         OnPropertyChanged(nameof(PullRequestAuthenticationState));
+        Guid projectId = SelectedProject.Id;
+        _ = RefreshPullRequestsInBackgroundAsync(projectId);
     }
 
     public async Task RefreshPullRequestsAsync()
@@ -2597,7 +3396,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         if (_pullRequestRepository is null) await ResolvePullRequestRepositoryAsync();
         if (_pullRequestRepository is null) return;
-        if (!TryGetPullRequestWriteToken(out string token)) return;
+        string? token = await GetPullRequestWriteTokenAsync();
+        if (token is null) return;
         CreatePullRequestRequest request = new(
             NewPullRequestTitle,
             NewPullRequestBody,
@@ -2627,7 +3427,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public async Task AddPullRequestCommentAsync()
     {
         if (_pullRequestRepository is null || SelectedPullRequest is null) return;
-        if (!TryGetPullRequestWriteToken(out string token)) return;
+        string? token = await GetPullRequestWriteTokenAsync();
+        if (token is null) return;
         string body = PullRequestComment;
         await RunOperationAsync("Publishing pull request comment…", async () =>
         {
@@ -2650,7 +3451,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public async Task SubmitPullRequestReviewAsync()
     {
         if (_pullRequestRepository is null || SelectedPullRequest is null) return;
-        if (!TryGetPullRequestWriteToken(out string token)) return;
+        string? token = await GetPullRequestWriteTokenAsync();
+        if (token is null) return;
         string body = PullRequestReviewBody;
         CyRevision.PullRequests.PullRequestReviewAction action = this.PullRequestReviewAction;
         await RunOperationAsync("Submitting pull request review…", async () =>
@@ -2674,7 +3476,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public async Task MergeSelectedPullRequestAsync()
     {
         if (_pullRequestRepository is null || SelectedPullRequest is null) return;
-        if (!TryGetPullRequestWriteToken(out string token)) return;
+        string? token = await GetPullRequestWriteTokenAsync();
+        if (token is null) return;
         int number = SelectedPullRequest.Number;
         CyRevision.PullRequests.PullRequestMergeMethod method = this.PullRequestMergeMethod;
         await RunOperationAsync($"Merging pull request #{number}…", async () =>
@@ -2697,7 +3500,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public async Task ToggleSelectedPullRequestStateAsync()
     {
         if (_pullRequestRepository is null || SelectedPullRequest is null) return;
-        if (!TryGetPullRequestWriteToken(out string token)) return;
+        string? token = await GetPullRequestWriteTokenAsync();
+        if (token is null) return;
         int number = SelectedPullRequest.Number;
         bool open = !SelectedPullRequest.State.Equals("open", StringComparison.OrdinalIgnoreCase);
         await RunOperationAsync(open ? "Reopening pull request…" : "Closing pull request…", async () =>
@@ -2759,17 +3563,82 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private async Task RefreshPullRequestsCoreAsync(int? selectNumber = null)
     {
         if (_pullRequestRepository is null) return;
+        BeginPullRequestLoading();
         int? previousNumber = selectNumber ?? SelectedPullRequest?.Number;
-        IReadOnlyList<PullRequestSummary> pulls = await _pullRequestService.ListAsync(
-            _pullRequestRepository,
-            PullRequestStateFilter,
-            ResolvePullRequestToken());
-        ReplaceCollection(PullRequests, pulls);
-        PullRequestStatus = $"{pulls.Count} pull request(s) · {_pullRequestRepository.FullName} · {PullRequestStateFilter}";
-        SelectedPullRequest = previousNumber is int number
-            ? PullRequests.FirstOrDefault(pull => pull.Number == number) ?? PullRequests.FirstOrDefault()
-            : PullRequests.FirstOrDefault();
+        PullRequestStatus = $"Loading pull requests from {_pullRequestRepository.FullName}…";
+        try
+        {
+            string? token = await ResolvePullRequestTokenAsync(_pullRequestRepository);
+            IReadOnlyList<PullRequestSummary> pulls = await _pullRequestService.ListAsync(
+                _pullRequestRepository,
+                PullRequestStateFilter,
+                token);
+            ReplaceCollection(PullRequests, pulls);
+            ApplyPullRequestFilter();
+            PullRequestStatus = $"{pulls.Count} pull request(s) · {_pullRequestRepository.FullName} · {PullRequestStateFilter}";
+            SelectedPullRequest = previousNumber is int number
+                ? FilteredPullRequests.FirstOrDefault(pull => pull.Number == number) ?? FilteredPullRequests.FirstOrDefault()
+                : FilteredPullRequests.FirstOrDefault();
+        }
+        finally
+        {
+            EndPullRequestLoading();
+        }
     }
+
+    private async Task RefreshPullRequestsInBackgroundAsync(Guid projectId)
+    {
+        PullRequestRepository? repository = _pullRequestRepository;
+        if (repository is null) return;
+        BeginPullRequestLoading();
+        try
+        {
+            string? token = await ResolvePullRequestTokenAsync(repository);
+            IReadOnlyList<PullRequestSummary> pulls = await _pullRequestService.ListAsync(
+                repository,
+                PullRequestStateFilter,
+                token);
+            if (SelectedProject?.Id != projectId || _pullRequestRepository != repository) return;
+            ReplaceCollection(PullRequests, pulls);
+            ApplyPullRequestFilter();
+            PullRequestStatus = $"{pulls.Count} pull request(s) · {repository.FullName} · {PullRequestStateFilter}";
+            SelectedPullRequest = FilteredPullRequests.FirstOrDefault();
+        }
+        catch (Exception exception)
+        {
+            if (SelectedProject?.Id == projectId)
+                PullRequestStatus = "Remote pull requests unavailable: " + exception.Message;
+        }
+        finally
+        {
+            EndPullRequestLoading();
+        }
+    }
+
+    private void ApplyPullRequestFilter()
+    {
+        string[] terms = PullRequestSearch.Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        bool Matches(PullRequestSummary pull) => terms.Length == 0 || terms.All(term =>
+            pull.NumberText.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            pull.Title.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            pull.StateText.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            pull.Author.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            pull.HeadBranch.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            pull.BaseBranch.Contains(term, StringComparison.OrdinalIgnoreCase));
+        ReplaceCollection(
+            FilteredPullRequests,
+            PullRequests.Where(Matches).OrderByDescending(pull => pull.UpdatedAt));
+    }
+
+    private void UpdatePullRequestPatch(PullRequestFile? file) => PullRequestPatch = BuildPullRequestPatch(file);
+
+    private static string BuildPullRequestPatch(PullRequestFile? file) => file is null
+        ? "Select a changed file to inspect its patch."
+        : string.IsNullOrWhiteSpace(file.Patch)
+            ? "The provider did not supply a text patch. The file may be binary or too large."
+            : file.Patch;
 
     private async Task LoadSelectedPullRequestAsync(PullRequestSummary? pullRequest)
     {
@@ -2781,14 +3650,23 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
 
         PullRequestStatus = $"Loading pull request #{pullRequest.Number}…";
+        BeginPullRequestLoading();
         try
         {
+            string? token = await ResolvePullRequestTokenAsync(_pullRequestRepository);
             PullRequestDetails details = await _pullRequestService.GetDetailsAsync(
                 _pullRequestRepository,
                 pullRequest.Number,
-                ResolvePullRequestToken());
+                token);
             if (loadVersion != _pullRequestDetailsLoadVersion || SelectedPullRequest?.Number != pullRequest.Number) return;
             _selectedPullRequestDetails = details;
+            ReplaceCollection(PullRequestCommitRevisions, details.Commits.Select(commit => new GitRevision(
+                commit.Hash,
+                commit.Hash[..Math.Min(8, commit.Hash.Length)],
+                commit.AuthorName,
+                commit.AuthorEmail,
+                commit.AuthoredAt,
+                commit.Subject)));
             ReplaceCollection(PullRequestFiles, details.Files);
             ReplaceCollection(PullRequestReviews, details.Reviews);
             ReplaceCollection(PullRequestComments, details.Comments);
@@ -2802,11 +3680,39 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             if (loadVersion == _pullRequestDetailsLoadVersion) PullRequestStatus = exception.Message;
         }
+        finally
+        {
+            EndPullRequestLoading();
+        }
+    }
+
+    private void BeginPullRequestLoading()
+    {
+        Interlocked.Increment(ref _pullRequestLoadCount);
+        IsPullRequestLoading = true;
+    }
+
+    private void EndPullRequestLoading()
+    {
+        int remaining = Interlocked.Decrement(ref _pullRequestLoadCount);
+        if (remaining <= 0)
+        {
+            Interlocked.Exchange(ref _pullRequestLoadCount, 0);
+            IsPullRequestLoading = false;
+        }
     }
 
     private string? ResolvePullRequestToken()
     {
         if (!string.IsNullOrWhiteSpace(PullRequestToken)) return PullRequestToken.Trim();
+        string? environmentToken = ResolveEnvironmentPullRequestToken();
+        return !string.IsNullOrWhiteSpace(environmentToken)
+            ? environmentToken
+            : _pullRequestCredentialToken;
+    }
+
+    private string? ResolveEnvironmentPullRequestToken()
+    {
         if (string.IsNullOrWhiteSpace(PullRequestTokenEnvironmentVariable)) return null;
         try
         {
@@ -2818,25 +3724,85 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private bool TryGetPullRequestWriteToken(out string token)
+    private async Task<string?> ResolvePullRequestTokenAsync(PullRequestRepository repository)
     {
-        token = ResolvePullRequestToken() ?? string.Empty;
-        if (token.Length > 0) return true;
+        string? token = ResolvePullRequestToken();
+        if (!string.IsNullOrWhiteSpace(token)) return token;
 
-        PullRequestStatus = "A session token or token environment variable is required for this operation.";
+        _pullRequestCredentialToken = await TryReadGitCredentialTokenAsync(repository);
+        OnPropertyChanged(nameof(PullRequestAuthenticationState));
+        return _pullRequestCredentialToken;
+    }
+
+    private async Task<string?> GetPullRequestWriteTokenAsync()
+    {
+        string? token = _pullRequestRepository is null
+            ? ResolvePullRequestToken()
+            : await ResolvePullRequestTokenAsync(_pullRequestRepository);
+        if (!string.IsNullOrWhiteSpace(token)) return token;
+
+        PullRequestStatus = "Authentication is required. Sign in through Git Credential Manager or provide a session token.";
         StatusMessage = PullRequestStatus;
-        return false;
+        return null;
+    }
+
+    private static async Task<string?> TryReadGitCredentialTokenAsync(PullRequestRepository repository)
+    {
+        try
+        {
+            ProcessStartInfo startInfo = new()
+            {
+                FileName = "git",
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("credential");
+            startInfo.ArgumentList.Add("fill");
+            startInfo.Environment["GCM_INTERACTIVE"] = "Never";
+            startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+
+            using Process process = new() { StartInfo = startInfo };
+            if (!process.Start()) return null;
+            await process.StandardInput.WriteLineAsync("protocol=https");
+            await process.StandardInput.WriteLineAsync($"host={repository.Host}");
+            await process.StandardInput.WriteLineAsync($"path={repository.Owner}/{repository.Name}.git");
+            await process.StandardInput.WriteLineAsync();
+            process.StandardInput.Close();
+            string output = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            if (process.ExitCode != 0) return null;
+
+            foreach (string line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (line.StartsWith("password=", StringComparison.Ordinal))
+                {
+                    string credential = line["password=".Length..].Trim();
+                    return credential.Length == 0 ? null : credential;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            // Git or its credential helper is unavailable. The session-token field remains the fallback.
+        }
+
+        return null;
     }
 
     private void ClearPullRequestData(bool clearConnection = true)
     {
         Interlocked.Increment(ref _pullRequestDetailsLoadVersion);
         PullRequests.Clear();
+        FilteredPullRequests.Clear();
         ClearPullRequestDetails();
         SelectedPullRequest = null;
         if (clearConnection)
         {
             _pullRequestRepository = null;
+            _pullRequestCredentialToken = null;
             PullRequestToken = string.Empty;
             PullRequestApiBaseUrl = string.Empty;
             PullRequestStatus = "Select a GitHub-backed project to manage pull requests.";
@@ -2848,6 +3814,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         _selectedPullRequestDetails = null;
         PullRequestFiles.Clear();
+        PullRequestCommitRevisions.Clear();
         PullRequestReviews.Clear();
         PullRequestComments.Clear();
         SelectedPullRequestFile = null;
@@ -3388,11 +4355,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, "Projet retiré du catalogue — aucun fichier supprimé");
     }
 
-    public Task RefreshAsync() => RunOperationAsync("Actualisation…", async () =>
+    public Task RefreshAsync() => RunOperationAsync("Refreshing tracked and untracked files…", async () =>
     {
-        await RefreshCoreAsync();
+        await RefreshCoreAsync(includeUntrackedFiles: true);
         await LoadAdvisoryReservationsCoreAsync();
-    }, "Dépôt et réservations actualisés");
+    }, "Repository, untracked files and reservations refreshed");
 
     public Task RefreshAdvisoryReservationsAsync() => RunOperationAsync(
         "Actualisation des réservations souples…",
@@ -3509,6 +4476,23 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         return SelectExplorerCommitCoreAsync(commitHash);
     }
 
+    public void ShowCommitExplorerRevisions(
+        IEnumerable<GitRevision> revisions,
+        GitRevision? selectedRevision = null)
+    {
+        _commitExplorerSourceRevisions = revisions
+            .GroupBy(revision => revision.Hash, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToArray();
+        ApplyCommitExplorerFilter();
+        GitRevision? selection = selectedRevision is null
+            ? CommitExplorerRevisions.FirstOrDefault()
+            : CommitExplorerRevisions.FirstOrDefault(revision => revision.Hash == selectedRevision.Hash)
+              ?? selectedRevision;
+        SelectedCommitExplorerRevision = null;
+        SelectedCommitExplorerRevision = selection;
+    }
+
     public async Task CompareExplorerCommitsAsync()
     {
         if (SelectedProject is null || SelectedExplorerRevision is null || SelectedComparisonRevision is null)
@@ -3584,6 +4568,26 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             item.IsSelected = selected;
         }
+        InvalidateMultiRestorePlan();
+    }
+
+    public async Task AddCommitExplorerFilesToMultiRestoreAsync(
+        GitRevision revision,
+        IReadOnlyCollection<GitCommitFileChange> files)
+    {
+        if (files.Count == 0) return;
+        if (!string.Equals(_multiRestoreLoadedHash, revision.Hash, StringComparison.Ordinal))
+        {
+            await LoadMultiRestoreCommitAsync(revision);
+        }
+
+        HashSet<string> selectedPaths = files.Select(file => file.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (MultiRestoreFileViewModel item in MultiRestoreFiles)
+        {
+            item.IsSelected = selectedPaths.Contains(item.Path);
+        }
+        SelectedMultiRestoreFile = MultiRestoreFiles.FirstOrDefault(item => item.IsSelected);
+        MultiRestoreSummary = $"{revision.ShortHash} · {selectedPaths.Count} file(s) added from Commit Explorer.";
         InvalidateMultiRestorePlan();
     }
 
@@ -3757,19 +4761,30 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private async Task LoadMultiRestoreDiffAsync(MultiRestoreFileViewModel? item)
     {
+        int loadVersion = Interlocked.Increment(ref _multiRestoreDiffLoadVersion);
         if (SelectedProject is null || MultiRestoreCommit is null || item is null)
         {
+            IsMultiRestoreDiffLoading = false;
             MultiRestoreDiff = "Select a file to inspect its commit patch.";
             return;
         }
 
+        ProjectItemViewModel project = SelectedProject;
+        string commitHash = MultiRestoreCommit.Hash;
+        IsMultiRestoreDiffLoading = true;
+        MultiRestoreDiff = $"Loading diff for {item.Path}…";
         try
         {
-            MultiRestoreDiff = await _gitService.GetCommitDiffAsync(
-                SelectedProject.RootPath,
-                MultiRestoreCommit.Hash,
+            string diff = await _gitService.GetCommitDiffAsync(
+                project.RootPath,
+                commitHash,
                 item.Path);
-            if (string.IsNullOrWhiteSpace(MultiRestoreDiff))
+            if (loadVersion != _multiRestoreDiffLoadVersion ||
+                SelectedProject?.Id != project.Id ||
+                MultiRestoreCommit?.Hash != commitHash ||
+                SelectedMultiRestoreFile?.Path != item.Path) return;
+            MultiRestoreDiff = diff;
+            if (string.IsNullOrWhiteSpace(diff))
             {
                 MultiRestoreDiff = item.IsLfsObject
                     ? "Git LFS object — the safety preview verifies that the selected object exists locally."
@@ -3778,25 +4793,42 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
         catch (Exception exception)
         {
-            MultiRestoreDiff = exception.Message;
+            if (loadVersion == _multiRestoreDiffLoadVersion) MultiRestoreDiff = exception.Message;
+        }
+        finally
+        {
+            if (loadVersion == _multiRestoreDiffLoadVersion) IsMultiRestoreDiffLoading = false;
         }
     }
 
     private async Task LoadCherryPickDiffAsync(CherryPickCommitViewModel? item)
     {
+        int loadVersion = Interlocked.Increment(ref _cherryPickDiffLoadVersion);
         if (SelectedProject is null || item is null)
         {
+            IsCherryPickDiffLoading = false;
             CherryPickDiff = "Select a commit to inspect its patch.";
             return;
         }
 
+        ProjectItemViewModel project = SelectedProject;
+        IsCherryPickDiffLoading = true;
+        CherryPickDiff = $"Loading commit {item.ShortHash}…";
         try
         {
-            CherryPickDiff = await _gitService.GetCommitDiffAsync(SelectedProject.RootPath, item.Hash);
+            string diff = await _gitService.GetCommitDiffAsync(project.RootPath, item.Hash);
+            if (loadVersion != _cherryPickDiffLoadVersion ||
+                SelectedProject?.Id != project.Id ||
+                SelectedCherryPickCommit?.Hash != item.Hash) return;
+            CherryPickDiff = diff;
         }
         catch (Exception exception)
         {
-            CherryPickDiff = exception.Message;
+            if (loadVersion == _cherryPickDiffLoadVersion) CherryPickDiff = exception.Message;
+        }
+        finally
+        {
+            if (loadVersion == _cherryPickDiffLoadVersion) IsCherryPickDiffLoading = false;
         }
     }
 
@@ -3927,7 +4959,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        string[] paths = Changes.Where(change => !change.Change.IsStaged).Select(change => change.Path).Distinct().ToArray();
+        string[] paths = Changes
+            .Where(change => change.IsIncluded && !change.IsLocalOnly && !change.Change.IsStaged)
+            .Select(change => change.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         if (paths.Length == 0)
         {
             StatusMessage = "Aucune modification à indexer";
@@ -3939,6 +4975,54 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await _gitService.StageAsync(SelectedProject.RootPath, paths);
             await RefreshCoreAsync();
         }, $"{paths.Length} fichier(s) indexé(s)");
+    }
+
+    public async Task ScanAllUntrackedFilesAsync()
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        if (project is null || !project.Definition.Features.GitEnabled)
+        {
+            return;
+        }
+
+        await RunOperationAsync(
+            $"Scanning every untracked file in {project.Name}…",
+            async () =>
+            {
+                GitRepositoryStatus status = await _gitService.GetDetailedStatusAsync(project.RootPath);
+                if (SelectedProject?.Id != project.Id)
+                {
+                    return;
+                }
+                ApplyPrimaryGitStatus(project, status);
+            },
+            $"Detailed untracked scan complete for {project.Name}");
+    }
+
+    public async Task LoadLfsInventoryAsync()
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        if (project is null || !project.Definition.Features.GitEnabled)
+        {
+            return;
+        }
+
+        await RunOperationAsync(
+            $"Scanning Git LFS files in {project.Name}…",
+            async () =>
+            {
+                IReadOnlyList<LfsTrackedFile> files = await _gitService.GetLfsTrackedFilesAsync(project.RootPath);
+                if (SelectedProject?.Id != project.Id)
+                {
+                    return;
+                }
+                ReplaceCollection(LfsFiles, files);
+                IsLfsInventoryLoaded = true;
+                LfsTrackedFile? selected = files.FirstOrDefault(file => file.Path == SelectedLfsFile?.Path)
+                                           ?? files.FirstOrDefault();
+                SelectedLfsFile = selected;
+            },
+            $"{project.Name} · {LfsFiles.Count:N0} Git LFS file(s) loaded");
     }
 
     public async Task UnstageAllAsync()
@@ -3962,6 +5046,83 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, $"{paths.Length} fichier(s) retiré(s) de l’index");
     }
 
+    public void IncludeAllPreparedChanges()
+    {
+        foreach (GitChangeViewModel change in PreparedChanges)
+        {
+            change.IsIncluded = true;
+        }
+    }
+
+    public void KeepAllPreparedChanges()
+    {
+        foreach (GitChangeViewModel change in PreparedChanges)
+        {
+            change.IsIncluded = false;
+        }
+    }
+
+    public async Task SetChangeLocalOnlyAsync(GitChangeViewModel change, bool isLocalOnly)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        if (SelectedProject is null || !change.IsUntracked)
+        {
+            StatusMessage = "Only untracked files can be moved to the local-only list.";
+            return;
+        }
+
+        string path = NormalizeChangePath(change.Path);
+        if (isLocalOnly)
+        {
+            _localOnlyChangePaths.Add(path);
+        }
+        else
+        {
+            _localOnlyChangePaths.Remove(path);
+        }
+
+        string selectedPath = change.Path;
+        RebuildChangePreparation(Changes.Select(item => item.Change).ToArray(), selectedPath);
+        await SaveLocalChangePreferencesAsync();
+        StatusMessage = isLocalOnly
+            ? $"{change.Path} moved to Local only"
+            : $"{change.Path} returned to Untracked files";
+    }
+
+    public Task SetSelectedChangeLocalOnlyAsync(bool isLocalOnly) => SelectedChange is null
+        ? Task.CompletedTask
+        : SetChangeLocalOnlyAsync(SelectedChange, isLocalOnly);
+
+    public async Task RollbackChangesAsync(IReadOnlyCollection<GitChangeViewModel> changes)
+    {
+        if (SelectedProject is null || changes.Count == 0)
+        {
+            return;
+        }
+
+        GitChange[] targets = changes
+            .Select(change => change.Change)
+            .DistinctBy(change => NormalizeChangePath(change.Path), StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        await RunOperationAsync("Rolling back selected changes…", async () =>
+        {
+            await _gitService.DiscardChangesAsync(SelectedProject.RootPath, targets);
+            foreach (GitChange target in targets.Where(target => target.Kind == GitChangeKind.Untracked))
+            {
+                _localOnlyChangePaths.Remove(NormalizeChangePath(target.Path));
+            }
+            await SaveLocalChangePreferencesAsync();
+            await RefreshCoreAsync();
+        }, $"Rolled back {targets.Length} file(s)");
+    }
+
+    public Task RollbackSelectedChangeAsync() => SelectedChange is null
+        ? Task.CompletedTask
+        : RollbackChangesAsync([SelectedChange]);
+
+    public Task RollbackIncludedChangesAsync() => RollbackChangesAsync(
+        Changes.Where(change => change.IsIncluded && !change.IsLocalOnly).ToArray());
+
     public async Task CommitAsync()
     {
         if (SelectedProject is null)
@@ -3975,16 +5136,30 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        string[] paths = Changes.Select(change => change.Path).Distinct().ToArray();
+        string[] paths = Changes
+            .Where(change => change.IsIncluded && !change.IsLocalOnly)
+            .Select(change => change.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         if (paths.Length == 0)
         {
             StatusMessage = "Aucune modification à enregistrer";
             return;
         }
 
+        string[] excludedStagedPaths = Changes
+            .Where(change => change.Change.IsStaged && !paths.Contains(change.Path, StringComparer.OrdinalIgnoreCase))
+            .Select(change => change.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         string message = CommitMessage;
         await RunOperationAsync("Création de la révision…", async () =>
         {
+            if (excludedStagedPaths.Length > 0)
+            {
+                await _gitService.UnstageAsync(SelectedProject.RootPath, excludedStagedPaths);
+            }
             await _gitService.CreateRevisionAsync(SelectedProject.RootPath, message, paths);
             CommitMessage = string.Empty;
             if (_syncEngine is not null && SelectedProject.Definition.Features.PeerSyncEnabled)
@@ -3993,6 +5168,89 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             }
             await RefreshCoreAsync();
         }, "Révision créée");
+    }
+
+    private void ApplyBranchFilter()
+    {
+        string[] terms = BranchSearch.Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        bool Matches(GitBranch branch) => terms.Length == 0 || terms.All(term =>
+            branch.Name.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            branch.Scope.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            branch.PublicationStatus.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            branch.SyncStatus.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            branch.TipAuthorName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            branch.TipSubject.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            (branch.RemoteName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+
+        IOrderedEnumerable<GitBranch> ordered = BranchSort switch
+        {
+            "Status" => Branches.Where(Matches)
+                .OrderByDescending(branch => branch.IsCurrent)
+                .ThenBy(branch => branch.PublicationStatus, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(branch => branch.Name, StringComparer.OrdinalIgnoreCase),
+            "Last update" => Branches.Where(Matches)
+                .OrderByDescending(branch => branch.TipAuthoredAt)
+                .ThenBy(branch => branch.Name, StringComparer.OrdinalIgnoreCase),
+            "Last author" => Branches.Where(Matches)
+                .OrderBy(branch => branch.TipAuthorName, StringComparer.OrdinalIgnoreCase)
+                .ThenByDescending(branch => branch.TipAuthoredAt)
+                .ThenBy(branch => branch.Name, StringComparer.OrdinalIgnoreCase),
+            "Ahead" => Branches.Where(Matches)
+                .OrderByDescending(branch => branch.AheadBy)
+                .ThenBy(branch => branch.Name, StringComparer.OrdinalIgnoreCase),
+            "Behind" => Branches.Where(Matches)
+                .OrderByDescending(branch => branch.BehindBy)
+                .ThenBy(branch => branch.Name, StringComparer.OrdinalIgnoreCase),
+            _ => Branches.Where(Matches)
+                .OrderByDescending(branch => branch.IsCurrent)
+                .ThenBy(branch => branch.Name, StringComparer.OrdinalIgnoreCase)
+        };
+        ReplaceCollection(FilteredBranches, ordered);
+    }
+
+    private async Task LoadSelectedBranchHistoryAsync(GitBranch? branch)
+    {
+        int version = Interlocked.Increment(ref _selectedBranchHistoryLoadVersion);
+        SelectedBranchHistory.Clear();
+        SelectedBranchRevision = null;
+        SelectedBranchDetails = null;
+        if (SelectedProject is null || branch is null)
+        {
+            SelectedBranchSummary = "Select a branch to inspect its commits without switching.";
+            return;
+        }
+
+        SelectedBranchSummary = $"{branch.PublicationStatus} · {branch.SyncStatus} · loading commits…";
+        try
+        {
+            Task<IReadOnlyList<GitRevision>> historyTask = _gitService.GetHistoryForReferenceAsync(
+                SelectedProject.RootPath,
+                branch.Name,
+                maximumCount: 150);
+            Task<GitBranchDetails> detailsTask = _gitService.GetBranchDetailsAsync(
+                SelectedProject.RootPath,
+                branch.Name);
+            await Task.WhenAll(historyTask, detailsTask);
+            if (version != _selectedBranchHistoryLoadVersion || SelectedBranch?.Name != branch.Name) return;
+            IReadOnlyList<GitRevision> history = await historyTask;
+            ReplaceCollection(SelectedBranchHistory, history);
+            SelectedBranchRevision = history.FirstOrDefault();
+            SelectedBranchDetails = await detailsTask;
+            SelectedBranchSummary = $"{branch.PublicationStatus} · {branch.SyncStatus} · " +
+                                    $"{history.Count:N0} recent commit(s) · " +
+                                    $"{SelectedBranchDetails.UniqueCommitText} vs {SelectedBranchDetails.ComparisonBaseText} · " +
+                                    branch.TrackingText;
+        }
+        catch (Exception exception)
+        {
+            if (version == _selectedBranchHistoryLoadVersion)
+            {
+                SelectedBranchDetails = null;
+                SelectedBranchSummary = $"Unable to read {branch.Name}: {exception.Message}";
+            }
+        }
     }
 
     public async Task CreateBranchAsync(string branchName)
@@ -4054,7 +5312,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, $"Branche {branchName} intégrée");
     }
 
-    public Task FetchAsync() => RunGitNetworkOperationAsync("Récupération des références…", _gitService.FetchAsync, "Fetch terminé");
+    public Task FetchAsync() => RunGitNetworkOperationAsync(
+        "Fetching local and remote references…",
+        _gitService.FetchAsync,
+        "Remote branches and history refreshed",
+        includeRemoteHistory: true);
 
     public Task PullAsync() => RunGitNetworkOperationAsync("Récupération des changements…", _gitService.PullAsync, "Pull terminé");
 
@@ -4091,8 +5353,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     }
 
     public Task RefreshLfsLocksAsync() => RunOperationAsync(
-        "Refreshing Git LFS locksâ€¦",
-        LoadLfsLocksCoreAsync,
+        "Refreshing Git LFS locks…",
+        () => LoadLfsLocksCoreAsync(),
         "Git LFS locks refreshed");
 
     public async Task UnlockLfsLockAsync(LfsFileLock fileLock, bool force)
@@ -4109,7 +5371,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
 
         await RunOperationAsync(
-            force ? $"Force-unlocking {fileLock.Path}â€¦" : $"Unlocking {fileLock.Path}â€¦",
+            force ? $"Force-unlocking {fileLock.Path}…" : $"Unlocking {fileLock.Path}…",
             async () =>
             {
                 await _gitService.UnlockLfsFileAsync(SelectedProject.RootPath, fileLock.Id, force);
@@ -4133,7 +5395,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
 
         await RunOperationAsync(
-            forceEveryLock ? "Force-unlocking every Git LFS fileâ€¦" : "Unlocking all of your Git LFS filesâ€¦",
+            forceEveryLock ? "Force-unlocking every Git LFS file…" : "Unlocking all of your Git LFS files…",
             async () =>
             {
                 List<string> failures = [];
@@ -5780,79 +7042,428 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             $"VPN {VpnProjectMembers.Count(member => member.IsOnline)}/{VpnProjectMembers.Count} connected";
     }
 
-    private async Task LoadSelectedProjectAsync()
+    private async Task LoadSelectedProjectAsync(
+        ProjectItemViewModel? project,
+        int loadVersion,
+        CancellationTokenSource cancellationSource)
     {
-        await _discordAgent.StopAsync();
-        ClearPullRequestData();
-        if (SelectedProject is null)
-        {
-            await StopSyncCoreAsync();
-            ResetDiscordView();
-            ClearRepositoryView();
-            return;
-        }
-
-        if (_syncEngineProjectId is not null && _syncEngineProjectId != SelectedProject.Id)
-        {
-            await StopSyncCoreAsync();
-        }
-
-        ProjectDefinition updated = SelectedProject.Definition with { LastOpenedAt = DateTimeOffset.UtcNow };
-        SelectedProject.Update(updated);
-        LoadBackupSettings(updated);
-        SelectedPreset = ProjectPresets.All.FirstOrDefault(preset =>
-            preset.Features == updated.Features && preset.Retention.Mode == updated.Retention.Mode);
-        ClearGitGraphView();
+        CancellationToken cancellationToken = cancellationSource.Token;
+        IsProjectLoading = true;
+        SetProjectLoadProgress(project, loadVersion, 2, project is null ? "Closing project…" : $"Opening {project.Name}…");
         try
         {
-            await _projectCatalog.UpsertAsync(updated);
-            StatusMessage = "Chargement du dépôt…";
-            await RefreshCoreAsync();
-            await LoadLfsManagementCoreAsync();
-            await LoadLfsLocksCoreAsync();
-            await LoadRemoteBuildCoreAsync();
-            await LoadBackupsCoreAsync();
-            await LoadSyncProfileCoreAsync();
-            await LoadVpnProfileCoreAsync();
-            await LoadDiscordProfileCoreAsync();
-            await LoadAdvisoryReservationsCoreAsync();
-            await RefreshCodeWorkspaceAsync();
-            await LoadAiMcpProfileCoreAsync();
-            await ResolvePullRequestRepositoryAsync();
-            await RefreshProjectMembersCoreAsync(testConnections: false);
-            StatusMessage = "Dépôt chargé";
+            await _discordAgent.StopAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentProjectLoad(project, loadVersion))
+            {
+                return;
+            }
+
+            ClearPullRequestData();
+            if (project is null)
+            {
+                await StopSyncCoreAsync();
+                ResetDiscordView();
+                ClearRepositoryView();
+                return;
+            }
+
+            if (_syncEngineProjectId is not null && _syncEngineProjectId != project.Id)
+            {
+                SetProjectLoadProgress(project, loadVersion, 5, "Stopping the previous project services…");
+                await StopSyncCoreAsync();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            ProjectDefinition updated = project.Definition with { LastOpenedAt = DateTimeOffset.UtcNow };
+            project.Update(updated);
+            LoadBackupSettings(updated);
+            SelectedPreset = ProjectPresets.All.FirstOrDefault(preset =>
+                preset.Features == updated.Features && preset.Retention.Mode == updated.Retention.Mode);
+            ClearGitGraphView();
+
+            SetProjectLoadProgress(project, loadVersion, 8, "Loading project preferences…");
+            await _projectCatalog.UpsertAsync(updated, cancellationToken);
+            LocalChangePreferences localPreferences = await _localChangePreferencesStore.LoadAsync(updated.Id, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentProjectLoad(project, loadVersion))
+            {
+                return;
+            }
+
+            _localOnlyChangePaths.Clear();
+            foreach (string path in localPreferences.LocalOnlyPaths)
+            {
+                _localOnlyChangePaths.Add(NormalizeChangePath(path));
+            }
+
+            StatusMessage = $"Loading {project.Name}…";
+            SetProjectLoadProgress(project, loadVersion, 12, "Reading Git status and current branch…");
+            await RefreshCoreAsync(project, loadVersion, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentProjectLoad(project, loadVersion))
+            {
+                return;
+            }
+
+            SetProjectLoadProgress(project, loadVersion, 48, "Loading Git LFS locks…");
+            await LoadLfsLocksCoreAsync(cancellationToken, project.Id);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentProjectLoad(project, loadVersion))
+            {
+                return;
+            }
+
+            SetProjectLoadProgress(project, loadVersion, 66, "Loading project tools…");
+            await LoadProjectSupplementalDataAsync(project, loadVersion, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentProjectLoad(project, loadVersion))
+            {
+                return;
+            }
+
+            SetProjectLoadProgress(project, loadVersion, 98, "Scanning untracked files in the background…");
+            GitRepositoryStatus detailedStatus = await _gitService.GetDetailedStatusAsync(project.RootPath, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentProjectLoad(project, loadVersion))
+            {
+                return;
+            }
+            ApplyPrimaryGitStatus(project, detailedStatus);
+
+            if (!_codeWorkspaceCache.ContainsKey(project.Id))
+                CodeWorkspaceSummary = "Open Solution Explorer to index project files.";
+            SetProjectLoadProgress(project, loadVersion, 100, $"{project.Name} is ready");
+            project.SetLoaded($"{Changes.Count:N0} change(s) · ready", CurrentBranch);
+            StatusMessage = $"{project.Name} loaded";
+            _loadedProjectSessions.Add(project.Id);
+            CacheCurrentProjectSession(project);
+        }
+        catch (OperationCanceledException)
+        {
+            // Selecting another project intentionally cancels this load.
+            project?.SetLoadCancelled();
         }
         catch (Exception exception)
         {
-            StatusMessage = exception.Message;
+            if (IsCurrentProjectLoad(project, loadVersion))
+            {
+                StatusMessage = exception.Message;
+                ProjectLoadStage = $"Unable to load {project?.Name ?? "project"}: {exception.Message}";
+                project?.SetLoadError(exception.Message);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_projectLoadCancellation, cancellationSource))
+            {
+                IsProjectLoading = false;
+                _projectLoadCancellation = null;
+                cancellationSource.Dispose();
+            }
         }
     }
 
-    private async Task LoadSelectedDiffAsync()
+    private async Task LoadProjectSupplementalDataAsync(
+        ProjectItemViewModel project,
+        int loadVersion,
+        CancellationToken cancellationToken)
     {
-        if (SelectedProject is null || SelectedChange is null)
+        async Task RunStageAsync(double progress, string stage, Func<Task> operation)
         {
-            DiffText = "Sélectionnez un fichier pour afficher son diff.";
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentProjectLoad(project, loadVersion))
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            SetProjectLoadProgress(project, loadVersion, progress, stage);
+            await operation();
+        }
+
+        await RunStageAsync(68, "Loading LFS storage settings…", LoadLfsManagementCoreAsync);
+        await RunStageAsync(71, "Loading remote-build settings…", LoadRemoteBuildCoreAsync);
+        await RunStageAsync(74, "Loading backups…", LoadBackupsCoreAsync);
+        await RunStageAsync(78, "Loading synchronization profile…", LoadSyncProfileCoreAsync);
+        await RunStageAsync(82, "Loading VPN profile…", LoadVpnProfileCoreAsync);
+        await RunStageAsync(85, "Loading Discord agent settings…", LoadDiscordProfileCoreAsync);
+        await RunStageAsync(88, "Loading work-in-progress reservations…", LoadAdvisoryReservationsCoreAsync);
+        await RunStageAsync(91, "Loading AI and MCP settings…", LoadAiMcpProfileCoreAsync);
+        await RunStageAsync(94, "Detecting pull-request remote…", ResolvePullRequestRepositoryAsync);
+        await RunStageAsync(97, "Building project member overview…", () => RefreshProjectMembersCoreAsync(testConnections: false));
+    }
+
+    private bool IsCurrentProjectLoad(ProjectItemViewModel? project, int loadVersion) =>
+        loadVersion == _projectLoadVersion &&
+        ((project is null && SelectedProject is null) ||
+         (project is not null && SelectedProject?.Id == project.Id));
+
+    private void SetProjectLoadProgress(
+        ProjectItemViewModel? project,
+        int loadVersion,
+        double progress,
+        string stage)
+    {
+        if (!IsCurrentProjectLoad(project, loadVersion))
+        {
+            return;
+        }
+
+        ProjectLoadProgress = Math.Clamp(progress, 0, 100);
+        ProjectLoadStage = stage;
+        project?.SetLoading(stage, progress);
+    }
+
+    private void NotifyLongOperationStateChanged()
+    {
+        OnPropertyChanged(nameof(IsLongOperationActive));
+        OnPropertyChanged(nameof(IsLongOperationIndeterminate));
+        OnPropertyChanged(nameof(LongOperationProgress));
+        OnPropertyChanged(nameof(LongOperationStage));
+    }
+
+    private void ClearFastGitViewForProjectSwitch(ProjectItemViewModel? project)
+    {
+        CurrentProjectName = project?.Name ?? "No project";
+        RepositoryPath = project?.RootPath ?? "No project selected";
+        CurrentBranch = project is null
+            ? "—"
+            : project.Definition.Features.GitEnabled ? "Loading branch…" : "No Git";
+        ChangeSummary = project is null ? "0 changes" : $"{project.Name} · loading changes…";
+        ChangeSummaryColor = project is null ? "#A9ABB2" : "#61AFEF";
+        foreach (GitChangeViewModel change in Changes)
+        {
+            change.PreparationChanged -= OnChangePreparationItemChanged;
+        }
+        Changes.Clear();
+        PreparedChanges.Clear();
+        FilteredPreparedChanges.Clear();
+        LocalOnlyChanges.Clear();
+        FilteredLocalOnlyChanges.Clear();
+        ChangeTree.Clear();
+        History.Clear();
+        _allExplorerRevisions = [];
+        ExplorerFiles.Clear();
+        ExplorerFileHistory.Clear();
+        Branches.Clear();
+        FilteredBranches.Clear();
+        SelectedBranchHistory.Clear();
+        LfsPatterns.Clear();
+        LfsFiles.Clear();
+        IsLfsInventoryLoaded = false;
+        LfsVersions.Clear();
+        LfsLocks.Clear();
+        MyLfsLocks.Clear();
+        FilteredLfsLocks.Clear();
+        FilteredMyLfsLocks.Clear();
+        SelectedChange = null;
+        SelectedBranch = null;
+        SelectedExplorerRevision = null;
+        SelectedLfsFile = null;
+        LfsLockFilterSummary = "Loading locks…";
+        project?.SetLoading("Waiting for Git status…", 0);
+    }
+
+    private void CacheCurrentProjectSession(ProjectItemViewModel project)
+    {
+        Dictionary<string, object?> fields = [];
+        foreach (FieldInfo field in typeof(MainWindowViewModel).GetFields(BindingFlags.Instance | BindingFlags.NonPublic))
+        {
+            if (ShouldCacheProjectField(field)) fields[field.Name] = field.GetValue(this);
+        }
+
+        Dictionary<string, object?[]> collections = [];
+        foreach (PropertyInfo property in typeof(MainWindowViewModel).GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        {
+            if (!ShouldCacheProjectCollection(property) || property.GetValue(this) is not IEnumerable values) continue;
+            collections[property.Name] = values.Cast<object?>().ToArray();
+        }
+
+        _latestProjectStatuses.TryGetValue(project.Id, out GitRepositoryStatus? status);
+        _projectSessionCache[project.Id] = new CachedProjectSession(
+            fields,
+            collections,
+            status,
+            _localOnlyChangePaths.ToArray(),
+            DateTimeOffset.UtcNow);
+    }
+
+    private bool RestoreCachedProjectSession(ProjectItemViewModel project)
+    {
+        if (!_projectSessionCache.TryGetValue(project.Id, out CachedProjectSession? cached)) return false;
+
+        foreach ((string fieldName, object? value) in cached.Fields)
+        {
+            FieldInfo? field = typeof(MainWindowViewModel).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+            if (field is not null && ShouldCacheProjectField(field)) field.SetValue(this, value);
+        }
+
+        foreach ((string propertyName, object?[] values) in cached.Collections)
+        {
+            PropertyInfo? property = typeof(MainWindowViewModel).GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+            if (property?.GetValue(this) is not IList list) continue;
+            list.Clear();
+            foreach (object? value in values) list.Add(value);
+        }
+
+        _localOnlyChangePaths.Clear();
+        foreach (string path in cached.LocalOnlyPaths) _localOnlyChangePaths.Add(path);
+        _isRestoringProjectSession = true;
+        try
+        {
+            if (cached.Status is not null) ApplyPrimaryGitStatus(project, cached.Status);
+        }
+        finally
+        {
+            _isRestoringProjectSession = false;
+        }
+
+        IsProjectLoading = false;
+        ProjectLoadProgress = 100;
+        ProjectLoadStage = $"{project.Name} restored from memory · Refresh to update";
+        StatusMessage = $"{project.Name} restored from memory";
+        project.SetLoaded($"{Changes.Count:N0} change(s) · cached", CurrentBranch);
+        OnPropertyChanged(null);
+        return true;
+    }
+
+    private static bool ShouldCacheProjectField(FieldInfo field)
+    {
+        if (field.IsStatic || field.IsInitOnly || typeof(CancellationTokenSource).IsAssignableFrom(field.FieldType))
+            return false;
+
+        string name = field.Name;
+        if (name.Contains("LoadVersion", StringComparison.Ordinal) ||
+            name.Contains("Cancellation", StringComparison.Ordinal) ||
+            (name.StartsWith("_is", StringComparison.Ordinal) && name.Contains("Loading", StringComparison.Ordinal)))
+            return false;
+
+        return name is not (
+            "_selectedProject" or "_projectLoadVersion" or "_projectLoadProgress" or "_projectLoadStage" or
+            "_isProjectLoading" or "_isRestoringProjectSession" or "_isBusy" or "_statusMessage" or "_syncEngine" or "_syncEngineProjectId" or
+            "_vpnFileExchangeHost" or "_subscribedUnrealPlugin" or "_currentRemoteBuildJob" or "_availableUpdate" or
+            "_selectedLanguage" or "_allDocumentationTopics" or "_selectedDocumentationTopic" or
+            "_documentationSearch" or "_latestApplicationVersion" or "_updateStatus" or "_updateReleaseNotes" or
+            "_hasUpdateAvailable" or "_isCheckingForUpdates" or "_isDownloadingUpdate" or "_updateProgress" or
+            "_selectedPlugin" or "_isUnrealIntegrationEnabled" or "_discordIsRunning") &&
+               !name.StartsWith("_code", StringComparison.Ordinal) &&
+               !name.StartsWith("_selectedCode", StringComparison.Ordinal) &&
+               !name.StartsWith("_repositoryConsole", StringComparison.Ordinal) &&
+               !name.StartsWith("_applicationLog", StringComparison.Ordinal);
+    }
+
+    private static bool ShouldCacheProjectCollection(PropertyInfo property)
+    {
+        if (!property.PropertyType.IsGenericType ||
+            property.PropertyType.GetGenericTypeDefinition() != typeof(ObservableCollection<>)) return false;
+        return property.Name is not (
+            nameof(Projects) or nameof(Changes) or nameof(PreparedChanges) or nameof(FilteredPreparedChanges) or
+            nameof(LocalOnlyChanges) or nameof(FilteredLocalOnlyChanges) or nameof(ChangeTree) or
+            nameof(DocumentationTopics) or nameof(Plugins) or nameof(CodeTree) or nameof(CodeFileList) or
+            nameof(CodeSearchResults) or nameof(CodeHistory) or nameof(CodeSymbols) or nameof(AiProviders) or
+            nameof(RepositoryCommandHistory) or nameof(FilteredRepositoryCommandHistory) or
+            nameof(ApplicationLogEntries) or nameof(FilteredApplicationLogEntries));
+    }
+
+    private async Task LoadSelectedDiffAsync(
+        ProjectItemViewModel? project,
+        GitChangeViewModel? change,
+        int diffLoadVersion)
+    {
+        if (project is null || change is null)
+        {
+            if (diffLoadVersion == _selectedDiffLoadVersion)
+            {
+                DiffText = "Select a file to display its diff.";
+            }
+            return;
+        }
+
+        _workingTreeDiffCancellation?.Cancel();
+        _workingTreeDiffCancellation?.Dispose();
+        CancellationTokenSource cancellation = new();
+        _workingTreeDiffCancellation = cancellation;
+        string cacheKey = BuildWorkingTreeDiffCacheKey(project, change);
+        if (_diffCache.TryGetValue(cacheKey, out string? cachedDiff))
+        {
+            DiffText = cachedDiff;
+            IsWorkingTreeDiffLoading = false;
             return;
         }
 
         try
         {
-            DiffText = await _gitService.GetDiffAsync(
-                SelectedProject.RootPath,
-                SelectedChange.Path,
-                SelectedChange.Change.IsStaged);
-            if (string.IsNullOrWhiteSpace(DiffText))
+            IsWorkingTreeDiffLoading = true;
+            DiffText = $"Loading diff for {change.Path}…";
+            string diff = change.IsUntracked
+                ? await BuildUntrackedFileDiffAsync(project.RootPath, change.Path, cancellation.Token)
+                : await _gitService.GetDiffAsync(
+                    project.RootPath,
+                    change.Path,
+                    change.Change.IsStaged,
+                    cancellation.Token);
+            if (diffLoadVersion != _selectedDiffLoadVersion ||
+                SelectedProject?.Id != project.Id ||
+                !ReferenceEquals(SelectedChange, change))
             {
-                DiffText = SelectedChange.Change.IsLfsObject
-                    ? "Fichier LFS binaire — le diff visuel sera proposé par CyRevision Diff."
-                    : "Aucun diff textuel disponible pour ce fichier.";
+                return;
             }
+            string displayDiff = string.IsNullOrWhiteSpace(diff)
+                ? change.Change.IsLfsObject
+                    ? "Fichier LFS binaire — le diff visuel sera proposé par CyRevision Diff."
+                    : "Aucun diff textuel disponible pour ce fichier."
+                : diff;
+            StoreDiffCache(cacheKey, displayDiff);
+            DiffText = displayDiff;
+        }
+        catch (OperationCanceledException)
+        {
+            // Rapid selection changes intentionally cancel obsolete Git processes.
         }
         catch (Exception exception)
         {
-            DiffText = exception.Message;
+            if (diffLoadVersion == _selectedDiffLoadVersion && SelectedProject?.Id == project.Id)
+            {
+                DiffText = exception.Message;
+            }
         }
+        finally
+        {
+            if (diffLoadVersion == _selectedDiffLoadVersion && SelectedProject?.Id == project.Id)
+            {
+                IsWorkingTreeDiffLoading = false;
+            }
+            if (ReferenceEquals(_workingTreeDiffCancellation, cancellation))
+            {
+                _workingTreeDiffCancellation = null;
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    private string BuildWorkingTreeDiffCacheKey(ProjectItemViewModel project, GitChangeViewModel change)
+    {
+        string stamp = "missing";
+        try
+        {
+            string fullPath = Path.Combine(project.RootPath, change.Path.Replace('/', Path.DirectorySeparatorChar));
+            FileInfo info = new(fullPath);
+            if (info.Exists) stamp = $"{info.LastWriteTimeUtc.Ticks}:{info.Length}";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+        return $"working:{project.Id}:{_workingTreeDiffGeneration}:{change.Change.IsStaged}:{change.Path}:{stamp}";
+    }
+
+    private void StoreDiffCache(string key, string value)
+    {
+        if (_diffCache.Count >= 512) _diffCache.Clear();
+        _diffCache[key] = value;
+    }
+
+    public async Task<string> LoadSelectedDiffForExternalAsync()
+    {
+        int version = Interlocked.Increment(ref _selectedDiffLoadVersion);
+        await LoadSelectedDiffAsync(SelectedProject, SelectedChange, version);
+        return DiffText;
     }
 
     private async Task SelectExplorerCommitCoreAsync(string commitHash)
@@ -5874,21 +7485,27 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private async Task LoadExplorerRevisionAsync(GitRevision revision)
+    private async Task LoadExplorerRevisionAsync(GitRevision revision, int loadVersion)
     {
-        if (SelectedProject is null)
+        ProjectItemViewModel? project = SelectedProject;
+        if (project is null)
         {
             return;
         }
 
         _comparisonFromHash = null;
         _comparisonToHash = null;
+        IsExplorerLoading = true;
+        ExplorerSummary = $"Loading {revision.ShortHash} · {revision.Subject}…";
+        ExplorerDiff = "Loading committed files…";
         try
         {
             GitCommitDetails details = await _gitService.GetCommitDetailsAsync(
-                SelectedProject.RootPath,
+                project.RootPath,
                 revision.Hash);
-            if (SelectedExplorerRevision?.Hash != revision.Hash)
+            if (loadVersion != _explorerRevisionLoadVersion ||
+                SelectedProject?.Id != project.Id ||
+                SelectedExplorerRevision?.Hash != revision.Hash)
             {
                 return;
             }
@@ -5897,11 +7514,20 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             ExplorerSummary = $"{details.Revision.ShortHash} · {details.Revision.Subject} · " +
                               $"{details.Files.Count} fichier(s) · +{details.AddedLines} / -{details.DeletedLines} · " +
                               $"{details.BinaryFileCount} binaire(s)";
-            ExplorerDiff = await _gitService.GetCommitDiffAsync(SelectedProject.RootPath, revision.Hash);
+            ExplorerDiff = details.Files.Count == 0
+                ? "This commit does not contain a file change."
+                : "Select a committed file to inspect its diff.";
+            SelectedExplorerFile = null;
             SelectedExplorerFile = ExplorerFiles.FirstOrDefault();
         }
         catch (Exception exception)
         {
+            if (loadVersion != _explorerRevisionLoadVersion ||
+                SelectedProject?.Id != project.Id ||
+                SelectedExplorerRevision?.Hash != revision.Hash)
+            {
+                return;
+            }
             ExplorerSummary = exception.Message;
             ExplorerFiles.Clear();
             ExplorerFileHistory.Clear();
@@ -5912,47 +7538,113 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             BranchCompareTargets.Clear();
             ExplorerDiff = exception.Message;
         }
+        finally
+        {
+            if (loadVersion == _explorerRevisionLoadVersion &&
+                SelectedProject?.Id == project.Id &&
+                SelectedExplorerRevision?.Hash == revision.Hash)
+            {
+                IsExplorerLoading = false;
+            }
+        }
     }
 
-    private async Task LoadExplorerFileAsync(GitCommitFileChange? file)
+    private async Task LoadExplorerFileAsync(GitCommitFileChange? file, int loadVersion)
     {
-        if (SelectedProject is null || SelectedExplorerRevision is null || file is null)
+        ProjectItemViewModel? project = SelectedProject;
+        GitRevision? revision = SelectedExplorerRevision;
+        if (project is null || revision is null || file is null)
         {
             ExplorerFileHistory.Clear();
             return;
         }
 
-        string revisionHash = SelectedExplorerRevision.Hash;
+        _explorerFileCancellation?.Cancel();
+        _explorerFileCancellation?.Dispose();
+        CancellationTokenSource cancellation = new();
+        _explorerFileCancellation = cancellation;
+        string revisionHash = revision.Hash;
+        string comparisonKey = _comparisonFromHash is not null && _comparisonToHash is not null
+            ? $"{_comparisonFromHash}:{_comparisonToHash}"
+            : revisionHash;
+        string diffCacheKey = $"commit:{project.Id}:{comparisonKey}:{file.Path}";
+        string historyCacheKey = $"history:{project.Id}:{file.Path}";
+        IsExplorerDiffLoading = true;
+        if (_diffCache.TryGetValue(diffCacheKey, out string? cachedDiff))
+        {
+            ExplorerDiff = cachedDiff;
+            IsExplorerDiffLoading = false;
+        }
+        else
+        {
+            ExplorerDiff = $"Loading diff for {file.Path}…";
+        }
         try
         {
-            Task<IReadOnlyList<GitFileRevision>> historyTask = _gitService.GetFileHistoryAsync(
-                SelectedProject.RootPath,
-                file.Path,
-                100);
-            Task<string> diffTask = _comparisonFromHash is not null && _comparisonToHash is not null
-                ? _gitService.GetComparisonDiffAsync(
-                    SelectedProject.RootPath,
-                    _comparisonFromHash,
-                    _comparisonToHash,
-                    file.Path)
-                : _gitService.GetCommitDiffAsync(SelectedProject.RootPath, revisionHash, file.Path);
-            await Task.WhenAll(historyTask, diffTask);
-            if (SelectedExplorerFile?.Path != file.Path)
+            Task<IReadOnlyList<GitFileRevision>> historyTask = _fileHistoryCache.TryGetValue(historyCacheKey, out IReadOnlyList<GitFileRevision>? cachedHistory)
+                ? Task.FromResult(cachedHistory)
+                : _gitService.GetFileHistoryAsync(project.RootPath, file.Path, 100, cancellation.Token);
+
+            if (cachedDiff is null)
+            {
+                string diff = _comparisonFromHash is not null && _comparisonToHash is not null
+                    ? await _gitService.GetComparisonDiffAsync(
+                        project.RootPath, _comparisonFromHash, _comparisonToHash, file.Path, cancellation.Token)
+                    : await _gitService.GetCommitDiffAsync(project.RootPath, revisionHash, file.Path, cancellation.Token);
+                cancellation.Token.ThrowIfCancellationRequested();
+                if (loadVersion != _explorerFileLoadVersion || SelectedProject?.Id != project.Id ||
+                    SelectedExplorerRevision?.Hash != revisionHash || SelectedExplorerFile?.Path != file.Path)
+                    return;
+                cachedDiff = string.IsNullOrWhiteSpace(diff)
+                    ? file.IsLfsObject
+                        ? "Git LFS object: use the LFS timeline to preview or export this version."
+                        : "No textual diff is available for this file."
+                    : diff;
+                StoreDiffCache(diffCacheKey, cachedDiff);
+                ExplorerDiff = cachedDiff;
+                IsExplorerDiffLoading = false;
+            }
+
+            IReadOnlyList<GitFileRevision> history = await historyTask;
+            if (loadVersion != _explorerFileLoadVersion ||
+                SelectedProject?.Id != project.Id ||
+                SelectedExplorerRevision?.Hash != revisionHash ||
+                SelectedExplorerFile?.Path != file.Path)
             {
                 return;
             }
 
-            ReplaceCollection(ExplorerFileHistory, await historyTask);
-            string diff = await diffTask;
-            ExplorerDiff = string.IsNullOrWhiteSpace(diff)
-                ? file.IsLfsObject
-                    ? "Objet Git LFS : utilisez la Time Machine pour prévisualiser ou exporter cette version."
-                    : "Aucun diff textuel disponible pour ce fichier."
-                : diff;
+            _fileHistoryCache[historyCacheKey] = history;
+            ReplaceCollection(ExplorerFileHistory, history);
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer file selection superseded this load.
         }
         catch (Exception exception)
         {
-            ExplorerDiff = exception.Message;
+            if (loadVersion == _explorerFileLoadVersion &&
+                SelectedProject?.Id == project.Id &&
+                SelectedExplorerRevision?.Hash == revisionHash &&
+                SelectedExplorerFile?.Path == file.Path)
+            {
+                ExplorerDiff = exception.Message;
+            }
+        }
+        finally
+        {
+            if (loadVersion == _explorerFileLoadVersion &&
+                SelectedProject?.Id == project.Id &&
+                SelectedExplorerRevision?.Hash == revisionHash &&
+                SelectedExplorerFile?.Path == file.Path)
+            {
+                IsExplorerDiffLoading = false;
+            }
+            if (ReferenceEquals(_explorerFileCancellation, cancellation))
+            {
+                _explorerFileCancellation = null;
+                cancellation.Dispose();
+            }
         }
     }
 
@@ -5970,6 +7662,27 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
 
         ReplaceCollection(History, filtered);
+    }
+
+    private void ApplyCommitExplorerFilter()
+    {
+        string query = ExplorerSearch.Trim();
+        IEnumerable<GitRevision> filtered = _commitExplorerSourceRevisions;
+        if (query.Length > 0)
+        {
+            filtered = filtered.Where(revision =>
+                revision.Hash.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                revision.Subject.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                revision.AuthorName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                revision.AuthorEmail.Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        ReplaceCollection(CommitExplorerRevisions, filtered);
+        if (SelectedCommitExplorerRevision is not null &&
+            CommitExplorerRevisions.All(revision => revision.Hash != SelectedCommitExplorerRevision.Hash))
+        {
+            SelectedCommitExplorerRevision = CommitExplorerRevisions.FirstOrDefault();
+        }
     }
 
     private void UpdateSmartSyncPlan()
@@ -6103,107 +7816,510 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private async Task RefreshCoreAsync()
+    private async Task RefreshCoreAsync(
+        ProjectItemViewModel? expectedProject = null,
+        int? expectedLoadVersion = null,
+        CancellationToken cancellationToken = default,
+        bool includeUntrackedFiles = false)
     {
-        if (SelectedProject is null)
+        ProjectItemViewModel? project = expectedProject ?? SelectedProject;
+        if (project is null || !IsRefreshContextCurrent(project, expectedLoadVersion))
         {
             return;
         }
 
-        if (!SelectedProject.Definition.Features.GitEnabled)
+        if (!project.Definition.Features.GitEnabled)
         {
-            RepositoryPath = SelectedProject.RootPath;
-            CurrentBranch = "Mode sans Git";
-            ChangeSummary = "Synchronisation / sauvegarde de fichiers";
+            RepositoryPath = project.RootPath;
+            CurrentProjectName = project.Name;
+            CurrentBranch = "No Git";
+            ChangeSummary = $"{project.Name} · file synchronization / backup";
+            ChangeSummaryColor = "#78D7B7";
             Changes.Clear();
+            PreparedChanges.Clear();
+            FilteredPreparedChanges.Clear();
+            LocalOnlyChanges.Clear();
+            FilteredLocalOnlyChanges.Clear();
+            ChangeTree.Clear();
+            UpdateChangePreparationSummary();
             History.Clear();
             Branches.Clear();
+            FilteredBranches.Clear();
+            SelectedBranchHistory.Clear();
             LfsPatterns.Clear();
             LfsLocks.Clear();
             MyLfsLocks.Clear();
+            FilteredLfsLocks.Clear();
+            FilteredMyLfsLocks.Clear();
+            ApplyLfsLockFilter();
             LfsLocksSummary = "Git is disabled for this project.";
             ExplorerFiles.Clear();
             ExplorerFileHistory.Clear();
             LfsFiles.Clear();
+            IsLfsInventoryLoaded = false;
             LfsVersions.Clear();
             _allExplorerRevisions = [];
             SelectedExplorerRevision = null;
             SelectedLfsFile = null;
             SelectedBranch = null;
             SelectedChange = null;
-            DiffText = "Git est désactivé pour ce projet.";
+            DiffText = "Git is disabled for this project.";
+            project.SetGitState("No Git", "File synchronization / backup");
             return;
         }
 
-        string rootPath = SelectedProject.RootPath;
-        Task<GitRepositoryStatus> statusTask = _gitService.GetStatusAsync(rootPath);
-        Task<IReadOnlyList<GitRevision>> historyTask = _gitService.GetHistoryAsync(rootPath);
-        Task<IReadOnlyList<GitBranch>> branchesTask = _gitService.GetBranchesAsync(rootPath);
-        Task<IReadOnlyList<LfsTrackedPattern>> lfsTask = _gitService.GetLfsPatternsAsync(rootPath);
-        Task<IReadOnlyList<LfsTrackedFile>> lfsFilesTask = _gitService.GetLfsTrackedFilesAsync(rootPath);
-        await Task.WhenAll(statusTask, historyTask, branchesTask, lfsTask, lfsFilesTask);
+        string rootPath = project.RootPath;
+        Task<GitRepositoryStatus> statusTask = includeUntrackedFiles
+            ? _gitService.GetDetailedStatusAsync(rootPath, cancellationToken)
+            : _gitService.GetQuickStatusAsync(rootPath, cancellationToken);
+        Task<IReadOnlyList<GitBranch>> branchesTask = _gitService.GetBranchesAsync(rootPath, cancellationToken);
+        Task<IReadOnlyList<GitRevision>> historyTask = IncludeRemoteHistory
+            ? _gitService.GetHistoryAcrossRefsAsync(rootPath, cancellationToken: cancellationToken)
+            : _gitService.GetHistoryAsync(rootPath, cancellationToken: cancellationToken);
+        Task<IReadOnlyList<LfsTrackedPattern>> lfsTask = _gitService.GetLfsPatternsAsync(rootPath, cancellationToken);
+
+        await Task.WhenAll(statusTask, branchesTask);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsRefreshContextCurrent(project, expectedLoadVersion))
+        {
+            return;
+        }
 
         GitRepositoryStatus status = await statusTask;
-        CurrentBranch = status.IsDetachedHead ? $"HEAD {status.CurrentBranch}" : status.CurrentBranch;
-        RepositoryPath = status.RootPath;
-        ChangeSummary = $"{status.Changes.Count} modification(s) · ↑{status.AheadBy} ↓{status.BehindBy}";
+        ApplyPrimaryGitStatus(project, status);
+        ReplaceCollection(Branches, await branchesTask);
+        ApplyBranchFilter();
+        RefreshCompositionBranches();
+        SelectedBranch = Branches.FirstOrDefault(branch => branch.IsCurrent);
+        if (expectedLoadVersion is int primaryLoadVersion)
+        {
+            SetProjectLoadProgress(project, primaryLoadVersion, 28, "Git status ready · loading history and LFS metadata…");
+        }
 
-        ReplaceCollection(Changes, status.Changes.Select(change => new GitChangeViewModel(change)));
+        await Task.WhenAll(historyTask, lfsTask);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsRefreshContextCurrent(project, expectedLoadVersion))
+        {
+            return;
+        }
+
         _allExplorerRevisions = (await historyTask).ToArray();
         ApplyExplorerFilter();
-        ReplaceCollection(Branches, await branchesTask);
-        RefreshCompositionBranches();
         ReplaceCollection(LfsPatterns, await lfsTask);
-        ReplaceCollection(LfsFiles, await lfsFilesTask);
-        SelectedBranch = Branches.FirstOrDefault(branch => branch.IsCurrent);
-        SelectedChange = Changes.FirstOrDefault();
         GitRevision? firstRevision = History.FirstOrDefault();
         if (firstRevision is not null && SelectedExplorerRevision?.Hash == firstRevision.Hash)
         {
-            _ = LoadExplorerRevisionAsync(firstRevision);
+            int loadVersion = Interlocked.Increment(ref _explorerRevisionLoadVersion);
+            _ = LoadExplorerRevisionAsync(firstRevision, loadVersion);
         }
         else
         {
             SelectedExplorerRevision = firstRevision;
         }
 
-        LfsTrackedFile? selectedLfsFile = LfsFiles.FirstOrDefault(file => file.Path == SelectedLfsFile?.Path)
-                                              ?? LfsFiles.FirstOrDefault();
-        if (selectedLfsFile is not null && SelectedLfsFile?.Path == selectedLfsFile.Path)
-        {
-            _ = LoadLfsTimelineAsync(selectedLfsFile);
-        }
-        else
-        {
-            SelectedLfsFile = selectedLfsFile;
-        }
         UpdateSmartSyncPlan();
+        if (expectedLoadVersion is int metadataLoadVersion)
+        {
+            SetProjectLoadProgress(project, metadataLoadVersion, 45, "Git history and LFS metadata ready");
+        }
     }
 
-    private async Task LoadLfsLocksCoreAsync()
+    private bool IsRefreshContextCurrent(ProjectItemViewModel project, int? expectedLoadVersion) =>
+        SelectedProject?.Id == project.Id &&
+        (!expectedLoadVersion.HasValue || expectedLoadVersion.Value == _projectLoadVersion);
+
+    private void ApplyPrimaryGitStatus(ProjectItemViewModel project, GitRepositoryStatus status)
     {
+        _latestProjectStatuses[project.Id] = status;
+        if (!_isRestoringProjectSession) Interlocked.Increment(ref _workingTreeDiffGeneration);
+        CurrentBranch = status.IsDetachedHead ? $"HEAD {status.CurrentBranch}" : status.CurrentBranch;
+        CurrentProjectName = project.Name;
+        RepositoryPath = status.RootPath;
+        ChangeSummary = $"{project.Name} · {status.Changes.Count:N0} change(s) · ↑{status.AheadBy} ↓{status.BehindBy}";
+        ChangeSummaryColor = status.Changes.Any(change => change.Kind == GitChangeKind.Conflicted)
+            ? "#E06C75"
+            : status.Changes.Count > 0 ? "#E5C07B" : "#78D7B7";
+        RebuildChangePreparation(status.Changes, SelectedChange?.Path);
+        project.SetGitState(CurrentBranch, $"{status.Changes.Count:N0} change(s)");
+    }
+
+    private void RebuildChangePreparation(
+        IReadOnlyList<GitChange> changes,
+        string? selectedPath = null)
+    {
+        Dictionary<string, bool> previousSelection = Changes
+            .GroupBy(change => NormalizeChangePath(change.Path), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().IsIncluded, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, LfsFileLock> locks = LfsLocks
+            .GroupBy(fileLock => NormalizeChangePath(fileLock.Path), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (GitChangeViewModel change in Changes)
+        {
+            change.PreparationChanged -= OnChangePreparationItemChanged;
+        }
+        Changes.Clear();
+        PreparedChanges.Clear();
+        FilteredPreparedChanges.Clear();
+        LocalOnlyChanges.Clear();
+        FilteredLocalOnlyChanges.Clear();
+
+        foreach (GitChange change in changes.OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            string path = NormalizeChangePath(change.Path);
+            bool localOnly = change.Kind == GitChangeKind.Untracked && _localOnlyChangePaths.Contains(path);
+            bool included = previousSelection.TryGetValue(path, out bool wasIncluded)
+                ? wasIncluded
+                : !localOnly;
+            locks.TryGetValue(path, out LfsFileLock? fileLock);
+            GitChangeViewModel item = new(change, included, localOnly, fileLock);
+            item.PreparationChanged += OnChangePreparationItemChanged;
+            Changes.Add(item);
+            if (localOnly)
+            {
+                LocalOnlyChanges.Add(item);
+            }
+            else
+            {
+                PreparedChanges.Add(item);
+            }
+        }
+
+        ApplyChangeFilter();
+        SelectedChange = Changes.FirstOrDefault(change =>
+                             string.Equals(change.Path, selectedPath, StringComparison.OrdinalIgnoreCase))
+                         ?? PreparedChanges.FirstOrDefault()
+                         ?? LocalOnlyChanges.FirstOrDefault();
+        UpdateChangePreparationSummary();
+    }
+
+    private void ApplyChangeFilter()
+    {
+        string[] terms = ChangeSearch.Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        bool Matches(GitChangeViewModel change) => terms.Length == 0 || terms.All(term =>
+            change.Path.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            change.State.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            change.Area.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            change.LockOwner.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+        IOrderedEnumerable<GitChangeViewModel> Sort(IEnumerable<GitChangeViewModel> source) => ChangeSort switch
+        {
+            "State" => source.OrderBy(change => change.State, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(change => change.Path, StringComparer.OrdinalIgnoreCase),
+            "Lock" => source.OrderByDescending(change => change.HasLock)
+                .ThenBy(change => change.LockOwner, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(change => change.Path, StringComparer.OrdinalIgnoreCase),
+            "Area" => source.OrderBy(change => change.Area, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(change => change.Path, StringComparer.OrdinalIgnoreCase),
+            _ => source.OrderBy(change => change.Path, StringComparer.OrdinalIgnoreCase)
+        };
+
+        ReplaceCollection(FilteredPreparedChanges, Sort(PreparedChanges.Where(Matches)));
+        ReplaceCollection(FilteredLocalOnlyChanges, Sort(LocalOnlyChanges.Where(Matches)));
+        RebuildChangeTree(Changes.Where(Matches));
+    }
+
+    private void RebuildChangeTree(IEnumerable<GitChangeViewModel>? source = null)
+    {
+        GitChangeViewModel[] visible = (source ?? Changes).ToArray();
+        ChangeTree.Clear();
+        AddChangeTreeGroup("Tracked changes", "tracked", visible.Where(change => change.IsTracked));
+        AddChangeTreeGroup("Untracked files", "untracked", visible.Where(change => change.IsUntracked && !change.IsLocalOnly));
+        AddChangeTreeGroup("Local-only files", "local", visible.Where(change => change.IsLocalOnly));
+    }
+
+    private void AddChangeTreeGroup(
+        string title,
+        string groupKind,
+        IEnumerable<GitChangeViewModel> source)
+    {
+        GitChangeViewModel[] changes = source.OrderBy(change => change.Path, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (changes.Length == 0)
+        {
+            return;
+        }
+
+        GitChangeTreeNode root = new(title, string.Empty, true, groupKind: groupKind);
+        foreach (GitChangeViewModel change in changes)
+        {
+            string[] parts = NormalizeChangePath(change.Path)
+                .Split('/', StringSplitOptions.RemoveEmptyEntries);
+            GitChangeTreeNode parent = root;
+            string currentPath = string.Empty;
+            for (int index = 0; index < Math.Max(0, parts.Length - 1); index++)
+            {
+                string part = parts[index];
+                currentPath = currentPath.Length == 0 ? part : currentPath + "/" + part;
+                GitChangeTreeNode? directory = parent.Children.FirstOrDefault(node =>
+                    node.IsDirectory && string.Equals(node.Name, part, StringComparison.OrdinalIgnoreCase));
+                if (directory is null)
+                {
+                    directory = new GitChangeTreeNode(part, currentPath, true);
+                    parent.Children.Add(directory);
+                }
+                parent = directory;
+            }
+
+            parent.Children.Add(new GitChangeTreeNode(
+                parts.LastOrDefault() ?? change.Path,
+                change.Path,
+                false,
+                change));
+        }
+
+        ChangeTree.Add(root);
+    }
+
+    private void OnChangePreparationItemChanged(object? sender, EventArgs e) => UpdateChangePreparationSummary();
+
+    private void UpdateChangePreparationSummary()
+    {
+        int tracked = Changes.Count(change => change.IsTracked);
+        int untracked = Changes.Count(change => change.IsUntracked && !change.IsLocalOnly);
+        int included = IncludedChangeCount;
+        int kept = KeptChangeCount;
+        int local = LocalOnlyChanges.Count;
+        int locked = Changes.Count(change => change.HasLock);
+        ChangePreparationSummary =
+            $"{included} selected · {kept} kept · {tracked} tracked · {untracked} untracked · {local} local-only" +
+            (locked > 0 ? $" · {locked} locked" : string.Empty);
+        OnPropertyChanged(nameof(IncludedChangeCount));
+        OnPropertyChanged(nameof(KeptChangeCount));
+        OnPropertyChanged(nameof(ForeignLockedIncludedCount));
+        OnPropertyChanged(nameof(CanCommitPreparedChanges));
+    }
+
+    private async Task SaveLocalChangePreferencesAsync()
+    {
+        if (SelectedProject is not null)
+        {
+            await _localChangePreferencesStore.SaveAsync(SelectedProject.Id, _localOnlyChangePaths);
+        }
+    }
+
+    private static async Task<string> BuildUntrackedFileDiffAsync(
+        string repositoryRoot,
+        string relativePath,
+        CancellationToken cancellationToken)
+    {
+        string root = Path.GetFullPath(repositoryRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string fullPath = Path.GetFullPath(Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (!fullPath.StartsWith(root + Path.DirectorySeparatorChar, comparison) || !File.Exists(fullPath))
+        {
+            return "The untracked file is no longer available.";
+        }
+
+        FileInfo file = new(fullPath);
+        if (file.Length > 2 * 1024 * 1024)
+        {
+            return $"Untracked file · {file.Length / 1024d / 1024d:0.##} MB · text preview limited to 2 MB.";
+        }
+
+        byte[] bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken);
+        if (bytes.Contains((byte)0))
+        {
+            return $"Untracked binary file · {file.Length / 1024d:0.#} KB · no textual diff available.";
+        }
+
+        string[] lines = Encoding.UTF8.GetString(bytes)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n');
+        int visibleLineCount = Math.Min(lines.Length, 5000);
+        StringBuilder diff = new();
+        diff.AppendLine($"diff --git a/{relativePath} b/{relativePath}");
+        diff.AppendLine("new file mode 100644");
+        diff.AppendLine("--- /dev/null");
+        diff.AppendLine($"+++ b/{relativePath}");
+        diff.AppendLine($"@@ -0,0 +1,{lines.Length} @@");
+        for (int index = 0; index < visibleLineCount; index++)
+        {
+            diff.Append('+').AppendLine(lines[index]);
+        }
+        if (visibleLineCount < lines.Length)
+        {
+            diff.AppendLine($"+… {lines.Length - visibleLineCount} additional line(s) hidden …");
+        }
+        return diff.ToString();
+    }
+
+    private static string NormalizeChangePath(string path) => path.Trim().Replace('\\', '/').TrimStart('/');
+
+    private async Task LoadLfsLocksCoreAsync(
+        CancellationToken cancellationToken = default,
+        Guid? expectedProjectId = null)
+    {
+        ProjectItemViewModel? project = SelectedProject;
         LfsLocks.Clear();
         MyLfsLocks.Clear();
-        if (SelectedProject is null || !SelectedProject.Definition.Features.GitEnabled)
+        FilteredLfsLocks.Clear();
+        FilteredMyLfsLocks.Clear();
+        SetSelectedLfsLocks([], mineList: false);
+        SetSelectedLfsLocks([], mineList: true);
+        ApplyLfsLockFilter();
+        if (project is null ||
+            (expectedProjectId.HasValue && project.Id != expectedProjectId.Value) ||
+            !project.Definition.Features.GitEnabled)
         {
             LfsLocksSummary = "Git is disabled for this project.";
+            ApplyLfsLockFilter();
             return;
         }
 
         try
         {
-            IReadOnlyList<LfsFileLock> locks = await _gitService.GetLfsLocksAsync(SelectedProject.RootPath);
+            IReadOnlyList<LfsFileLock> locks = await _gitService.GetLfsLocksAsync(project.RootPath, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (SelectedProject?.Id != project.Id ||
+                (expectedProjectId.HasValue && expectedProjectId.Value != project.Id))
+            {
+                return;
+            }
             ReplaceCollection(LfsLocks, locks);
             ReplaceCollection(MyLfsLocks, locks.Where(item => item.IsOurs));
+            ApplyLfsLockFilter();
             int others = locks.Count - MyLfsLocks.Count;
             bool cached = locks.Any(item => item.IsCached);
-            LfsLocksSummary = $"{locks.Count} project lock(s) Â· {MyLfsLocks.Count} mine Â· {others} other user(s)" +
-                              (cached ? " Â· cached/offline data" : " Â· verified with the LFS server");
+            LfsLocksSummary = $"{locks.Count} project lock(s) · {MyLfsLocks.Count} mine · {others} other user(s)" +
+                              (cached ? " · cached/offline data" : " · verified with the LFS server");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception exception)
         {
             LfsLocksSummary = "Unable to load Git LFS locks: " + exception.Message;
+            ApplyLfsLockFilter();
         }
+        finally
+        {
+            if (SelectedProject?.Id == project.Id && Changes.Count > 0)
+            {
+                RebuildChangePreparation(Changes.Select(change => change.Change).ToArray(), SelectedChange?.Path);
+            }
+        }
+    }
+
+    private void ApplyLfsLockFilter()
+    {
+        static bool Matches(LfsFileLock fileLock, string search)
+        {
+            string[] terms = search.Split(
+                ' ',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return terms.Length == 0 || terms.All(term =>
+                fileLock.Path.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                Path.GetFileName(fileLock.Path).Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                fileLock.OwnerName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                fileLock.Ownership.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                fileLock.Source.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                fileLock.Id.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        static IOrderedEnumerable<LfsFileLock> Sort(IEnumerable<LfsFileLock> source, string sort) => sort switch
+        {
+            "Owner" => source.OrderBy(item => item.Ownership, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.OwnerName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => Path.GetFileName(item.Path), StringComparer.OrdinalIgnoreCase),
+            "Locked by" => source.OrderBy(item => item.OwnerName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => Path.GetFileName(item.Path), StringComparer.OrdinalIgnoreCase),
+            "Date" => source.OrderByDescending(item => item.LockedAt)
+                .ThenBy(item => item.Path, StringComparer.OrdinalIgnoreCase),
+            "Source" => source.OrderBy(item => item.Source, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.Path, StringComparer.OrdinalIgnoreCase),
+            "ID" => source.OrderBy(item => item.Id, StringComparer.OrdinalIgnoreCase),
+            _ => source.OrderBy(item => Path.GetFileName(item.Path), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+        };
+
+        ReplaceCollection(
+            FilteredLfsLocks,
+            Sort(LfsLocks.Where(item => Matches(item, AllLfsLockSearch)), AllLfsLockSort));
+        ReplaceCollection(
+            FilteredMyLfsLocks,
+            Sort(MyLfsLocks.Where(item => Matches(item, MyLfsLockSearch)), MyLfsLockSort));
+        RebuildLfsLockTree(LfsLockTree, FilteredLfsLocks);
+        RebuildLfsLockTree(MyLfsLockTree, FilteredMyLfsLocks);
+        LfsLockFilterSummary = $"All {FilteredLfsLocks.Count:N0}/{LfsLocks.Count:N0} · " +
+                               $"Mine {FilteredMyLfsLocks.Count:N0}/{MyLfsLocks.Count:N0}";
+    }
+
+    private static void RebuildLfsLockTree(
+        ObservableCollection<LfsLockTreeNode> target,
+        IEnumerable<LfsFileLock> locks)
+    {
+        target.Clear();
+        foreach (LfsFileLock fileLock in locks)
+        {
+            string[] parts = NormalizeChangePath(fileLock.Path)
+                .Split('/', StringSplitOptions.RemoveEmptyEntries);
+            IList<LfsLockTreeNode> level = target;
+            string currentPath = string.Empty;
+            for (int index = 0; index < Math.Max(0, parts.Length - 1); index++)
+            {
+                string part = parts[index];
+                currentPath = currentPath.Length == 0 ? part : currentPath + "/" + part;
+                LfsLockTreeNode? directory = level.FirstOrDefault(node =>
+                    node.IsDirectory && node.Name.Equals(part, StringComparison.OrdinalIgnoreCase));
+                if (directory is null)
+                {
+                    directory = new LfsLockTreeNode(part, currentPath, true);
+                    level.Add(directory);
+                }
+                level = directory.Children;
+            }
+            level.Add(new LfsLockTreeNode(parts.LastOrDefault() ?? fileLock.Path, fileLock.Path, false, fileLock));
+        }
+    }
+
+    public void SetSelectedLfsLocks(IEnumerable<LfsFileLock> locks, bool mineList)
+    {
+        LfsFileLock[] selected = locks.DistinctBy(item => item.Id).ToArray();
+        if (mineList)
+        {
+            _selectedMyLocks = selected;
+            SelectedMyLockCount = selected.Length;
+        }
+        else
+        {
+            _selectedProjectLocks = selected;
+            SelectedProjectLockCount = selected.Length;
+        }
+    }
+
+    public async Task UnlockSelectedLfsLocksAsync(bool mineList)
+    {
+        if (SelectedProject is null) return;
+        LfsFileLock[] targets = (mineList ? _selectedMyLocks : _selectedProjectLocks).ToArray();
+        if (targets.Length == 0) return;
+
+        await RunOperationAsync(
+            $"Unlocking {targets.Length:N0} selected Git LFS file(s)…",
+            async () =>
+            {
+                List<string> failures = [];
+                foreach (LfsFileLock item in targets)
+                {
+                    try
+                    {
+                        await _gitService.UnlockLfsFileAsync(SelectedProject.RootPath, item.Id, force: !item.IsOurs);
+                    }
+                    catch (Exception exception)
+                    {
+                        failures.Add($"{item.Path}: {exception.Message}");
+                    }
+                }
+                await LoadLfsLocksCoreAsync();
+                if (failures.Count > 0)
+                    throw new GitOperationException(string.Join(" | ", failures.Take(3)));
+            },
+            $"{targets.Length:N0} selected lock(s) processed");
     }
 
     private async Task LoadLfsManagementCoreAsync()
@@ -7700,17 +9816,27 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private async Task RunGitNetworkOperationAsync(
         string progressMessage,
         Func<string, CancellationToken, Task> operation,
-        string successMessage)
+        string successMessage,
+        bool includeRemoteHistory = false)
     {
         if (SelectedProject is null)
         {
             return;
         }
 
+        ProjectItemViewModel project = SelectedProject;
         await RunOperationAsync(progressMessage, async () =>
         {
-            await operation(SelectedProject.RootPath, CancellationToken.None);
-            await RefreshCoreAsync();
+            await operation(project.RootPath, CancellationToken.None);
+            if (SelectedProject?.Id != project.Id)
+            {
+                return;
+            }
+            if (includeRemoteHistory)
+            {
+                IncludeRemoteHistory = true;
+            }
+            await RefreshCoreAsync(project);
         }, successMessage);
     }
 
@@ -7772,6 +9898,202 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                               ?? BranchCompareTargets.FirstOrDefault();
     }
 
+    public async Task RunRepositoryCommandAsync()
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        string command = RepositoryConsoleCommand.Trim();
+        if (project is null || string.IsNullOrWhiteSpace(command) || IsRepositoryConsoleRunning) return;
+
+        _repositoryConsoleCancellation?.Dispose();
+        _repositoryConsoleCancellation = new CancellationTokenSource();
+        IsRepositoryConsoleRunning = true;
+        SetRepositoryConsoleStatus(project.Id, $"Running in {project.Name}…");
+        AppendRepositoryConsoleOutput(project.Id, $"{Environment.NewLine}[{DateTime.Now:T}] {SelectedRepositoryShell}  {project.RootPath}{Environment.NewLine}> {command}");
+        RepositoryConsoleCommand = string.Empty;
+        _repositoryHistoryNavigationIndex = -1;
+        _applicationLogService.Information("Console", $"Repository command started in '{project.Name}' using {SelectedRepositoryShell}.", project.RootPath);
+        try
+        {
+            RepositoryCommandResult result = await _repositoryConsoleService.ExecuteAsync(
+                project.RootPath,
+                command,
+                SelectedRepositoryShell,
+                (line, isError) => Dispatcher.UIThread.Post(() =>
+                    AppendRepositoryConsoleOutput(project.Id, isError ? $"! {line}" : line)),
+                _repositoryConsoleCancellation.Token);
+            string resultText = result.WasCancelled
+                ? $"Cancelled after {result.Duration:g}."
+                : $"Exit code {result.ExitCode} · {result.Duration:g}.";
+            AppendRepositoryConsoleOutput(project.Id, resultText);
+            SetRepositoryConsoleStatus(project.Id, resultText);
+            if (result.WasCancelled)
+                _applicationLogService.Warning("Console", $"Repository command cancelled in '{project.Name}'.", project.RootPath);
+            else if (result.ExitCode == 0)
+                _applicationLogService.Information("Console", $"Repository command completed in '{project.Name}' with exit code 0.", project.RootPath);
+            else
+                _applicationLogService.Warning("Console", $"Repository command completed in '{project.Name}' with exit code {result.ExitCode}.", project.RootPath);
+        }
+        catch (Exception exception)
+        {
+            SetRepositoryConsoleStatus(project.Id, exception.Message);
+            AppendRepositoryConsoleOutput(project.Id, $"ERROR: {exception.Message}");
+            _applicationLogService.Error("Console", $"Repository console failed in '{project.Name}'.", exception, project.RootPath);
+        }
+        finally
+        {
+            IsRepositoryConsoleRunning = false;
+            _repositoryConsoleCancellation?.Dispose();
+            _repositoryConsoleCancellation = null;
+            LoadRepositoryConsoleHistory();
+        }
+    }
+
+    public void StopRepositoryCommand() => _repositoryConsoleCancellation?.Cancel();
+
+    public void ClearRepositoryConsoleOutput()
+    {
+        if (SelectedProject is not { } project) return;
+        GetRepositoryConsoleBuffer(project.Id).Clear();
+        RepositoryConsoleOutput = string.Empty;
+        SetRepositoryConsoleStatus(project.Id, "Console output cleared. Persistent command history was kept.");
+    }
+
+    public void ClearRepositoryConsoleHistory()
+    {
+        if (SelectedProject is null) return;
+        _repositoryConsoleService.ClearHistory(SelectedProject.RootPath);
+        LoadRepositoryConsoleHistory();
+        RepositoryConsoleStatus = "Command history cleared for this project.";
+    }
+
+    public void UseSelectedRepositoryCommand()
+    {
+        if (SelectedRepositoryCommand is null) return;
+        RepositoryConsoleCommand = SelectedRepositoryCommand.Command;
+        _repositoryHistoryNavigationIndex = -1;
+    }
+
+    public string NavigateRepositoryCommandHistory(int direction)
+    {
+        if (FilteredRepositoryCommandHistory.Count == 0) return RepositoryConsoleCommand;
+        _repositoryHistoryNavigationIndex = direction < 0
+            ? Math.Min(_repositoryHistoryNavigationIndex + 1, FilteredRepositoryCommandHistory.Count - 1)
+            : Math.Max(_repositoryHistoryNavigationIndex - 1, -1);
+        RepositoryConsoleCommand = _repositoryHistoryNavigationIndex < 0
+            ? string.Empty
+            : FilteredRepositoryCommandHistory[_repositoryHistoryNavigationIndex].Command;
+        return RepositoryConsoleCommand;
+    }
+
+    public void RefreshApplicationLogs()
+    {
+        ReplaceCollection(ApplicationLogEntries, _applicationLogService.LoadRecent());
+        ApplyApplicationLogFilter();
+    }
+
+    public void ClearApplicationLogView()
+    {
+        ApplicationLogEntries.Clear();
+        FilteredApplicationLogEntries.Clear();
+        SelectedApplicationLogEntry = null;
+    }
+
+    private void LoadRepositoryConsoleHistory()
+    {
+        RepositoryCommandHistory.Clear();
+        if (SelectedProject is not null)
+        {
+            foreach (RepositoryCommandHistoryEntry entry in _repositoryConsoleService.GetHistory(SelectedProject.RootPath))
+                RepositoryCommandHistory.Add(entry);
+        }
+        _repositoryHistoryNavigationIndex = -1;
+        ApplyRepositoryConsoleHistoryFilter();
+    }
+
+    private void ApplyRepositoryConsoleHistoryFilter()
+    {
+        string search = RepositoryConsoleHistorySearch.Trim();
+        IEnumerable<RepositoryCommandHistoryEntry> entries = RepositoryCommandHistory;
+        if (search.Length > 0)
+        {
+            entries = entries.Where(entry =>
+                entry.Command.Contains(search, StringComparison.CurrentCultureIgnoreCase) ||
+                entry.Shell.Contains(search, StringComparison.CurrentCultureIgnoreCase));
+        }
+        ReplaceCollection(FilteredRepositoryCommandHistory, entries);
+    }
+
+    private void RestoreRepositoryConsoleForProject(ProjectItemViewModel? project)
+    {
+        RepositoryConsoleOutput = project is null
+            ? "Select a project to open its repository console."
+            : GetRepositoryConsoleBuffer(project.Id).ToString();
+        RepositoryConsoleStatus = project is not null && _repositoryConsoleStatuses.TryGetValue(project.Id, out string? status)
+            ? status
+            : "Console ready.";
+    }
+
+    private StringBuilder GetRepositoryConsoleBuffer(Guid projectId)
+    {
+        if (_repositoryConsoleOutputBuffers.TryGetValue(projectId, out StringBuilder? buffer)) return buffer;
+        buffer = new StringBuilder();
+        _repositoryConsoleOutputBuffers[projectId] = buffer;
+        return buffer;
+    }
+
+    private void SetRepositoryConsoleStatus(Guid projectId, string status)
+    {
+        _repositoryConsoleStatuses[projectId] = status;
+        if (SelectedProject?.Id == projectId) RepositoryConsoleStatus = status;
+    }
+
+    private void AppendRepositoryConsoleOutput(Guid projectId, string text)
+    {
+        const int maximumCharacters = 2_000_000;
+        StringBuilder buffer = GetRepositoryConsoleBuffer(projectId);
+        if (buffer.Length > 0) buffer.AppendLine();
+        buffer.Append(text);
+        if (buffer.Length > maximumCharacters)
+            buffer.Remove(0, buffer.Length - maximumCharacters);
+        if (SelectedProject?.Id == projectId) RepositoryConsoleOutput = buffer.ToString();
+    }
+
+    private void OnApplicationLogEntryWritten(object? sender, ApplicationLogEntry entry)
+    {
+        void AddEntry()
+        {
+            ApplicationLogEntries.Insert(0, entry);
+            while (ApplicationLogEntries.Count > 1_000) ApplicationLogEntries.RemoveAt(ApplicationLogEntries.Count - 1);
+            ApplyApplicationLogFilter();
+        }
+        if (Dispatcher.UIThread.CheckAccess()) AddEntry();
+        else Dispatcher.UIThread.Post(AddEntry);
+    }
+
+    private void ApplyApplicationLogFilter()
+    {
+        string search = ApplicationLogSearch.Trim();
+        IEnumerable<ApplicationLogEntry> entries = ApplicationLogEntries;
+        string? projectPath = SelectedProject?.RootPath;
+        entries = projectPath is null
+            ? entries.Where(entry => string.IsNullOrWhiteSpace(entry.ProjectPath))
+            : entries.Where(entry => entry.ProjectPath is not null && ProjectPathsEqual(entry.ProjectPath, projectPath));
+        if (!string.Equals(ApplicationLogLevelFilter, "All", StringComparison.OrdinalIgnoreCase) &&
+            Enum.TryParse(ApplicationLogLevelFilter, out ApplicationLogLevel level))
+        {
+            entries = entries.Where(entry => entry.Level == level);
+        }
+        if (search.Length > 0)
+        {
+            entries = entries.Where(entry =>
+                entry.Area.Contains(search, StringComparison.CurrentCultureIgnoreCase) ||
+                entry.Message.Contains(search, StringComparison.CurrentCultureIgnoreCase));
+        }
+        ReplaceCollection(FilteredApplicationLogEntries, entries);
+        SelectedApplicationLogEntry = FilteredApplicationLogEntries.FirstOrDefault();
+        OnPropertyChanged(nameof(ApplicationLogProjectSummary));
+    }
+
     private async Task RunOperationAsync(string progressMessage, Func<Task> operation, string successMessage)
     {
         if (IsBusy)
@@ -7781,14 +10103,18 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
         IsBusy = true;
         StatusMessage = progressMessage;
+        string? projectPath = SelectedProject?.RootPath;
+        _applicationLogService.Information("Operation", progressMessage, projectPath);
         try
         {
             await operation();
             StatusMessage = successMessage;
+            _applicationLogService.Information("Operation", successMessage, projectPath);
         }
         catch (Exception exception)
         {
             StatusMessage = exception.Message;
+            _applicationLogService.Error("Operation", progressMessage, exception, projectPath);
         }
         finally
         {
@@ -7799,11 +10125,20 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private void ClearRepositoryView()
     {
         RepositoryPath = "Aucun projet ouvert";
+        CurrentProjectName = "No project";
         CurrentBranch = "—";
         ChangeSummary = "0 modification";
+        ChangeSummaryColor = "#A9ABB2";
         Changes.Clear();
+        PreparedChanges.Clear();
+        LocalOnlyChanges.Clear();
+        ChangeTree.Clear();
+        _localOnlyChangePaths.Clear();
+        UpdateChangePreparationSummary();
         History.Clear();
         Branches.Clear();
+        FilteredBranches.Clear();
+        SelectedBranchHistory.Clear();
         LfsPatterns.Clear();
         ExplorerFiles.Clear();
         ExplorerFileHistory.Clear();
@@ -7837,9 +10172,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(CanApplyMultiRestore));
         OnPropertyChanged(nameof(CanApplyCherryPick));
         LfsFiles.Clear();
+        IsLfsInventoryLoaded = false;
         LfsVersions.Clear();
         LfsLocks.Clear();
         MyLfsLocks.Clear();
+        FilteredLfsLocks.Clear();
+        FilteredMyLfsLocks.Clear();
+        ApplyLfsLockFilter();
         LfsLocksSummary = "Git LFS locks have not been loaded.";
         SmartSyncPlanItems.Clear();
         SmartSyncPlanSummary = "Aucun projet sélectionné.";
@@ -7884,6 +10223,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private void ClearCodeWorkspace()
     {
         CodeTree.Clear();
+        CodeFileList.Clear();
         CodeSearchResults.Clear();
         CodeHistory.Clear();
         CodeSymbols.Clear();
@@ -8027,9 +10367,32 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private sealed record CachedCodeWorkspace(
+        CodeWorkspaceSnapshot Snapshot,
+        DateTimeOffset UpdatedAt,
+        bool IncludeHidden);
+
+    private sealed record CachedProjectSession(
+        IReadOnlyDictionary<string, object?> Fields,
+        IReadOnlyDictionary<string, object?[]> Collections,
+        GitRepositoryStatus? Status,
+        IReadOnlyList<string> LocalOnlyPaths,
+        DateTimeOffset CapturedAt);
+
     public async ValueTask DisposeAsync()
     {
+        _repositoryConsoleCancellation?.Cancel();
+        _repositoryConsoleCancellation?.Dispose();
+        _applicationLogService.EntryWritten -= OnApplicationLogEntryWritten;
         _remoteBuildCancellation?.Cancel();
+        _projectLoadCancellation?.Cancel();
+        _projectLoadCancellation?.Dispose();
+        _codeWorkspaceCancellation?.Cancel();
+        _codeWorkspaceCancellation?.Dispose();
+        _workingTreeDiffCancellation?.Cancel();
+        _workingTreeDiffCancellation?.Dispose();
+        _explorerFileCancellation?.Cancel();
+        _explorerFileCancellation?.Dispose();
         _codeSearchCancellation?.Cancel();
         _codeSearchCancellation?.Dispose();
         _aiAgentCancellation?.Cancel();

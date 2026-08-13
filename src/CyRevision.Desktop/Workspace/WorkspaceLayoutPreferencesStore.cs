@@ -45,7 +45,11 @@ internal sealed record WorkspaceLayoutPreferences(
     double HistoryThirdWeight,
     double HistoryTopWeight,
     double HistoryBottomWeight,
-    int SchemaVersion = 2)
+    bool ShowChangesDiff = true,
+    bool ShowPullRequestDiff = true,
+    bool ShowMultiRestoreDiff = true,
+    bool ShowCherryPickDiff = true,
+    int SchemaVersion = 4)
 {
     public static WorkspaceLayoutPreferences Default { get; } =
         new(
@@ -112,6 +116,26 @@ internal sealed class WorkspaceLayoutPreferencesStore
                     ShowTimeline = preferences.ShowTimeline,
                     ShowFiles = preferences.ShowFiles,
                     ShowDiff = preferences.ShowDiff
+                };
+            }
+
+            if (preferences.SchemaVersion < 3)
+            {
+                preferences = preferences with
+                {
+                    ShowChangesDiff = true,
+                    ShowPullRequestDiff = true,
+                    SchemaVersion = 3
+                };
+            }
+
+            if (preferences.SchemaVersion < 4)
+            {
+                preferences = preferences with
+                {
+                    ShowMultiRestoreDiff = true,
+                    ShowCherryPickDiff = true,
+                    SchemaVersion = 4
                 };
             }
 
