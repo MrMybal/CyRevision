@@ -25,15 +25,18 @@ build_agent_project="$repository_root/src/CyRevision.Build.Agent/CyRevision.Buil
 release_root="$repository_root/artifacts/release/$version"
 publish_directory="$release_root/$rid"
 bundle_root="$release_root/CyRevision.app"
+app_root="$bundle_root/Contents/Resources/app"
 dmg_stage="$release_root/dmg-$rid"
 dmg_path="$release_root/CyRevision-$version-$rid.dmg"
 portable_archive="$release_root/CyRevision-$version-$rid-portable.zip"
 checksum_file="$release_root/SHA256SUMS-$rid.txt"
 iconset="$release_root/cyrevision.iconset"
 main_executable="$bundle_root/Contents/MacOS/CyRevision.Desktop"
+packaged_executable="$app_root/CyRevision.Desktop"
+launcher_source="$repository_root/installer/macos/CyRevisionLauncher.c"
 
 rm -rf -- "$publish_directory" "$bundle_root" "$dmg_stage" "$iconset"
-mkdir -p "$publish_directory" "$bundle_root/Contents/MacOS" "$bundle_root/Contents/Resources" "$iconset"
+mkdir -p "$publish_directory" "$bundle_root/Contents/MacOS" "$app_root" "$iconset"
 
 bash "$repository_root/scripts/prepare-syncthing-runtime.sh" "$rid"
 
@@ -73,12 +76,38 @@ dotnet publish "$build_agent_project" \
   /p:DebugType=None \
   /p:DebugSymbols=false
 
-cp -a "$publish_directory/." "$bundle_root/Contents/MacOS/"
-chmod +x "$bundle_root/Contents/MacOS/CyRevision.Desktop"
-chmod +x "$bundle_root/Contents/MacOS/Agent/CyRevision.Discord.Agent"
-chmod +x "$bundle_root/Contents/MacOS/BuildAgent/CyRevision.Build.Agent"
+cp -a "$publish_directory/." "$app_root/"
+chmod +x "$packaged_executable"
+chmod +x "$app_root/Agent/CyRevision.Discord.Agent"
+chmod +x "$app_root/BuildAgent/CyRevision.Build.Agent"
 cp "$repository_root/LICENSE" "$bundle_root/Contents/Resources/"
 cp "$repository_root/README.md" "$bundle_root/Contents/Resources/"
+
+# Keep Contents/MacOS limited to the real CFBundleExecutable. Managed DLLs and
+# application resources belong under Contents/Resources; recent codesign
+# versions reject unsigned .NET assemblies when they are placed in MacOS.
+case "$rid" in
+  osx-x64) launcher_arch="x86_64" ;;
+  osx-arm64) launcher_arch="arm64" ;;
+esac
+xcrun --sdk macosx clang \
+  -arch "$launcher_arch" \
+  -mmacosx-version-min=11.0 \
+  -Os \
+  -Wall \
+  -Wextra \
+  -Werror \
+  "$launcher_source" \
+  -o "$main_executable"
+chmod +x "$main_executable"
+xcrun lipo -verify_arch "$launcher_arch" "$main_executable"
+xcrun lipo -verify_arch "$launcher_arch" "$packaged_executable"
+
+unexpected_macos_entry="$(find "$bundle_root/Contents/MacOS" -mindepth 1 -maxdepth 1 ! -name 'CyRevision.Desktop' -print -quit)"
+if [[ -n "$unexpected_macos_entry" ]]; then
+  echo "Unexpected file in Contents/MacOS: $unexpected_macos_entry" >&2
+  exit 1
+fi
 
 master_icon="$repository_root/src/CyRevision.Desktop/Assets/Branding/cyrevision-icon-master.png"
 for size in 16 32 128 256 512; do
@@ -95,23 +124,18 @@ sed \
   "$repository_root/installer/macos/Info.plist.in" > "$bundle_root/Contents/Info.plist"
 plutil -lint "$bundle_root/Contents/Info.plist"
 
-# Ad-hoc signing keeps the bundle internally consistent. Sign nested Mach-O
-# files first, but leave the CFBundleExecutable to the final bundle signing.
-# Signing the main executable directly while it lives inside the .app makes
-# codesign validate the still-unsigned envelope and fails on adjacent .NET DLLs.
+# Ad-hoc signing keeps the bundle internally consistent. Sign every packaged
+# Mach-O first, then let codesign sign the native launcher and app envelope.
 # --deep cannot be used because runtime plugin folders are not macOS bundles.
-if [[ ! -x "$main_executable" ]]; then
-  echo "The macOS application executable is missing: $main_executable" >&2
+if [[ ! -x "$main_executable" || ! -x "$packaged_executable" ]]; then
+  echo "The macOS launcher or packaged application executable is missing." >&2
   exit 1
 fi
 while IFS= read -r -d '' candidate; do
-  if [[ "$candidate" == "$main_executable" ]]; then
-    continue
-  fi
   if file -b "$candidate" | grep -q 'Mach-O'; then
     codesign --force --sign - "$candidate"
   fi
-done < <(find "$bundle_root/Contents/MacOS" -type f -print0)
+done < <(find "$app_root" -type f -print0)
 
 # This command signs both the main executable and the application envelope.
 # A Developer ID identity and notarization can later replace this ad-hoc identity.
@@ -121,7 +145,7 @@ while IFS= read -r -d '' candidate; do
   if file -b "$candidate" | grep -q 'Mach-O'; then
     codesign --verify --strict --verbose=2 "$candidate"
   fi
-done < <(find "$bundle_root/Contents/MacOS" -type f -print0)
+done < <(find "$app_root" -type f -print0)
 codesign --verify --strict --verbose=2 "$bundle_root"
 
 ditto -c -k --sequesterRsrc --keepParent "$bundle_root" "$portable_archive"
