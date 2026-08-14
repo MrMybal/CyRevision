@@ -11,7 +11,9 @@ public sealed class CodeTreeNode
         bool isDirectory,
         IEnumerable<CodeTreeNode>? children = null,
         long size = 0,
-        string language = "")
+        string language = "",
+        bool hasUnloadedChildren = false,
+        bool isPlaceholder = false)
     {
         Name = name;
         RelativePath = relativePath;
@@ -19,7 +21,10 @@ public sealed class CodeTreeNode
         IsDirectory = isDirectory;
         Size = size;
         Language = language;
-        Children = new ObservableCollection<CodeTreeNode>(children ?? []);
+        HasUnloadedChildren = hasUnloadedChildren;
+        IsPlaceholder = isPlaceholder;
+        Children = new ObservableCollection<CodeTreeNode>(children ??
+            (hasUnloadedChildren ? [CreatePlaceholder(fullPath)] : []));
     }
 
     public string Name { get; }
@@ -29,9 +34,30 @@ public sealed class CodeTreeNode
     public long Size { get; }
     public string Language { get; }
     public ObservableCollection<CodeTreeNode> Children { get; }
+    public bool HasUnloadedChildren { get; private set; }
+    public bool IsPlaceholder { get; }
     public string Icon => IsDirectory ? "▸" : LanguageIcon(Language);
-    public string Detail => IsDirectory ? $"{Children.Count} item(s)" : $"{FormatSize(Size)} · {Language}";
+    public string Detail => IsPlaceholder
+        ? string.Empty
+        : IsDirectory
+            ? HasUnloadedChildren ? "Open to load" : $"{Children.Count} item(s)"
+            : $"{FormatSize(Size)} · {Language}";
     public string AccentColor => IsDirectory ? "#D7BA7D" : LanguageColor(Language);
+
+    public void ReplaceChildren(IEnumerable<CodeTreeNode> children)
+    {
+        Children.Clear();
+        foreach (CodeTreeNode child in children) Children.Add(child);
+        HasUnloadedChildren = false;
+    }
+
+    private static CodeTreeNode CreatePlaceholder(string parentPath) => new(
+        "Loading…",
+        string.Empty,
+        parentPath,
+        false,
+        language: "Text",
+        isPlaceholder: true);
 
     private static string LanguageIcon(string language) => language switch
     {

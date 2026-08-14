@@ -72,8 +72,45 @@ public sealed class JsonSyncthingProfileStore : ISyncthingProfileStore
                 apiEndpoint,
                 existing?.ApiKey ?? CreateApiKey(),
                 listenPort,
-                existing?.FolderId ?? "cyrevision-" + projectId.ToString("N"));
+                existing?.FolderId ?? "cyrevision-" + projectId.ToString("N"))
+            {
+                FolderMode = existing?.FolderMode ?? SyncthingFolderMode.SendReceive,
+                RescanIntervalSeconds = existing?.RescanIntervalSeconds is > 0
+                    ? existing.RescanIntervalSeconds
+                    : 60,
+                FileWatcherEnabled = existing?.FileWatcherEnabled ?? true
+            };
             profile.ToIsolationOptions().Validate();
+            Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+            await WriteAtomicallyAsync(profilePath, profile, cancellationToken);
+            RestrictProfilePermissions(profilePath);
+            return profile;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<SyncthingProfile> SaveAsync(
+        SyncthingProfile profile,
+        CancellationToken cancellationToken = default)
+    {
+        if (profile.ProjectId == Guid.Empty)
+        {
+            throw new ArgumentException("A project ID is required.", nameof(profile));
+        }
+
+        if (profile.RescanIntervalSeconds is < 0 or > 86400)
+        {
+            throw new ArgumentOutOfRangeException(nameof(profile), "The rescan interval must be between 0 and 86400 seconds.");
+        }
+
+        profile.ToIsolationOptions().Validate();
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            string profilePath = GetProfilePath(profile.ProjectId);
             Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
             await WriteAtomicallyAsync(profilePath, profile, cancellationToken);
             RestrictProfilePermissions(profilePath);

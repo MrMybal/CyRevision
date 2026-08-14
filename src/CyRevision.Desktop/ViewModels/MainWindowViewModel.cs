@@ -36,6 +36,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly IGitRepositoryService _gitService;
     private readonly ApplicationPaths _applicationPaths;
     private readonly ISyncthingProfileStore _syncthingProfileStore;
+    private readonly SyncthingRuntimeResolver _syncthingRuntimeResolver;
+    private readonly SyncthingIgnoreFileService _syncthingIgnoreFileService;
     private readonly IGitPeerExchangeService _gitPeerExchangeService;
     private readonly IAssetDiffService _assetDiffService;
     private readonly IVpnProfileStore _vpnProfileStore;
@@ -65,6 +67,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly LocalChangePreferencesStore _localChangePreferencesStore;
     private readonly ApplicationLogService _applicationLogService;
     private readonly RepositoryConsoleService _repositoryConsoleService;
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly string? _initialProjectPath;
     private readonly HashSet<string> _localOnlyChangePaths = new(StringComparer.OrdinalIgnoreCase);
     private ProjectItemViewModel? _selectedProject;
@@ -113,6 +116,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private ManagedSyncthingEngine? _syncEngine;
     private Guid? _syncEngineProjectId;
     private string _syncthingExecutablePath = string.Empty;
+    private string _syncthingRuntimeSummary = "No Syncthing runtime detected.";
+    private SyncthingFolderMode _selectedSyncthingFolderMode = SyncthingFolderMode.SendReceive;
+    private string _syncthingRescanInterval = "60";
+    private bool _syncthingFileWatcherEnabled = true;
+    private string _syncthingFolderSummary = "Start Syncthing to inspect folder differences.";
+    private string _syncthingIgnoreRules = string.Empty;
+    private string _syncthingIgnoreStatus = "No .stignore file loaded.";
+    private bool _isSyncthingRefreshing;
     private string _syncState = "Sync désactivé";
     private string _syncDetails = "Aucune instance CyRevision n'est lancée.";
     private string _peerExchangeText = string.Empty;
@@ -325,6 +336,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private CancellationTokenSource? _codeSearchCancellation;
     private CancellationTokenSource? _codeWorkspaceCancellation;
     private readonly Dictionary<Guid, CachedCodeWorkspace> _codeWorkspaceCache = [];
+    private readonly HashSet<string> _loadingCodeDirectories = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, CachedProjectSession> _projectSessionCache = [];
     private readonly Dictionary<Guid, GitRepositoryStatus> _latestProjectStatuses = [];
     private readonly HashSet<Guid> _loadedProjectSessions = [];
@@ -418,6 +430,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         IGitRepositoryService gitService,
         ApplicationPaths applicationPaths,
         ISyncthingProfileStore syncthingProfileStore,
+        SyncthingRuntimeResolver syncthingRuntimeResolver,
+        SyncthingIgnoreFileService syncthingIgnoreFileService,
         IGitPeerExchangeService gitPeerExchangeService,
         IAssetDiffService assetDiffService,
         IVpnProfileStore vpnProfileStore,
@@ -452,6 +466,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _gitService = gitService;
         _applicationPaths = applicationPaths;
         _syncthingProfileStore = syncthingProfileStore;
+        _syncthingRuntimeResolver = syncthingRuntimeResolver;
+        _syncthingIgnoreFileService = syncthingIgnoreFileService;
         _gitPeerExchangeService = gitPeerExchangeService;
         _assetDiffService = assetDiffService;
         _vpnProfileStore = vpnProfileStore;
@@ -555,6 +571,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<PeerMemberViewModel> PeerMembers { get; } = [];
 
+    public ObservableCollection<ProjectParticipantViewModel> SyncthingDevices { get; } = [];
+
+    public ObservableCollection<SyncthingDifferenceItem> SyncthingDifferences { get; } = [];
+
+    public ObservableCollection<SyncthingLogEntry> SyncthingLogs { get; } = [];
+
     public ObservableCollection<ProjectParticipantViewModel> SyncProjectMembers { get; } = [];
 
     public ObservableCollection<ProjectParticipantViewModel> GitProjectMembers { get; } = [];
@@ -603,6 +625,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<ApplicationLogEntry> ApplicationLogEntries { get; } = [];
 
     public ObservableCollection<ApplicationLogEntry> FilteredApplicationLogEntries { get; } = [];
+
+    public ObservableCollection<OperationTaskViewModel> ActiveOperations { get; } = [];
 
     public IReadOnlyList<string> RepositoryShells { get; } = OperatingSystem.IsWindows()
         ? ["PowerShell", "Command Prompt"]
@@ -1596,7 +1620,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    public bool IsLongOperationActive => IsProjectLoading || IsBusy;
+    public bool HasActiveOperations => ActiveOperations.Count > 0;
+
+    public string ActiveOperationCountText => ActiveOperations.Count == 1
+        ? "1 task running"
+        : $"{ActiveOperations.Count:N0} tasks running";
+
+    public bool IsLongOperationActive => IsProjectLoading || IsBusy || HasActiveOperations;
 
     public bool IsLongOperationIndeterminate => IsBusy && !IsProjectLoading;
 
@@ -1868,6 +1898,78 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _syncthingExecutablePath;
         private set => SetProperty(ref _syncthingExecutablePath, value);
+    }
+
+    public string SyncthingRuntimeSummary
+    {
+        get => _syncthingRuntimeSummary;
+        private set => SetProperty(ref _syncthingRuntimeSummary, value);
+    }
+
+    public IReadOnlyList<SyncthingFolderMode> SyncthingFolderModes { get; } =
+        Enum.GetValues<SyncthingFolderMode>();
+
+    public IReadOnlyList<string> SyncthingFolderModeNames { get; } =
+        Enum.GetValues<SyncthingFolderMode>().Select(mode => mode.ToDisplayName()).ToArray();
+
+    public SyncthingFolderMode SelectedSyncthingFolderMode
+    {
+        get => _selectedSyncthingFolderMode;
+        set
+        {
+            if (SetProperty(ref _selectedSyncthingFolderMode, value))
+            {
+                OnPropertyChanged(nameof(SelectedSyncthingFolderModeName));
+            }
+        }
+    }
+
+    public string SelectedSyncthingFolderModeName
+    {
+        get => SelectedSyncthingFolderMode.ToDisplayName();
+        set
+        {
+            SyncthingFolderMode mode = SyncthingFolderModeNames
+                .Select((name, index) => (name, mode: SyncthingFolderModes[index]))
+                .FirstOrDefault(item => string.Equals(item.name, value, StringComparison.OrdinalIgnoreCase)).mode;
+            SelectedSyncthingFolderMode = mode;
+        }
+    }
+
+    public string SyncthingRescanInterval
+    {
+        get => _syncthingRescanInterval;
+        set => SetProperty(ref _syncthingRescanInterval, value);
+    }
+
+    public bool SyncthingFileWatcherEnabled
+    {
+        get => _syncthingFileWatcherEnabled;
+        set => SetProperty(ref _syncthingFileWatcherEnabled, value);
+    }
+
+    public string SyncthingFolderSummary
+    {
+        get => _syncthingFolderSummary;
+        private set => SetProperty(ref _syncthingFolderSummary, value);
+    }
+
+    public string SyncthingIgnoreRules
+    {
+        get => _syncthingIgnoreRules;
+        set => SetProperty(ref _syncthingIgnoreRules, value);
+    }
+
+    public string SyncthingIgnoreStatus
+    {
+        get => _syncthingIgnoreStatus;
+        private set => SetProperty(ref _syncthingIgnoreStatus, value);
+    }
+
+    public bool IsSyncthingRefreshing
+    {
+        get => _isSyncthingRefreshing;
+        private set => SetProperty(ref _isSyncthingRefreshing, value);
     }
 
     public string SyncState
@@ -3132,10 +3234,15 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _codeWorkspaceCancellation?.Dispose();
         CancellationTokenSource cancellation = new();
         _codeWorkspaceCancellation = cancellation;
-        IsBusy = true;
+        OperationTaskViewModel trackedTask = BeginTrackedTask(
+            $"Index {project.Name} solution",
+            project.Name,
+            "Loading top-level folders without blocking the interface");
         IsCodeWorkspaceLoading = true;
         StatusMessage = $"Indexing {project.Name} code workspace…";
         CodeWorkspaceSummary = "Indexing workspace…";
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        _applicationLogService.Information("solution", "index started (lazy mode)", project.RootPath);
         try
         {
             CodeWorkspaceSnapshot snapshot = await _codeWorkspaceService.BuildTreeAsync(
@@ -3146,15 +3253,27 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             cancellation.Token.ThrowIfCancellationRequested();
             if (SelectedProject?.Id != project.Id)
             {
+                _codeWorkspaceCache[project.Id] = new CachedCodeWorkspace(
+                    snapshot,
+                    DateTimeOffset.UtcNow,
+                    CodeIncludeHidden);
+                CompleteTrackedTask(trackedTask, "Completed", $"Cached for {project.Name}");
                 return;
             }
             CachedCodeWorkspace cached = new(snapshot, DateTimeOffset.UtcNow, CodeIncludeHidden);
             _codeWorkspaceCache[project.Id] = cached;
             ApplyCodeWorkspaceSnapshot(cached);
             StatusMessage = $"{project.Name} code index ready";
+            CompleteTrackedTask(trackedTask, "Completed", $"Top level ready in {stopwatch.Elapsed.TotalMilliseconds:N0} ms");
+            _applicationLogService.Information(
+                "solution",
+                $"index ready duration={stopwatch.Elapsed.TotalMilliseconds:N0}ms roots={snapshot.Roots.Count:N0} lazy=true",
+                project.RootPath);
         }
         catch (OperationCanceledException)
         {
+            CompleteTrackedTask(trackedTask, "Cancelled", "Superseded by a newer request");
+            _applicationLogService.Warning("solution", "index cancelled", project.RootPath);
             if (SelectedProject?.Id == project.Id)
             {
                 CodeWorkspaceSummary = "Code indexing cancelled.";
@@ -3162,6 +3281,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
         catch (Exception exception)
         {
+            CompleteTrackedTask(trackedTask, "Failed", exception.Message);
+            _applicationLogService.Error("solution", "index failed", exception, project.RootPath);
             if (SelectedProject?.Id == project.Id)
             {
                 CodeWorkspaceSummary = exception.Message;
@@ -3174,7 +3295,6 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             {
                 _codeWorkspaceCancellation = null;
                 cancellation.Dispose();
-                IsBusy = false;
                 IsCodeWorkspaceLoading = false;
             }
         }
@@ -3205,9 +3325,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         _codeWorkspaceLastUpdated = cached.UpdatedAt;
         ApplyCodeWorkspaceFilter();
-        CodeWorkspaceSummary = $"{cached.Snapshot.FileCount:N0} files · {cached.Snapshot.DirectoryCount:N0} folders · " +
-                               $"indexed in {cached.Snapshot.Elapsed.TotalMilliseconds:N0} ms" +
-                               (cached.Snapshot.WasTruncated ? " · safety limit reached" : string.Empty);
+        CodeWorkspaceSummary = $"{cached.Snapshot.Roots.Count:N0} top-level item(s) · lazy explorer · " +
+                               $"ready in {cached.Snapshot.Elapsed.TotalMilliseconds:N0} ms" +
+                               (cached.Snapshot.WasTruncated ? " · directory view limited" : string.Empty);
         if (SelectedCodeNode is null || CodeFileList.All(node => node.RelativePath != SelectedCodeNode.RelativePath))
             SelectedCodeNode = FindFirstFile(CodeTree);
         OnPropertyChanged(nameof(CodeWorkspaceLastUpdatedText));
@@ -3244,18 +3364,32 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             .Cast<CodeTreeNode>()
             .ToArray();
         if (!matches && children.Length == 0) return null;
-        return new CodeTreeNode(node.Name, node.RelativePath, node.FullPath, true, children, node.Size, node.Language);
+        return new CodeTreeNode(
+            node.Name,
+            node.RelativePath,
+            node.FullPath,
+            true,
+            children,
+            node.Size,
+            node.Language,
+            node.HasUnloadedChildren);
     }
 
     private static IReadOnlyList<CodeTreeNode> FlattenCodeFiles(IEnumerable<CodeTreeNode> roots)
     {
+        const int maximumVisibleFiles = 5_000;
         List<CodeTreeNode> files = [];
-        foreach (CodeTreeNode node in roots)
+        Stack<CodeTreeNode> pending = new(roots.Reverse());
+        while (pending.Count > 0 && files.Count < maximumVisibleFiles)
         {
-            if (node.IsDirectory)
-                files.AddRange(FlattenCodeFiles(node.Children));
-            else
+            CodeTreeNode node = pending.Pop();
+            if (node.IsPlaceholder) continue;
+            if (!node.IsDirectory)
+            {
                 files.Add(node);
+                continue;
+            }
+            for (int index = node.Children.Count - 1; index >= 0; index--) pending.Push(node.Children[index]);
         }
         return files;
     }
@@ -4060,7 +4194,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         CodeHistory.Clear();
         CodeSymbols.Clear();
         CodePreviewText = string.Empty;
-        if (SelectedProject is null || node is null)
+        if (SelectedProject is null || node is null || node.IsPlaceholder)
         {
             CodePreviewSummary = "Select a file to preview it.";
             return;
@@ -4070,12 +4204,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             if (node.IsDirectory)
             {
-                CodePreviewSummary = $"Folder · {node.RelativePath} · {node.Children.Count} visible item(s)";
-                if (SelectedProject.Definition.Features.GitEnabled)
+                if (node.HasUnloadedChildren)
                 {
-                    ReplaceCollection(CodeHistory, await _codeWorkspaceService.GetHistoryAsync(
-                        SelectedProject.RootPath, node.RelativePath));
+                    await LoadCodeDirectoryAsync(SelectedProject, node);
                 }
+                CodePreviewSummary = $"Folder · {node.RelativePath} · {node.Children.Count} loaded item(s)";
                 return;
             }
             CodeFilePreview preview = await _codeWorkspaceService.ReadPreviewAsync(
@@ -4098,11 +4231,55 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    public async Task LoadCodeDirectoryAsync(ProjectItemViewModel project, CodeTreeNode directory)
+    {
+        if (!directory.IsDirectory || !directory.HasUnloadedChildren) return;
+        string loadKey = $"{project.Id:N}:{directory.RelativePath}";
+        if (!_loadingCodeDirectories.Add(loadKey)) return;
+
+        OperationTaskViewModel task = BeginTrackedTask(
+            $"Open {directory.Name}",
+            project.Name,
+            directory.RelativePath);
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        _applicationLogService.Debug("solution", $"directory load start path=\"{directory.RelativePath}\"", project.RootPath);
+        try
+        {
+            IReadOnlyList<CodeTreeNode> children = await _codeWorkspaceService.LoadDirectoryAsync(
+                project.RootPath,
+                directory.RelativePath,
+                CodeIncludeHidden);
+            if (SelectedProject?.Id != project.Id)
+            {
+                CompleteTrackedTask(task, "Completed", $"Cached {children.Count:N0} item(s) for {project.Name}");
+                directory.ReplaceChildren(children);
+                return;
+            }
+            directory.ReplaceChildren(children);
+            ReplaceCollection(CodeFileList, FlattenCodeFiles(CodeTree));
+            CompleteTrackedTask(task, "Completed", $"{children.Count:N0} item(s) in {stopwatch.Elapsed.TotalMilliseconds:N0} ms");
+            _applicationLogService.Debug(
+                "solution",
+                $"directory load complete path=\"{directory.RelativePath}\" items={children.Count:N0} duration={stopwatch.Elapsed.TotalMilliseconds:N0}ms",
+                project.RootPath);
+        }
+        catch (Exception exception)
+        {
+            CompleteTrackedTask(task, "Failed", exception.Message);
+            _applicationLogService.Error("solution", $"directory load failed path=\"{directory.RelativePath}\"", exception, project.RootPath);
+            CodePreviewSummary = exception.Message;
+        }
+        finally
+        {
+            _loadingCodeDirectories.Remove(loadKey);
+        }
+    }
+
     private static CodeTreeNode? FindFirstFile(IEnumerable<CodeTreeNode> nodes)
     {
         foreach (CodeTreeNode node in nodes)
         {
-            if (!node.IsDirectory) return node;
+            if (!node.IsDirectory && !node.IsPlaceholder) return node;
             CodeTreeNode? child = FindFirstFile(node.Children);
             if (child is not null) return child;
         }
@@ -5374,7 +5551,15 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             force ? $"Force-unlocking {fileLock.Path}…" : $"Unlocking {fileLock.Path}…",
             async () =>
             {
+                _applicationLogService.Information(
+                    "git-lfs",
+                    $"unlock request path=\"{fileLock.Path}\" lock_id={fileLock.Id} owner=\"{fileLock.OwnerName}\" force={force.ToString().ToLowerInvariant()}",
+                    SelectedProject.RootPath);
                 await _gitService.UnlockLfsFileAsync(SelectedProject.RootPath, fileLock.Id, force);
+                _applicationLogService.Information(
+                    "git-lfs",
+                    $"unlock complete path=\"{fileLock.Path}\" lock_id={fileLock.Id}",
+                    SelectedProject.RootPath);
                 await LoadLfsLocksCoreAsync();
             },
             $"Git LFS lock removed: {fileLock.Path}");
@@ -5404,14 +5589,27 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 {
                     try
                     {
+                        _applicationLogService.Information(
+                            "git-lfs",
+                            $"unlock request path=\"{item.Path}\" lock_id={item.Id} owner=\"{item.OwnerName}\" force={forceEveryLock.ToString().ToLowerInvariant()}",
+                            SelectedProject.RootPath);
                         await _gitService.UnlockLfsFileAsync(
                             SelectedProject.RootPath,
                             item.Id,
                             force: forceEveryLock);
                         removed++;
+                        _applicationLogService.Information(
+                            "git-lfs",
+                            $"unlock complete path=\"{item.Path}\" lock_id={item.Id}",
+                            SelectedProject.RootPath);
                     }
                     catch (Exception exception)
                     {
+                        _applicationLogService.Error(
+                            "git-lfs",
+                            $"unlock failed path=\"{item.Path}\" lock_id={item.Id}",
+                            exception,
+                            SelectedProject.RootPath);
                         failures.Add($"{item.Path}: {exception.Message}");
                     }
                 }
@@ -5867,11 +6065,149 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, "Exécutable Syncthing configuré pour ce projet");
     }
 
+    public async Task ConfigureSyncthingAutomaticallyAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        SyncthingRuntimeInstallation installation = _syncthingRuntimeResolver.Detect(
+            _currentSyncProfile?.ExecutablePath);
+        if (!installation.IsAvailable)
+        {
+            StatusMessage = installation.Details;
+            SyncthingRuntimeSummary = installation.Details;
+            return;
+        }
+
+        await SetSyncthingExecutableAsync(installation.ExecutablePath!);
+        SyncthingRuntimeSummary = $"{installation.Source} Â· {installation.Details}";
+    }
+
+    public async Task SaveSyncthingSettingsAsync()
+    {
+        if (SelectedProject is null || _currentSyncProfile is null)
+        {
+            StatusMessage = "Configure the Syncthing runtime first.";
+            return;
+        }
+
+        if (!int.TryParse(SyncthingRescanInterval, out int rescanInterval) || rescanInterval is < 0 or > 86400)
+        {
+            StatusMessage = "The rescan interval must be between 0 and 86400 seconds.";
+            return;
+        }
+
+        await RunOperationAsync("Saving Syncthing settingsâ€¦", async () =>
+        {
+            _currentSyncProfile = await _syncthingProfileStore.SaveAsync(_currentSyncProfile with
+            {
+                FolderMode = SelectedSyncthingFolderMode,
+                RescanIntervalSeconds = rescanInterval,
+                FileWatcherEnabled = SyncthingFileWatcherEnabled
+            });
+            if (_syncEngine?.Status.State is SyncEngineState.Running or SyncEngineState.Paused)
+            {
+                await ConfigureCurrentSyncFolderAsync();
+                await RefreshSyncthingWorkspaceCoreAsync();
+            }
+        }, $"Syncthing mode saved: {SelectedSyncthingFolderMode.ToDisplayName()}");
+    }
+
+    public Task RefreshSyncthingWorkspaceAsync() =>
+        RunOperationAsync(
+            "Refreshing Syncthing devices, differences, and logsâ€¦",
+            RefreshSyncthingWorkspaceCoreAsync,
+            "Syncthing workspace refreshed");
+
+    public async Task ScanSyncthingFolderAsync()
+    {
+        if (_currentSyncProfile is null || _syncEngine?.Status.State is not (SyncEngineState.Running or SyncEngineState.Paused))
+        {
+            StatusMessage = "Start Syncthing before requesting a folder scan.";
+            return;
+        }
+
+        await RunOperationAsync("Scanning the synchronized folderâ€¦", async () =>
+        {
+            using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
+            await api.ScanFolderAsync(_currentSyncProfile.FolderId);
+            await RefreshSyncthingWorkspaceCoreAsync();
+        }, "Syncthing folder scan completed");
+    }
+
+    public async Task LoadSyncthingIgnoreRulesAsync()
+    {
+        if (_currentSyncProfile is null)
+        {
+            SyncthingIgnoreStatus = "Configure Syncthing first.";
+            return;
+        }
+
+        SyncthingIgnoreRules = await _syncthingIgnoreFileService.ReadAsync(_currentSyncProfile.ExchangeDirectory);
+        SyncthingIgnoreStatus = string.IsNullOrEmpty(SyncthingIgnoreRules)
+            ? "No .stignore file exists yet."
+            : $"Loaded {_currentSyncProfile.ExchangeDirectory}{Path.DirectorySeparatorChar}.stignore";
+    }
+
+    public void UseSyncthingUnrealIgnoreTemplate()
+    {
+        SyncthingIgnoreRules = SyncthingIgnoreFileService.UnrealTemplate;
+        SyncthingIgnoreStatus = "Unreal template loaded in the editor; save to apply it.";
+    }
+
+    public async Task SaveSyncthingIgnoreRulesAsync()
+    {
+        if (_currentSyncProfile is null)
+        {
+            StatusMessage = "Configure Syncthing before saving .stignore.";
+            return;
+        }
+
+        await RunOperationAsync("Saving .stignoreâ€¦", async () =>
+        {
+            await _syncthingIgnoreFileService.WriteAsync(
+                _currentSyncProfile.ExchangeDirectory,
+                SyncthingIgnoreRules);
+            if (_syncEngine?.Status.State is SyncEngineState.Running or SyncEngineState.Paused)
+            {
+                using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
+                await api.ScanFolderAsync(_currentSyncProfile.FolderId);
+            }
+        }, ".stignore saved for this project");
+        SyncthingIgnoreStatus = "Saved as UTF-8 in the synchronized folder root.";
+    }
+
     public async Task StartSyncAsync()
     {
         if (SelectedProject is null)
         {
             return;
+        }
+
+        if (!SelectedProject.Definition.Features.PeerSyncEnabled)
+        {
+            StatusMessage = "Choose a project mode that includes Sync before starting Syncthing.";
+            return;
+        }
+
+        if (_currentSyncProfile is null || !File.Exists(_currentSyncProfile.ExecutablePath))
+        {
+            SyncthingRuntimeInstallation installation = _syncthingRuntimeResolver.Detect();
+            if (!installation.IsAvailable)
+            {
+                StatusMessage = installation.Details;
+                SyncthingRuntimeSummary = installation.Details;
+                return;
+            }
+
+            _currentSyncProfile = await _syncthingProfileStore.CreateOrUpdateAsync(
+                SelectedProject.Id,
+                installation.ExecutablePath!,
+                ResolveSyncExchangeDirectory(SelectedProject.Definition));
+            SyncthingExecutablePath = _currentSyncProfile.ExecutablePath;
+            SyncthingRuntimeSummary = $"{installation.Source} Â· {installation.Details}";
         }
 
         if (!SelectedProject.Definition.Features.PeerSyncEnabled)
@@ -5909,6 +6245,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             await ExchangeGitCoreAsync();
             await LoadPeerMembersCoreAsync();
             UpdateSyncStatus(_syncEngine.Status);
+            await RefreshSyncthingWorkspaceCoreAsync();
         }, "Synchronisation CyRevision active");
     }
 
@@ -7221,6 +7558,29 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(LongOperationStage));
     }
 
+    private OperationTaskViewModel BeginTrackedTask(string title, string projectName, string detail = "")
+    {
+        OperationTaskViewModel task = new(title, projectName, detail);
+        ActiveOperations.Insert(0, task);
+        NotifyActiveOperationsChanged();
+        return task;
+    }
+
+    private void CompleteTrackedTask(OperationTaskViewModel task, string state, string detail)
+    {
+        task.State = state;
+        task.Detail = detail;
+        ActiveOperations.Remove(task);
+        NotifyActiveOperationsChanged();
+    }
+
+    private void NotifyActiveOperationsChanged()
+    {
+        OnPropertyChanged(nameof(HasActiveOperations));
+        OnPropertyChanged(nameof(ActiveOperationCountText));
+        NotifyLongOperationStateChanged();
+    }
+
     private void ClearFastGitViewForProjectSwitch(ProjectItemViewModel? project)
     {
         CurrentProjectName = project?.Name ?? "No project";
@@ -8308,10 +8668,23 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 {
                     try
                     {
+                        _applicationLogService.Information(
+                            "git-lfs",
+                            $"unlock request path=\"{item.Path}\" lock_id={item.Id} owner=\"{item.OwnerName}\" force={(!item.IsOurs).ToString().ToLowerInvariant()}",
+                            SelectedProject.RootPath);
                         await _gitService.UnlockLfsFileAsync(SelectedProject.RootPath, item.Id, force: !item.IsOurs);
+                        _applicationLogService.Information(
+                            "git-lfs",
+                            $"unlock complete path=\"{item.Path}\" lock_id={item.Id}",
+                            SelectedProject.RootPath);
                     }
                     catch (Exception exception)
                     {
+                        _applicationLogService.Error(
+                            "git-lfs",
+                            $"unlock failed path=\"{item.Path}\" lock_id={item.Id}",
+                            exception,
+                            SelectedProject.RootPath);
                         failures.Add($"{item.Path}: {exception.Message}");
                     }
                 }
@@ -8390,13 +8763,31 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             _currentSyncProfile = null;
             SyncthingExecutablePath = string.Empty;
+            SyncthingRuntimeSummary = "No project selected.";
+            SyncthingFolderSummary = "No synchronized folder selected.";
+            SyncthingIgnoreRules = string.Empty;
+            SyncthingIgnoreStatus = "No .stignore file loaded.";
+            SyncthingDevices.Clear();
+            SyncthingDifferences.Clear();
+            SyncthingLogs.Clear();
             SyncState = "Sync désactivé";
             SyncDetails = "Aucun projet sélectionné.";
             return;
         }
 
         _currentSyncProfile = await _syncthingProfileStore.GetAsync(SelectedProject.Id);
+        SyncthingRuntimeInstallation installation = _syncthingRuntimeResolver.Detect(_currentSyncProfile?.ExecutablePath);
         SyncthingExecutablePath = _currentSyncProfile?.ExecutablePath ?? string.Empty;
+        SyncthingRuntimeSummary = installation.IsAvailable
+            ? $"{installation.Source} Â· {installation.Details}"
+            : installation.Details;
+        SelectedSyncthingFolderMode = _currentSyncProfile?.FolderMode ?? SyncthingFolderMode.SendReceive;
+        SyncthingRescanInterval = (_currentSyncProfile?.RescanIntervalSeconds ?? 60).ToString();
+        SyncthingFileWatcherEnabled = _currentSyncProfile?.FileWatcherEnabled ?? true;
+        if (_currentSyncProfile is not null)
+        {
+            await LoadSyncthingIgnoreRulesAsync();
+        }
         if (!SelectedProject.Definition.Features.PeerSyncEnabled)
         {
             SyncState = "Sync désactivé";
@@ -9291,6 +9682,68 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         await api.PutFolderAsync(CreateFolderConfiguration(_currentSyncProfile, deviceIds));
     }
 
+    private async Task RefreshSyncthingWorkspaceCoreAsync()
+    {
+        IsSyncthingRefreshing = true;
+        try
+        {
+            SyncthingDevices.Clear();
+            SyncthingDifferences.Clear();
+            SyncthingLogs.Clear();
+            if (_currentSyncProfile is null ||
+                _syncEngine?.Status.State is not (SyncEngineState.Running or SyncEngineState.Paused))
+            {
+                SyncthingFolderSummary = "Syncthing is stopped. Start it to inspect live devices and differences.";
+                return;
+            }
+
+            using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
+            Task<IReadOnlyList<SyncthingDeviceConfiguration>> devicesTask = api.GetDevicesAsync();
+            Task<IReadOnlyList<SyncthingPeerConnectionStatus>> connectionsTask = api.GetPeerConnectionsAsync();
+            Task<SyncthingFolderStatus> statusTask = api.GetFolderStatusAsync(_currentSyncProfile.FolderId);
+            Task<IReadOnlyList<SyncthingDifferenceItem>> differencesTask = api.GetDifferencesAsync(_currentSyncProfile.FolderId);
+            Task<IReadOnlyList<SyncthingLogEntry>> logsTask = api.GetLogsAsync();
+            await Task.WhenAll(devicesTask, connectionsTask, statusTask, differencesTask, logsTask);
+
+            IReadOnlyDictionary<string, SyncthingPeerConnectionStatus> connections =
+                connectionsTask.Result.ToDictionary(item => item.DeviceId, StringComparer.OrdinalIgnoreCase);
+            foreach (SyncthingDeviceConfiguration device in devicesTask.Result
+                         .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase))
+            {
+                connections.TryGetValue(device.DeviceId, out SyncthingPeerConnectionStatus? connection);
+                bool online = connection?.Connected == true;
+                SyncthingDevices.Add(new ProjectParticipantViewModel(
+                    string.IsNullOrWhiteSpace(device.Name) ? ShortDeviceId(device.DeviceId) : device.Name,
+                    ShortDeviceId(device.DeviceId),
+                    device.Paused ? "Paused" : "Device",
+                    online ? "Connected" : "Offline",
+                    connection?.LastSeenAt?.ToLocalTime().ToString("g") ?? "â€”",
+                    connection?.Address ?? string.Join(", ", device.Addresses ?? []),
+                    online ? "#78D7B7" : "#A9ABB2",
+                    online));
+            }
+
+            ReplaceCollection(SyncthingDifferences, differencesTask.Result);
+            ReplaceCollection(SyncthingLogs, logsTask.Result.OrderByDescending(entry => entry.Timestamp).Take(500));
+            SyncthingFolderStatus folder = statusTask.Result;
+            SyncthingFolderSummary = folder.IsInSync
+                ? $"Up to date Â· {folder.InSyncFiles:N0} file(s) Â· state {folder.State}"
+                : $"{folder.NeededFiles:N0} incoming file(s) / {FormatByteSize(folder.NeededBytes)} Â· " +
+                  $"{folder.ReceiveOnlyChangedFiles:N0} local change(s) / {FormatByteSize(folder.ReceiveOnlyChangedBytes)} Â· " +
+                  $"{folder.ErrorCount:N0} error(s)";
+            UpdateSyncStatus(await _syncEngine.RefreshStatusAsync());
+        }
+        finally
+        {
+            IsSyncthingRefreshing = false;
+        }
+    }
+
+    private static string ShortDeviceId(string deviceId) =>
+        string.IsNullOrWhiteSpace(deviceId)
+            ? "Unknown"
+            : deviceId.Length <= 12 ? deviceId : deviceId[..12] + "â€¦";
+
     private async Task LoadPeerMembersCoreAsync()
     {
         if (SelectedProject is null)
@@ -9448,14 +9901,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         int? cleanoutDays = definition.Features.BackupEnabled && definition.Retention.MaximumAge is { } maximumAge
             ? Math.Max(1, (int)Math.Round(maximumAge.TotalDays))
             : null;
-        string folderType = "sendreceive";
+        SyncthingFolderMode folderMode = profile.FolderMode;
         string grantPath = Path.Combine(GetProjectSecurityPath(definition.Id), "membership-grant.json");
         if (File.Exists(grantPath))
         {
             PeerMembershipGrant grant = PeerExchangeCodec.ImportMembershipGrant(File.ReadAllText(grantPath));
             if (grant.Certificate.Role is PeerRole.ReadOnly or PeerRole.Backup or PeerRole.EncryptedArchive)
             {
-                folderType = "receiveonly";
+                folderMode = SyncthingFolderMode.ReceiveOnly;
             }
         }
 
@@ -9464,10 +9917,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             definition.Name,
             profile.ExchangeDirectory,
             deviceIds.ToArray(),
-            folderType,
+            folderMode.ToApiValue(),
             versioningType,
             keepVersions,
-            cleanoutDays);
+            cleanoutDays,
+            RescanIntervalSeconds: profile.RescanIntervalSeconds,
+            FileWatcherEnabled: profile.FileWatcherEnabled);
     }
 
     private async Task StopSyncCoreAsync()
@@ -9485,6 +9940,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             : "Sync désactivé";
         SyncDetails = "Seule l'instance possédée par CyRevision a été arrêtée.";
         PeerMembers.Clear();
+        SyncthingDevices.Clear();
+        SyncthingDifferences.Clear();
+        SyncthingLogs.Clear();
+        SyncthingFolderSummary = "Syncthing is stopped.";
         SelectedPeerMember = null;
     }
 
@@ -10096,29 +10555,64 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private async Task RunOperationAsync(string progressMessage, Func<Task> operation, string successMessage)
     {
-        if (IsBusy)
-        {
-            return;
-        }
-
-        IsBusy = true;
-        StatusMessage = progressMessage;
         string? projectPath = SelectedProject?.RootPath;
-        _applicationLogService.Information("Operation", progressMessage, projectPath);
+        string projectName = SelectedProject?.Name ?? "Application";
+        OperationTaskViewModel trackedTask = BeginTrackedTask(progressMessage, projectName);
+        bool enteredGate = false;
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        if (_operationGate.CurrentCount == 0)
+        {
+            trackedTask.State = "Queued";
+            trackedTask.Detail = "Waiting for the current operation to finish";
+        }
         try
         {
+            await _operationGate.WaitAsync();
+            enteredGate = true;
+            trackedTask.State = "Running";
+            trackedTask.Detail = projectPath ?? "Application";
+            IsBusy = true;
+            StatusMessage = progressMessage;
+            _applicationLogService.Information(
+                "operation",
+                $"start id={trackedTask.Id:N} task=\"{progressMessage}\"",
+                projectPath);
             await operation();
             StatusMessage = successMessage;
-            _applicationLogService.Information("Operation", successMessage, projectPath);
+            CompleteTrackedTask(trackedTask, "Completed", successMessage);
+            _applicationLogService.Information(
+                "operation",
+                $"complete id={trackedTask.Id:N} duration={stopwatch.Elapsed.TotalMilliseconds:N0}ms result=\"{successMessage}\"",
+                projectPath);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = $"Cancelled: {progressMessage}";
+            CompleteTrackedTask(trackedTask, "Cancelled", "Operation cancelled");
+            _applicationLogService.Warning(
+                "operation",
+                $"cancel id={trackedTask.Id:N} duration={stopwatch.Elapsed.TotalMilliseconds:N0}ms task=\"{progressMessage}\"",
+                projectPath);
         }
         catch (Exception exception)
         {
             StatusMessage = exception.Message;
-            _applicationLogService.Error("Operation", progressMessage, exception, projectPath);
+            CompleteTrackedTask(trackedTask, "Failed", exception.Message);
+            _applicationLogService.Error(
+                "operation",
+                $"fail id={trackedTask.Id:N} duration={stopwatch.Elapsed.TotalMilliseconds:N0}ms task=\"{progressMessage}\"",
+                exception,
+                projectPath);
         }
         finally
         {
-            IsBusy = false;
+            if (ActiveOperations.Contains(trackedTask))
+                CompleteTrackedTask(trackedTask, "Finished", trackedTask.Detail);
+            if (enteredGate)
+            {
+                IsBusy = false;
+                _operationGate.Release();
+            }
         }
     }
 

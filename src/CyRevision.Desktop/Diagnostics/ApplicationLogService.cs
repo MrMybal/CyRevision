@@ -19,6 +19,9 @@ public sealed record ApplicationLogEntry(
 {
     public string TimeText => Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff");
     public string LevelText => Level.ToString();
+    public string LinuxLine =>
+        $"{Timestamp.ToLocalTime():MMM dd HH:mm:ss.fff} cyrevision[{Environment.ProcessId}] " +
+        $"{Level.ToString().ToUpperInvariant(),-11} {Area,-14} {Message.Replace(Environment.NewLine, " | ", StringComparison.Ordinal)}";
     public string LevelColor => Level switch
     {
         ApplicationLogLevel.Debug => "#9B9DA3",

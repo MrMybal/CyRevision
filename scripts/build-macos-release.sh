@@ -30,9 +30,12 @@ dmg_path="$release_root/CyRevision-$version-$rid.dmg"
 portable_archive="$release_root/CyRevision-$version-$rid-portable.zip"
 checksum_file="$release_root/SHA256SUMS-$rid.txt"
 iconset="$release_root/cyrevision.iconset"
+main_executable="$bundle_root/Contents/MacOS/CyRevision.Desktop"
 
 rm -rf -- "$publish_directory" "$bundle_root" "$dmg_stage" "$iconset"
 mkdir -p "$publish_directory" "$bundle_root/Contents/MacOS" "$bundle_root/Contents/Resources" "$iconset"
+
+bash "$repository_root/scripts/prepare-syncthing-runtime.sh" "$rid"
 
 dotnet restore "$solution"
 dotnet restore "$desktop_project" --runtime "$rid"
@@ -92,17 +95,26 @@ sed \
   "$repository_root/installer/macos/Info.plist.in" > "$bundle_root/Contents/Info.plist"
 plutil -lint "$bundle_root/Contents/Info.plist"
 
-# Ad-hoc signing keeps the bundle internally consistent. Sign actual Mach-O
-# files explicitly: --deep incorrectly treats runtime plugin directories such
-# as Plugins/CyRevision.AIIntegration as nested macOS bundles.
+# Ad-hoc signing keeps the bundle internally consistent. Sign nested Mach-O
+# files first, but leave the CFBundleExecutable to the final bundle signing.
+# Signing the main executable directly while it lives inside the .app makes
+# codesign validate the still-unsigned envelope and fails on adjacent .NET DLLs.
+# --deep cannot be used because runtime plugin folders are not macOS bundles.
+if [[ ! -x "$main_executable" ]]; then
+  echo "The macOS application executable is missing: $main_executable" >&2
+  exit 1
+fi
 while IFS= read -r -d '' candidate; do
+  if [[ "$candidate" == "$main_executable" ]]; then
+    continue
+  fi
   if file -b "$candidate" | grep -q 'Mach-O'; then
     codesign --force --sign - "$candidate"
   fi
 done < <(find "$bundle_root/Contents/MacOS" -type f -print0)
 
-# Sign the application envelope only after every native component. A Developer
-# ID identity and notarization can later replace this ad-hoc identity in CI.
+# This command signs both the main executable and the application envelope.
+# A Developer ID identity and notarization can later replace this ad-hoc identity.
 codesign --force --sign - "$bundle_root"
 
 while IFS= read -r -d '' candidate; do

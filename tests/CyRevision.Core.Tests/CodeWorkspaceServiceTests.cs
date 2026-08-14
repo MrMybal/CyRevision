@@ -15,11 +15,16 @@ public sealed class CodeWorkspaceServiceTests
         await File.WriteAllTextAsync(Path.Combine(workspace.Path, "Intermediate", "Generated.cpp"), "void Generated() {}\n");
         await File.WriteAllTextAsync(Path.Combine(workspace.Path, ".git", "config"), "secret\n");
 
-        CodeWorkspaceSnapshot snapshot = await new CodeWorkspaceService().BuildTreeAsync(workspace.Path);
+        CodeWorkspaceService service = new();
+        CodeWorkspaceSnapshot snapshot = await service.BuildTreeAsync(workspace.Path);
 
-        Assert.Equal(1, snapshot.FileCount);
+        Assert.Equal(0, snapshot.FileCount);
         Assert.Equal("src", Assert.Single(snapshot.Roots).Name);
-        Assert.Equal("Feature.cs", Assert.Single(snapshot.Roots[0].Children).Name);
+        Assert.True(snapshot.Roots[0].HasUnloadedChildren);
+
+        IReadOnlyList<CodeTreeNode> children = await service.LoadDirectoryAsync(workspace.Path, "src");
+
+        Assert.Equal("Feature.cs", Assert.Single(children).Name);
     }
 
     [Fact]

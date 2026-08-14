@@ -243,7 +243,8 @@ public sealed class GitHubPullRequestService : IPullRequestService
         Uri endpoint = BuildEndpoint(repository, relativePath);
         using HttpRequestMessage request = new(method, endpoint);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        request.Headers.UserAgent.ParseAdd("CyRevision/0.1.8");
+        string applicationVersion = typeof(GitHubPullRequestService).Assembly.GetName().Version?.ToString(3) ?? "0.1.10";
+        request.Headers.UserAgent.ParseAdd($"CyRevision/{applicationVersion}");
         request.Headers.Add("X-GitHub-Api-Version", ApiVersion);
         if (!string.IsNullOrWhiteSpace(token))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
