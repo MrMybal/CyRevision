@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.11 Alpha — 2026-08-14
+
+- corrected the incomplete macOS signing fix from 0.1.10 by moving managed assemblies and application resources out of `Contents/MacOS` into `Contents/Resources/app`;
+- added a minimal architecture-specific native launcher as the sole `CFBundleExecutable`, preserving self-contained Intel and Apple Silicon packages while allowing strict bundle signing;
+- retained explicit nested Mach-O signing for the desktop runtime, bundled Syncthing runtime, Discord agent and remote build agent before sealing the application envelope.
+
 ## 0.1.10 Alpha — 2026-08-14
 
 - fixed macOS packaging on both Intel and Apple Silicon by signing nested native binaries before the application envelope and letting `codesign` sign the main executable with its bundle;
