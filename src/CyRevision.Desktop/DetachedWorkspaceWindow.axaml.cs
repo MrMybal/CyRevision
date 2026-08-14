@@ -1,6 +1,8 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using CyRevision.Code;
 using CyRevision.Desktop.Controls;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.ViewModels;
@@ -64,8 +66,10 @@ public partial class DetachedWorkspaceWindow : Window
         await (_viewModel?.CompareExplorerCommitsAsync() ?? Task.CompletedTask);
     private async void OnCodeSearchClick(object? sender, RoutedEventArgs e) =>
         await (_viewModel?.SearchCodeAsync() ?? Task.CompletedTask);
+    private void OnCancelCodeSearchClick(object? sender, RoutedEventArgs e) =>
+        _viewModel?.CancelCodeSearch();
     private async void OnRefreshCodeClick(object? sender, RoutedEventArgs e) =>
-        await (_viewModel?.RefreshCodeWorkspaceAsync() ?? Task.CompletedTask);
+        await (_viewModel?.RefreshCodeWorkspaceAsync(preserveLoadedTree: false) ?? Task.CompletedTask);
 
     private async void OnCodeSearchKeyDown(object? sender, KeyEventArgs e)
     {

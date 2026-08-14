@@ -50,6 +50,8 @@
         <Border Grid.Row="2" Margin="10" Background="#0B1020" BorderBrush="#393B40"
                 BorderThickness="1" CornerRadius="5" ClipToBounds="True">
             <controls:CodeDiffView DiffText="{Binding DiffText}"
+                                   PreviewImage="{Binding PreviewImage}"
+                                   PresentationSummary="{Binding PresentationSummary}"
                                    FilePath="{Binding FilePath}" />
         </Border>
     </Grid>

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.ViewModels;
 
@@ -71,7 +72,12 @@ public partial class FocusedDiffWindow : Window
 
     private void OnCloseClick(object? sender, RoutedEventArgs e) => Close();
 
-    private sealed record DiffWindowContent(string WindowTitle, string FilePath, string DiffText);
+    private sealed record DiffWindowContent(
+        string WindowTitle,
+        string FilePath,
+        string DiffText,
+        IImage? PreviewImage = null,
+        string PresentationSummary = "");
 
     private sealed class LiveDiffWindowContent : INotifyPropertyChanged, IDisposable
     {
@@ -80,6 +86,8 @@ public partial class FocusedDiffWindow : Window
         private string _windowTitle = "Diff";
         private string _filePath = string.Empty;
         private string _diffText = "Select an item to inspect its diff.";
+        private IImage? _previewImage;
+        private string _presentationSummary = string.Empty;
         private bool _isLoading;
 
         public LiveDiffWindowContent(MainWindowViewModel source, DiffWindowSource kind)
@@ -109,6 +117,18 @@ public partial class FocusedDiffWindow : Window
         {
             get => _diffText;
             private set => SetField(ref _diffText, value);
+        }
+
+        public IImage? PreviewImage
+        {
+            get => _previewImage;
+            private set => SetField(ref _previewImage, value);
+        }
+
+        public string PresentationSummary
+        {
+            get => _presentationSummary;
+            private set => SetField(ref _presentationSummary, value);
         }
 
         public bool IsLoading
@@ -141,12 +161,16 @@ public partial class FocusedDiffWindow : Window
                     WindowTitle = "Commit diff";
                     FilePath = _source.SelectedExplorerFile?.Path ?? "Select a committed file";
                     DiffText = _source.ExplorerDiff;
+                    PreviewImage = _source.ExplorerDiffPreviewImage;
+                    PresentationSummary = _source.ExplorerDiffPresentationSummary;
                     IsLoading = _source.IsExplorerAnyLoading;
                     break;
                 case DiffWindowSource.WorkingTree:
                     WindowTitle = "Working tree diff";
                     FilePath = _source.SelectedChange?.Path ?? "Select a changed file";
                     DiffText = _source.DiffText;
+                    PreviewImage = _source.DiffPreviewImage;
+                    PresentationSummary = _source.DiffPresentationSummary;
                     IsLoading = _source.IsWorkingTreeDiffLoading;
                     break;
                 case DiffWindowSource.PullRequest:
@@ -155,18 +179,24 @@ public partial class FocusedDiffWindow : Window
                     DiffText = string.IsNullOrWhiteSpace(_source.SelectedPullRequestFile?.Patch)
                         ? "The provider did not supply a text patch for this file."
                         : _source.SelectedPullRequestFile.Patch;
+                    PreviewImage = null;
+                    PresentationSummary = string.Empty;
                     IsLoading = _source.IsPullRequestLoading;
                     break;
                 case DiffWindowSource.MultiRestore:
                     WindowTitle = "Multi restore diff";
                     FilePath = _source.SelectedMultiRestoreFile?.Path ?? "Select a restore file";
                     DiffText = _source.MultiRestoreDiff;
+                    PreviewImage = _source.MultiRestoreDiffPreviewImage;
+                    PresentationSummary = _source.MultiRestoreDiffPresentationSummary;
                     IsLoading = _source.IsMultiRestoreDiffLoading;
                     break;
                 case DiffWindowSource.CherryPick:
                     WindowTitle = "Cherry-pick diff";
                     FilePath = _source.SelectedCherryPickCommit?.Subject ?? "Select a commit";
                     DiffText = _source.CherryPickDiff;
+                    PreviewImage = null;
+                    PresentationSummary = string.Empty;
                     IsLoading = _source.IsCherryPickDiffLoading;
                     break;
             }

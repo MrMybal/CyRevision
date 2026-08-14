@@ -6,7 +6,8 @@ internal sealed record ProjectWorkspaceState(
     Guid ProjectId,
     string ActiveTab,
     string CodeRefreshFrequency,
-    int ConsoleSection = 0);
+    int ConsoleSection = 0,
+    Dictionary<string, string>? CategoryTabs = null);
 
 internal sealed class ProjectWorkspaceStateStore
 {

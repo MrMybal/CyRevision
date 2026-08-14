@@ -87,11 +87,15 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
                 cancellationToken)
             .ConfigureAwait(false)).Trim();
 
-        string branch = (await RunGitAsync(
-                root,
-                ["branch", "--show-current"],
-                cancellationToken)
-            .ConfigureAwait(false)).Trim();
+        Task<string> branchTask = RunGitAsync(root, ["branch", "--show-current"], cancellationToken);
+        Task<string> remotesTask = RunGitAsync(root, ["remote"], cancellationToken);
+        Task<string> porcelainTask = RunGitAsync(
+            root,
+            ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--branch", $"--untracked-files={untrackedFilesMode}"],
+            cancellationToken);
+        await Task.WhenAll(branchTask, remotesTask, porcelainTask).ConfigureAwait(false);
+
+        string branch = (await branchTask.ConfigureAwait(false)).Trim();
 
         bool detached = string.IsNullOrWhiteSpace(branch);
         if (detached)
@@ -101,12 +105,8 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
                 .Trim();
         }
 
-        string remotes = await RunGitAsync(root, ["remote"], cancellationToken).ConfigureAwait(false);
-        string porcelain = await RunGitAsync(
-                root,
-                ["status", "--porcelain=v1", "-z", "--branch", $"--untracked-files={untrackedFilesMode}"],
-                cancellationToken)
-            .ConfigureAwait(false);
+        string remotes = await remotesTask.ConfigureAwait(false);
+        string porcelain = await porcelainTask.ConfigureAwait(false);
 
         IReadOnlyList<GitChange> preliminaryChanges = ParseStatus(
             porcelain,
@@ -651,15 +651,16 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         }
 
         GitRevision parsedRevision = new(fields[0], fields[1], fields[2], fields[3], authoredAt, fields[5]);
+        string[] parentHashes = fields[6].Split(' ', StringSplitOptions.RemoveEmptyEntries);
         IReadOnlyList<GitCommitFileChange> files = await GetRevisionChangesAsync(
                 repositoryPath,
-                revision,
-                null,
+                parentHashes.Length > 1 ? parentHashes[0] : revision,
+                parentHashes.Length > 1 ? revision : null,
                 cancellationToken)
             .ConfigureAwait(false);
         return new GitCommitDetails(
             parsedRevision,
-            fields[6].Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            parentHashes,
             fields[7].Trim(),
             files,
             files.Where(file => !file.IsBinary).Sum(file => file.AddedLines ?? 0),
@@ -690,21 +691,30 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             files.Count(file => file.IsBinary));
     }
 
-    public Task<string> GetCommitDiffAsync(
+    public async Task<string> GetCommitDiffAsync(
         string repositoryPath,
         string revision,
         string? relativePath = null,
         CancellationToken cancellationToken = default)
     {
         ValidateReferenceName(revision);
-        List<string> arguments = ["show", "--format=", "--no-ext-diff", "--no-color", "--no-renames", revision];
+        List<string> arguments = ["diff", "--no-ext-diff", "--no-color", "--no-renames", $"{revision}^1", revision];
         if (!string.IsNullOrWhiteSpace(relativePath))
         {
             arguments.Add("--");
             arguments.Add(relativePath);
         }
 
-        return RunGitAsync(repositoryPath, arguments, cancellationToken);
+        ProcessResult result = await RunGitResultAsync(repositoryPath, arguments, cancellationToken).ConfigureAwait(false);
+        if (result.Succeeded) return result.StandardOutput;
+
+        List<string> rootArguments = ["show", "--format=", "--no-ext-diff", "--no-color", "--no-renames", revision];
+        if (!string.IsNullOrWhiteSpace(relativePath))
+        {
+            rootArguments.Add("--");
+            rootArguments.Add(relativePath);
+        }
+        return await RunGitAsync(repositoryPath, rootArguments, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<string> GetComparisonDiffAsync(
@@ -742,7 +752,8 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
                 repositoryPath,
                 [
                     "-c", "core.quotepath=false", "log", "--follow", $"--max-count={maximumCount}",
-                    "--date=iso-strict", "--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1e",
+                    "--date=iso-strict", "--format=CYREVHIST%x1f%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s",
+                    "--raw", "--numstat",
                     "--", relativePath
                 ],
                 cancellationToken)
@@ -754,37 +765,107 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
 
         EnsureSuccess(result, "Unable to read the file history.");
         List<GitFileRevision> history = [];
-        foreach (string entry in result.StandardOutput.Split('\x1e', StringSplitOptions.RemoveEmptyEntries))
+        GitRevision? revision = null;
+        string path = relativePath.Replace('\\', '/');
+        GitChangeKind kind = GitChangeKind.Modified;
+        long? addedLines = null;
+        long? deletedLines = null;
+        bool isBinary = false;
+
+        void CompleteRevision()
         {
-            string[] fields = entry.Trim().Split('\x1f');
-            if (fields.Length != 6 ||
-                !DateTimeOffset.TryParse(fields[4], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset authoredAt))
-            {
-                continue;
-            }
-
-            GitRevision itemRevision = new(fields[0], fields[1], fields[2], fields[3], authoredAt, fields[5]);
-            IReadOnlyList<GitCommitFileChange> changes = await GetRevisionChangesAsync(
-                    repositoryPath,
-                    fields[0],
-                    null,
-                    cancellationToken,
-                    relativePath)
-                .ConfigureAwait(false);
-            GitCommitFileChange? change = changes.FirstOrDefault();
-            if (change is null)
-            {
-                continue;
-            }
-
+            if (revision is null) return;
             history.Add(new GitFileRevision(
-                itemRevision,
-                change.Path,
-                change.Kind,
-                change.AddedLines,
-                change.DeletedLines,
-                change.IsBinary,
-                change.LfsPointer));
+                revision,
+                path,
+                kind,
+                addedLines,
+                deletedLines,
+                isBinary));
+        }
+
+        foreach (string rawLine in result.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string line = rawLine.Trim();
+            if (line.StartsWith("CYREVHIST\x1f", StringComparison.Ordinal))
+            {
+                CompleteRevision();
+                string[] fields = line.Split('\x1f');
+                if (fields.Length != 7 ||
+                    !DateTimeOffset.TryParse(fields[5], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset authoredAt))
+                {
+                    revision = null;
+                    continue;
+                }
+                revision = new GitRevision(fields[1], fields[2], fields[3], fields[4], authoredAt, fields[6]);
+                path = relativePath.Replace('\\', '/');
+                kind = GitChangeKind.Modified;
+                addedLines = null;
+                deletedLines = null;
+                isBinary = false;
+                continue;
+            }
+
+            if (revision is null) continue;
+            if (line[0] == ':' && line.IndexOf('\t') is int rawTab && rawTab > 0)
+            {
+                string[] metadata = line[..rawTab].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                string[] paths = line[(rawTab + 1)..].Split('\t', StringSplitOptions.RemoveEmptyEntries);
+                if (metadata.Length > 0)
+                {
+                    kind = metadata[^1][0] switch
+                    {
+                        'A' => GitChangeKind.Added,
+                        'D' => GitChangeKind.Deleted,
+                        'R' => GitChangeKind.Renamed,
+                        'U' => GitChangeKind.Conflicted,
+                        _ => GitChangeKind.Modified
+                    };
+                }
+                if (paths.Length > 0) path = NormalizeHistoryPath(paths[^1]);
+                continue;
+            }
+
+            string[] stat = line.Split('\t', 3);
+            if (stat.Length != 3 || (stat[0] != "-" && !long.TryParse(stat[0], out _))) continue;
+            path = NormalizeHistoryPath(stat[2]);
+            if (stat[0] == "-" || stat[1] == "-")
+            {
+                isBinary = true;
+            }
+            else
+            {
+                addedLines = long.TryParse(stat[0], NumberStyles.None, CultureInfo.InvariantCulture, out long added) ? added : 0;
+                deletedLines = long.TryParse(stat[1], NumberStyles.None, CultureInfo.InvariantCulture, out long deleted) ? deleted : 0;
+            }
+        }
+        CompleteRevision();
+
+        HashSet<string> lfsPaths = await GetLfsFileNamesForPathsAsync(
+            repositoryPath,
+            [relativePath],
+            cancellationToken).ConfigureAwait(false);
+        if (lfsPaths.Count > 0)
+        {
+            for (int start = 0; start < history.Count; start += 8)
+            {
+                int count = Math.Min(8, history.Count - start);
+                Task<LfsPointerInfo?>[] pointerTasks = new Task<LfsPointerInfo?>[count];
+                for (int offset = 0; offset < count; offset++)
+                {
+                    GitFileRevision item = history[start + offset];
+                    pointerTasks[offset] = item.Kind == GitChangeKind.Deleted
+                        ? Task.FromResult<LfsPointerInfo?>(null)
+                        : TryReadLfsPointerAtRevisionAsync(
+                            repositoryPath,
+                            item.Revision.Hash,
+                            item.Path,
+                            cancellationToken);
+                }
+                LfsPointerInfo?[] pointers = await Task.WhenAll(pointerTasks).ConfigureAwait(false);
+                for (int offset = 0; offset < count; offset++)
+                    history[start + offset] = history[start + offset] with { LfsPointer = pointers[offset] };
+            }
         }
 
         return history;
@@ -829,7 +910,21 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             }
         }
 
-        GitBranch[] remoteBranches = branches.Where(branch => branch.IsRemote).ToArray();
+        Dictionary<string, GitBranch> exactRemoteBranches = branches
+            .Where(branch => branch.IsRemote)
+            .GroupBy(branch => branch.Name, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        Dictionary<string, GitBranch> remoteBranchesByLocalName = branches
+            .Where(branch => branch.IsRemote)
+            .Select(branch => new
+            {
+                Branch = branch,
+                LocalName = branch.Name.IndexOf('/') is int separator && separator >= 0
+                    ? branch.Name[(separator + 1)..]
+                    : branch.Name
+            })
+            .GroupBy(item => item.LocalName, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().Branch, StringComparer.Ordinal);
         return branches.Select(branch =>
         {
             if (branch.IsRemote || !string.IsNullOrWhiteSpace(branch.RemoteName))
@@ -837,10 +932,8 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
                 return branch;
             }
 
-            GitBranch? counterpart = remoteBranches.FirstOrDefault(remote =>
-                remote.Name.Equals($"origin/{branch.Name}", StringComparison.Ordinal))
-                ?? remoteBranches.FirstOrDefault(remote =>
-                    remote.Name.EndsWith("/" + branch.Name, StringComparison.Ordinal));
+            exactRemoteBranches.TryGetValue($"origin/{branch.Name}", out GitBranch? counterpart);
+            counterpart ??= remoteBranchesByLocalName.GetValueOrDefault(branch.Name);
             return counterpart is null ? branch : branch with { RemoteName = counterpart.Name };
         }).ToArray();
     }
@@ -1490,29 +1583,34 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         CancellationToken cancellationToken)
     {
         HashSet<string> lfsFiles = new(StringComparer.OrdinalIgnoreCase);
-        foreach (string[] batch in paths
-                     .Where(path => !string.IsNullOrWhiteSpace(path))
-                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                     .Chunk(150))
+        string[] candidates = paths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (candidates.Length == 0)
         {
-            ProcessResult result = await RunGitResultAsync(
-                    repositoryPath,
-                    ["check-attr", "-z", "filter", "--", .. batch],
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (!result.Succeeded)
-            {
-                continue;
-            }
+            return lfsFiles;
+        }
 
-            string[] fields = result.StandardOutput.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-            for (int index = 0; index + 2 < fields.Length; index += 3)
+        string standardInput = string.Join('\0', candidates) + '\0';
+        ProcessResult result = await RunGitResultWithInputAsync(
+                repositoryPath,
+                ["check-attr", "-z", "--stdin", "filter"],
+                standardInput,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.Succeeded)
+        {
+            return lfsFiles;
+        }
+
+        string[] fields = result.StandardOutput.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+        for (int index = 0; index + 2 < fields.Length; index += 3)
+        {
+            if (string.Equals(fields[index + 1], "filter", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(fields[index + 2], "lfs", StringComparison.OrdinalIgnoreCase))
             {
-                if (string.Equals(fields[index + 1], "filter", StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(fields[index + 2], "lfs", StringComparison.OrdinalIgnoreCase))
-                {
-                    lfsFiles.Add(fields[index]);
-                }
+                lfsFiles.Add(fields[index]);
             }
         }
         return lfsFiles;
@@ -1610,10 +1708,17 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         }
 
         string contentRevision = secondRevision ?? firstRevision;
+        HashSet<string> lfsPaths = await GetLfsFileNamesForPathsAsync(
+                repositoryPath,
+                changes.Values
+                    .Where(change => change.Kind != GitChangeKind.Deleted)
+                    .Select(change => change.Path),
+                cancellationToken)
+            .ConfigureAwait(false);
         List<GitCommitFileChange> result = [];
         foreach (MutableRevisionChange change in changes.Values.OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase))
         {
-            LfsPointerInfo? pointer = change.Kind == GitChangeKind.Deleted
+            LfsPointerInfo? pointer = change.Kind == GitChangeKind.Deleted || !lfsPaths.Contains(change.Path)
                 ? null
                 : await TryReadLfsPointerAtRevisionAsync(
                         repositoryPath,
@@ -1684,6 +1789,18 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         IReadOnlyCollection<string> arguments,
         CancellationToken cancellationToken) =>
         _processRunner.RunAsync(_gitExecutable, arguments, Path.GetFullPath(workingDirectory), cancellationToken);
+
+    private Task<ProcessResult> RunGitResultWithInputAsync(
+        string workingDirectory,
+        IReadOnlyCollection<string> arguments,
+        string standardInput,
+        CancellationToken cancellationToken) =>
+        _processRunner.RunAsync(
+            _gitExecutable,
+            arguments,
+            Path.GetFullPath(workingDirectory),
+            standardInput,
+            cancellationToken);
 
     private static void EnsureSuccess(ProcessResult result, string message)
     {

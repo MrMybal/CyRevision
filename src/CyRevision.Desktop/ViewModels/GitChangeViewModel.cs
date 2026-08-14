@@ -9,7 +9,7 @@ public sealed class GitChangeViewModel : ObservableObject
 
     public GitChangeViewModel(
         GitChange change,
-        bool isIncluded = true,
+        bool isIncluded = false,
         bool isLocalOnly = false,
         LfsFileLock? fileLock = null)
     {
@@ -21,9 +21,9 @@ public sealed class GitChangeViewModel : ObservableObject
 
     public event EventHandler? PreparationChanged;
 
-    public GitChange Change { get; }
+    public GitChange Change { get; private set; }
 
-    public LfsFileLock? FileLock { get; }
+    public LfsFileLock? FileLock { get; private set; }
 
     public string Path => Change.Path.Replace('\\', '/');
 
@@ -107,6 +107,48 @@ public sealed class GitChangeViewModel : ObservableObject
         : FileLock.IsOurs ? "YOU" : FileLock.OwnerName;
 
     public string LockColor => FileLock?.IsOurs == true ? "#78D7B7" : "#E5C07B";
+
+    public bool UpdateFileLock(LfsFileLock? fileLock)
+    {
+        if (Equals(FileLock, fileLock))
+        {
+            return false;
+        }
+
+        FileLock = fileLock;
+        OnPropertyChanged(nameof(FileLock));
+        OnPropertyChanged(nameof(HasLock));
+        OnPropertyChanged(nameof(HasForeignLock));
+        OnPropertyChanged(nameof(LockOwner));
+        OnPropertyChanged(nameof(LockShort));
+        OnPropertyChanged(nameof(LockColor));
+        return true;
+    }
+
+    public bool UpdateChange(GitChange change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        if (Change == change) return false;
+        Change = change;
+        if (!IsUntracked && _isLocalOnly)
+        {
+            _isLocalOnly = false;
+            OnPropertyChanged(nameof(IsLocalOnly));
+        }
+        OnPropertyChanged(nameof(Change));
+        OnPropertyChanged(nameof(Path));
+        OnPropertyChanged(nameof(FileName));
+        OnPropertyChanged(nameof(DirectoryPath));
+        OnPropertyChanged(nameof(State));
+        OnPropertyChanged(nameof(Area));
+        OnPropertyChanged(nameof(Lfs));
+        OnPropertyChanged(nameof(IsUntracked));
+        OnPropertyChanged(nameof(IsTracked));
+        OnPropertyChanged(nameof(StatusColor));
+        OnPropertyChanged(nameof(PreparationState));
+        OnPropertyChanged(nameof(PreparationColor));
+        return true;
+    }
 
     public string StatusColor => Change.Kind switch
     {

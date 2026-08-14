@@ -17,12 +17,17 @@ public sealed class SyncthingProfileStoreTests : IDisposable
 
         SyncthingProfile created = await store.CreateOrUpdateAsync(projectId, executable, exchange);
         SyncthingProfile updated = await store.CreateOrUpdateAsync(projectId, executable, exchange);
+        SyncthingSharedFolder sharedFolder = new(
+            Guid.NewGuid(), "Build versions", Path.Combine(_root, "builds"), "cyrevision-share-builds",
+            SyncthingFolderMode.ReceiveOnly);
         updated = await store.SaveAsync(updated with
         {
+            SharedFolders = [sharedFolder],
             FolderMode = SyncthingFolderMode.SendOnly,
             RescanIntervalSeconds = 120,
             FileWatcherEnabled = false
         });
+        updated = await store.CreateOrUpdateAsync(projectId, executable, exchange);
         SyncthingProfile? loaded = await store.GetAsync(projectId);
 
         Assert.NotNull(loaded);
@@ -30,8 +35,11 @@ public sealed class SyncthingProfileStoreTests : IDisposable
         Assert.Equal(created.ApiKey, updated.ApiKey);
         Assert.Equal(created.ListenPort, updated.ListenPort);
         Assert.NotEqual(created.ApiEndpoint.Port, created.ListenPort);
-        Assert.Equal(updated, loaded);
+        Assert.Equal(updated.ApiEndpoint, loaded.ApiEndpoint);
+        Assert.Equal(updated.ApiKey, loaded.ApiKey);
+        Assert.Equal(updated.FolderMode, loaded.FolderMode);
         Assert.Equal(SyncthingFolderMode.SendOnly, loaded.FolderMode);
+        Assert.Equal(sharedFolder, Assert.Single(loaded.SharedFolders));
         created.ToIsolationOptions().Validate();
         Assert.NotEqual(Path.GetFullPath(exchange), Path.GetFullPath(created.ConfigurationDirectory));
     }

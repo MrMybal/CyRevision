@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using CyRevision.Security;
@@ -12,7 +13,10 @@ public sealed record VpnInvitation(
     string AssignedAddress,
     VpnPeerDefinition IssuerPeer,
     VpnNodeCapabilities AllowedCapabilities,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt)
+{
+    public string RequestedClientName { get; init; } = string.Empty;
+}
 
 public sealed record SignedVpnInvitation(
     VpnInvitation Invitation,
@@ -33,7 +37,8 @@ public static class VpnPeerExchangeCodec
         VpnProjectProfile profile,
         IDeviceIdentityStore issuerIdentity,
         VpnNodeCapabilities allowedCapabilities,
-        TimeSpan lifetime)
+        TimeSpan lifetime,
+        string? requestedClientName = null)
     {
         VpnProfileValidator.Validate(profile);
         if (string.IsNullOrWhiteSpace(profile.PublicKey))
@@ -62,7 +67,10 @@ public static class VpnPeerExchangeCodec
             VpnProfileFactory.FindAvailableAddress(profile),
             issuerPeer,
             allowedCapabilities,
-            DateTimeOffset.UtcNow.Add(lifetime));
+            DateTimeOffset.UtcNow.Add(lifetime))
+        {
+            RequestedClientName = requestedClientName?.Trim() ?? string.Empty
+        };
         return new SignedVpnInvitation(
             invitation,
             issuerIdentity.Identity,
@@ -90,7 +98,9 @@ public static class VpnPeerExchangeCodec
         VpnProfileValidator.ValidateWireGuardKey(joiningProfile.PublicKey, "publique du pair");
         VpnPeerDefinition joiningPeer = new(
             joiningIdentity.Identity.DeviceId,
-            joiningIdentity.Identity.DisplayName,
+            string.IsNullOrWhiteSpace(offer.Invitation.RequestedClientName)
+                ? joiningIdentity.Identity.DisplayName
+                : offer.Invitation.RequestedClientName,
             joiningProfile.PublicKey,
             joiningProfile.LocalAddress,
             joiningProfile.PublicEndpoint,
@@ -202,15 +212,21 @@ public static class VpnPeerExchangeCodec
     public static string ExportInvitation(SignedVpnInvitation invitation) =>
         JsonSerializer.Serialize(invitation, JsonOptions);
 
+    public static string ExportInvitationCode(SignedVpnInvitation invitation) =>
+        EncodeExchange("CYRVPN1", invitation);
+
     public static SignedVpnInvitation ImportInvitation(string value) =>
-        JsonSerializer.Deserialize<SignedVpnInvitation>(value, JsonOptions)
+        JsonSerializer.Deserialize<SignedVpnInvitation>(DecodeExchange(value, "CYRVPN1"), JsonOptions)
         ?? throw new InvalidDataException("L'invitation VPN est invalide.");
 
     public static string ExportJoinResponse(VpnJoinResponse response) =>
         JsonSerializer.Serialize(response, JsonOptions);
 
+    public static string ExportJoinResponseCode(VpnJoinResponse response) =>
+        EncodeExchange("CYRVPNR1", response);
+
     public static VpnJoinResponse ImportJoinResponse(string value) =>
-        JsonSerializer.Deserialize<VpnJoinResponse>(value, JsonOptions)
+        JsonSerializer.Deserialize<VpnJoinResponse>(DecodeExchange(value, "CYRVPNR1"), JsonOptions)
         ?? throw new InvalidDataException("La réponse VPN est invalide.");
 
     private static byte[] BuildInvitationPayload(VpnInvitation invitation) => Encoding.UTF8.GetBytes(string.Join('\n',
@@ -220,7 +236,41 @@ public static class VpnPeerExchangeCodec
         invitation.AssignedAddress,
         BuildPeerPayload(invitation.IssuerPeer),
         ((int)invitation.AllowedCapabilities).ToString(CultureInfo.InvariantCulture),
-        invitation.ExpiresAt.ToUniversalTime().ToString("O")));
+        invitation.ExpiresAt.ToUniversalTime().ToString("O")) +
+        (string.IsNullOrWhiteSpace(invitation.RequestedClientName)
+            ? string.Empty
+            : "\n" + invitation.RequestedClientName.Trim()));
+
+    private static string EncodeExchange<T>(string prefix, T value)
+    {
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
+        using MemoryStream output = new();
+        using (GZipStream gzip = new(output, CompressionLevel.SmallestSize, leaveOpen: true)) gzip.Write(json);
+        return prefix + "-" + Convert.ToBase64String(output.ToArray())
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    private static string DecodeExchange(string value, string prefix)
+    {
+        string trimmed = value?.Trim() ?? string.Empty;
+        if (trimmed.StartsWith('{')) return trimmed;
+        string marker = prefix + "-";
+        if (!trimmed.StartsWith(marker, StringComparison.Ordinal))
+            throw new InvalidDataException("The VPN exchange code is not recognized.");
+        string payload = trimmed[marker.Length..].Replace('-', '+').Replace('_', '/');
+        payload = payload.PadRight(payload.Length + ((4 - payload.Length % 4) % 4), '=');
+        try
+        {
+            using MemoryStream input = new(Convert.FromBase64String(payload));
+            using GZipStream gzip = new(input, CompressionMode.Decompress);
+            using StreamReader reader = new(gzip, Encoding.UTF8);
+            return reader.ReadToEnd();
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidDataException)
+        {
+            throw new InvalidDataException("The VPN exchange code is corrupted.", exception);
+        }
+    }
 
     private static byte[] BuildJoinResponsePayload(
         Guid invitationId,

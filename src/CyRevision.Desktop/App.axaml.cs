@@ -93,6 +93,7 @@ public partial class App : Application
             JsonProjectCatalog catalog = new(paths.ProjectCatalogPath);
             GitCliRepositoryService gitService = new();
             GitHubPullRequestService pullRequests = new();
+            GitHubActionsService ciWorkflows = new();
             JsonDiscordAgentStore discordStore = new(paths.DiscordDirectory);
             DiscordControlConnectionStore discordConnections = new(paths.DiscordControlDirectory);
             DiscordProjectAgent discordAgent = new(
@@ -127,7 +128,7 @@ public partial class App : Application
                 vpnNetworkSetup, vpnSyncExchange, swarmProfiles, swarmSetup, vpnFileProfiles, vpnFileExchange,
                 lfsManagementProfiles, lfsStorageManager, remoteBuildConnections, remoteBuildSnapshots,
                 localization, documentation, updates, discordStore, discordAgent, discordConnections,
-                pluginManager, new CodeWorkspaceService(), pullRequests, applicationLog, repositoryConsole, initialProjectPath);
+                pluginManager, new CodeWorkspaceService(), pullRequests, ciWorkflows, applicationLog, repositoryConsole, initialProjectPath);
             _viewModel = viewModel;
 
             MainWindow mainWindow = new(viewModel, localization, paths.ConfigurationDirectory)

@@ -68,17 +68,20 @@ public sealed class VpnServicesTests : IDisposable
             Path.Combine(_root, "peer"), "Build machine", "vpn:peer");
 
         SignedVpnInvitation invitation = VpnPeerExchangeCodec.CreateInvitation(
-            ownerProfile, owner, VpnNodeCapabilities.SwarmAgent, TimeSpan.FromHours(1));
-        SignedVpnInvitation imported = VpnPeerExchangeCodec.ImportInvitation(
-            VpnPeerExchangeCodec.ExportInvitation(invitation));
+            ownerProfile, owner, VpnNodeCapabilities.SwarmAgent, TimeSpan.FromHours(1), "CI Agent 01");
+        string invitationCode = VpnPeerExchangeCodec.ExportInvitationCode(invitation);
+        Assert.StartsWith("CYRVPN1-", invitationCode, StringComparison.Ordinal);
+        SignedVpnInvitation imported = VpnPeerExchangeCodec.ImportInvitation(invitationCode);
         joiningProfile = VpnPeerExchangeCodec.ApplyInvitation(joiningProfile, imported);
         VpnJoinResponse response = VpnPeerExchangeCodec.CreateJoinResponse(
             imported, joiningProfile, peer, VpnNodeCapabilities.SwarmAgent);
 
         VpnPeerDefinition accepted = VpnPeerExchangeCodec.ValidateJoinResponse(response, projectId, owner.Identity);
         Assert.Equal(VpnNodeCapabilities.SwarmAgent, accepted.Capabilities);
+        Assert.Equal("CI Agent 01", accepted.DisplayName);
         Assert.Equal(invitation.Invitation.AssignedAddress, accepted.TunnelAddress);
         Assert.Equal(ownerProfile.LocalAddress, joiningProfile.Peers.Single().TunnelAddress);
+        Assert.StartsWith("CYRVPNR1-", VpnPeerExchangeCodec.ExportJoinResponseCode(response), StringComparison.Ordinal);
 
         VpnJoinResponse escalated = response with
         {

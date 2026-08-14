@@ -7,6 +7,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using System.ComponentModel;
 using System.Diagnostics;
+using CyRevision.Code;
 using CyRevision.Desktop.Controls;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.SystemIntegration;
@@ -38,6 +39,7 @@ public partial class MainWindow : Window
     private WorkspaceLayoutPreferencesStore? _workspaceLayoutStore;
     private ProjectWorkspaceStateStore? _projectWorkspaceStateStore;
     private readonly DispatcherTimer _codeRefreshTimer = new() { Interval = TimeSpan.FromMinutes(1) };
+    private RepositoryChangeMonitor? _repositoryChangeMonitor;
     private Guid? _activeWorkspaceProjectId;
     private bool _restoringProjectWorkspace;
     private WorkspaceLayoutPreferences _layoutPreferences = WorkspaceLayoutPreferences.Default;
@@ -45,7 +47,9 @@ public partial class MainWindow : Window
     private ChangesLayoutMode _changesLayout = ChangesLayoutMode.Balanced;
     private CodeLayoutMode _codeLayout = CodeLayoutMode.Balanced;
     private WorkspaceCategory _workspaceCategory = WorkspaceCategory.Overview;
+    private readonly Dictionary<string, string> _categoryWorkspaceTabs = new(StringComparer.Ordinal);
     private bool _pullRequestDiffFocused;
+    private bool _solutionExplorerTreeLayout = true;
     private Action<DesktopBehaviorSetting>? _desktopBehaviorToggle;
 
     public bool StartHidden { get; set; }
@@ -64,9 +68,12 @@ public partial class MainWindow : Window
     {
         _viewModel = viewModel;
         DataContext = viewModel;
+        ChangesFolderTree.AddHandler(TreeViewItem.ExpandedEvent, OnChangesTreeItemExpanded);
+        SolutionTreePanel.AddHandler(TreeViewItem.ExpandedEvent, OnSolutionTreeItemExpanded);
         _localization = localization;
         _workspaceLayoutStore = new WorkspaceLayoutPreferencesStore(configurationDirectory);
         _projectWorkspaceStateStore = new ProjectWorkspaceStateStore(configurationDirectory);
+        _repositoryChangeMonitor = new RepositoryChangeMonitor(OnRepositoryChangesDetected);
         _layoutPreferences = _workspaceLayoutStore.Load();
         HistoryTimelineToggle.IsChecked = _layoutPreferences.ShowTimeline;
         HistoryFilesToggle.IsChecked = _layoutPreferences.ShowFiles;
@@ -140,6 +147,8 @@ public partial class MainWindow : Window
         SaveCurrentProjectWorkspaceState();
         _codeRefreshTimer.Stop();
         _codeRefreshTimer.Tick -= OnCodeRefreshTimerTick;
+        _repositoryChangeMonitor?.Dispose();
+        _repositoryChangeMonitor = null;
         WorkspaceTabs.SelectionChanged -= OnWorkspaceTabSelectionChanged;
         ConsoleAndLogsTabs.SelectionChanged -= OnConsoleAndLogsTabSelectionChanged;
         _viewModel.PropertyChanged -= OnMainViewModelPropertyChanged;
@@ -166,11 +175,37 @@ public partial class MainWindow : Window
         {
             SaveCurrentProjectWorkspaceState();
             RestoreSelectedProjectWorkspaceState();
+            ConfigureRepositoryChangeMonitor();
         }
         else if (e.PropertyName == nameof(MainWindowViewModel.CodeAutoRefreshFrequency))
         {
             SaveCurrentProjectWorkspaceState();
         }
+        else if (e.PropertyName == nameof(MainWindowViewModel.HasCodeFileSearchResults))
+        {
+            ApplySolutionExplorerLayout(_solutionExplorerTreeLayout);
+        }
+    }
+
+    private void ConfigureRepositoryChangeMonitor()
+    {
+        ProjectItemViewModel? project = _viewModel.SelectedProject;
+        if (project is null || !project.Definition.Features.GitEnabled || !Directory.Exists(project.RootPath))
+        {
+            _repositoryChangeMonitor?.Stop();
+            return;
+        }
+
+        _repositoryChangeMonitor?.Start(project.RootPath);
+    }
+
+    private void OnRepositoryChangesDetected(RepositoryChangeBatch batch)
+    {
+        Dispatcher.UIThread.Post(async () => await _viewModel.RefreshDetectedChangesAsync(
+            batch.Paths.Count,
+            batch.RequiresUntrackedScan,
+            batch.GitMetadataChanged,
+            batch.WatcherOverflowed));
     }
 
     private void RestoreSelectedProjectWorkspaceState()
@@ -183,6 +218,12 @@ public partial class MainWindow : Window
 
         ProjectWorkspaceState state = _projectWorkspaceStateStore.Get(_viewModel.SelectedProject.Id);
         _activeWorkspaceProjectId = state.ProjectId;
+        _categoryWorkspaceTabs.Clear();
+        if (state.CategoryTabs is not null)
+        {
+            foreach ((string category, string tabName) in state.CategoryTabs)
+                _categoryWorkspaceTabs[category] = tabName;
+        }
         _restoringProjectWorkspace = true;
         try
         {
@@ -198,6 +239,7 @@ public partial class MainWindow : Window
         }
 
         EnsureCodeWorkspaceForVisibleTab();
+        EnsureSelectedWorkspaceData();
     }
 
     private void SaveCurrentProjectWorkspaceState()
@@ -205,11 +247,14 @@ public partial class MainWindow : Window
         if (_restoringProjectWorkspace || _projectWorkspaceStateStore is null || _activeWorkspaceProjectId is not Guid projectId)
             return;
         string activeTab = (WorkspaceTabs.SelectedItem as TabItem)?.Name ?? "ProjectWorkspaceTab";
+        if (WorkspaceTabs.SelectedItem is TabItem selectedTab)
+            _categoryWorkspaceTabs[CategoryFor(selectedTab).ToString()] = activeTab;
         _projectWorkspaceStateStore.Save(new ProjectWorkspaceState(
             projectId,
             activeTab,
             _viewModel.CodeAutoRefreshFrequency,
-            Math.Max(0, ConsoleAndLogsTabs.SelectedIndex)));
+            Math.Max(0, ConsoleAndLogsTabs.SelectedIndex),
+            new Dictionary<string, string>(_categoryWorkspaceTabs, StringComparer.Ordinal)));
     }
 
     private void OnWorkspaceTabSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -217,6 +262,7 @@ public partial class MainWindow : Window
         if (_restoringProjectWorkspace) return;
         SaveCurrentProjectWorkspaceState();
         EnsureCodeWorkspaceForVisibleTab();
+        EnsureSelectedWorkspaceData();
     }
 
     private void OnConsoleAndLogsTabSelectionChanged(object? sender, SelectionChangedEventArgs e) =>
@@ -227,6 +273,14 @@ public partial class MainWindow : Window
         if (ReferenceEquals(WorkspaceTabs.SelectedItem, SolutionExplorerWorkspaceTab) ||
             ReferenceEquals(WorkspaceTabs.SelectedItem, CodeWorkspaceTab))
             _ = _viewModel.EnsureCodeWorkspaceLoadedAsync();
+    }
+
+    private void EnsureSelectedWorkspaceData()
+    {
+        if (WorkspaceTabs.SelectedItem is TabItem { Name: { Length: > 0 } workspaceName })
+        {
+            _ = _viewModel.EnsureWorkspaceDataLoadedAsync(workspaceName);
+        }
     }
 
     private async void OnCodeRefreshTimerTick(object? sender, EventArgs e)
@@ -349,9 +403,9 @@ public partial class MainWindow : Window
 
         (double explorer, double editor, double results, double editorHeight, double symbolsHeight) = layout switch
         {
-            CodeLayoutMode.EditorFocus => (0.56, 1.95, 0.64, 1.0, 0.24),
-            CodeLayoutMode.SearchFocus => (0.68, 1.0, 1.42, 1.0, 0.30),
-            _ => (0.8, 1.45, 1.0, 1.0, 0.32)
+            CodeLayoutMode.EditorFocus => (0.72, 1.95, 0.55, 1.0, 0.24),
+            CodeLayoutMode.SearchFocus => (1.65, 1.05, 0.48, 1.0, 0.30),
+            _ => (1.2, 1.25, 0.65, 1.0, 0.32)
         };
         if (restoreSavedSize && _layoutPreferences.CodeLayout == layout)
         {
@@ -795,11 +849,45 @@ public partial class MainWindow : Window
 
     private void OnChangeTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (sender is TreeView tree && tree.SelectedItem is GitChangeTreeNode node && node.Change is { } change)
+        if (sender is not TreeView tree || tree.SelectedItem is not GitChangeTreeNode node) return;
+        if (node.IsPlaceholder)
+        {
+            GitChangeTreeNode? parent = FindChangeTreeParent(_viewModel.ChangeTree, node);
+            parent?.EnsureChildrenLoaded();
+            return;
+        }
+        if (node.IsDirectory)
+        {
+            node.EnsureChildrenLoaded();
+            return;
+        }
+        if (node.Change is { } change)
         {
             _viewModel.SelectedChangeTreeNode = node;
             _viewModel.SelectedChange = change;
         }
+    }
+
+    private void OnChangesTreeItemExpanded(object? sender, RoutedEventArgs e)
+    {
+        if (e.Source is TreeViewItem { DataContext: GitChangeTreeNode node })
+        {
+            node.EnsureChildrenLoaded();
+        }
+    }
+
+    private static GitChangeTreeNode? FindChangeTreeParent(
+        IEnumerable<GitChangeTreeNode> roots,
+        GitChangeTreeNode target)
+    {
+        foreach (GitChangeTreeNode root in roots)
+        {
+            if (root.Children.Contains(target)) return root;
+            GitChangeTreeNode? parent = FindChangeTreeParent(root.Children, target);
+            if (parent is not null) return parent;
+        }
+
+        return null;
     }
 
     private void NavigateToWorkspace(TabItem tab, Control? focusTarget = null)
@@ -839,7 +927,15 @@ public partial class MainWindow : Window
             tab.IsVisible = visibleTabs.Contains(tab);
         }
 
-        if (selectDefault || WorkspaceTabs.SelectedItem is not TabItem selected || !visibleTabs.Contains(selected))
+        if (selectDefault)
+        {
+            string key = category.ToString();
+            TabItem remembered = _categoryWorkspaceTabs.TryGetValue(key, out string? rememberedName)
+                ? visibleTabs.FirstOrDefault(tab => tab.Name == rememberedName) ?? visibleTabs[0]
+                : visibleTabs[0];
+            WorkspaceTabs.SelectedItem = remembered;
+        }
+        else if (WorkspaceTabs.SelectedItem is not TabItem selected || !visibleTabs.Contains(selected))
         {
             WorkspaceTabs.SelectedItem = visibleTabs[0];
         }
@@ -864,7 +960,7 @@ public partial class MainWindow : Window
         WorkspaceCategory.Git =>
         [
             ChangesWorkspaceTab, HistoryWorkspaceTab, CompositionWorkspaceTab, BranchesWorkspaceTab,
-            PullRequestsWorkspaceTab, GitGraphsWorkspaceTab, LfsLocksWorkspaceTab, GitLfsWorkspaceTab,
+            PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab, LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab,
             BackupsWorkspaceTab
         ],
         WorkspaceCategory.Code => [SolutionExplorerWorkspaceTab, CodeWorkspaceTab, ConsoleWorkspaceTab, AssetDiffWorkspaceTab, AiWorkspaceTab, McpWorkspaceTab],
@@ -873,18 +969,18 @@ public partial class MainWindow : Window
             SynchronizationWorkspaceTab, VpnWorkspaceTab, SwarmWorkspaceTab, VpnFilesWorkspaceTab,
             RemoteBuildsWorkspaceTab, DiscordWorkspaceTab, WorkInProgressWorkspaceTab
         ],
-        _ => [PluginsWorkspaceTab, HelpWorkspaceTab]
+        _ => [PluginsWorkspaceTab, UnrealWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab]
     };
 
     private TabItem[] AllWorkspaceTabs() =>
     [
         ProjectWorkspaceTab, MembersWorkspaceTab, ChangesWorkspaceTab, SolutionExplorerWorkspaceTab, CodeWorkspaceTab,
         ConsoleWorkspaceTab, HistoryWorkspaceTab,
-        CompositionWorkspaceTab, BranchesWorkspaceTab, PullRequestsWorkspaceTab, GitGraphsWorkspaceTab,
-        LfsLocksWorkspaceTab, GitLfsWorkspaceTab, BackupsWorkspaceTab, SynchronizationWorkspaceTab, VpnWorkspaceTab,
+        CompositionWorkspaceTab, BranchesWorkspaceTab, PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab,
+        LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab, BackupsWorkspaceTab, SynchronizationWorkspaceTab, VpnWorkspaceTab,
         SwarmWorkspaceTab, VpnFilesWorkspaceTab, RemoteBuildsWorkspaceTab, DiscordWorkspaceTab,
         WorkInProgressWorkspaceTab, AssetDiffWorkspaceTab, AiWorkspaceTab, McpWorkspaceTab,
-        PluginsWorkspaceTab, HelpWorkspaceTab
+        PluginsWorkspaceTab, UnrealWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab
     ];
 
     private void OnShowProjectWorkspaceClick(object? sender, RoutedEventArgs e) =>
@@ -975,10 +1071,13 @@ public partial class MainWindow : Window
 
     private void ApplySolutionExplorerLayout(bool tree)
     {
+        _solutionExplorerTreeLayout = tree;
         SolutionTreeLayoutToggle.IsChecked = tree;
         SolutionListLayoutToggle.IsChecked = !tree;
-        SolutionTreePanel.IsVisible = tree;
-        SolutionListPanel.IsVisible = !tree;
+        bool searching = _viewModel.HasCodeFileSearchResults;
+        SolutionSearchResultsPanel.IsVisible = searching;
+        SolutionTreePanel.IsVisible = tree && !searching;
+        SolutionListPanel.IsVisible = !tree && !searching;
     }
 
     private void OnShowHistoryWorkspaceClick(object? sender, RoutedEventArgs e) =>
@@ -1121,7 +1220,16 @@ public partial class MainWindow : Window
         _viewModel.CancelCodeSearch();
 
     private async void OnRefreshCodeWorkspaceClick(object? sender, RoutedEventArgs e) =>
-        await _viewModel.RefreshCodeWorkspaceAsync();
+        await _viewModel.RefreshCodeWorkspaceAsync(preserveLoadedTree: false);
+
+    private async void OnSolutionTreeItemExpanded(object? sender, RoutedEventArgs e)
+    {
+        if (e.Source is TreeViewItem { DataContext: CodeTreeNode directory } &&
+            _viewModel.SelectedProject is { } project)
+        {
+            await _viewModel.LoadCodeDirectoryAsync(project, directory);
+        }
+    }
 
     private async void OnCodeSelectionHistoryClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.LoadCodeSelectionHistoryAsync(CodePreview.SelectionStart, CodePreview.SelectionEnd);
@@ -1304,6 +1412,27 @@ public partial class MainWindow : Window
     private async void OnRefreshPullRequestsClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RefreshPullRequestsAsync();
 
+    private async void OnRefreshCiClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshCiAsync();
+
+    private async void OnDispatchCiClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.DispatchSelectedCiWorkflowAsync();
+
+    private async void OnDispatchReleaseCiClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.DispatchReleaseCiWorkflowAsync();
+
+    private async void OnRerunFailedCiClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RerunFailedCiJobsAsync();
+
+    private async void OnCancelCiRunClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CancelSelectedCiRunAsync();
+
+    private void OnOpenCiRunClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedCiRun is not { } run) return;
+        Process.Start(new ProcessStartInfo { FileName = run.WebUrl.AbsoluteUri, UseShellExecute = true });
+    }
+
     private void OnOpenGitHubTokenHelpClick(object? sender, RoutedEventArgs e) =>
         Process.Start(new ProcessStartInfo
         {
@@ -1369,6 +1498,43 @@ public partial class MainWindow : Window
     }
 
     private async void OnTrackLfsClick(object? sender, RoutedEventArgs e) => await _viewModel.TrackLfsPatternAsync();
+
+    private async void OnReloadGitIgnoreClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.LoadGitIgnoreAsync();
+
+    private async void OnSaveGitIgnoreClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveGitIgnoreAsync();
+
+    private async void OnRefreshIgnoredFilesClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshIgnoredFilesAsync();
+
+    private async void OnTestGitIgnorePathClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.TestGitIgnorePathAsync();
+
+    private async void OnGitIgnoreTestPathKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        await _viewModel.TestGitIgnorePathAsync();
+    }
+
+    private void OnApplyGitIgnoreTemplateClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.ApplyGitIgnoreTemplate();
+
+    private async void OnRefreshIgnoreSuggestionsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.LoadIgnoreSuggestionsAsync(force: true);
+
+    private void OnAppendGitIgnoreSuggestionsClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.AppendSelectedSuggestionsToGitIgnore();
+
+    private void OnAppendSyncthingIgnoreSuggestionsClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.AppendSelectedSuggestionsToSyncthingIgnore();
+
+    private void OnRefreshDiagnosticsClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.RefreshPerformanceDiagnostics();
+
+    private void OnClearDiagnosticsClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.ClearPerformanceDiagnostics();
 
     private async void OnRefreshLfsLocksClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RefreshLfsLocksAsync();
@@ -1535,6 +1701,21 @@ public partial class MainWindow : Window
 
     private async void OnSaveSyncthingSettingsClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SaveSyncthingSettingsAsync();
+
+    private async void OnPickSharedSyncFolderClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Choose the independent folder to synchronize");
+        if (path is not null) _viewModel.SetSharedSyncFolderPath(path);
+    }
+
+    private async void OnSaveSharedSyncFolderClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.AddOrUpdateSharedSyncFolderAsync();
+
+    private async void OnRemoveSharedSyncFolderClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RemoveSelectedSharedSyncFolderAsync();
+
+    private async void OnScanSharedSyncFolderClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ScanSelectedSharedSyncFolderAsync();
 
     private async void OnRefreshSyncthingClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RefreshSyncthingWorkspaceAsync();
@@ -1842,6 +2023,26 @@ public partial class MainWindow : Window
     }
 
     private async void OnCompareAssetsClick(object? sender, RoutedEventArgs e) => await _viewModel.CompareAssetsAsync();
+
+    private void OnUseSelectedAssetAsBaselineClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.UseSelectedAssetAsBaseline();
+
+    private void OnUseSelectedAssetAsCandidateClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.UseSelectedAssetAsCandidate();
+
+    private void OnAssetExplorerSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        CodeFileEntry? file = e.AddedItems.OfType<CodeFileEntry>().LastOrDefault()
+                              ?? (sender as ListBox)?.SelectedItem as CodeFileEntry;
+        if (file is not null) _viewModel.SelectedAssetExplorerFile = file;
+    }
+
+    private void OnSolutionSearchSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        CodeFileEntry? file = e.AddedItems.OfType<CodeFileEntry>().LastOrDefault()
+                              ?? (sender as ListBox)?.SelectedItem as CodeFileEntry;
+        if (file is not null) _viewModel.SelectedCodeFileSearchResult = file;
+    }
 
     private async void OnCompareSelectedToHeadClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CompareSelectedChangeToHeadAsync();

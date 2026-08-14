@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using CyRevision.Diff;
 
 namespace CyRevision.Desktop.Controls;
@@ -16,9 +17,17 @@ public sealed class CodeDiffView : UserControl
     public static readonly StyledProperty<string?> FilePathProperty =
         AvaloniaProperty.Register<CodeDiffView, string?>(nameof(FilePath));
 
+    public static readonly StyledProperty<IImage?> PreviewImageProperty =
+        AvaloniaProperty.Register<CodeDiffView, IImage?>(nameof(PreviewImage));
+
+    public static readonly StyledProperty<string?> PresentationSummaryProperty =
+        AvaloniaProperty.Register<CodeDiffView, string?>(nameof(PresentationSummary));
+
     // Thousands of Avalonia controls make very large patches feel frozen. The complete
     // patch stays cached in the view model; the interactive preview favors responsiveness.
     private const int MaximumRenderedLines = 2000;
+    private const int InitialRenderedLines = 120;
+    private const int RenderBatchSize = 160;
     private static readonly IBrush CanvasBrush = Brush("#0B1020");
     private static readonly IBrush ContextBrush = Brush("#101827");
     private static readonly IBrush AddedBrush = Brush("#123128");
@@ -47,6 +56,9 @@ public sealed class CodeDiffView : UserControl
         HorizontalAlignment = HorizontalAlignment.Left
     };
     private readonly ScrollViewer _scrollViewer;
+    private readonly Grid _visualPreview;
+    private readonly Image _previewImage;
+    private readonly TextBlock _previewSummary;
     private readonly TextBlock _summaryText;
     private readonly TextBlock _positionText;
     private readonly Button _unifiedButton;
@@ -57,6 +69,8 @@ public sealed class CodeDiffView : UserControl
     private ParsedCodeDiff _parsed = new([], [], 0, 0, 0);
     private bool _splitMode;
     private int _currentChangeIndex = -1;
+    private int _renderVersion;
+    private bool _rebuildScheduled;
 
     public CodeDiffView()
     {
@@ -120,6 +134,31 @@ public sealed class CodeDiffView : UserControl
         Grid.SetRow(_scrollViewer, 1);
         _root.Children.Add(_scrollViewer);
 
+        _previewImage = new Image
+        {
+            Stretch = Stretch.Uniform,
+            Margin = new Thickness(18)
+        };
+        _previewSummary = new TextBlock
+        {
+            Foreground = TextBrush,
+            Background = Brush("#D90D1422"),
+            Padding = new Thickness(10, 6),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(12),
+            TextWrapping = TextWrapping.Wrap
+        };
+        _visualPreview = new Grid
+        {
+            Background = CanvasBrush,
+            IsVisible = false
+        };
+        _visualPreview.Children.Add(_previewImage);
+        _visualPreview.Children.Add(_previewSummary);
+        Grid.SetRow(_visualPreview, 1);
+        _root.Children.Add(_visualPreview);
+
         Content = _root;
         UpdateModeButtons();
         Rebuild();
@@ -137,13 +176,40 @@ public sealed class CodeDiffView : UserControl
         set => SetValue(FilePathProperty, value);
     }
 
+    public IImage? PreviewImage
+    {
+        get => GetValue(PreviewImageProperty);
+        set => SetValue(PreviewImageProperty, value);
+    }
+
+    public string? PresentationSummary
+    {
+        get => GetValue(PresentationSummaryProperty);
+        set => SetValue(PresentationSummaryProperty, value);
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
         if (change.Property == DiffTextProperty || change.Property == FilePathProperty)
         {
-            Rebuild();
+            ScheduleRebuild();
         }
+        else if (change.Property == PreviewImageProperty || change.Property == PresentationSummaryProperty)
+        {
+            UpdatePresentationMode();
+        }
+    }
+
+    private void ScheduleRebuild()
+    {
+        if (_rebuildScheduled) return;
+        _rebuildScheduled = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _rebuildScheduled = false;
+            Rebuild();
+        }, DispatcherPriority.Background);
     }
 
     private void SetMode(bool splitMode)
@@ -165,10 +231,24 @@ public sealed class CodeDiffView : UserControl
         _currentChangeIndex = -1;
         _summaryText.Text = $"+{_parsed.AddedLineCount}  −{_parsed.RemovedLineCount}  ·  {_parsed.HunkCount} @@";
         RenderRows();
+        UpdatePresentationMode();
+    }
+
+    private void UpdatePresentationMode()
+    {
+        bool showImage = PreviewImage is not null;
+        _previewImage.Source = PreviewImage;
+        _previewSummary.Text = PresentationSummary ?? string.Empty;
+        _previewSummary.IsVisible = !string.IsNullOrWhiteSpace(PresentationSummary);
+        _visualPreview.IsVisible = showImage;
+        _scrollViewer.IsVisible = !showImage;
+        if (showImage && !string.IsNullOrWhiteSpace(PresentationSummary))
+            _summaryText.Text = PresentationSummary;
     }
 
     private void RenderRows()
     {
+        int renderVersion = ++_renderVersion;
         _rowsPanel.Children.Clear();
         _changeRows.Clear();
 
@@ -188,18 +268,61 @@ public sealed class CodeDiffView : UserControl
         if (_splitMode)
         {
             AddSplitHeader();
-            foreach (CodeDiffSplitRow row in _parsed.SplitRows.Take(MaximumRenderedLines))
-            {
-                AddSplitRow(row);
-            }
+            CodeDiffSplitRow[] rows = _parsed.SplitRows.Take(MaximumRenderedLines).ToArray();
+            RenderSplitBatch(rows, 0, Math.Min(InitialRenderedLines, rows.Length), renderVersion);
         }
         else
         {
-            foreach (CodeDiffLine line in _parsed.Lines.Take(MaximumRenderedLines))
-            {
-                AddUnifiedRow(line);
-            }
+            CodeDiffLine[] rows = _parsed.Lines.Take(MaximumRenderedLines).ToArray();
+            RenderUnifiedBatch(rows, 0, Math.Min(InitialRenderedLines, rows.Length), renderVersion);
         }
+    }
+
+    private void RenderUnifiedBatch(CodeDiffLine[] rows, int start, int count, int renderVersion)
+    {
+        if (renderVersion != _renderVersion) return;
+        int end = Math.Min(rows.Length, start + count);
+        for (int index = start; index < end; index++) AddUnifiedRow(rows[index]);
+        ContinueRendering(rows, end, renderVersion);
+    }
+
+    private void RenderSplitBatch(CodeDiffSplitRow[] rows, int start, int count, int renderVersion)
+    {
+        if (renderVersion != _renderVersion) return;
+        int end = Math.Min(rows.Length, start + count);
+        for (int index = start; index < end; index++) AddSplitRow(rows[index]);
+        ContinueRendering(rows, end, renderVersion);
+    }
+
+    private void ContinueRendering(CodeDiffLine[] rows, int next, int renderVersion)
+    {
+        if (next < rows.Length)
+        {
+            UpdateNavigation();
+            Dispatcher.UIThread.Post(
+                () => RenderUnifiedBatch(rows, next, RenderBatchSize, renderVersion),
+                DispatcherPriority.Background);
+            return;
+        }
+        CompleteRendering(renderVersion);
+    }
+
+    private void ContinueRendering(CodeDiffSplitRow[] rows, int next, int renderVersion)
+    {
+        if (next < rows.Length)
+        {
+            UpdateNavigation();
+            Dispatcher.UIThread.Post(
+                () => RenderSplitBatch(rows, next, RenderBatchSize, renderVersion),
+                DispatcherPriority.Background);
+            return;
+        }
+        CompleteRendering(renderVersion);
+    }
+
+    private void CompleteRendering(int renderVersion)
+    {
+        if (renderVersion != _renderVersion) return;
 
         int renderedCount = _splitMode ? _parsed.SplitRows.Count : _parsed.Lines.Count;
         if (renderedCount > MaximumRenderedLines)

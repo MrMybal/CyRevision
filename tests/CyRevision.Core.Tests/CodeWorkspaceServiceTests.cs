@@ -4,6 +4,20 @@ namespace CyRevision.Core.Tests;
 
 public sealed class CodeWorkspaceServiceTests
 {
+    [Theory]
+    [InlineData("Tools/Build/Compile.bat", "*.bat", true)]
+    [InlineData("Source/Reality/Actor.cpp", ".cpp", true)]
+    [InlineData("Plugins/Reality/Private/Actor.cpp.generated", "Reality\\*.cpp*", true)]
+    [InlineData("Plugins/Other/Private/Actor.cpp", "Reality\\*.cpp*", false)]
+    [InlineData("Source/Reality/Actor.h", "*.cpp;*.h", true)]
+    public void FilePatternMatcherSupportsSubstringsExtensionsAndGlobs(
+        string path,
+        string expression,
+        bool expected)
+    {
+        Assert.Equal(expected, CodeFilePatternMatcher.IsMatch(path, expression));
+    }
+
     [Fact]
     public async Task BuildTreeExcludesGeneratedAndGitDirectories()
     {
@@ -43,6 +57,21 @@ public sealed class CodeWorkspaceServiceTests
         Assert.Equal("Feature.cs", result.RelativePath);
         Assert.Equal(2, result.LineNumber);
         Assert.Equal(1, result.ColumnNumber);
+    }
+
+    [Fact]
+    public async Task FileIndexIncludesNestedFilesWithoutLoadingTheirFolders()
+    {
+        using TemporaryDirectory workspace = new();
+        string nested = Path.Combine(workspace.Path, "Source", "UI", "Widgets");
+        Directory.CreateDirectory(nested);
+        await File.WriteAllTextAsync(Path.Combine(nested, "UI_InventoryPanel.cpp"), "void Draw() {}\n");
+
+        CodeFileIndex index = await new CodeWorkspaceService().BuildFileIndexAsync(workspace.Path);
+
+        CodeFileEntry file = Assert.Single(index.Files);
+        Assert.Equal("Source/UI/Widgets/UI_InventoryPanel.cpp", file.RelativePath);
+        Assert.Equal("C/C++", file.Language);
     }
 
     [Fact]
