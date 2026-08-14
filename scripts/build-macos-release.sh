@@ -100,8 +100,8 @@ xcrun --sdk macosx clang \
   "$launcher_source" \
   -o "$main_executable"
 chmod +x "$main_executable"
-xcrun lipo -verify_arch "$launcher_arch" "$main_executable"
-xcrun lipo -verify_arch "$launcher_arch" "$packaged_executable"
+xcrun lipo "$main_executable" -verify_arch "$launcher_arch"
+xcrun lipo "$packaged_executable" -verify_arch "$launcher_arch"
 
 unexpected_macos_entry="$(find "$bundle_root/Contents/MacOS" -mindepth 1 -maxdepth 1 ! -name 'CyRevision.Desktop' -print -quit)"
 if [[ -n "$unexpected_macos_entry" ]]; then
