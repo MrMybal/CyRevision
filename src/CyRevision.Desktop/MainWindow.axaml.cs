@@ -1530,6 +1530,27 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnDetectSyncthingClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ConfigureSyncthingAutomaticallyAsync();
+
+    private async void OnSaveSyncthingSettingsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveSyncthingSettingsAsync();
+
+    private async void OnRefreshSyncthingClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshSyncthingWorkspaceAsync();
+
+    private async void OnScanSyncthingClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ScanSyncthingFolderAsync();
+
+    private async void OnLoadSyncthingIgnoreClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.LoadSyncthingIgnoreRulesAsync();
+
+    private void OnUseSyncthingUnrealIgnoreClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.UseSyncthingUnrealIgnoreTemplate();
+
+    private async void OnSaveSyncthingIgnoreClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveSyncthingIgnoreRulesAsync();
+
     private async void OnStartSyncClick(object? sender, RoutedEventArgs e) => await _viewModel.StartSyncAsync();
 
     private async void OnPauseSyncClick(object? sender, RoutedEventArgs e) => await _viewModel.PauseSyncAsync();

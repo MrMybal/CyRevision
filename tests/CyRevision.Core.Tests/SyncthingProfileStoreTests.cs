@@ -17,6 +17,12 @@ public sealed class SyncthingProfileStoreTests : IDisposable
 
         SyncthingProfile created = await store.CreateOrUpdateAsync(projectId, executable, exchange);
         SyncthingProfile updated = await store.CreateOrUpdateAsync(projectId, executable, exchange);
+        updated = await store.SaveAsync(updated with
+        {
+            FolderMode = SyncthingFolderMode.SendOnly,
+            RescanIntervalSeconds = 120,
+            FileWatcherEnabled = false
+        });
         SyncthingProfile? loaded = await store.GetAsync(projectId);
 
         Assert.NotNull(loaded);
@@ -24,7 +30,8 @@ public sealed class SyncthingProfileStoreTests : IDisposable
         Assert.Equal(created.ApiKey, updated.ApiKey);
         Assert.Equal(created.ListenPort, updated.ListenPort);
         Assert.NotEqual(created.ApiEndpoint.Port, created.ListenPort);
-        Assert.Equal(created, loaded);
+        Assert.Equal(updated, loaded);
+        Assert.Equal(SyncthingFolderMode.SendOnly, loaded.FolderMode);
         created.ToIsolationOptions().Validate();
         Assert.NotEqual(Path.GetFullPath(exchange), Path.GetFullPath(created.ConfigurationDirectory));
     }

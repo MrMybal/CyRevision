@@ -9,7 +9,7 @@ on:
       version:
         description: "Release version without the v prefix"
         required: true
-        default: "0.1.8"
+        default: "0.1.10"
       publish_release:
         description: "Create or update the GitHub Release"
         type: boolean
@@ -51,9 +51,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install .NET 8 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "8.0.x"
       - name: Restore, build, and test
@@ -68,9 +68,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install .NET 8 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "8.0.x"
       - name: Install Inno Setup
@@ -78,6 +78,8 @@ jobs:
         run: choco install innosetup --no-progress -y
       - name: Build Windows installer
         shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/build-release.ps1 -Version '${{ needs.prepare.outputs.version }}' -SkipTests
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -98,15 +100,16 @@ jobs:
         rid: [linux-x64, linux-arm64]
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install .NET 8 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "8.0.x"
       - name: Build Linux packages
         shell: bash
         env:
           CYREVISION_SKIP_TESTS: "1"
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/build-linux-release.sh '${{ needs.prepare.outputs.version }}' '${{ matrix.rid }}'
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -127,15 +130,16 @@ jobs:
         rid: [osx-x64, osx-arm64]
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install .NET 8 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "8.0.x"
       - name: Build macOS disk image
         shell: bash
         env:
           CYREVISION_SKIP_TESTS: "1"
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/build-macos-release.sh '${{ needs.prepare.outputs.version }}' '${{ matrix.rid }}'
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4

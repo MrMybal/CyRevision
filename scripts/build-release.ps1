@@ -55,6 +55,8 @@ if (Test-Path -LiteralPath $releaseRoot)
 
 New-Item -ItemType Directory -Path $publishDirectory -Force | Out-Null
 
+& (Join-Path $PSScriptRoot 'prepare-syncthing-runtime.ps1') -Runtime 'win-x64'
+
 Invoke-NativeCommand 'dotnet' @('restore', $solution)
 Invoke-NativeCommand 'dotnet' @('restore', $desktopProject, '--runtime', 'win-x64')
 Invoke-NativeCommand 'dotnet' @('restore', $agentProject, '--runtime', 'win-x64')

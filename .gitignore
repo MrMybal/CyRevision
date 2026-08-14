@@ -8,6 +8,7 @@ obj/
 TestResults/
 coverage/
 artifacts/
+src/CyRevision.Desktop/SyncthingRuntime/*/
 publish/
 .tools/
 .dotnet-cli/

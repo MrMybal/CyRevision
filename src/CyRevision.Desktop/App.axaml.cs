@@ -102,6 +102,9 @@ public partial class App : Application
             GitPeerExchangeService gitExchange = new();
             AssetDiffService assetDiff = new();
             JsonSyncthingProfileStore syncProfiles = new(paths.ManagedSyncthingDirectory);
+            SyncthingRuntimeResolver syncRuntimeResolver = new(
+                managedRoot: Path.Combine(paths.ManagedSyncthingDirectory, "runtime"));
+            SyncthingIgnoreFileService syncIgnoreFiles = new();
             JsonVpnProfileStore vpnProfiles = new(paths.VpnDirectory);
             WireGuardConfigService vpnConfiguration = new(paths.VpnDirectory);
             ManagedWireGuardEngine vpnEngine = new(paths.VpnDirectory, vpnConfiguration);
@@ -119,7 +122,7 @@ public partial class App : Application
             string? initialProjectPath = ReadProjectArgument(desktop.Args);
             RepositoryConsoleService repositoryConsole = new(paths.ConfigurationDirectory);
             MainWindowViewModel viewModel = new(
-                catalog, gitService, paths, syncProfiles, gitExchange, assetDiff,
+                catalog, gitService, paths, syncProfiles, syncRuntimeResolver, syncIgnoreFiles, gitExchange, assetDiff,
                 vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine, vpnRuntimeResolver,
                 vpnNetworkSetup, vpnSyncExchange, swarmProfiles, swarmSetup, vpnFileProfiles, vpnFileExchange,
                 lfsManagementProfiles, lfsStorageManager, remoteBuildConnections, remoteBuildSnapshots,

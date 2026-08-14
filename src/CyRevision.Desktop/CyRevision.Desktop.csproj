@@ -5,7 +5,6 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\Branding\cyrevision.ico</ApplicationIcon>
-    <VersionPrefix>0.1.8</VersionPrefix>
   </PropertyGroup>
 
   <ItemGroup>
@@ -42,6 +41,7 @@
     <None Update="Localization\Locales\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="Documentation\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="VpnRuntime\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="SyncthingRuntime\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\plugins\CyRevision.UnrealIntegration\cyrevision-plugin.json"
           Link="Plugins\CyRevision.UnrealIntegration\cyrevision-plugin.json"
           CopyToOutputDirectory="PreserveNewest"

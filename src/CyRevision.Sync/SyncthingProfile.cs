@@ -11,6 +11,12 @@ public sealed record SyncthingProfile(
     int ListenPort,
     string FolderId)
 {
+    public SyncthingFolderMode FolderMode { get; init; } = SyncthingFolderMode.SendReceive;
+
+    public int RescanIntervalSeconds { get; init; } = 60;
+
+    public bool FileWatcherEnabled { get; init; } = true;
+
     public SyncthingIsolationOptions ToIsolationOptions(bool enabled = true) => new(
         ExecutablePath,
         ConfigurationDirectory,
@@ -30,6 +36,10 @@ public interface ISyncthingProfileStore
         Guid projectId,
         string executablePath,
         string exchangeDirectory,
+        CancellationToken cancellationToken = default);
+
+    Task<SyncthingProfile> SaveAsync(
+        SyncthingProfile profile,
         CancellationToken cancellationToken = default);
 
     Task RemoveAsync(Guid projectId, CancellationToken cancellationToken = default);

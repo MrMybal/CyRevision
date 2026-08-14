@@ -34,6 +34,8 @@ checksum_file="$release_root/SHA256SUMS-$rid.txt"
 rm -rf -- "$publish_directory" "$package_root"
 mkdir -p "$publish_directory"
 
+bash "$repository_root/scripts/prepare-syncthing-runtime.sh" "$rid"
+
 dotnet restore "$solution"
 dotnet restore "$desktop_project" --runtime "$rid"
 dotnet restore "$agent_project" --runtime "$rid"

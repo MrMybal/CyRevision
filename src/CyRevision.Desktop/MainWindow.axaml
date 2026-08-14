@@ -243,7 +243,7 @@
                 </MenuItem>
                 <Separator />
                 <MenuItem Header="Backups" Click="OnShowBackupsWorkspaceClick" />
-                <MenuItem Header="Synchronization" Click="OnShowSynchronizationWorkspaceClick" />
+                <MenuItem Header="Syncthing" Click="OnShowSynchronizationWorkspaceClick" />
                 <Separator />
                 <MenuItem Header="WireGuard VPN" Click="OnShowVpnWorkspaceClick" />
                 <MenuItem Header="Swarm over VPN" Click="OnShowSwarmWorkspaceClick" />
@@ -378,14 +378,31 @@
 
             <Border Grid.Row="2" IsVisible="{Binding IsLongOperationActive}" Background="#202633"
                     BorderBrush="#35435C" BorderThickness="1" CornerRadius="5" Padding="7,4" Margin="0,0,0,5">
-                <Grid ColumnDefinitions="220,*,Auto" ColumnSpacing="9">
-                    <TextBlock Text="{Binding LongOperationStage}" Foreground="#B8C7E6" FontSize="9.5"
-                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                    <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding LongOperationProgress}"
-                                 IsIndeterminate="{Binding IsLongOperationIndeterminate}" Height="6" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="2" Text="{Binding CurrentProjectName}" Foreground="#78D7B7"
-                               FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" />
-                </Grid>
+                <StackPanel Spacing="4">
+                    <Grid ColumnDefinitions="220,*,Auto" ColumnSpacing="9">
+                        <TextBlock Text="{Binding LongOperationStage}" Foreground="#B8C7E6" FontSize="9.5"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding LongOperationProgress}"
+                                     IsIndeterminate="{Binding IsLongOperationIndeterminate}" Height="6" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="{Binding ActiveOperationCountText}" Foreground="#78D7B7"
+                                   FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding ActiveOperations}" IsVisible="{Binding HasActiveOperations}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="74,180,*,Auto" ColumnSpacing="8" Margin="0,1">
+                                    <TextBlock Text="{Binding State}" Foreground="#78D7B7" FontFamily="Cascadia Mono, Consolas"
+                                               FontSize="8.5" FontWeight="SemiBold" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="8.5"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Detail}" Classes="muted" FontSize="8.5"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="3" Text="{Binding ProjectName}" Foreground="#61AFEF" FontSize="8.5" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </Border>
 
             <TabControl x:Name="WorkspaceTabs" Grid.Row="3">
@@ -1095,24 +1112,18 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Grid.Row="1" Classes="card" Padding="0" ClipToBounds="True">
-                                    <DataGrid ItemsSource="{Binding FilteredApplicationLogEntries}"
-                                              SelectedItem="{Binding SelectedApplicationLogEntry}"
-                                              AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
-                                              Background="Transparent" BorderThickness="0">
-                                        <DataGrid.Columns>
-                                            <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="165" />
-                                            <DataGridTemplateColumn Header="Level" Width="105">
-                                                <DataGridTemplateColumn.CellTemplate>
-                                                    <DataTemplate>
-                                                        <TextBlock Text="{Binding LevelText}" Foreground="{Binding LevelColor}" FontWeight="SemiBold" />
-                                                    </DataTemplate>
-                                                </DataGridTemplateColumn.CellTemplate>
-                                            </DataGridTemplateColumn>
-                                            <DataGridTextColumn Header="Area" Binding="{Binding Area}" Width="125" />
-                                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" />
-                                        </DataGrid.Columns>
-                                    </DataGrid>
+                                <Border Grid.Row="1" Classes="card" Padding="0" ClipToBounds="True" Background="#101114">
+                                    <ListBox ItemsSource="{Binding FilteredApplicationLogEntries}"
+                                             SelectedItem="{Binding SelectedApplicationLogEntry}"
+                                             Background="#101114" BorderThickness="0">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding LinuxLine}" Foreground="{Binding LevelColor}"
+                                                           FontFamily="Cascadia Mono, Consolas" FontSize="10.5"
+                                                           TextWrapping="NoWrap" Margin="6,2" />
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
                                 </Border>
 
                                 <Border Grid.Row="2" Classes="card" Padding="9">
@@ -2222,18 +2233,41 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem x:Name="SynchronizationWorkspaceTab" Header="Synchronisation">
-                    <Grid Margin="0,8,0,0" ColumnDefinitions="1*,1.25*" ColumnSpacing="8">
+                <TabItem x:Name="SynchronizationWorkspaceTab" Header="Syncthing">
+                    <TabControl Margin="0,8,0,0">
+                    <TabItem Header="Overview">
+                    <Grid ColumnDefinitions="1*,1.25*" ColumnSpacing="8">
                         <Border Classes="card">
                             <StackPanel Spacing="10">
                                 <TextBlock Text="Instance Syncthing CyRevision" FontSize="17" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding SyncState}" FontSize="14" FontWeight="SemiBold" Foreground="#78D7B7" />
                                 <TextBlock Text="{Binding SyncDetails}" TextWrapping="Wrap" Classes="muted" />
-                                <TextBlock Text="Exécutable" Margin="0,7,0,0" />
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <WrapPanel Orientation="Horizontal" Margin="0,5,0,0">
+                                    <Button Classes="primary" Content="Detect and configure runtime" Click="OnDetectSyncthingClick" Margin="0,2,7,2" />
+                                    <Button Classes="secondary" Content="Refresh devices and differences" Click="OnRefreshSyncthingClick" Margin="0,2,7,2" />
+                                    <Button Classes="secondary" Content="Scan folder" Click="OnScanSyncthingClick" Margin="0,2,7,2" />
+                                </WrapPanel>
+                                <TextBlock Text="{Binding SyncthingRuntimeSummary}" TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                <Grid ColumnDefinitions="180,100,*" ColumnSpacing="8">
+                                    <StackPanel>
+                                        <TextBlock Text="Folder mode" FontSize="10" Classes="muted" />
+                                        <ComboBox ItemsSource="{Binding SyncthingFolderModeNames}" SelectedItem="{Binding SelectedSyncthingFolderModeName}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Rescan (s)" FontSize="10" Classes="muted" />
+                                        <TextBox Text="{Binding SyncthingRescanInterval}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Bottom">
+                                        <CheckBox Content="Watch file-system changes" IsChecked="{Binding SyncthingFileWatcherEnabled}" />
+                                        <Button Classes="secondary" Content="Save and apply" Click="OnSaveSyncthingSettingsClick" HorizontalAlignment="Left" Margin="0,5,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                                <Expander Header="Advanced runtime override">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,6,0,0">
                                     <TextBox Text="{Binding SyncthingExecutablePath}" IsReadOnly="True" PlaceholderText="Non configuré" />
                                     <Button Grid.Column="1" Classes="secondary" Content="Choisir…" Click="OnPickSyncthingClick" />
                                 </Grid>
+                                </Expander>
                                 <WrapPanel Orientation="Horizontal">
                                     <Button Classes="primary" Content="Démarrer" Click="OnStartSyncClick" Margin="0,4,7,4" />
                                     <Button Classes="secondary" Content="Pause" Click="OnPauseSyncClick" Margin="0,4,7,4" />
@@ -2305,6 +2339,74 @@
                             </Grid>
                         </Border>
                     </Grid>
+                </TabItem>
+
+                <TabItem Header="Devices">
+                    <Border Classes="card" Padding="0">
+                        <Grid RowDefinitions="Auto,*">
+                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel><TextBlock Text="Configured and connected devices" FontWeight="SemiBold" /><TextBlock Text="Refresh explicitly to query the live Syncthing API." FontSize="9" Classes="muted" /></StackPanel>
+                                    <Button Grid.Column="1" Classes="secondary" Content="Refresh" Click="OnRefreshSyncthingClick" />
+                                </Grid>
+                            </Border>
+                            <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SyncthingDevices}" AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0" GridLinesVisibility="Horizontal" Background="Transparent">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="1.2*" />
+                                    <DataGridTemplateColumn Header="Status" Width="105"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding Status}" Foreground="{Binding StatusColor}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="Role" Binding="{Binding Role}" Width="90" />
+                                    <DataGridTextColumn Header="Device ID" Binding="{Binding Identity}" Width="130" />
+                                    <DataGridTextColumn Header="Address" Binding="{Binding Details}" Width="1.4*" />
+                                    <DataGridTextColumn Header="Last activity" Binding="{Binding LastActivity}" Width="150" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+                </TabItem>
+
+                <TabItem Header="Differences">
+                    <Border Classes="card" Padding="0">
+                        <Grid RowDefinitions="Auto,*">
+                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10">
+                                <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Folder differences" FontWeight="SemiBold" /><TextBlock Text="{Binding SyncthingFolderSummary}" FontSize="9" Classes="muted" /></StackPanel><WrapPanel Grid.Column="1"><ProgressBar IsIndeterminate="True" IsVisible="{Binding IsSyncthingRefreshing}" Width="90" Height="4" Margin="0,0,8,0" /><Button Classes="secondary" Content="Scan and refresh" Click="OnScanSyncthingClick" /></WrapPanel></Grid>
+                            </Border>
+                            <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SyncthingDifferences}" AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0" GridLinesVisibility="Horizontal" Background="Transparent">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="120" />
+                                    <DataGridTextColumn Header="File" Binding="{Binding Name}" Width="2*" />
+                                    <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="90" />
+                                    <DataGridTextColumn Header="Size (bytes)" Binding="{Binding Size}" Width="110" />
+                                    <DataGridTextColumn Header="Modified" Binding="{Binding ModifiedAt}" Width="180" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+                </TabItem>
+
+                <TabItem Header="Ignore rules (.stignore)">
+                    <Border Classes="card">
+                        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="7">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <StackPanel><TextBlock Text="Syncthing ignore rules" FontSize="15" FontWeight="SemiBold" /><TextBlock Text="{Binding SyncthingIgnoreStatus}" FontSize="10" Classes="muted" /></StackPanel>
+                                <WrapPanel Grid.Column="1"><Button Classes="secondary" Content="Reload" Click="OnLoadSyncthingIgnoreClick" Margin="0,2,6,2" /><Button Classes="secondary" Content="Unreal template" Click="OnUseSyncthingUnrealIgnoreClick" Margin="0,2,6,2" /><Button Classes="primary" Content="Save .stignore" Click="OnSaveSyncthingIgnoreClick" Margin="0,2,0,2" /></WrapPanel>
+                            </Grid>
+                            <TextBox Grid.Row="1" Text="{Binding SyncthingIgnoreRules}" AcceptsReturn="True" FontFamily="Cascadia Mono,Consolas" FontSize="11" TextWrapping="NoWrap" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                            <TextBlock Grid.Row="2" Text="Patterns are relative to the synchronized folder root. The first matching rule wins; use ! to include and // for comments." FontSize="10" Classes="muted" />
+                        </Grid>
+                    </Border>
+                </TabItem>
+
+                <TabItem Header="Logs">
+                    <Border Classes="card" Padding="0">
+                        <Grid RowDefinitions="Auto,*">
+                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10"><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="Syncthing logs" FontWeight="SemiBold" /><TextBlock Text="Up to 500 recent entries from this project's isolated instance." FontSize="9" Classes="muted" /></StackPanel><Button Grid.Column="1" Classes="secondary" Content="Refresh" Click="OnRefreshSyncthingClick" /></Grid></Border>
+                            <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SyncthingLogs}" AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0" GridLinesVisibility="Horizontal" Background="Transparent">
+                                <DataGrid.Columns><DataGridTextColumn Header="Time" Binding="{Binding Timestamp}" Width="180" /><DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="85" /><DataGridTextColumn Header="Facility" Binding="{Binding Facility}" Width="130" /><DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" /></DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+                </TabItem>
+                </TabControl>
                 </TabItem>
 
                 <TabItem x:Name="VpnWorkspaceTab" Header="VPN WireGuard">

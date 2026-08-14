@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.10 Alpha — 2026-08-14
+
+- fixed macOS packaging on both Intel and Apple Silicon by signing nested native binaries before the application envelope and letting `codesign` sign the main executable with its bundle;
+- updated the release workflow to current Node 24-based checkout and .NET setup actions and aligned every release default on version 0.1.10;
+- added the optional managed Syncthing workspace with per-project configuration, send/receive modes, ignore rules, connected-device state and project-scoped logs without requiring a preinstalled executable;
+- improved large-repository responsiveness with lazy solution-tree expansion, retained project sessions, cancellable background work and a persistent cross-workspace task list;
+- expanded Linux-style project diagnostics for Git, LFS locks and long-running operations, including safer stale `index.lock` handling without deleting locks owned by active Git processes.
+
 ## 0.1.9 Alpha — 2026-08-14
 
 - redesigned the Changes workspace for large repositories with dense list and folder views, tracked/untracked/local-only composition, lock ownership, selective staging, rollback and commit controls;

@@ -62,6 +62,8 @@ public sealed class ManagedSyncthingEngine : ISyncEngine, IAsyncDisposable
             }
 
             _ownedProcess = process;
+            _ = DrainProcessStreamAsync(process.StandardOutput);
+            _ = DrainProcessStreamAsync(process.StandardError);
             WriteOwnerMarker(process);
             _apiClient?.Dispose();
             _apiClient = new SyncthingApiClient(_options.ApiEndpoint, _options.ApiKey);
@@ -209,8 +211,8 @@ public sealed class ManagedSyncthingEngine : ISyncEngine, IAsyncDisposable
             WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(_options.ExecutablePath))!,
             UseShellExecute = false,
             CreateNoWindow = true,
-            RedirectStandardOutput = false,
-            RedirectStandardError = false
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
         };
         info.ArgumentList.Add("serve");
         info.ArgumentList.Add("--config=" + Path.GetFullPath(_options.ConfigurationDirectory));
@@ -224,6 +226,8 @@ public sealed class ManagedSyncthingEngine : ISyncEngine, IAsyncDisposable
         {
             info.ArgumentList.Add("--no-console");
         }
+
+        info.ArgumentList.Add("--log-file=" + Path.GetFullPath(_options.LogPath));
 
         return info;
     }
@@ -395,6 +399,21 @@ public sealed class ManagedSyncthingEngine : ISyncEngine, IAsyncDisposable
 
         string markerPath = Path.Combine(_options.DataDirectory, "owned-process.txt");
         File.Delete(markerPath);
+    }
+
+    private static async Task DrainProcessStreamAsync(StreamReader reader)
+    {
+        try
+        {
+            while (await reader.ReadLineAsync() is not null)
+            {
+                // Syncthing writes the durable project log to --logfile.
+            }
+        }
+        catch (Exception exception) when (exception is ObjectDisposedException or IOException)
+        {
+            // The owned process can close its redirected pipe during shutdown.
+        }
     }
 
     private sealed record ProcessResult(bool Succeeded, string Error);

@@ -8,7 +8,7 @@ namespace CyRevision.Code;
 
 public sealed class CodeWorkspaceService
 {
-    private const int MaximumIndexedFiles = 150_000;
+    private const int MaximumDirectoryEntries = 5_000;
     private const int MaximumPreviewBytes = 2 * 1024 * 1024;
     private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -23,6 +23,19 @@ public sealed class CodeWorkspaceService
         bool includeHidden = false,
         CancellationToken cancellationToken = default) =>
         Task.Run(() => BuildTree(rootPath, filter, includeHidden, cancellationToken), cancellationToken);
+
+    public Task<IReadOnlyList<CodeTreeNode>> LoadDirectoryAsync(
+        string rootPath,
+        string relativePath,
+        bool includeHidden = false,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() =>
+        {
+            string root = NormalizeRoot(rootPath);
+            string directory = ResolveInsideRoot(root, relativePath);
+            BuildCounters counters = new();
+            return BuildDirectoryChildren(root, directory, string.Empty, includeHidden, counters, cancellationToken);
+        }, cancellationToken);
 
     public async Task<CodeFilePreview> ReadPreviewAsync(
         string rootPath,
@@ -179,10 +192,7 @@ public sealed class CodeWorkspaceService
         IEnumerable<string> entries;
         try
         {
-            entries = Directory.EnumerateFileSystemEntries(directory)
-                .OrderBy(path => !Directory.Exists(path))
-                .ThenBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            entries = Directory.EnumerateFileSystemEntries(directory);
         }
         catch (UnauthorizedAccessException)
         {
@@ -193,6 +203,7 @@ public sealed class CodeWorkspaceService
             return nodes;
         }
 
+        int acceptedEntries = 0;
         foreach (string path in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -212,33 +223,41 @@ public sealed class CodeWorkspaceService
             string relative = Path.GetRelativePath(root, path).Replace('\\', '/');
             if (directoryEntry)
             {
-                IReadOnlyList<CodeTreeNode> children = BuildDirectoryChildren(
-                    root, path, filter, includeHidden, counters, cancellationToken);
-                if (filter.Length > 0 && children.Count == 0 && !name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                if (filter.Length > 0 && !relative.Contains(filter, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
                 counters.Directories++;
-                nodes.Add(new CodeTreeNode(name, relative, path, true, children));
+                nodes.Add(new CodeTreeNode(name, relative, path, true, hasUnloadedChildren: true));
+                if (++acceptedEntries >= MaximumDirectoryEntries)
+                {
+                    counters.Truncated = true;
+                    break;
+                }
                 continue;
             }
 
-            if (counters.Files >= MaximumIndexedFiles)
-            {
-                counters.Truncated = true;
-                break;
-            }
             if (filter.Length > 0 && !relative.Contains(filter, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            FileInfo info = new(path);
+            FileInfo info;
+            try { info = new FileInfo(path); }
+            catch (IOException) { continue; }
             counters.Files++;
             counters.Bytes += info.Length;
             nodes.Add(new CodeTreeNode(name, relative, path, false, size: info.Length, language: DetectLanguage(path)));
+            if (++acceptedEntries >= MaximumDirectoryEntries)
+            {
+                counters.Truncated = true;
+                break;
+            }
         }
-        return nodes;
+        return nodes
+            .OrderBy(node => !node.IsDirectory)
+            .ThenBy(node => node.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static async Task<IReadOnlyList<CodeSearchResult>> SearchWithRipgrepAsync(

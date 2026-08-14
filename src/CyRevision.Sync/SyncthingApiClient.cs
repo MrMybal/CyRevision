@@ -34,7 +34,39 @@ public sealed record SyncthingFolderConfiguration(
     string VersioningType = "",
     int? KeepVersions = null,
     int? CleanoutDays = null,
-    bool Paused = false);
+    bool Paused = false,
+    int RescanIntervalSeconds = 60,
+    bool FileWatcherEnabled = true);
+
+public sealed record SyncthingFolderStatus(
+    string FolderId,
+    string State,
+    DateTimeOffset? StateChangedAt,
+    long GlobalFiles,
+    long LocalFiles,
+    long InSyncFiles,
+    long NeededFiles,
+    long NeededBytes,
+    long ReceiveOnlyChangedFiles,
+    long ReceiveOnlyChangedBytes,
+    long ErrorCount)
+{
+    public bool IsInSync => NeededFiles == 0 && NeededBytes == 0 && ReceiveOnlyChangedFiles == 0;
+}
+
+public sealed record SyncthingDifferenceItem(
+    string Name,
+    string Direction,
+    long Size,
+    DateTimeOffset? ModifiedAt,
+    bool Deleted,
+    string Type);
+
+public sealed record SyncthingLogEntry(
+    DateTimeOffset? Timestamp,
+    string Message,
+    string Level = "Info",
+    string Facility = "Syncthing");
 
 public sealed class SyncthingApiClient : IDisposable
 {
@@ -75,6 +107,7 @@ public sealed class SyncthingApiClient : IDisposable
     public async Task<SyncthingRuntimeStatus> GetRuntimeStatusAsync(CancellationToken cancellationToken = default)
     {
         JsonObject status = await GetObjectAsync("rest/system/status", cancellationToken);
+        JsonObject version = await GetObjectAsync("rest/system/version", cancellationToken);
         JsonObject connections = await GetObjectAsync("rest/system/connections", cancellationToken);
         int connected = connections["connections"] is JsonObject peers
             ? peers.Count(peer => peer.Value?["connected"]?.GetValue<bool>() == true)
@@ -110,7 +143,7 @@ public sealed class SyncthingApiClient : IDisposable
             status["myID"]?.GetValue<string>() ?? string.Empty,
             connected,
             pendingBytes,
-            status["version"]?.GetValue<string>());
+            version["version"]?.GetValue<string>() ?? status["version"]?.GetValue<string>());
     }
 
     public async Task<IReadOnlyList<SyncthingPeerConnectionStatus>> GetPeerConnectionsAsync(
@@ -147,6 +180,154 @@ public sealed class SyncthingApiClient : IDisposable
 
         return result;
     }
+
+    public async Task<SyncthingFolderConfiguration?> GetFolderAsync(
+        string folderId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            JsonObject folder = await GetObjectAsync(
+                "rest/config/folders/" + Uri.EscapeDataString(folderId),
+                cancellationToken);
+            List<string> deviceIds = [];
+            if (folder["devices"] is JsonArray devices)
+            {
+                deviceIds.AddRange(devices
+                    .Select(device => device?["deviceID"]?.GetValue<string>())
+                    .Where(deviceId => !string.IsNullOrWhiteSpace(deviceId))
+                    .Select(deviceId => deviceId!));
+            }
+
+            return new SyncthingFolderConfiguration(
+                folder["id"]?.GetValue<string>() ?? folderId,
+                folder["label"]?.GetValue<string>() ?? string.Empty,
+                folder["path"]?.GetValue<string>() ?? string.Empty,
+                deviceIds,
+                folder["type"]?.GetValue<string>() ?? "sendreceive",
+                folder["versioning"]?["type"]?.GetValue<string>() ?? string.Empty,
+                Paused: folder["paused"]?.GetValue<bool>() == true,
+                RescanIntervalSeconds: folder["rescanIntervalS"]?.GetValue<int>() ?? 60,
+                FileWatcherEnabled: folder["fsWatcherEnabled"]?.GetValue<bool>() != false);
+        }
+        catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    public async Task<IReadOnlyList<SyncthingDeviceConfiguration>> GetDevicesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        JsonNode? node = await GetNodeAsync("rest/config/devices", cancellationToken);
+        if (node is not JsonArray devices)
+        {
+            return [];
+        }
+
+        return devices.OfType<JsonObject>().Select(device => new SyncthingDeviceConfiguration(
+            device["deviceID"]?.GetValue<string>() ?? string.Empty,
+            device["name"]?.GetValue<string>() ?? string.Empty,
+            device["addresses"] is JsonArray addresses
+                ? addresses.Select(address => address?.GetValue<string>())
+                    .Where(address => !string.IsNullOrWhiteSpace(address))
+                    .Select(address => address!)
+                    .ToArray()
+                : null,
+            device["paused"]?.GetValue<bool>() == true)).ToArray();
+    }
+
+    public async Task<SyncthingFolderStatus> GetFolderStatusAsync(
+        string folderId,
+        CancellationToken cancellationToken = default)
+    {
+        JsonObject database = await GetObjectAsync(
+            "rest/db/status?folder=" + Uri.EscapeDataString(folderId),
+            cancellationToken);
+        DateTimeOffset? stateChangedAt = DateTimeOffset.TryParse(
+            database["stateChanged"]?.GetValue<string>(),
+            out DateTimeOffset parsed)
+            ? parsed
+            : null;
+        return new SyncthingFolderStatus(
+            folderId,
+            database["state"]?.GetValue<string>() ?? "unknown",
+            stateChangedAt,
+            database["globalFiles"]?.GetValue<long>() ?? 0,
+            database["localFiles"]?.GetValue<long>() ?? 0,
+            database["inSyncFiles"]?.GetValue<long>() ?? 0,
+            database["needFiles"]?.GetValue<long>() ?? 0,
+            database["needBytes"]?.GetValue<long>() ?? 0,
+            database["receiveOnlyChangedFiles"]?.GetValue<long>() ?? 0,
+            database["receiveOnlyChangedBytes"]?.GetValue<long>() ?? 0,
+            (database["pullErrors"]?.GetValue<long>() ?? 0) +
+            (string.IsNullOrWhiteSpace(database["invalid"]?.GetValue<string>()) ? 0 : 1));
+    }
+
+    public async Task<IReadOnlyList<SyncthingDifferenceItem>> GetDifferencesAsync(
+        string folderId,
+        CancellationToken cancellationToken = default)
+    {
+        List<SyncthingDifferenceItem> result = [];
+        await AppendDifferencesAsync(
+            result,
+            "rest/db/need?folder=" + Uri.EscapeDataString(folderId) + "&page=1&perpage=250",
+            "Incoming",
+            cancellationToken);
+        await AppendDifferencesAsync(
+            result,
+            "rest/db/localchanged?folder=" + Uri.EscapeDataString(folderId) + "&page=1&perpage=250",
+            "Local change",
+            cancellationToken);
+        foreach (SyncthingDeviceConfiguration device in await GetDevicesAsync(cancellationToken))
+        {
+            try
+            {
+                await AppendDifferencesAsync(
+                    result,
+                    "rest/db/remoteneed?folder=" + Uri.EscapeDataString(folderId) +
+                    "&device=" + Uri.EscapeDataString(device.DeviceId) +
+                    "&page=1&perpage=250",
+                    "Outgoing to " + (string.IsNullOrWhiteSpace(device.Name) ? device.DeviceId[..Math.Min(12, device.DeviceId.Length)] : device.Name),
+                    cancellationToken);
+            }
+            catch (HttpRequestException exception) when (exception.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.NotFound)
+            {
+                // Older or temporarily unshared devices may not expose remote need information.
+            }
+        }
+        return result
+            .OrderBy(item => item.Direction, StringComparer.Ordinal)
+            .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyList<SyncthingLogEntry>> GetLogsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        JsonObject root = await GetObjectAsync("rest/system/log", cancellationToken);
+        if (root["messages"] is not JsonArray messages)
+        {
+            return [];
+        }
+
+        return messages.OfType<JsonObject>().Select(message =>
+        {
+            DateTimeOffset? timestamp = DateTimeOffset.TryParse(
+                message["when"]?.GetValue<string>(),
+                out DateTimeOffset parsed)
+                ? parsed
+                : null;
+            return new SyncthingLogEntry(
+                timestamp,
+                message["message"]?.GetValue<string>() ?? string.Empty,
+                message["level"]?.GetValue<string>() ?? "Info",
+                message["facility"]?.GetValue<string>() ?? "Syncthing");
+        }).ToArray();
+    }
+
+    public Task ScanFolderAsync(string folderId, CancellationToken cancellationToken = default) =>
+        PostEmptyAsync("rest/db/scan?folder=" + Uri.EscapeDataString(folderId), cancellationToken);
 
     public Task PauseAsync(CancellationToken cancellationToken = default) =>
         PostEmptyAsync("rest/system/pause", cancellationToken);
@@ -200,8 +381,8 @@ public sealed class SyncthingApiClient : IDisposable
             path = Path.GetFullPath(folder.Path),
             type = folder.FolderType,
             devices = folder.DeviceIds.Select(id => new { deviceID = id }).ToArray(),
-            rescanIntervalS = 60,
-            fsWatcherEnabled = true,
+            rescanIntervalS = folder.RescanIntervalSeconds,
+            fsWatcherEnabled = folder.FileWatcherEnabled,
             paused = folder.Paused,
             versioning = new
             {
@@ -221,6 +402,34 @@ public sealed class SyncthingApiClient : IDisposable
     }
 
     public void Dispose() => _httpClient.Dispose();
+
+    private async Task AppendDifferencesAsync(
+        ICollection<SyncthingDifferenceItem> destination,
+        string path,
+        string direction,
+        CancellationToken cancellationToken)
+    {
+        JsonObject root = await GetObjectAsync(path, cancellationToken);
+        IEnumerable<JsonObject> files = new[] { "files", "progress", "queued", "rest" }
+            .SelectMany(section => root[section] is JsonArray array
+                ? array.OfType<JsonObject>()
+                : []);
+        foreach (JsonObject file in files)
+        {
+            DateTimeOffset? modifiedAt = DateTimeOffset.TryParse(
+                file["modified"]?.GetValue<string>(),
+                out DateTimeOffset parsed)
+                ? parsed
+                : null;
+            destination.Add(new SyncthingDifferenceItem(
+                file["name"]?.GetValue<string>() ?? string.Empty,
+                direction,
+                file["size"]?.GetValue<long>() ?? 0,
+                modifiedAt,
+                file["deleted"]?.GetValue<bool>() == true,
+                file["type"]?.GetValue<string>() ?? "file"));
+        }
+    }
 
     private async Task<JsonObject> GetObjectAsync(string path, CancellationToken cancellationToken)
     {
