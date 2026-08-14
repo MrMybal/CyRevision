@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.12 Alpha — 2026-08-14
+
+- fixed the architecture validation command for the Xcode 15.4 `lipo` syntax used by GitHub's macOS runners;
+- preserved the native-launcher bundle layout introduced in 0.1.11 and now allows the workflow to continue into signing and DMG creation.
+
 ## 0.1.11 Alpha — 2026-08-14
 
 - corrected the incomplete macOS signing fix from 0.1.10 by moving managed assemblies and application resources out of `Contents/MacOS` into `Contents/Resources/app`;
