@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.13 Alpha — 2026-08-14
+
+- accelerated very large repositories with batched virtualized collections, bounded caches, cancellable Git processes, persistent project snapshots and a low-cost background change monitor that avoids rescanning when switching projects;
+- redesigned file and code discovery with dense Rider-style result lists, wildcard-aware path filters, secondary result filtering, lazy project trees, responsive previews and visible non-disruptive background progress;
+- unified file presentation across the solution explorer, changes, history and detached diff windows, including native image previews and plugin-provided preview/diff handlers for additional asset formats such as Unreal packages;
+- expanded commit composition and ignore-rule workflows with tracked/untracked separation, safer default selection, local-only files, folder and file-type assistants, glob patterns and complete `.gitignore` editing;
+- added GitHub Actions inspection and dispatch support, richer project-scoped logs/tasks, safer Git lock diagnostics and performance telemetry for long-running operations;
+- added independent per-project Syncthing shared folders with send/receive modes, persistent configuration and Git-only compatibility, plus clear Local Git/Git + remote status;
+- simplified secure WireGuard onboarding with named clients and compact signed invitation/response codes while keeping private keys on the client and preserving optional Sync-based exchange.
+
 ## 0.1.12 Alpha — 2026-08-14
 
 - fixed the architecture validation command for the Xcode 15.4 `lipo` syntax used by GitHub's macOS runners;
