@@ -12,7 +12,7 @@ public sealed class CodeWorkspaceService
     private const int MaximumPreviewBytes = 2 * 1024 * 1024;
     private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".git", ".svn", ".hg", ".idea", ".vs", ".cache", "bin", "obj", "Binaries",
+        ".git", ".svn", ".hg", ".idea", ".vs", ".cache", ".cyrevision", "bin", "obj", "Binaries",
         "Intermediate", "Saved", "DerivedDataCache", "node_modules", "packages", "Library", "Temp",
         "BuildToolsOutput"
     };
@@ -35,6 +35,36 @@ public sealed class CodeWorkspaceService
             string directory = ResolveInsideRoot(root, relativePath);
             BuildCounters counters = new();
             return BuildDirectoryChildren(root, directory, string.Empty, includeHidden, counters, cancellationToken);
+        }, cancellationToken);
+
+    public Task<CodeFileIndex> BuildFileIndexAsync(
+        string rootPath,
+        bool includeHidden = false,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() =>
+        {
+            string root = NormalizeRoot(rootPath);
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            List<CodeFileEntry> files = [];
+            foreach (string path in EnumerateWorkspaceFiles(root, includeHidden))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    FileInfo info = new(path);
+                    string relative = Path.GetRelativePath(root, path).Replace('\\', '/');
+                    files.Add(new CodeFileEntry(relative, path, info.Length, DetectLanguage(path)));
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    // Files can disappear while the background index is being built.
+                }
+            }
+
+            stopwatch.Stop();
+            return new CodeFileIndex(
+                files.OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase).ToArray(),
+                stopwatch.Elapsed);
         }, cancellationToken);
 
     public async Task<CodeFilePreview> ReadPreviewAsync(
@@ -392,9 +422,20 @@ public sealed class CodeWorkspaceService
 
     private static IEnumerable<string> EnumerateSearchableFiles(string root, bool includeHidden, string patterns)
     {
+        string[] parsedPatterns = ParsePatterns(patterns).ToArray();
+        foreach (string path in EnumerateWorkspaceFiles(root, includeHidden))
+        {
+            if (new FileInfo(path).Length > MaximumPreviewBytes) continue;
+            if (parsedPatterns.Length > 0 && !parsedPatterns.Any(pattern =>
+                    FileSystemName.MatchesSimpleExpression(pattern, Path.GetFileName(path), ignoreCase: true))) continue;
+            yield return path;
+        }
+    }
+
+    private static IEnumerable<string> EnumerateWorkspaceFiles(string root, bool includeHidden)
+    {
         Stack<string> pending = new();
         pending.Push(root);
-        string[] parsedPatterns = ParsePatterns(patterns).ToArray();
         while (pending.Count > 0)
         {
             string directory = pending.Pop();
@@ -413,9 +454,6 @@ public sealed class CodeWorkspaceService
                         pending.Push(path);
                     continue;
                 }
-                if (new FileInfo(path).Length > MaximumPreviewBytes) continue;
-                if (parsedPatterns.Length > 0 && !parsedPatterns.Any(pattern =>
-                        FileSystemName.MatchesSimpleExpression(pattern, Path.GetFileName(path), ignoreCase: true))) continue;
                 yield return path;
             }
         }
@@ -450,6 +488,8 @@ public sealed class CodeWorkspaceService
         ".py" => "Python", ".js" or ".jsx" => "JavaScript", ".ts" or ".tsx" => "TypeScript",
         ".json" or ".jsonc" => "JSON", ".xml" or ".axaml" or ".xaml" => "XML/XAML",
         ".md" => "Markdown", ".uplugin" or ".uproject" or ".ini" => "Unreal",
+        ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".webp" or ".ico" => "Image",
+        ".uasset" or ".umap" => "Unreal package",
         ".sh" or ".ps1" or ".cmd" or ".bat" => "Script", ".yml" or ".yaml" => "YAML",
         ".html" or ".css" or ".scss" => "Web", ".java" or ".kt" => "JVM",
         ".rs" => "Rust", ".go" => "Go", ".sql" => "SQL", _ => "Text"
@@ -521,6 +561,9 @@ public sealed class CodeWorkspaceService
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
+        startInfo.Environment["GIT_OPTIONAL_LOCKS"] = "0";
+        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        startInfo.Environment["GCM_INTERACTIVE"] = "Never";
         foreach (string argument in arguments) startInfo.ArgumentList.Add(argument);
         using Process process = new() { StartInfo = startInfo };
         if (!process.Start()) throw new InvalidOperationException($"Unable to start {executable}.");

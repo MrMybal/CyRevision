@@ -1,5 +1,15 @@
 namespace CyRevision.Sync;
 
+public sealed record SyncthingSharedFolder(
+    Guid Id,
+    string Name,
+    string Path,
+    string FolderId,
+    SyncthingFolderMode Mode,
+    bool Enabled = true,
+    int RescanIntervalSeconds = 60,
+    bool FileWatcherEnabled = true);
+
 public sealed record SyncthingProfile(
     Guid ProjectId,
     string ExecutablePath,
@@ -11,6 +21,8 @@ public sealed record SyncthingProfile(
     int ListenPort,
     string FolderId)
 {
+    public IReadOnlyList<SyncthingSharedFolder> SharedFolders { get; init; } = [];
+
     public SyncthingFolderMode FolderMode { get; init; } = SyncthingFolderMode.SendReceive;
 
     public int RescanIntervalSeconds { get; init; } = 60;

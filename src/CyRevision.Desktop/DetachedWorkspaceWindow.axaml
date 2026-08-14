@@ -32,6 +32,14 @@
         </Style>
         <Style Selector="DataGrid.compact DataGridRow"><Setter Property="MinHeight" Value="26" /></Style>
         <Style Selector="DataGrid.compact DataGridCell"><Setter Property="Padding" Value="5,2" /><Setter Property="FontSize" Value="10.5" /></Style>
+        <Style Selector="ListBox.compactList ListBoxItem">
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="ListBox.compactList ListBoxItem:pointerover"><Setter Property="Background" Value="#303A3B" /></Style>
+        <Style Selector="ListBox.compactList ListBoxItem:selected"><Setter Property="Background" Value="#365550" /></Style>
         <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#9B9DA3" /></Style>
     </Window.Styles>
 
@@ -109,66 +117,115 @@
                                     <TextBlock Text="Focused diff" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="1" Text="Read-only" Foreground="#78D7B7" FontSize="9" VerticalAlignment="Center" />
                                 </Grid>
-                                <controls:CodeDiffView Grid.Row="1" DiffText="{Binding ExplorerDiff}" FilePath="{Binding SelectedExplorerFile.Path}" />
+                                <controls:CodeDiffView Grid.Row="1" DiffText="{Binding ExplorerDiff}"
+                                                       PreviewImage="{Binding ExplorerDiffPreviewImage}"
+                                                       PresentationSummary="{Binding ExplorerDiffPresentationSummary}"
+                                                       FilePath="{Binding SelectedExplorerFile.Path}" />
                             </Grid>
                         </Border>
                     </Grid>
                 </Grid>
             </TabItem>
 
-            <TabItem x:Name="DetachedCodeTab" Header="Code explorer">
+            <TabItem x:Name="DetachedCodeTab" Header="Find in Files">
                 <Grid Margin="0,7,0,0" RowDefinitions="Auto,*" RowSpacing="7">
                     <Border Classes="toolCard" Padding="8">
-                        <Grid ColumnDefinitions="*,130,Auto,Auto" ColumnSpacing="7">
+                        <Grid ColumnDefinitions="*,150,Auto,Auto" ColumnSpacing="7" RowDefinitions="Auto,Auto,4">
                             <TextBox x:Name="DetachedCodeSearch" Text="{Binding CodeSearchQuery}"
                                      PlaceholderText="Search text, symbol, or pattern…" KeyDown="OnCodeSearchKeyDown" />
                             <TextBox Grid.Column="1" Text="{Binding CodeFilePatterns}" PlaceholderText="*.cs;*.cpp" />
                             <Button Grid.Column="2" Classes="toolPrimary" Content="Search" Click="OnCodeSearchClick" />
-                            <Button Grid.Column="3" Classes="toolButton" Content="Refresh tree" Click="OnRefreshCodeClick" />
+                            <Button Grid.Column="3" Classes="toolButton" Content="Cancel" Click="OnCancelCodeSearchClick" />
+                            <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="14" Margin="2,6,0,2">
+                                <CheckBox Content="Match case" IsChecked="{Binding CodeSearchMatchCase}" />
+                                <CheckBox Content="Whole words" IsChecked="{Binding CodeSearchWholeWord}" />
+                                <CheckBox Content="Regular expression" IsChecked="{Binding CodeSearchRegex}" />
+                                <TextBlock Text="{Binding CodeSearchSummary}" Classes="muted" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <ProgressBar Grid.Row="2" Grid.ColumnSpan="4" IsVisible="{Binding IsCodeSearchRunning}"
+                                         IsIndeterminate="True" Height="3" Margin="1,1,1,0" />
                         </Grid>
                     </Border>
-                    <Grid Grid.Row="1" ColumnDefinitions="0.65*,7,1.45*,7,0.9*">
+                    <Grid Grid.Row="1" ColumnDefinitions="1.15*,7,1.35*,7,0.8*">
                         <Border Classes="toolCard" Padding="0" ClipToBounds="True">
-                            <Grid RowDefinitions="30,30,*">
-                                <TextBlock Text="Project" FontSize="11.5" FontWeight="SemiBold" Margin="8,0" VerticalAlignment="Center" />
-                                <TextBox Grid.Row="1" Text="{Binding CodeTreeFilter}" PlaceholderText="Filter files…" Margin="6,2" FontSize="10" />
-                                <TreeView Grid.Row="2" ItemsSource="{Binding CodeTree}" SelectedItem="{Binding SelectedCodeNode}"
-                                          Background="Transparent" BorderThickness="0" Margin="2">
-                                    <TreeView.ItemTemplate>
-                                        <TreeDataTemplate ItemsSource="{Binding Children}">
-                                            <Grid ColumnDefinitions="22,*,Auto" Margin="1" ToolTip.Tip="{Binding RelativePath}">
-                                                <TextBlock Text="{Binding Icon}" FontSize="8" Foreground="{Binding AccentColor}" VerticalAlignment="Center" />
-                                                <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="{Binding AccentColor}"
-                                                           FontSize="10.5" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Grid.Column="2" Text="{Binding Detail}" FontSize="8.5" Classes="muted" Margin="4,0" />
+                            <Grid RowDefinitions="36,30,*">
+                                <StackPanel Margin="8,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Results" FontSize="11.5" FontWeight="SemiBold" />
+                                    <TextBlock Text="Select a match to preview its exact location" Classes="muted" FontSize="8.5" />
+                                </StackPanel>
+                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="5,3">
+                                    <TextBox Text="{Binding CodeSearchFileFilter, UpdateSourceTrigger=PropertyChanged}"
+                                             PlaceholderText="Filter results by file name or pathâ€¦" Padding="6,2" />
+                                    <TextBlock Grid.Column="1" Text="{Binding CodeSearchResultFilterSummary}" Classes="muted"
+                                               FontSize="8.5" VerticalAlignment="Center" />
+                                </Grid>
+                                <ListBox Grid.Row="2" ItemsSource="{Binding FilteredCodeSearchResults}"
+                                         SelectedItem="{Binding SelectedCodeSearchResult}"
+                                         Classes="compactList"
+                                         Background="Transparent" BorderThickness="0" Margin="2"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <VirtualizingStackPanel />
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Height="21" ColumnDefinitions="44,*,170" ColumnSpacing="6"
+                                                  Margin="4,0" ToolTip.Tip="{Binding Location}">
+                                                <TextBlock Text="{Binding Position}" Foreground="#7E8799" FontSize="9"
+                                                           HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center" FontFamily="Cascadia Mono,Consolas" FontSize="9.5">
+                                                    <Run Text="{Binding PreviewBeforeMatch}" />
+                                                    <Run Text="{Binding PreviewMatch}" Foreground="#FFD866" FontWeight="Bold" />
+                                                    <Run Text="{Binding PreviewAfterMatch}" />
+                                                </TextBlock>
+                                                <TextBlock Grid.Column="2" TextTrimming="CharacterEllipsis"
+                                                           HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="8.5">
+                                                    <Run Text="{Binding FileName}" Foreground="#61AFEF" FontWeight="SemiBold" />
+                                                    <Run Text="  " />
+                                                    <Run Text="{Binding DirectoryPath}" Foreground="#7E8799" />
+                                                </TextBlock>
                                             </Grid>
-                                        </TreeDataTemplate>
-                                    </TreeView.ItemTemplate>
-                                </TreeView>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </Grid>
                         </Border>
                         <GridSplitter Grid.Column="1" Width="7" Background="#45484E" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
                         <Border Grid.Column="2" Classes="toolCard" Padding="0" ClipToBounds="True">
                             <Grid RowDefinitions="34,*">
                                 <StackPanel Margin="8,0" VerticalAlignment="Center">
-                                    <TextBlock Text="Editor preview" FontSize="11.5" FontWeight="SemiBold" />
+                                    <TextBlock Text="Selected result preview" FontSize="11.5" FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding CodePreviewSummary}" FontSize="8.5" Classes="muted" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
-                                <controls:SyntaxHighlightedCodeView x:Name="DetachedCodePreview" Grid.Row="1"
+                            <Grid Grid.Row="1">
+                                <Image Source="{Binding CodePreviewImage}" IsVisible="{Binding CodePreviewIsImage}"
+                                       Stretch="Uniform" Margin="12" />
+                                <controls:SyntaxHighlightedCodeView x:Name="DetachedCodePreview"
                                                                     Text="{Binding CodePreviewText}"
-                                                                    FilePath="{Binding SelectedCodeNode.RelativePath}" />
+                                                                    IsVisible="{Binding CodePreviewIsText}"
+                                                                    FilePath="{Binding CodePreviewPath}"
+                                                                    TargetFilePath="{Binding SelectedCodeSearchResult.RelativePath}"
+                                                                    TargetLine="{Binding SelectedCodeSearchResult.LineNumber}"
+                                                                    TargetColumn="{Binding SelectedCodeSearchResult.ColumnNumber}"
+                                                                    TargetLength="{Binding SelectedCodeSearchResult.MatchText.Length}" />
+                            </Grid>
                             </Grid>
                         </Border>
                         <GridSplitter Grid.Column="3" Width="7" Background="#45484E" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
                         <Border Grid.Column="4" Classes="toolCard" Padding="0" ClipToBounds="True">
                             <TabControl>
-                                <TabItem Header="Search results">
-                                    <DataGrid Classes="compact" ItemsSource="{Binding CodeSearchResults}"
-                                              SelectedItem="{Binding SelectedCodeSearchResult}" AutoGenerateColumns="False"
-                                              IsReadOnly="True" GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
+                                <TabItem Header="Git history">
+                                    <DataGrid Classes="compact" ItemsSource="{Binding CodeHistory}"
+                                              AutoGenerateColumns="False" IsReadOnly="True"
+                                              GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
                                         <DataGrid.Columns>
-                                            <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="135" />
-                                            <DataGridTextColumn Header="Preview" Binding="{Binding Preview}" Width="*" />
+                                            <DataGridTextColumn Header="Rev" Binding="{Binding ShortHash}" Width="65" />
+                                            <DataGridTextColumn Header="Description" Binding="{Binding Subject}" Width="*" />
+                                            <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="80" />
                                         </DataGrid.Columns>
                                     </DataGrid>
                                 </TabItem>

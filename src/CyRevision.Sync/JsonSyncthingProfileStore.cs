@@ -74,6 +74,7 @@ public sealed class JsonSyncthingProfileStore : ISyncthingProfileStore
                 listenPort,
                 existing?.FolderId ?? "cyrevision-" + projectId.ToString("N"))
             {
+                SharedFolders = existing?.SharedFolders ?? [],
                 FolderMode = existing?.FolderMode ?? SyncthingFolderMode.SendReceive,
                 RescanIntervalSeconds = existing?.RescanIntervalSeconds is > 0
                     ? existing.RescanIntervalSeconds

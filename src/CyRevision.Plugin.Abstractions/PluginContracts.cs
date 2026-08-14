@@ -21,6 +21,57 @@ public interface ICyRevisionPlugin : IAsyncDisposable
     Task InitializeAsync(CyRevisionPluginContext context, CancellationToken cancellationToken = default);
 }
 
+public enum FilePresentationKind
+{
+    Text,
+    Image,
+    Metadata
+}
+
+public sealed record FilePreviewRequest(
+    string ProjectRoot,
+    string RelativePath,
+    string FilePath,
+    long FileSize);
+
+public sealed record FileDiffRequest(
+    string ProjectRoot,
+    string RelativePath,
+    string BaselinePath,
+    string CandidatePath);
+
+public sealed record FilePresentationResult(
+    string ProviderId,
+    FilePresentationKind Kind,
+    string Summary,
+    string TextContent = "",
+    string? ImagePath = null,
+    IReadOnlyDictionary<string, string>? Metadata = null);
+
+/// <summary>
+/// Optional capability implemented by a CyRevision plugin. The desktop asks these providers
+/// everywhere a file preview or diff is displayed, so support is not tied to a single tab.
+/// Results stay UI-neutral: plugins never need to reference Avalonia.
+/// </summary>
+public interface IFilePresentationProvider
+{
+    string ProviderId { get; }
+
+    int Priority => 0;
+
+    bool CanPreview(FilePreviewRequest request);
+
+    bool CanCompare(FileDiffRequest request);
+
+    Task<FilePresentationResult?> CreatePreviewAsync(
+        FilePreviewRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<FilePresentationResult?> CreateDiffAsync(
+        FileDiffRequest request,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed record UnrealProjectInspection(
     bool IsValid,
     string ProjectRoot,

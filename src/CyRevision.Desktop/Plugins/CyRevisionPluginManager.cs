@@ -76,6 +76,13 @@ public sealed class CyRevisionPluginManager : IAsyncDisposable
     public TPlugin? GetPlugin<TPlugin>() where TPlugin : class, ICyRevisionPlugin =>
         _entries.Select(entry => entry.Instance).OfType<TPlugin>().FirstOrDefault();
 
+    public IReadOnlyList<TExtension> GetExtensions<TExtension>() where TExtension : class =>
+        _entries
+            .Where(entry => entry.IsEnabled)
+            .Select(entry => entry.Instance)
+            .OfType<TExtension>()
+            .ToArray();
+
     public async Task EnableAsync(string pluginId, CancellationToken cancellationToken = default)
     {
         PluginCatalogEntry entry = GetEntry(pluginId);

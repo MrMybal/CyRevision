@@ -138,6 +138,14 @@
                             </DataGrid>
                         </TabItem>
                     </TabControl>
+                    <Border Grid.Row="1" ZIndex="10" IsVisible="{Binding IsExplorerLoading}"
+                            VerticalAlignment="Bottom" Background="#F0202633" BorderBrush="#4A5D7A"
+                            BorderThickness="0,1,0,0" Padding="8,5">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                            <TextBlock Text="Loading committed files..." Classes="muted" FontSize="9" />
+                            <ProgressBar Grid.Column="1" IsIndeterminate="True" Height="4" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
                 </Grid>
             </Border>
 
@@ -145,7 +153,7 @@
                           Background="#4B4D52" Cursor="SizeWestEast" />
 
             <Border x:Name="DiffPanel" Grid.Column="4" Classes="card" Padding="0" ClipToBounds="True">
-                <Grid RowDefinitions="36,Auto,*">
+                <Grid RowDefinitions="36,*">
                     <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel VerticalAlignment="Center">
@@ -157,14 +165,18 @@
                                        FontSize="8.5" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
-                    <Border Grid.Row="1" IsVisible="{Binding IsExplorerAnyLoading}" Background="#202633" Padding="8,4">
+                    <controls:CodeDiffView Grid.Row="1" DiffText="{Binding ExplorerDiff}"
+                                           PreviewImage="{Binding ExplorerDiffPreviewImage}"
+                                           PresentationSummary="{Binding ExplorerDiffPresentationSummary}"
+                                           FilePath="{Binding SelectedExplorerFile.Path}" />
+                    <Border Grid.Row="1" ZIndex="10" IsVisible="{Binding IsExplorerDiffLoading}"
+                            VerticalAlignment="Bottom" Background="#F0202633" BorderBrush="#4A5D7A"
+                            BorderThickness="0,1,0,0" Padding="8,5">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                             <TextBlock Text="Loading diff…" Classes="muted" FontSize="9" />
                             <ProgressBar Grid.Column="1" IsIndeterminate="True" Height="4" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
-                    <controls:CodeDiffView Grid.Row="2" DiffText="{Binding ExplorerDiff}"
-                                           FilePath="{Binding SelectedExplorerFile.Path}" />
                 </Grid>
             </Border>
         </Grid>

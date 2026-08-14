@@ -4,7 +4,7 @@ using CyRevision.Plugin.Abstractions;
 
 namespace CyRevision.Plugin.Unreal;
 
-public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin
+public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePresentationProvider
 {
     private const int BridgePort = 47832;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
@@ -30,6 +30,10 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin
         "0.1.0",
         "Optional Unreal project integration and Editor plugin installer.",
         "Game engines");
+
+    public string ProviderId => Descriptor.Id + ".files";
+
+    public int Priority => 100;
 
     public event EventHandler<UnrealProjectChangedEventArgs>? ProjectChanged;
 
@@ -142,6 +146,74 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin
         BridgeStatus = BridgeStatus with { IsRunning = false, Detail = "Bridge is stopped." };
     }
 
+    public bool CanPreview(FilePreviewRequest request) => IsUnrealPackage(request.FilePath);
+
+    public bool CanCompare(FileDiffRequest request) =>
+        IsUnrealPackage(request.CandidatePath) &&
+        string.Equals(
+            Path.GetExtension(request.BaselinePath),
+            Path.GetExtension(request.CandidatePath),
+            StringComparison.OrdinalIgnoreCase);
+
+    public async Task<FilePresentationResult?> CreatePreviewAsync(
+        FilePreviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanPreview(request)) return null;
+        UnrealPackageFingerprint fingerprint = await InspectPackageAsync(request.FilePath, cancellationToken);
+        string text = string.Join(Environment.NewLine,
+            "Unreal package preview (offline)",
+            $"File: {request.RelativePath}",
+            $"Kind: {fingerprint.Kind}",
+            $"Size: {fingerprint.Size:N0} bytes",
+            $"Header signature: {fingerprint.HeaderSignature}",
+            $"Detected names: {string.Join(", ", fingerprint.Names.Take(40))}",
+            string.Empty,
+            "Open the project in Unreal Editor for a rendered asset preview.");
+        return new FilePresentationResult(
+            ProviderId,
+            FilePresentationKind.Metadata,
+            $"Unreal plugin · {fingerprint.Kind} · {fingerprint.Size:N0} bytes",
+            text,
+            Metadata: new Dictionary<string, string>
+            {
+                ["Kind"] = fingerprint.Kind,
+                ["Size"] = fingerprint.Size.ToString(),
+                ["Header"] = fingerprint.HeaderSignature
+            });
+    }
+
+    public async Task<FilePresentationResult?> CreateDiffAsync(
+        FileDiffRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanCompare(request)) return null;
+        Task<UnrealPackageFingerprint> baselineTask = InspectPackageAsync(request.BaselinePath, cancellationToken);
+        Task<UnrealPackageFingerprint> candidateTask = InspectPackageAsync(request.CandidatePath, cancellationToken);
+        await Task.WhenAll(baselineTask, candidateTask);
+        UnrealPackageFingerprint baseline = baselineTask.Result;
+        UnrealPackageFingerprint candidate = candidateTask.Result;
+        string[] addedNames = candidate.Names.Except(baseline.Names, StringComparer.Ordinal).Take(100).ToArray();
+        string[] removedNames = baseline.Names.Except(candidate.Names, StringComparer.Ordinal).Take(100).ToArray();
+        bool equivalent = baseline.Size == candidate.Size &&
+                          baseline.HeaderSignature == candidate.HeaderSignature &&
+                          addedNames.Length == 0 && removedNames.Length == 0;
+        string text = string.Join(Environment.NewLine,
+            "Unreal package diff (offline)",
+            $"File: {request.RelativePath}",
+            $"Size: {baseline.Size:N0} → {candidate.Size:N0} bytes ({candidate.Size - baseline.Size:+#;-#;0})",
+            $"Header: {baseline.HeaderSignature} → {candidate.HeaderSignature}",
+            $"Detected names added: {(addedNames.Length == 0 ? "none" : string.Join(", ", addedNames))}",
+            $"Detected names removed: {(removedNames.Length == 0 ? "none" : string.Join(", ", removedNames))}",
+            string.Empty,
+            "This comparison is provided by the enabled Unreal plugin without opening the engine.");
+        return new FilePresentationResult(
+            ProviderId,
+            FilePresentationKind.Metadata,
+            equivalent ? "Unreal packages appear equivalent" : "Unreal package metadata changed",
+            text);
+    }
+
     private void OnProjectChanged(object? sender, UnrealProjectChangedEventArgs eventArgs) =>
         ProjectChanged?.Invoke(this, eventArgs);
 
@@ -199,4 +271,62 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin
         .TrimEnd('=')
         .Replace('+', '-')
         .Replace('/', '_');
+
+    private static bool IsUnrealPackage(string path) =>
+        Path.GetExtension(path).Equals(".uasset", StringComparison.OrdinalIgnoreCase) ||
+        Path.GetExtension(path).Equals(".umap", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<UnrealPackageFingerprint> InspectPackageAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        FileInfo info = new(path);
+        if (!info.Exists) throw new FileNotFoundException("Unreal package not found.", path);
+        await using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        int length = (int)Math.Min(stream.Length, 2 * 1024 * 1024);
+        byte[] bytes = new byte[length];
+        int read = await stream.ReadAsync(bytes.AsMemory(0, length), cancellationToken);
+        string header = Convert.ToHexString(bytes.AsSpan(0, Math.Min(16, read)));
+        HashSet<string> names = ExtractReadableNames(bytes.AsSpan(0, read));
+        string kind = Path.GetExtension(path).Equals(".umap", StringComparison.OrdinalIgnoreCase)
+            ? "Unreal map"
+            : "Unreal asset";
+        return new UnrealPackageFingerprint(kind, info.Length, header, names);
+    }
+
+    private static HashSet<string> ExtractReadableNames(ReadOnlySpan<byte> bytes)
+    {
+        HashSet<string> names = new(StringComparer.Ordinal);
+        List<char> current = [];
+        foreach (byte value in bytes)
+        {
+            if (value is >= 32 and <= 126)
+            {
+                current.Add((char)value);
+                continue;
+            }
+            if (current.Count is >= 4 and <= 120)
+            {
+                string candidate = new(current.ToArray());
+                if (candidate.Any(char.IsLetter) && candidate.All(character => char.IsLetterOrDigit(character) || "_./:- ".Contains(character)))
+                    names.Add(candidate);
+            }
+            current.Clear();
+            if (names.Count >= 500) break;
+        }
+        if (current.Count is >= 4 and <= 120)
+        {
+            string candidate = new(current.ToArray());
+            if (candidate.Any(char.IsLetter) &&
+                candidate.All(character => char.IsLetterOrDigit(character) || "_./:- ".Contains(character)))
+                names.Add(candidate);
+        }
+        return names;
+    }
+
+    private sealed record UnrealPackageFingerprint(
+        string Kind,
+        long Size,
+        string HeaderSignature,
+        IReadOnlySet<string> Names);
 }

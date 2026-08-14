@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 
 namespace CyRevision.Code;
 
@@ -23,7 +25,7 @@ public sealed class CodeTreeNode
         Language = language;
         HasUnloadedChildren = hasUnloadedChildren;
         IsPlaceholder = isPlaceholder;
-        Children = new ObservableCollection<CodeTreeNode>(children ??
+        Children = new CodeTreeNodeCollection(children ??
             (hasUnloadedChildren ? [CreatePlaceholder(fullPath)] : []));
     }
 
@@ -46,8 +48,15 @@ public sealed class CodeTreeNode
 
     public void ReplaceChildren(IEnumerable<CodeTreeNode> children)
     {
-        Children.Clear();
-        foreach (CodeTreeNode child in children) Children.Add(child);
+        if (Children is CodeTreeNodeCollection batch)
+        {
+            batch.ReplaceAll(children);
+        }
+        else
+        {
+            Children.Clear();
+            foreach (CodeTreeNode child in children) Children.Add(child);
+        }
         HasUnloadedChildren = false;
     }
 
@@ -68,6 +77,8 @@ public sealed class CodeTreeNode
         "JSON" => "{}",
         "Markdown" => "M↓",
         "Unreal" => "UE",
+        "Image" => "IMG",
+        "Unreal package" => "UE",
         _ => "·"
     };
 
@@ -80,6 +91,8 @@ public sealed class CodeTreeNode
         "JSON" => "#9CDC8C",
         "Markdown" => "#61AFEF",
         "Unreal" => "#4EC9B0",
+        "Image" => "#E06C75",
+        "Unreal package" => "#C678DD",
         "XML" => "#CE9178",
         _ => "#A9B7C6"
     };
@@ -98,12 +111,70 @@ public sealed class CodeTreeNode
     }
 }
 
+internal sealed class CodeTreeNodeCollection : ObservableCollection<CodeTreeNode>
+{
+    public CodeTreeNodeCollection(IEnumerable<CodeTreeNode> nodes)
+    {
+        foreach (CodeTreeNode node in nodes) Items.Add(node);
+    }
+
+    public void ReplaceAll(IEnumerable<CodeTreeNode> nodes)
+    {
+        CodeTreeNode[] snapshot = nodes as CodeTreeNode[] ?? nodes.ToArray();
+        Items.Clear();
+        foreach (CodeTreeNode node in snapshot) Items.Add(node);
+        OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+    }
+}
+
 public sealed record CodeWorkspaceSnapshot(
     IReadOnlyList<CodeTreeNode> Roots,
     int DirectoryCount,
     int FileCount,
     long TotalBytes,
     bool WasTruncated,
+    TimeSpan Elapsed);
+
+public sealed record CodeFileEntry(
+    string RelativePath,
+    string FullPath,
+    long Size,
+    string Language)
+{
+    public string Name => Path.GetFileName(RelativePath);
+
+    public string DirectoryPath => Path.GetDirectoryName(RelativePath)?.Replace('\\', '/') ?? "/";
+
+    public string SizeText
+    {
+        get
+        {
+            string[] units = ["B", "KB", "MB", "GB"];
+            double value = Size;
+            int unit = 0;
+            while (value >= 1024 && unit < units.Length - 1)
+            {
+                value /= 1024;
+                unit++;
+            }
+
+            return $"{value:0.#} {units[unit]}";
+        }
+    }
+
+    public CodeTreeNode ToTreeNode() => new(
+        Name,
+        RelativePath,
+        FullPath,
+        false,
+        size: Size,
+        language: Language);
+}
+
+public sealed record CodeFileIndex(
+    IReadOnlyList<CodeFileEntry> Files,
     TimeSpan Elapsed);
 
 public sealed record CodeSearchOptions(
@@ -123,6 +194,17 @@ public sealed record CodeSearchResult(
     string MatchText)
 {
     public string Location => $"{RelativePath}:{LineNumber}:{ColumnNumber}";
+    public string FileName => Path.GetFileName(RelativePath);
+    public string DirectoryPath => Path.GetDirectoryName(RelativePath)?.Replace('\\', '/') ?? "/";
+    public string Position => $"{LineNumber}:{ColumnNumber}";
+
+    private int MatchIndex => string.IsNullOrEmpty(MatchText)
+        ? -1
+        : Preview.IndexOf(MatchText, StringComparison.OrdinalIgnoreCase);
+
+    public string PreviewBeforeMatch => MatchIndex < 0 ? Preview : Preview[..MatchIndex];
+    public string PreviewMatch => MatchIndex < 0 ? string.Empty : Preview.Substring(MatchIndex, MatchText.Length);
+    public string PreviewAfterMatch => MatchIndex < 0 ? string.Empty : Preview[(MatchIndex + MatchText.Length)..];
 }
 
 public sealed record CodeSearchReport(

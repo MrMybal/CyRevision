@@ -15,6 +15,7 @@ public sealed class LfsLockTreeNode
         RelativePath = relativePath;
         IsDirectory = isDirectory;
         FileLock = fileLock;
+        LeafCount = fileLock is null ? 0 : 1;
     }
 
     public string Name { get; }
@@ -22,12 +23,12 @@ public sealed class LfsLockTreeNode
     public bool IsDirectory { get; }
     public LfsFileLock? FileLock { get; }
     public ObservableCollection<LfsLockTreeNode> Children { get; } = [];
+    public int LeafCount { get; private set; }
     public string Icon => IsDirectory ? "▸" : "◆";
     public string AccentColor => FileLock?.FileColor ?? "#D7BA7D";
     public string Detail => IsDirectory
-        ? $"{CountLeaves(this):N0} file(s)"
+        ? $"{LeafCount:N0} file(s)"
         : $"{FileLock?.OwnerName} · {FileLock?.LockedAtText} · {FileLock?.Source}";
 
-    private static int CountLeaves(LfsLockTreeNode node) =>
-        node.FileLock is not null ? 1 : node.Children.Sum(CountLeaves);
+    internal void IncrementLeafCount() => LeafCount++;
 }
