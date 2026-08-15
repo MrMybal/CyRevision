@@ -46,7 +46,9 @@ internal sealed class CodexAppServerSession : IAsyncDisposable
         string executable = string.IsNullOrWhiteSpace(request.ExecutablePath)
             ? "codex"
             : request.ExecutablePath.Trim();
-        string repository = Path.GetFullPath(request.RepositoryPath);
+        string repository = Path.GetFullPath(string.IsNullOrWhiteSpace(request.WorkingDirectory)
+            ? request.RepositoryPath
+            : request.WorkingDirectory);
         ProcessStartInfo startInfo = new()
         {
             FileName = executable,
@@ -156,29 +158,34 @@ internal sealed class CodexAppServerSession : IAsyncDisposable
                     name = "cyrevision",
                     title = "CyRevision",
                     version = typeof(CodexAppServerSession).Assembly.GetName().Version?.ToString(3)
-                              ?? "0.1.14-alpha"
+                              ?? "0.1.15-alpha"
                 }
             },
             cancellationToken).ConfigureAwait(false);
         await SendNotificationAsync("initialized", new { }, cancellationToken).ConfigureAwait(false);
 
+        string workingDirectory = Path.GetFullPath(string.IsNullOrWhiteSpace(request.WorkingDirectory)
+            ? request.RepositoryPath
+            : request.WorkingDirectory);
         Dictionary<string, object?> threadParameters = new(StringComparer.Ordinal)
         {
-            ["cwd"] = Path.GetFullPath(request.RepositoryPath),
+            ["cwd"] = workingDirectory,
             ["approvalPolicy"] = "never",
             ["sandbox"] = request.Permissions.HasFlag(AiWorkspacePermission.ModifyFiles)
                 ? "workspace-write"
                 : "read-only",
-            ["developerInstructions"] = BuildProjectInstructions(request),
-            ["threadSource"] = "cyrevision"
+            ["developerInstructions"] = BuildProjectInstructions(request)
         };
         if (!string.IsNullOrWhiteSpace(request.Model))
         {
             threadParameters["model"] = request.Model.Trim();
         }
 
+        bool resumesExistingThread = !string.IsNullOrWhiteSpace(request.ThreadId);
+        if (resumesExistingThread) threadParameters["threadId"] = request.ThreadId.Trim();
+        else threadParameters["threadSource"] = "cyrevision";
         JsonElement threadResult = await SendRequestAsync(
-            "thread/start",
+            resumesExistingThread ? "thread/resume" : "thread/start",
             threadParameters,
             cancellationToken).ConfigureAwait(false);
         if (!threadResult.TryGetProperty("thread", out JsonElement thread) ||
@@ -188,6 +195,8 @@ internal sealed class CodexAppServerSession : IAsyncDisposable
             throw new InvalidOperationException("Codex did not return a conversation thread identifier.");
         }
         ThreadId = threadId.GetString()!;
+
+        if (resumesExistingThread) return;
 
         try
         {
@@ -208,6 +217,13 @@ internal sealed class CodexAppServerSession : IAsyncDisposable
         instructions.AppendLine("You are connected to a project through CyRevision.");
         instructions.AppendLine($"Project name: {request.ProjectName}");
         instructions.AppendLine($"Project path: {Path.GetFullPath(request.RepositoryPath)}");
+        if (!string.IsNullOrWhiteSpace(request.WorkingDirectory) &&
+            !string.Equals(Path.GetFullPath(request.WorkingDirectory), Path.GetFullPath(request.RepositoryPath),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            instructions.AppendLine($"Conversation worktree: {Path.GetFullPath(request.WorkingDirectory)}");
+            instructions.AppendLine("Work only in this isolated worktree; the main working tree must remain unchanged.");
+        }
         instructions.AppendLine("Treat this conversation as project-scoped and preserve unrelated user changes.");
         instructions.AppendLine(request.Permissions.HasFlag(AiWorkspacePermission.ModifyFiles)
             ? "CyRevision authorizes modifications only inside this project."
@@ -216,6 +232,12 @@ internal sealed class CodexAppServerSession : IAsyncDisposable
             ? "Network access is authorized when required by the user's request."
             : "Do not use network access or contact external services.");
         instructions.AppendLine("Never push or rewrite Git history. CyRevision brokers explicit Git operations separately.");
+        if (!string.IsNullOrWhiteSpace(request.PrePrompt))
+        {
+            instructions.AppendLine();
+            instructions.AppendLine("Conversation-specific instructions:");
+            instructions.AppendLine(request.PrePrompt.Trim());
+        }
         return instructions.ToString();
     }
 

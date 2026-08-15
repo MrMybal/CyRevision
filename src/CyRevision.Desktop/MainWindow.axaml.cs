@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -27,6 +28,44 @@ internal enum WorkspaceCategory
     Extensions
 }
 
+internal sealed record WorkspaceTabVisibilityPreset(
+    string Name,
+    string Description,
+    IReadOnlySet<string>? VisibleTabs,
+    bool IsCustom = false);
+
+internal sealed class WorkspaceTabVisibilityItem : INotifyPropertyChanged
+{
+    private bool _isVisible;
+
+    public WorkspaceTabVisibilityItem(string id, string name, string category, bool isVisible)
+    {
+        Id = id;
+        Name = name;
+        Category = category;
+        _isVisible = isVisible;
+    }
+
+    public string Id { get; }
+    public string Name { get; }
+    public string Category { get; }
+
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set
+        {
+            if (_isVisible == value) return;
+            _isVisible = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsVisible)));
+            VisibilityChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public event EventHandler? VisibilityChanged;
+}
+
 public partial class MainWindow : Window
 {
     private MainWindowViewModel _viewModel = null!;
@@ -37,6 +76,7 @@ public partial class MainWindow : Window
     private FocusedDiffWindow? _pullRequestDiffWindow;
     private CommitExplorerWindow? _commitExplorerWindow;
     private readonly List<DetachedWorkspaceWindow> _detachedWorkspaceWindows = [];
+    private readonly Dictionary<TabItem, DetachedTabWindow> _detachedTabWindows = [];
     private WorkspaceLayoutPreferencesStore? _workspaceLayoutStore;
     private ProjectWorkspaceStateStore? _projectWorkspaceStateStore;
     private readonly DispatcherTimer _codeRefreshTimer = new() { Interval = TimeSpan.FromMinutes(1) };
@@ -49,6 +89,12 @@ public partial class MainWindow : Window
     private CodeLayoutMode _codeLayout = CodeLayoutMode.Balanced;
     private WorkspaceCategory _workspaceCategory = WorkspaceCategory.Overview;
     private readonly Dictionary<string, string> _categoryWorkspaceTabs = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _hiddenWorkspaceTabNames = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _hiddenChangeColumnNames = new(StringComparer.Ordinal);
+    private readonly ObservableCollection<WorkspaceTabVisibilityItem> _workspaceTabVisibilityItems = [];
+    private IReadOnlyList<WorkspaceTabVisibilityPreset> _workspaceTabVisibilityPresets = [];
+    private string _workspaceTabVisibilityPreset = "Full workspace";
+    private bool _updatingWorkspaceTabVisibility;
     private bool _pullRequestDiffFocused;
     private bool _solutionExplorerTreeLayout = true;
     private Action<DesktopBehaviorSetting>? _desktopBehaviorToggle;
@@ -97,6 +143,9 @@ public partial class MainWindow : Window
         MainRevisionCompositionView.DiffVisibilityChanged += OnCompositionDiffVisibilityChanged;
         ApplyCodeLayout(_layoutPreferences.CodeLayout, false, true);
         WorkspaceTabs.SelectionChanged += OnWorkspaceTabSelectionChanged;
+        ConfigureWorkspaceDetachGestures();
+        InitializeWorkspaceTabVisibilityEditor();
+        ApplyChangeColumnVisibility();
         ConsoleAndLogsTabs.SelectionChanged += OnConsoleAndLogsTabSelectionChanged;
         _viewModel.PropertyChanged += OnMainViewModelPropertyChanged;
         _codeRefreshTimer.Tick += OnCodeRefreshTimerTick;
@@ -172,6 +221,10 @@ public partial class MainWindow : Window
             window.Close();
         }
         _detachedWorkspaceWindows.Clear();
+        foreach (DetachedTabWindow window in _detachedTabWindows.Values.ToArray()) window.Close();
+        _detachedTabWindows.Clear();
+        foreach (WorkspaceTabVisibilityItem item in _workspaceTabVisibilityItems)
+            item.VisibilityChanged -= OnWorkspaceTabVisibilityItemChanged;
         _uiLocalizer?.Dispose();
         MainRevisionCompositionView.DiffVisibilityChanged -= OnCompositionDiffVisibilityChanged;
     }
@@ -231,6 +284,10 @@ public partial class MainWindow : Window
         {
             SaveCurrentProjectWorkspaceState();
         }
+        else if (e.PropertyName == nameof(MainWindowViewModel.ChangeSort))
+        {
+            SaveCurrentProjectWorkspaceState();
+        }
         else if (e.PropertyName == nameof(MainWindowViewModel.HasCodeFileSearchResults))
         {
             ApplySolutionExplorerLayout(_solutionExplorerTreeLayout);
@@ -268,18 +325,21 @@ public partial class MainWindow : Window
 
         ProjectWorkspaceState state = _projectWorkspaceStateStore.Get(_viewModel.SelectedProject.Id);
         _activeWorkspaceProjectId = state.ProjectId;
-        _categoryWorkspaceTabs.Clear();
-        if (state.CategoryTabs is not null)
-        {
-            foreach ((string category, string tabName) in state.CategoryTabs)
-                _categoryWorkspaceTabs[category] = tabName;
-        }
         _restoringProjectWorkspace = true;
         try
         {
+            _categoryWorkspaceTabs.Clear();
+            if (state.CategoryTabs is not null)
+            {
+                foreach ((string category, string tabName) in state.CategoryTabs)
+                    _categoryWorkspaceTabs[category] = tabName;
+            }
+            RestoreWorkspaceTabVisibility(state);
+            RestoreChangeListPreferences(state);
             _viewModel.CodeAutoRefreshFrequency = state.CodeRefreshFrequency;
             ConsoleAndLogsTabs.SelectedIndex = Math.Clamp(state.ConsoleSection, 0, 1);
-            TabItem tab = AllWorkspaceTabs().FirstOrDefault(item => item.Name == state.ActiveTab) ?? ProjectWorkspaceTab;
+            TabItem requestedTab = AllWorkspaceTabs().FirstOrDefault(item => item.Name == state.ActiveTab) ?? ProjectWorkspaceTab;
+            TabItem tab = IsWorkspaceTabEnabled(requestedTab) ? requestedTab : ProjectWorkspaceTab;
             ApplyWorkspaceCategory(CategoryFor(tab), selectDefault: false);
             WorkspaceTabs.SelectedItem = tab;
         }
@@ -304,7 +364,11 @@ public partial class MainWindow : Window
             activeTab,
             _viewModel.CodeAutoRefreshFrequency,
             Math.Max(0, ConsoleAndLogsTabs.SelectedIndex),
-            new Dictionary<string, string>(_categoryWorkspaceTabs, StringComparer.Ordinal)));
+            new Dictionary<string, string>(_categoryWorkspaceTabs, StringComparer.Ordinal),
+            _workspaceTabVisibilityPreset,
+            _hiddenWorkspaceTabNames.OrderBy(name => name, StringComparer.Ordinal).ToList(),
+            _hiddenChangeColumnNames.OrderBy(name => name, StringComparer.Ordinal).ToList(),
+            _viewModel.ChangeSort));
     }
 
     private void OnWorkspaceTabSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -317,6 +381,66 @@ public partial class MainWindow : Window
 
     private void OnConsoleAndLogsTabSelectionChanged(object? sender, SelectionChangedEventArgs e) =>
         SaveCurrentProjectWorkspaceState();
+
+    private void RestoreChangeListPreferences(ProjectWorkspaceState state)
+    {
+        _hiddenChangeColumnNames.Clear();
+        foreach (string column in state.HiddenChangeColumns ?? [])
+        {
+            if (column is "Checked" or "State" or "Lock" or "Area")
+                _hiddenChangeColumnNames.Add(column);
+        }
+
+        _viewModel.ChangeSort = _viewModel.ChangeSortOptions.Contains(state.ChangeSort, StringComparer.Ordinal)
+            ? state.ChangeSort
+            : "Name";
+        ApplyChangeColumnVisibility();
+    }
+
+    private void ApplyChangeColumnVisibility()
+    {
+        foreach (DataGrid grid in new[] { VersionedChangesGrid, UnversionedChangesGrid })
+        {
+            foreach (DataGridColumn column in grid.Columns)
+            {
+                if (column.Tag is not string name) continue;
+                column.IsVisible = name == "Name" || !_hiddenChangeColumnNames.Contains(name);
+            }
+        }
+    }
+
+    private void OnChangeColumnsMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu contextMenu) return;
+        foreach (MenuItem root in contextMenu.Items.OfType<MenuItem>())
+        {
+            foreach (MenuItem item in root.Items.OfType<MenuItem>())
+            {
+                if (item.Tag is string name)
+                    item.IsChecked = !_hiddenChangeColumnNames.Contains(name);
+            }
+        }
+    }
+
+    private void OnChangeColumnVisibilityClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string name } item) return;
+        if (item.IsChecked == true) _hiddenChangeColumnNames.Remove(name);
+        else _hiddenChangeColumnNames.Add(name);
+        ApplyChangeColumnVisibility();
+        SaveCurrentProjectWorkspaceState();
+    }
+
+    private void OnChangesDataGridSorting(object? sender, DataGridColumnEventArgs e)
+    {
+        if (e.Column.Tag is not string sort ||
+            !_viewModel.ChangeSortOptions.Contains(sort, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        _viewModel.ChangeSort = sort;
+    }
 
     private void EnsureCodeWorkspaceForVisibleTab()
     {
@@ -813,7 +937,7 @@ public partial class MainWindow : Window
         FocusedDiffWindow window = new(_viewModel, _localization);
         window.Closed += (_, _) => _focusedDiffWindow = null;
         _focusedDiffWindow = window;
-        window.Show(this);
+        window.Show();
     }
 
     private void OnOpenChangesDiffWindowClick(object? sender, RoutedEventArgs e)
@@ -828,7 +952,7 @@ public partial class MainWindow : Window
         FocusedDiffWindow window = new(_viewModel, DiffWindowSource.WorkingTree, _localization);
         window.Closed += (_, _) => _changesDiffWindow = null;
         _changesDiffWindow = window;
-        window.Show(this);
+        window.Show();
     }
 
     private void OnOpenPullRequestDiffWindowClick(object? sender, RoutedEventArgs e)
@@ -843,7 +967,7 @@ public partial class MainWindow : Window
         FocusedDiffWindow window = new(_viewModel, DiffWindowSource.PullRequest, _localization);
         window.Closed += (_, _) => _pullRequestDiffWindow = null;
         _pullRequestDiffWindow = window;
-        window.Show(this);
+        window.Show();
     }
 
     private void OnOpenCommitExplorerWindowClick(object? sender, RoutedEventArgs e)
@@ -860,7 +984,7 @@ public partial class MainWindow : Window
         CommitExplorerWindow window = new(_viewModel);
         window.Closed += (_, _) => _commitExplorerWindow = null;
         _commitExplorerWindow = window;
-        window.Show(this);
+        window.Show();
     }
 
     private void OnOpenSelectedBranchCommitClick(object? sender, RoutedEventArgs e) =>
@@ -885,7 +1009,7 @@ public partial class MainWindow : Window
                 selectedRevision);
             window.Closed += (_, _) => _commitExplorerWindow = null;
             _commitExplorerWindow = window;
-            window.Show(this);
+            window.Show();
             return;
         }
 
@@ -926,6 +1050,43 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnChangeTreeIncludeClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { DataContext: GitChangeTreeNode node } checkBox) return;
+        _viewModel.SetChangeTreeNodeIncluded(node, checkBox.IsChecked == true);
+        e.Handled = true;
+    }
+
+    private async void OnExpandAllChangesTreeClick(object? sender, RoutedEventArgs e)
+    {
+        Queue<GitChangeTreeNode> pending = new(_viewModel.ChangeTree);
+        int expanded = 0;
+        while (pending.TryDequeue(out GitChangeTreeNode? node))
+        {
+            if (!node.IsDirectory) continue;
+            node.EnsureChildrenLoaded();
+            node.IsExpanded = true;
+            foreach (GitChangeTreeNode child in node.Children)
+            {
+                if (child.IsDirectory) pending.Enqueue(child);
+            }
+
+            if (++expanded % 32 == 0) await Task.Delay(1);
+        }
+    }
+
+    private void OnCollapseAllChangesTreeClick(object? sender, RoutedEventArgs e) =>
+        SetChangeTreeExpansion(_viewModel.ChangeTree, false);
+
+    private static void SetChangeTreeExpansion(IEnumerable<GitChangeTreeNode> nodes, bool expanded)
+    {
+        foreach (GitChangeTreeNode node in nodes)
+        {
+            node.IsExpanded = expanded;
+            SetChangeTreeExpansion(node.Children.Where(child => !child.IsPlaceholder), expanded);
+        }
+    }
+
     private static GitChangeTreeNode? FindChangeTreeParent(
         IEnumerable<GitChangeTreeNode> roots,
         GitChangeTreeNode target)
@@ -940,8 +1101,275 @@ public partial class MainWindow : Window
         return null;
     }
 
+    private void InitializeWorkspaceTabVisibilityEditor()
+    {
+        _workspaceTabVisibilityPresets = CreateWorkspaceTabVisibilityPresets();
+        WorkspaceTabPresetSelector.ItemsSource = _workspaceTabVisibilityPresets;
+        WorkspaceTabVisibilityList.ItemsSource = _workspaceTabVisibilityItems;
+
+        foreach (TabItem tab in AllWorkspaceTabs().Where(tab =>
+                     !ReferenceEquals(tab, ProjectWorkspaceTab) &&
+                     !ReferenceEquals(tab, VisibleTabsWorkspaceTab)))
+        {
+            if (string.IsNullOrWhiteSpace(tab.Name)) continue;
+            WorkspaceCategory category = CategoryFor(tab);
+            WorkspaceTabVisibilityItem item = new(
+                tab.Name,
+                WorkspaceTabDisplayName(tab),
+                WorkspaceCategoryDisplayName(category),
+                isVisible: true);
+            item.VisibilityChanged += OnWorkspaceTabVisibilityItemChanged;
+            _workspaceTabVisibilityItems.Add(item);
+        }
+
+        WorkspaceTabVisibilityPreset initialPreset = _workspaceTabVisibilityPresets.First();
+        WorkspaceTabPresetSelector.SelectedItem = initialPreset;
+        UpdateWorkspaceTabVisibilitySummary();
+    }
+
+    private IReadOnlyList<WorkspaceTabVisibilityPreset> CreateWorkspaceTabVisibilityPresets()
+    {
+        static HashSet<string> Visible(params string[] tabs) => new(tabs, StringComparer.Ordinal);
+        HashSet<string> all = AllWorkspaceTabs()
+            .Where(tab => !string.IsNullOrWhiteSpace(tab.Name))
+            .Select(tab => tab.Name!)
+            .ToHashSet(StringComparer.Ordinal);
+        return
+        [
+            new WorkspaceTabVisibilityPreset(
+                "Full workspace",
+                "Show every CyRevision project tool.",
+                all),
+            new WorkspaceTabVisibilityPreset(
+                "Git essentials",
+                "A compact revision-control workspace without Compose, CI, graphs, network, or AI tools.",
+                Visible(
+                    "ProjectWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
+                    "BranchesWorkspaceTab", "PullRequestsWorkspaceTab", "LfsLocksWorkspaceTab",
+                    "GitLfsWorkspaceTab", "BackupsWorkspaceTab", "HelpWorkspaceTab")),
+            new WorkspaceTabVisibilityPreset(
+                "Developer",
+                "Git, code exploration, console, assets, AI, plugins, and diagnostics.",
+                Visible(
+                    "ProjectWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
+                    "CompositionWorkspaceTab", "BranchesWorkspaceTab", "PullRequestsWorkspaceTab", "CiWorkspaceTab",
+                    "GitGraphsWorkspaceTab", "LfsLocksWorkspaceTab", "GitIgnoreWorkspaceTab", "GitLfsWorkspaceTab",
+                    "BackupsWorkspaceTab", "SolutionExplorerWorkspaceTab", "CodeWorkspaceTab", "ConsoleWorkspaceTab",
+                    "AssetDiffWorkspaceTab", "AiWorkspaceTab", "McpWorkspaceTab", "PluginsWorkspaceTab",
+                    "UnrealWorkspaceTab", "UnrealBuildWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
+            new WorkspaceTabVisibilityPreset(
+                "Minimal",
+                "Only Project, Changes, History, Solution Explorer, Console, and Help.",
+                Visible(
+                    "ProjectWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
+                    "SolutionExplorerWorkspaceTab", "ConsoleWorkspaceTab", "HelpWorkspaceTab")),
+            new WorkspaceTabVisibilityPreset(
+                "Custom",
+                "Manual per-tab visibility for this project.",
+                null,
+                IsCustom: true)
+        ];
+    }
+
+    private void RestoreWorkspaceTabVisibility(ProjectWorkspaceState state)
+    {
+        HashSet<string> knownTabs = _workspaceTabVisibilityItems.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+        _hiddenWorkspaceTabNames.Clear();
+        foreach (string hiddenTab in state.HiddenTabs ?? [])
+        {
+            if (knownTabs.Contains(hiddenTab)) _hiddenWorkspaceTabNames.Add(hiddenTab);
+        }
+
+        _updatingWorkspaceTabVisibility = true;
+        try
+        {
+            foreach (WorkspaceTabVisibilityItem item in _workspaceTabVisibilityItems)
+                item.IsVisible = !_hiddenWorkspaceTabNames.Contains(item.Id);
+
+            WorkspaceTabVisibilityPreset preset = ResolveWorkspaceTabVisibilityPreset(state.TabVisibilityPreset);
+            _workspaceTabVisibilityPreset = preset.Name;
+            WorkspaceTabPresetSelector.SelectedItem = preset;
+        }
+        finally
+        {
+            _updatingWorkspaceTabVisibility = false;
+        }
+
+        UpdateWorkspaceCategoryToggleVisibility();
+        UpdateWorkspaceTabVisibilitySummary();
+    }
+
+    private WorkspaceTabVisibilityPreset ResolveWorkspaceTabVisibilityPreset(string? preferredName = null)
+    {
+        WorkspaceTabVisibilityPreset? preferred = _workspaceTabVisibilityPresets.FirstOrDefault(preset =>
+            !preset.IsCustom && string.Equals(preset.Name, preferredName, StringComparison.Ordinal));
+        if (preferred is not null && WorkspaceTabVisibilityMatches(preferred)) return preferred;
+
+        return _workspaceTabVisibilityPresets.FirstOrDefault(preset =>
+                   !preset.IsCustom && WorkspaceTabVisibilityMatches(preset))
+               ?? _workspaceTabVisibilityPresets.First(preset => preset.IsCustom);
+    }
+
+    private bool WorkspaceTabVisibilityMatches(WorkspaceTabVisibilityPreset preset)
+    {
+        if (preset.VisibleTabs is null) return false;
+        return _workspaceTabVisibilityItems.All(item =>
+            item.IsVisible == preset.VisibleTabs.Contains(item.Id));
+    }
+
+    private void OnWorkspaceTabVisibilityItemChanged(object? sender, EventArgs e)
+    {
+        if (_updatingWorkspaceTabVisibility) return;
+        _hiddenWorkspaceTabNames.Clear();
+        foreach (WorkspaceTabVisibilityItem item in _workspaceTabVisibilityItems.Where(item => !item.IsVisible))
+            _hiddenWorkspaceTabNames.Add(item.Id);
+
+        WorkspaceTabVisibilityPreset preset = ResolveWorkspaceTabVisibilityPreset();
+        _workspaceTabVisibilityPreset = preset.Name;
+        WorkspaceTabPresetSelector.SelectedItem = preset;
+        ApplyCurrentWorkspaceTabVisibility(save: true);
+    }
+
+    private void OnApplyWorkspaceTabVisibilityPresetClick(object? sender, RoutedEventArgs e)
+    {
+        if (WorkspaceTabPresetSelector.SelectedItem is not WorkspaceTabVisibilityPreset { IsCustom: false } preset ||
+            preset.VisibleTabs is null)
+        {
+            return;
+        }
+
+        _updatingWorkspaceTabVisibility = true;
+        try
+        {
+            _hiddenWorkspaceTabNames.Clear();
+            foreach (WorkspaceTabVisibilityItem item in _workspaceTabVisibilityItems)
+            {
+                item.IsVisible = preset.VisibleTabs.Contains(item.Id);
+                if (!item.IsVisible) _hiddenWorkspaceTabNames.Add(item.Id);
+            }
+            _workspaceTabVisibilityPreset = preset.Name;
+        }
+        finally
+        {
+            _updatingWorkspaceTabVisibility = false;
+        }
+
+        ApplyCurrentWorkspaceTabVisibility(save: true);
+    }
+
+    private void OnShowAllWorkspaceTabsClick(object? sender, RoutedEventArgs e)
+    {
+        WorkspaceTabVisibilityPreset preset = _workspaceTabVisibilityPresets.First(item => item.Name == "Full workspace");
+        WorkspaceTabPresetSelector.SelectedItem = preset;
+        OnApplyWorkspaceTabVisibilityPresetClick(sender, e);
+    }
+
+    private void ApplyCurrentWorkspaceTabVisibility(bool save)
+    {
+        UpdateWorkspaceCategoryToggleVisibility();
+        ApplyWorkspaceCategory(_workspaceCategory, selectDefault: false);
+        UpdateWorkspaceTabVisibilitySummary();
+        if (save) SaveCurrentProjectWorkspaceState();
+    }
+
+    private void UpdateWorkspaceCategoryToggleVisibility()
+    {
+        OverviewCategoryToggle.IsVisible = true;
+        GitCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Git).Length > 0;
+        CodeCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Code).Length > 0;
+        NetworkCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Network).Length > 0;
+        ExtensionsCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Extensions).Length > 0;
+    }
+
+    private void UpdateWorkspaceTabVisibilitySummary()
+    {
+        int optionalVisible = _workspaceTabVisibilityItems.Count(item => item.IsVisible);
+        int totalVisible = optionalVisible + 2;
+        int total = _workspaceTabVisibilityItems.Count + 2;
+        string project = _viewModel?.SelectedProject?.Name ?? "this project";
+        WorkspaceTabVisibilitySummary.Text = $"{totalVisible} of {total} tabs visible · saved for {project} · Project and Visible tabs are always available";
+    }
+
+    private void ShowHiddenWorkspaceTabTemporarily(TabItem tab)
+    {
+        WorkspaceCategory category = CategoryFor(tab);
+        _workspaceCategory = category;
+        UpdateWorkspaceCategoryToggleVisibility();
+        ToggleButton categoryToggle = CategoryToggleFor(category);
+        categoryToggle.IsVisible = true;
+        foreach (WorkspaceCategory candidate in Enum.GetValues<WorkspaceCategory>())
+            CategoryToggleFor(candidate).IsChecked = candidate == category;
+
+        TabItem[] normalTabs = EnabledTabsFor(category);
+        foreach (TabItem candidate in AllWorkspaceTabs())
+            candidate.IsVisible = ReferenceEquals(candidate, tab) || normalTabs.Contains(candidate);
+        WorkspaceTabs.SelectedItem = tab;
+    }
+
+    private ToggleButton CategoryToggleFor(WorkspaceCategory category) => category switch
+    {
+        WorkspaceCategory.Overview => OverviewCategoryToggle,
+        WorkspaceCategory.Git => GitCategoryToggle,
+        WorkspaceCategory.Code => CodeCategoryToggle,
+        WorkspaceCategory.Network => NetworkCategoryToggle,
+        _ => ExtensionsCategoryToggle
+    };
+
+    private static string WorkspaceCategoryDisplayName(WorkspaceCategory category) => category switch
+    {
+        WorkspaceCategory.Overview => "Overview",
+        WorkspaceCategory.Git => "Git",
+        WorkspaceCategory.Code => "Code & Assets",
+        WorkspaceCategory.Network => "Team & Network",
+        _ => "Extensions & Help"
+    };
+
+    private static string WorkspaceTabDisplayName(TabItem tab) => tab.Name switch
+    {
+        "MembersWorkspaceTab" => "Members",
+        "VisibleTabsWorkspaceTab" => "Visible tabs",
+        "LicenseWorkspaceTab" => "License",
+        "ChangesWorkspaceTab" => "Changes",
+        "HistoryWorkspaceTab" => "History",
+        "CompositionWorkspaceTab" => "Compose",
+        "BranchesWorkspaceTab" => "Branches",
+        "PullRequestsWorkspaceTab" => "Pull Requests",
+        "CiWorkspaceTab" => "CI / Actions",
+        "GitGraphsWorkspaceTab" => "Git graphs",
+        "LfsLocksWorkspaceTab" => "File locks",
+        "GitIgnoreWorkspaceTab" => "Ignore rules",
+        "GitLfsWorkspaceTab" => "Git LFS",
+        "BackupsWorkspaceTab" => "Backups",
+        "SolutionExplorerWorkspaceTab" => "Solution Explorer",
+        "CodeWorkspaceTab" => "Code search",
+        "ConsoleWorkspaceTab" => "Console & Logs",
+        "AssetDiffWorkspaceTab" => "Asset preview & diff",
+        "AiWorkspaceTab" => "AI Assistant",
+        "McpWorkspaceTab" => "MCP",
+        "SynchronizationWorkspaceTab" => "Syncthing",
+        "VpnWorkspaceTab" => "WireGuard VPN",
+        "SwarmWorkspaceTab" => "Swarm over VPN",
+        "VpnFilesWorkspaceTab" => "VPN files",
+        "TeamChatWorkspaceTab" => "Team chat",
+        "RemoteBuildsWorkspaceTab" => "Remote builds",
+        "DiscordWorkspaceTab" => "Discord agent",
+        "WorkInProgressWorkspaceTab" => "Work in progress",
+        "PluginsWorkspaceTab" => "Plugins",
+        "UnrealWorkspaceTab" => "Unreal",
+        "UnrealBuildWorkspaceTab" => "Unreal builds",
+        "DiagnosticsWorkspaceTab" => "Diagnostics",
+        "HelpWorkspaceTab" => "Help",
+        _ => tab.Header?.ToString() ?? tab.Name ?? "Tool"
+    };
+
     private void NavigateToWorkspace(TabItem tab, Control? focusTarget = null)
     {
+        if (!IsWorkspaceTabEnabled(tab))
+        {
+            ShowHiddenWorkspaceTabTemporarily(tab);
+            (focusTarget ?? tab).Focus();
+            return;
+        }
         ApplyWorkspaceCategory(CategoryFor(tab), selectDefault: false);
         WorkspaceTabs.SelectedItem = tab;
         (focusTarget ?? tab).Focus();
@@ -964,6 +1392,14 @@ public partial class MainWindow : Window
 
     private void ApplyWorkspaceCategory(WorkspaceCategory category, bool selectDefault)
     {
+        UpdateWorkspaceCategoryToggleVisibility();
+        TabItem[] visibleTabs = EnabledTabsFor(category);
+        if (visibleTabs.Length == 0)
+        {
+            category = WorkspaceCategory.Overview;
+            visibleTabs = EnabledTabsFor(category);
+        }
+
         _workspaceCategory = category;
         OverviewCategoryToggle.IsChecked = category == WorkspaceCategory.Overview;
         GitCategoryToggle.IsChecked = category == WorkspaceCategory.Git;
@@ -971,7 +1407,6 @@ public partial class MainWindow : Window
         NetworkCategoryToggle.IsChecked = category == WorkspaceCategory.Network;
         ExtensionsCategoryToggle.IsChecked = category == WorkspaceCategory.Extensions;
 
-        TabItem[] visibleTabs = TabsFor(category);
         foreach (TabItem tab in AllWorkspaceTabs())
         {
             tab.IsVisible = visibleTabs.Contains(tab);
@@ -991,6 +1426,15 @@ public partial class MainWindow : Window
         }
     }
 
+    private TabItem[] EnabledTabsFor(WorkspaceCategory category) =>
+        TabsFor(category).Where(IsWorkspaceTabEnabled).ToArray();
+
+    private bool IsWorkspaceTabEnabled(TabItem tab) =>
+        ReferenceEquals(tab, ProjectWorkspaceTab) ||
+        ReferenceEquals(tab, VisibleTabsWorkspaceTab) ||
+        string.IsNullOrWhiteSpace(tab.Name) ||
+        !_hiddenWorkspaceTabNames.Contains(tab.Name);
+
     private WorkspaceCategory CategoryFor(TabItem tab)
     {
         foreach (WorkspaceCategory category in Enum.GetValues<WorkspaceCategory>())
@@ -1006,7 +1450,7 @@ public partial class MainWindow : Window
 
     private TabItem[] TabsFor(WorkspaceCategory category) => category switch
     {
-        WorkspaceCategory.Overview => [ProjectWorkspaceTab, MembersWorkspaceTab],
+        WorkspaceCategory.Overview => [ProjectWorkspaceTab, MembersWorkspaceTab, VisibleTabsWorkspaceTab, LicenseWorkspaceTab],
         WorkspaceCategory.Git =>
         [
             ChangesWorkspaceTab, HistoryWorkspaceTab, CompositionWorkspaceTab, BranchesWorkspaceTab,
@@ -1024,7 +1468,8 @@ public partial class MainWindow : Window
 
     private TabItem[] AllWorkspaceTabs() =>
     [
-        ProjectWorkspaceTab, MembersWorkspaceTab, ChangesWorkspaceTab, SolutionExplorerWorkspaceTab, CodeWorkspaceTab,
+        ProjectWorkspaceTab, MembersWorkspaceTab, VisibleTabsWorkspaceTab, LicenseWorkspaceTab,
+        ChangesWorkspaceTab, SolutionExplorerWorkspaceTab, CodeWorkspaceTab,
         ConsoleWorkspaceTab, HistoryWorkspaceTab,
         CompositionWorkspaceTab, BranchesWorkspaceTab, PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab,
         LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab, BackupsWorkspaceTab, SynchronizationWorkspaceTab, VpnWorkspaceTab,
@@ -1161,6 +1606,84 @@ public partial class MainWindow : Window
     private void OnOpenDetachedCherryPickClick(object? sender, RoutedEventArgs e) =>
         OpenDetachedWorkspace(DetachedWorkspaceSection.CherryPick);
 
+    private void OnDetachCurrentWorkspaceClick(object? sender, RoutedEventArgs e)
+    {
+        if (WorkspaceTabs.SelectedItem is TabItem tab) DetachWorkspace(tab);
+    }
+
+    private void ConfigureWorkspaceDetachGestures()
+    {
+        foreach (TabItem tab in WorkspaceTabs.Items.OfType<TabItem>())
+        {
+            tab.DoubleTapped += OnWorkspaceTabDoubleTapped;
+            ToolTip.SetTip(tab, "Double-click to open this workspace in a new window");
+        }
+
+        foreach (ToggleButton category in new[]
+                 {
+                     OverviewCategoryToggle,
+                     GitCategoryToggle,
+                     CodeCategoryToggle,
+                     NetworkCategoryToggle,
+                     ExtensionsCategoryToggle
+                 })
+        {
+            category.DoubleTapped += OnWorkspaceCategoryDoubleTapped;
+            ToolTip.SetTip(category, "Double-click to detach the active workspace in this category");
+        }
+    }
+
+    private void OnWorkspaceTabDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not TabItem tab) return;
+        e.Handled = true;
+        WorkspaceTabs.SelectedItem = tab;
+        Dispatcher.UIThread.Post(() => DetachWorkspace(tab));
+    }
+
+    private void OnWorkspaceCategoryDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (WorkspaceTabs.SelectedItem is not TabItem tab) return;
+        e.Handled = true;
+        Dispatcher.UIThread.Post(() => DetachWorkspace(tab));
+    }
+
+    private void OnDetachWorkspaceClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string key }) return;
+        TabItem? tab = key switch
+        {
+            "Changes" => ChangesWorkspaceTab,
+            "History" => HistoryWorkspaceTab,
+            "Compose" => CompositionWorkspaceTab,
+            "Branches" => BranchesWorkspaceTab,
+            "PullRequests" => PullRequestsWorkspaceTab,
+            "Ci" => CiWorkspaceTab,
+            "GitGraphs" => GitGraphsWorkspaceTab,
+            "FileLocks" => LfsLocksWorkspaceTab,
+            "GitLfs" => GitLfsWorkspaceTab,
+            "Backups" => BackupsWorkspaceTab,
+            "SolutionExplorer" => SolutionExplorerWorkspaceTab,
+            "Code" => CodeWorkspaceTab,
+            _ => null
+        };
+        if (tab is not null) DetachWorkspace(tab);
+    }
+
+    private void DetachWorkspace(TabItem tab)
+    {
+        if (_detachedTabWindows.TryGetValue(tab, out DetachedTabWindow? existing))
+        {
+            existing.Activate();
+            return;
+        }
+        string title = tab.Header?.ToString() ?? "Workspace";
+        DetachedTabWindow window = new(tab, title);
+        window.Closed += (_, _) => _detachedTabWindows.Remove(tab);
+        _detachedTabWindows[tab] = window;
+        window.Show();
+    }
+
     private void OpenDetachedWorkspace(DetachedWorkspaceSection section)
     {
         if (_localization is null)
@@ -1171,7 +1694,7 @@ public partial class MainWindow : Window
         DetachedWorkspaceWindow window = new(_viewModel, _localization, section);
         window.Closed += (_, _) => _detachedWorkspaceWindows.Remove(window);
         _detachedWorkspaceWindows.Add(window);
-        window.Show(this);
+        window.Show();
     }
 
     private void OnShowGitGraphsWorkspaceClick(object? sender, RoutedEventArgs e) =>
@@ -1296,8 +1819,29 @@ public partial class MainWindow : Window
     private async void OnSendAiChatClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SendCodexChatMessageAsync();
 
+    private async void OnGenerateAiCommitDescriptionClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.GenerateAiCommitDescriptionAsync();
+
+    private async void OnGenerateAiPullRequestDraftClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.GenerateAiPullRequestDraftAsync();
+
+    private async void OnGenerateAiCodeSummaryClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.GenerateAiCodeSummaryAsync();
+
+    private void OnClearAiCodeSummaryClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.ClearAiCodeSummary();
+
     private void OnCancelAiChatClick(object? sender, RoutedEventArgs e) =>
         _viewModel.CancelAiChat();
+
+    private async void OnCreateAiConversationClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CreateAiConversationAsync();
+
+    private async void OnDeleteAiConversationClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.DeleteSelectedAiConversationAsync();
+
+    private async void OnSaveAiConversationClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveAiConversationSettingsAsync();
 
     private void OnAddAiMcpStdioClick(object? sender, RoutedEventArgs e) =>
         _viewModel.AddAiMcpServer(CyRevision.Plugin.Abstractions.AiMcpTransport.Stdio);
@@ -1344,8 +1888,61 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnRemoveProjectClick(object? sender, RoutedEventArgs e) =>
-        await _viewModel.RemoveSelectedProjectAsync();
+    private async void OnRemoveProjectClick(object? sender, RoutedEventArgs e)
+    {
+        ProjectItemViewModel? project = _viewModel.SelectedProject;
+        if (project is null) return;
+        ProjectRemovalChoice? choice = await ShowRemoveProjectConfirmationAsync(project);
+        if (choice?.Confirmed == true)
+        {
+            await _viewModel.RemoveSelectedProjectAsync(choice.RemoveGeneratedCaches);
+        }
+    }
+
+    private async void OnMoveProjectUpClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.MoveSelectedProjectAsync(-1);
+
+    private async void OnMoveProjectDownClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.MoveSelectedProjectAsync(1);
+
+    private async void OnProjectAccentColorChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox { SelectedItem: string accentColor } && DataContext is MainWindowViewModel)
+        {
+            await _viewModel.SetSelectedProjectAccentColorAsync(accentColor);
+        }
+    }
+
+    private async void OnRefreshProjectLicenseClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshProjectLicenseAsync();
+
+    private void OnApplyProjectLicenseTemplateClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.ApplySelectedProjectLicenseTemplate();
+
+    private async void OnImportProjectLicenseClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFileAsync("Import a license text file");
+        if (path is not null) await _viewModel.ImportProjectLicenseDraftAsync(path);
+    }
+
+    private async void OnSaveProjectLicenseClick(object? sender, RoutedEventArgs e)
+    {
+        ProjectItemViewModel? project = _viewModel.SelectedProject;
+        if (project is null || !_viewModel.CanSaveProjectLicense) return;
+
+        bool overwrite = _viewModel.ProjectLicenseTargetExists;
+        string fileName = _viewModel.ProjectLicenseFileName.Trim();
+        string action = overwrite ? "Replace" : "Create";
+        if (!await ShowConfirmationAsync(
+                overwrite ? "Replace project license" : "Add project license",
+                $"{action} '{fileName}' in {project.Name}? This changes a project file and may affect redistribution rights. Review the complete terms before continuing.",
+                overwrite ? "Replace license" : "Create license"))
+        {
+            return;
+        }
+
+        await _viewModel.SaveProjectLicenseAsync(overwrite);
+    }
 
     private async void OnRefreshClick(object? sender, RoutedEventArgs e) => await _viewModel.RefreshAsync();
 
@@ -1567,7 +2164,7 @@ public partial class MainWindow : Window
             CommitExplorerWindow window = new(_viewModel, _viewModel.PullRequestCommitRevisions, selected);
             window.Closed += (_, _) => _commitExplorerWindow = null;
             _commitExplorerWindow = window;
-            window.Show(this);
+            window.Show();
             return;
         }
         _commitExplorerWindow.ShowRevisions(_viewModel.PullRequestCommitRevisions, selected);
@@ -2451,6 +3048,94 @@ public partial class MainWindow : Window
         return file?.TryGetLocalPath();
     }
 
+    private async Task<ProjectRemovalChoice?> ShowRemoveProjectConfirmationAsync(ProjectItemViewModel project)
+    {
+        CheckBox removeCaches = new()
+        {
+            Content = Translate("Also remove generated CyRevision caches"),
+            IsChecked = false,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold
+        };
+        TextBlock cacheDetails = new()
+        {
+            Text = Translate("This removes only .cyrevision/cache (generated indexes and previews). Git data, project files, AI conversations and worktrees are kept."),
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            MaxWidth = 500,
+            FontSize = 10,
+            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#9B9DA3"))
+        };
+        Button cancel = new()
+        {
+            Content = Translate("Cancel"),
+            Padding = new Avalonia.Thickness(16, 9),
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#202941"))
+        };
+        Button confirm = new()
+        {
+            Content = Translate("Remove from CyRevision"),
+            Padding = new Avalonia.Thickness(16, 9),
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#8A3E51")),
+            Foreground = Avalonia.Media.Brushes.White
+        };
+        Window dialog = new()
+        {
+            Title = Translate("Remove project from CyRevision"),
+            Width = 570,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#10172A")),
+            Content = new StackPanel
+            {
+                Margin = new Avalonia.Thickness(24),
+                Spacing = 14,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = project.Name,
+                        FontSize = 18,
+                        FontWeight = Avalonia.Media.FontWeight.Bold,
+                        Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse(project.AccentColor))
+                    },
+                    new TextBlock
+                    {
+                        Text = project.RootPath,
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                        FontSize = 10,
+                        Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#9B9DA3"))
+                    },
+                    new Border
+                    {
+                        Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#17223A")),
+                        BorderBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#2D3A4E")),
+                        BorderThickness = new Avalonia.Thickness(1),
+                        CornerRadius = new Avalonia.CornerRadius(5),
+                        Padding = new Avalonia.Thickness(12),
+                        Child = new TextBlock
+                        {
+                            Text = Translate("The project folder and repository will stay on disk and will not be modified."),
+                            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#78D7B7"))
+                        }
+                    },
+                    removeCaches,
+                    cacheDetails,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 9,
+                        Children = { cancel, confirm }
+                    }
+                }
+            }
+        };
+        cancel.Click += (_, _) => dialog.Close(null);
+        confirm.Click += (_, _) => dialog.Close(new ProjectRemovalChoice(true, removeCaches.IsChecked == true));
+        return await dialog.ShowDialog<ProjectRemovalChoice?>(this);
+    }
+
     private async Task<bool> ShowConfirmationAsync(
         string title,
         string message,
@@ -2504,4 +3189,6 @@ public partial class MainWindow : Window
     }
 
     private string Translate(string source) => _localization?.Translate(source) ?? source;
+
+    private sealed record ProjectRemovalChoice(bool Confirmed, bool RemoveGeneratedCaches);
 }

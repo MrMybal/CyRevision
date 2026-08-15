@@ -165,10 +165,21 @@
                 <MenuItem Header="Git graphs" Click="OnShowGitGraphsWorkspaceClick" />
                 <Separator />
                 <MenuItem Header="Open detached workspace">
-                    <MenuItem Header="History explorer" Click="OnOpenDetachedHistoryClick" />
-                    <MenuItem Header="Code explorer" Click="OnOpenDetachedCodeClick" />
-                    <MenuItem Header="Multi restore" Click="OnOpenDetachedMultiRestoreClick" />
-                    <MenuItem Header="Branch compare &amp; cherry-pick" Click="OnOpenDetachedCherryPickClick" />
+                    <MenuItem Header="Current workspace" Click="OnDetachCurrentWorkspaceClick" />
+                    <Separator />
+                    <MenuItem Header="Changes" Tag="Changes" Click="OnDetachWorkspaceClick" />
+                    <MenuItem Header="History" Tag="History" Click="OnDetachWorkspaceClick" />
+                    <MenuItem Header="Compose" Tag="Compose" Click="OnDetachWorkspaceClick" />
+                    <MenuItem Header="Branches" Tag="Branches" Click="OnDetachWorkspaceClick" />
+                    <MenuItem Header="Pull Requests" Tag="PullRequests" Click="OnDetachWorkspaceClick" />
+                    <MenuItem Header="CI / Actions" Tag="Ci" Click="OnDetachWorkspaceClick" />
+                    <MenuItem Header="Git graphs" Tag="GitGraphs" Click="OnDetachWorkspaceClick" />
+                    <MenuItem Header="File locks" Tag="FileLocks" Click="OnDetachWorkspaceClick" />
+                    <MenuItem Header="Git LFS" Tag="GitLfs" Click="OnDetachWorkspaceClick" />
+                    <MenuItem Header="Backups" Tag="Backups" Click="OnDetachWorkspaceClick" />
+                    <Separator />
+                    <MenuItem Header="Solution Explorer" Tag="SolutionExplorer" Click="OnDetachWorkspaceClick" />
+                    <MenuItem Header="Code search" Tag="Code" Click="OnDetachWorkspaceClick" />
                 </MenuItem>
                 <Separator />
                 <MenuItem Header="Workspace layout">
@@ -290,29 +301,34 @@
 
         <Border Grid.Row="2" Grid.RowSpan="3" Grid.Column="0" Background="#25272A" BorderBrush="#393B40" BorderThickness="0,0,1,0">
             <Grid RowDefinitions="Auto,*,Auto" Margin="6,8">
-                <Grid ColumnDefinitions="*,Auto" Margin="4,0,2,5">
+                <Grid ColumnDefinitions="*,Auto,Auto" Margin="4,0,2,5" ColumnSpacing="3">
                     <TextBlock Text="PROJECTS" FontSize="9" FontWeight="Bold" Classes="muted" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Classes="danger" Content="Remove" Padding="7,3" MinHeight="23"
-                            Click="OnRemoveProjectClick" IsEnabled="{Binding HasSelectedProject}" />
+                    <Button Grid.Column="1" Classes="secondary" Content="↑" Padding="6,2" MinHeight="23"
+                            ToolTip.Tip="Move project up" Click="OnMoveProjectUpClick"
+                            IsEnabled="{Binding CanMoveSelectedProjectUp}" />
+                    <Button Grid.Column="2" Classes="secondary" Content="↓" Padding="6,2" MinHeight="23"
+                            ToolTip.Tip="Move project down" Click="OnMoveProjectDownClick"
+                            IsEnabled="{Binding CanMoveSelectedProjectDown}" />
                 </Grid>
 
                 <ListBox Grid.Row="1" ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}" Background="Transparent" BorderThickness="0">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid Margin="4,3" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,3">
-                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" TextTrimming="CharacterEllipsis" />
-                                <Border Grid.Column="1" Background="#242C47" CornerRadius="4" Padding="5,1">
+                            <Grid Margin="2,3" ColumnDefinitions="4,*,Auto" RowDefinitions="Auto,Auto,Auto,3" ColumnSpacing="7">
+                                <Border Grid.RowSpan="4" Background="{Binding AccentColor}" CornerRadius="2" />
+                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                <Border Grid.Column="2" Background="#242C47" CornerRadius="4" Padding="5,1">
                                     <TextBlock Text="{Binding Mode}" FontSize="8.5" Foreground="#B8C1D8" />
                                 </Border>
-                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding RootPath}" FontSize="8.5" Classes="muted"
+                                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding RootPath}" FontSize="8.5" Classes="muted"
                                            TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
-                                <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*" Margin="0,2,0,1" ColumnSpacing="6">
+                                <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*" Margin="0,2,0,1" ColumnSpacing="6">
                                     <TextBlock Text="{Binding BranchName}" FontSize="10.5" FontWeight="Bold"
                                                Foreground="{Binding StatusColor}" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Grid.Column="1" Text="{Binding LoadDetail}" FontSize="8" Classes="muted"
                                                TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" />
                                 </Grid>
-            <ProgressBar Grid.Row="3" Grid.ColumnSpan="2" Classes="inlineLoader" Minimum="0" Maximum="100"
+            <ProgressBar Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Classes="inlineLoader" Minimum="0" Maximum="100"
                          Value="{Binding LoadProgress}" IsVisible="{Binding IsLoading}" />
                             </Grid>
                         </DataTemplate>
@@ -340,6 +356,8 @@
                     <TextBlock Text="{Binding ToolStatus}" FontSize="9.5" Classes="muted" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                    <Button Classes="secondary" Content="Detach current tab ↗" Click="OnDetachCurrentWorkspaceClick"
+                            ToolTip.Tip="Open the current tab in a synchronized external window" />
                     <Button Classes="secondary" Content="Open folder" Click="OnOpenProjectFolderClick"
                             ToolTip.Tip="Open the selected project folder in the system file manager" />
                     <Button Classes="secondary" Content="Actualiser" Click="OnRefreshClick" />
@@ -366,38 +384,64 @@
             </Border>
 
             <TabControl x:Name="WorkspaceTabs" Grid.Row="2">
-                <TabItem x:Name="ProjectWorkspaceTab" Header="Projet">
-                    <Grid Margin="0,8,0,0" ColumnDefinitions="1.15*,1*" ColumnSpacing="8">
-                        <Border Classes="card">
-                            <StackPanel Spacing="10">
-                                <TextBlock Text="Mode de fonctionnement" FontSize="18" FontWeight="SemiBold" />
-                                <TextBlock Text="Chaque module reste indépendant : Git peut fonctionner sans Sync et inversement." TextWrapping="Wrap" Classes="muted" />
-                                <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Margin="4">
-                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                                <TextBlock Text="{Binding Description}" FontSize="11" Classes="muted" />
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
-                                <Button Classes="primary" Content="Appliquer ce mode" Click="OnApplyPresetClick" HorizontalAlignment="Left" />
-                            </StackPanel>
-                        </Border>
-                        <Border Grid.Column="1" Classes="card">
-                            <StackPanel Spacing="9">
-                                <TextBlock Text="Profils disponibles" FontSize="18" FontWeight="SemiBold" />
-                                <TextBlock Text="Git uniquement" FontWeight="SemiBold" />
-                                <TextBlock Text="Git + Sync" FontWeight="SemiBold" />
-                                <TextBlock Text="Sync uniquement" FontWeight="SemiBold" />
-                                <TextBlock Text="Sync + versions" FontWeight="SemiBold" />
-                                <TextBlock Text="Backup uniquement" FontWeight="SemiBold" />
-                                <Border Height="1" Background="#29324A" Margin="0,7" />
-                                <TextBlock Text="Changer de profil ne supprime jamais les données déjà stockées." TextWrapping="Wrap" FontSize="11" Foreground="#78D7B7" />
-                            </StackPanel>
-                        </Border>
-                    </Grid>
+                <TabItem x:Name="ProjectWorkspaceTab" Header="Project">
+                    <ScrollViewer Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
+                        <Grid ColumnDefinitions="1.15*,1*" RowDefinitions="Auto" ColumnSpacing="8" RowSpacing="8">
+                            <Border Classes="card">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Operating mode" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock Text="Each module remains independent: Git can run without Sync, and Sync can run without Git."
+                                               TextWrapping="Wrap" Classes="muted" />
+                                    <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Margin="4">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding Description}" FontSize="11" Classes="muted" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <Button Classes="primary" Content="Apply mode" Click="OnApplyPresetClick" HorizontalAlignment="Left" />
+                                    <TextBlock Text="Changing mode never deletes data that is already stored."
+                                               TextWrapping="Wrap" FontSize="10.5" Foreground="#78D7B7" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="1" Classes="card">
+                                <StackPanel Spacing="9">
+                                    <TextBlock Text="Project settings" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding CurrentProjectName}" FontSize="15" FontWeight="SemiBold"
+                                               Foreground="{Binding SelectedProjectAccentColor}" />
+                                    <TextBlock Text="{Binding RepositoryPath}" Classes="muted" FontSize="10"
+                                               TextWrapping="Wrap" />
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                        <TextBlock Text="Project color" VerticalAlignment="Center" Classes="muted" />
+                                        <ComboBox Grid.Column="1" MinHeight="28" ItemsSource="{Binding ProjectAccentColors}"
+                                                  SelectedItem="{Binding SelectedProjectAccentColor, Mode=OneWay}"
+                                                  SelectionChanged="OnProjectAccentColorChanged">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid ColumnDefinitions="26,*" ColumnSpacing="8">
+                                                        <Border Width="22" Height="12" CornerRadius="3" Background="{Binding}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding}" FontSize="10" Classes="muted" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="secondary" Content="Open project folder" Click="OnOpenProjectFolderClick" />
+                                        <Button Classes="danger" Content="Remove from CyRevision…" Click="OnRemoveProjectClick"
+                                                IsEnabled="{Binding HasSelectedProject}" />
+                                    </StackPanel>
+                                    <TextBlock Text="Removal only updates the CyRevision catalogue. Project files stay on disk; generated CyRevision caches are optional."
+                                               TextWrapping="Wrap" FontSize="10.5" Foreground="#78D7B7" />
+                                </StackPanel>
+                            </Border>
+
+                        </Grid>
+                    </ScrollViewer>
                 </TabItem>
 
                 <TabItem x:Name="MembersWorkspaceTab" Header="Members">
@@ -501,6 +545,141 @@
                     </Grid>
                 </TabItem>
 
+                <TabItem x:Name="VisibleTabsWorkspaceTab" Header="Visible tabs">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,Auto,*" RowSpacing="8">
+                        <Border Classes="card" Padding="10">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Visible project tabs" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="WorkspaceTabVisibilitySummary" Classes="muted" FontSize="10.5"
+                                               Text="Project and Visible tabs are always available so hidden tools can be restored." />
+                                </StackPanel>
+                                <Button Grid.Column="1" Classes="secondary" Content="Show all" Click="OnShowAllWorkspaceTabsClick" />
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="1" Classes="card" Padding="8">
+                            <Grid ColumnDefinitions="1.2*,Auto,*" ColumnSpacing="8">
+                                <ComboBox x:Name="WorkspaceTabPresetSelector">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="2">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Description}" FontSize="9.5" Classes="muted"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <Button Grid.Column="1" Classes="primary" Content="Apply preset"
+                                        Click="OnApplyWorkspaceTabVisibilityPresetClick" />
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center" Classes="muted" FontSize="10"
+                                           Text="Presets: Full workspace · Git essentials · Developer · Minimal · Custom" />
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="2" Classes="card" Padding="5">
+                            <ListBox x:Name="WorkspaceTabVisibilityList" Background="#14171D"
+                                     BorderBrush="#343A46" BorderThickness="1" Padding="2" SelectionMode="Single">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal" ItemWidth="285" />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Width="277" Height="31" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7" Margin="1,0">
+                                            <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                                            <Border Grid.Column="2" Background="#252C3A" CornerRadius="3" Padding="5,1"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Category}" FontSize="8.5" Foreground="#9AA8C2" />
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem x:Name="LicenseWorkspaceTab" Header="License">
+                    <ScrollViewer Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
+                        <Border Classes="card">
+                            <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="9">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                    <StackPanel Spacing="2">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="Project license" FontSize="18" FontWeight="SemiBold" />
+                                            <Border Background="#24334D" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding ProjectLicenseDetectedId}" FontSize="9.5" Foreground="#8ED8C2" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding ProjectLicenseStatus}" Classes="muted" FontSize="10.5" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="secondary" Content="Refresh license" Click="OnRefreshProjectLicenseClick" />
+                                </Grid>
+
+                                <ProgressBar Grid.Row="1" Classes="inlineLoader" IsVisible="{Binding IsProjectLicenseLoading}"
+                                             IsIndeterminate="True" />
+
+                                <Grid Grid.Row="2" ColumnDefinitions="1.4*,1*,78,1*" ColumnSpacing="8">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="Starter template" FontSize="9.5" Classes="muted" />
+                                        <ComboBox ItemsSource="{Binding ProjectLicenseTemplates}"
+                                                  SelectedItem="{Binding SelectedProjectLicenseTemplate}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="2">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                        <TextBlock Text="{Binding Description}" FontSize="9.5" Classes="muted"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="3">
+                                        <TextBlock Text="Copyright holder" FontSize="9.5" Classes="muted" />
+                                        <TextBox Text="{Binding ProjectLicenseHolder}" PlaceholderText="Name or organization" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Spacing="3">
+                                        <TextBlock Text="Year" FontSize="9.5" Classes="muted" />
+                                        <TextBox Text="{Binding ProjectLicenseYear}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="3" Spacing="3">
+                                        <TextBlock Text="Root file name" FontSize="9.5" Classes="muted" />
+                                        <TextBox Text="{Binding ProjectLicenseFileName}" PlaceholderText="LICENSE" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <Grid Grid.Row="3" RowDefinitions="Auto,*" RowSpacing="5" MinHeight="420">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="secondary" Content="Apply template to editor" Click="OnApplyProjectLicenseTemplateClick" />
+                                        <Button Classes="secondary" Content="Import text file…" Click="OnImportProjectLicenseClick" />
+                                        <TextBlock Text="Nothing is written until you save." Classes="muted" FontSize="10"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <TextBox Grid.Row="1" Text="{Binding ProjectLicenseDraft}" AcceptsReturn="True"
+                                             FontFamily="Consolas, Cascadia Mono, monospace" FontSize="11"
+                                             TextWrapping="NoWrap" MinHeight="380"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                             PlaceholderText="Select a template, import a file, or enter custom license terms." />
+                                </Grid>
+
+                                <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                    <TextBlock Text="Changing a project license can affect copyright and redistribution rights. Review the final terms with qualified legal counsel."
+                                               Foreground="#F0C56A" TextWrapping="Wrap" FontSize="10.5" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Classes="primary" Content="Save license…" Click="OnSaveProjectLicenseClick"
+                                            IsEnabled="{Binding CanSaveProjectLicense}" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </ScrollViewer>
+                </TabItem>
+
                 <TabItem x:Name="ChangesWorkspaceTab" Header="Modifications">
                     <Grid x:Name="ChangesWorkspaceGrid" Margin="0,8,0,0"
                           ColumnDefinitions="1.05*,8,1.35*" RowDefinitions="Auto,*,Auto" RowSpacing="8">
@@ -560,42 +739,57 @@
                                                     <TextBlock Text="●" Foreground="#61AFEF" FontSize="8" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="1" Text="Versioned files" FontWeight="SemiBold" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="2" Text="{Binding FilteredVersionedChanges.Count, StringFormat={}{0:N0} file(s)}"
-                                                               Classes="muted" VerticalAlignment="Center" />
+                                                               Foreground="#61AFEF" FontSize="10.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                                                 </Grid>
                                             </Border>
-                                            <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredVersionedChanges}"
+                                            <DataGrid x:Name="VersionedChangesGrid" Grid.Row="1" ItemsSource="{Binding FilteredVersionedChanges}"
                                                       SelectedItem="{Binding SelectedChange, Mode=OneWayToSource}"
                                                       Classes="historyCompact" AutoGenerateColumns="False" IsReadOnly="True"
-                                                      GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                      Sorting="OnChangesDataGridSorting"
+                                                      CanUserSortColumns="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0"
+                                                      ToolTip.Tip="Click a header to sort. Right-click to choose visible columns.">
+                                                <DataGrid.ContextMenu>
+                                                    <ContextMenu Opened="OnChangeColumnsMenuOpened">
+                                                        <MenuItem Header="Visible columns">
+                                                            <MenuItem Header="Selection" Tag="Checked" ToggleType="CheckBox" Click="OnChangeColumnVisibilityClick" />
+                                                            <MenuItem Header="Name and path (always visible)" ToggleType="CheckBox" IsChecked="True" IsEnabled="False" />
+                                                            <MenuItem Header="State" Tag="State" ToggleType="CheckBox" Click="OnChangeColumnVisibilityClick" />
+                                                            <MenuItem Header="Lock" Tag="Lock" ToggleType="CheckBox" Click="OnChangeColumnVisibilityClick" />
+                                                            <MenuItem Header="Area" Tag="Area" ToggleType="CheckBox" Click="OnChangeColumnVisibilityClick" />
+                                                        </MenuItem>
+                                                    </ContextMenu>
+                                                </DataGrid.ContextMenu>
                                                 <DataGrid.Columns>
-                                                    <DataGridTemplateColumn Header="" Width="31">
+                                                    <DataGridTemplateColumn Header="✓" Width="29" Tag="Checked" SortMemberPath="IsIncluded">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                                             <CheckBox IsChecked="{Binding IsIncluded, Mode=TwoWay}"
                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                       ToolTip.Tip="Include this file in the next commit" />
                                                         </DataTemplate></DataGridTemplateColumn.CellTemplate>
                                                     </DataGridTemplateColumn>
-                                                    <DataGridTemplateColumn Header="File" Width="*">
+                                                    <DataGridTemplateColumn Header="Name" Width="*" MinWidth="190" Tag="Name" SortMemberPath="FileName">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
-                                                            <Grid RowDefinitions="Auto,Auto" Margin="1,2">
-                                                                <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                                                            <Grid RowDefinitions="Auto,Auto" Margin="1,1">
+                                                                <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"
+                                                                           FontSize="10.5" FontWeight="SemiBold" Foreground="#E6E9EF" />
                                                                 <TextBlock Grid.Row="1" Text="{Binding DirectoryPath}" TextTrimming="CharacterEllipsis"
-                                                                           Classes="muted" FontSize="8.5" />
+                                                                           Foreground="#666D78" FontSize="8" />
                                                             </Grid>
                                                         </DataTemplate></DataGridTemplateColumn.CellTemplate>
                                                     </DataGridTemplateColumn>
-                                                    <DataGridTemplateColumn Header="State" Width="74">
+                                                    <DataGridTemplateColumn Header="State" Width="70" Tag="State" SortMemberPath="State">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                                             <TextBlock Text="{Binding State}" Foreground="{Binding StatusColor}" />
                                                         </DataTemplate></DataGridTemplateColumn.CellTemplate>
                                                     </DataGridTemplateColumn>
-                                                    <DataGridTemplateColumn Header="Lock" Width="105">
+                                                    <DataGridTemplateColumn Header="Lock" Width="38" Tag="Lock" SortMemberPath="HasLock">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
-                                                            <TextBlock Text="{Binding LockShort}" Foreground="{Binding LockColor}"
-                                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding LockOwner}" />
+                                                            <TextBlock Text="{Binding LockIndicator}" Foreground="{Binding LockColor}"
+                                                                       FontSize="12" FontWeight="Bold" HorizontalAlignment="Center"
+                                                                       ToolTip.Tip="{Binding LockOwner}" />
                                                         </DataTemplate></DataGridTemplateColumn.CellTemplate>
                                                     </DataGridTemplateColumn>
-                                                    <DataGridTextColumn Header="Area" Binding="{Binding Area}" Width="78" />
+                                                    <DataGridTextColumn Header="Area" Binding="{Binding Area}" Width="76" Tag="Area" SortMemberPath="Area" />
                                                 </DataGrid.Columns>
                                             </DataGrid>
 
@@ -604,71 +798,114 @@
                                                     <TextBlock Text="●" Foreground="#78D7B7" FontSize="8" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="1" Text="Unversioned files" FontWeight="SemiBold" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="2" Text="{Binding FilteredUnversionedChanges.Count, StringFormat={}{0:N0} file(s)}"
-                                                               Classes="muted" VerticalAlignment="Center" />
+                                                               Foreground="#78D7B7" FontSize="10.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                                                 </Grid>
                                             </Border>
-                                            <DataGrid Grid.Row="3" ItemsSource="{Binding FilteredUnversionedChanges}"
+                                            <DataGrid x:Name="UnversionedChangesGrid" Grid.Row="3" ItemsSource="{Binding FilteredUnversionedChanges}"
                                                       SelectedItem="{Binding SelectedChange, Mode=OneWayToSource}"
                                                       Classes="historyCompact" AutoGenerateColumns="False" IsReadOnly="True"
-                                                      GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                      Sorting="OnChangesDataGridSorting"
+                                                      CanUserSortColumns="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0"
+                                                      ToolTip.Tip="Click a header to sort. Right-click to choose visible columns.">
+                                                <DataGrid.ContextMenu>
+                                                    <ContextMenu Opened="OnChangeColumnsMenuOpened">
+                                                        <MenuItem Header="Visible columns">
+                                                            <MenuItem Header="Selection" Tag="Checked" ToggleType="CheckBox" Click="OnChangeColumnVisibilityClick" />
+                                                            <MenuItem Header="Name and path (always visible)" ToggleType="CheckBox" IsChecked="True" IsEnabled="False" />
+                                                            <MenuItem Header="State" Tag="State" ToggleType="CheckBox" Click="OnChangeColumnVisibilityClick" />
+                                                            <MenuItem Header="Lock" Tag="Lock" ToggleType="CheckBox" Click="OnChangeColumnVisibilityClick" />
+                                                            <MenuItem Header="Area" Tag="Area" ToggleType="CheckBox" Click="OnChangeColumnVisibilityClick" />
+                                                        </MenuItem>
+                                                    </ContextMenu>
+                                                </DataGrid.ContextMenu>
                                                 <DataGrid.Columns>
-                                                    <DataGridTemplateColumn Header="" Width="31">
+                                                    <DataGridTemplateColumn Header="✓" Width="29" Tag="Checked" SortMemberPath="IsIncluded">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                                             <CheckBox IsChecked="{Binding IsIncluded, Mode=TwoWay}"
                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                       ToolTip.Tip="Include this file in the next commit" />
                                                         </DataTemplate></DataGridTemplateColumn.CellTemplate>
                                                     </DataGridTemplateColumn>
-                                                    <DataGridTemplateColumn Header="File" Width="*">
+                                                    <DataGridTemplateColumn Header="Name" Width="*" MinWidth="190" Tag="Name" SortMemberPath="FileName">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
-                                                            <Grid RowDefinitions="Auto,Auto" Margin="1,2">
-                                                                <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                                                            <Grid RowDefinitions="Auto,Auto" Margin="1,1">
+                                                                <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"
+                                                                           FontSize="10.5" FontWeight="SemiBold" Foreground="#E6E9EF" />
                                                                 <TextBlock Grid.Row="1" Text="{Binding DirectoryPath}" TextTrimming="CharacterEllipsis"
-                                                                           Classes="muted" FontSize="8.5" />
+                                                                           Foreground="#666D78" FontSize="8" />
                                                             </Grid>
                                                         </DataTemplate></DataGridTemplateColumn.CellTemplate>
                                                     </DataGridTemplateColumn>
-                                                    <DataGridTemplateColumn Header="State" Width="74">
+                                                    <DataGridTemplateColumn Header="State" Width="70" Tag="State" SortMemberPath="State">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                                             <TextBlock Text="{Binding State}" Foreground="{Binding StatusColor}" />
                                                         </DataTemplate></DataGridTemplateColumn.CellTemplate>
                                                     </DataGridTemplateColumn>
-                                                    <DataGridTemplateColumn Header="Lock" Width="105">
+                                                    <DataGridTemplateColumn Header="Lock" Width="38" Tag="Lock" SortMemberPath="HasLock">
                                                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
-                                                            <TextBlock Text="{Binding LockShort}" Foreground="{Binding LockColor}"
-                                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding LockOwner}" />
+                                                            <TextBlock Text="{Binding LockIndicator}" Foreground="{Binding LockColor}"
+                                                                       FontSize="12" FontWeight="Bold" HorizontalAlignment="Center"
+                                                                       ToolTip.Tip="{Binding LockOwner}" />
                                                         </DataTemplate></DataGridTemplateColumn.CellTemplate>
                                                     </DataGridTemplateColumn>
-                                                    <DataGridTextColumn Header="Area" Binding="{Binding Area}" Width="78" />
+                                                    <DataGridTextColumn Header="Area" Binding="{Binding Area}" Width="76" Tag="Area" SortMemberPath="Area" />
                                                 </DataGrid.Columns>
                                             </DataGrid>
                                         </Grid>
                                     </TabItem>
 
                                     <TabItem Header="Folders">
-                                        <TreeView x:Name="ChangesFolderTree" ItemsSource="{Binding ChangeTree}"
-                                                  SelectedItem="{Binding SelectedChangeTreeNode, Mode=TwoWay}"
-                                                  SelectionChanged="OnChangeTreeSelectionChanged"
-                                                  Classes="compactTree" Background="Transparent" BorderThickness="0" Margin="3">
-                                            <TreeView.ItemTemplate>
-                                                <TreeDataTemplate ItemsSource="{Binding Children}">
-                                                    <Grid ColumnDefinitions="16,20,*,Auto" Height="22" Margin="0" ToolTip.Tip="{Binding RelativePath}">
-                                                        <TextBlock Text="{Binding Icon}" Foreground="{Binding AccentColor}"
-                                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                        <CheckBox Grid.Column="1" IsVisible="{Binding HasChange}" IsEnabled="{Binding CanInclude}"
-                                                                  IsChecked="{Binding Change.IsIncluded, Mode=TwoWay}"
-                                                                  VerticalAlignment="Center" Margin="0,0,4,0" />
-                                                        <TextBlock Grid.Column="2" Text="{Binding Name}" Foreground="{Binding AccentColor}"
-                                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" Margin="4,0,2,0">
-                                                            <TextBlock Text="{Binding Change.PreparationState}" Foreground="{Binding Change.PreparationColor}" FontSize="8.5" />
-                                                            <TextBlock Text="{Binding Change.LockShort}" Foreground="{Binding Change.LockColor}" FontSize="8.5" />
-                                                            <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="8" />
-                                                        </StackPanel>
-                                                    </Grid>
-                                                </TreeDataTemplate>
-                                            </TreeView.ItemTemplate>
-                                        </TreeView>
+                                        <Grid RowDefinitions="28,*">
+                                            <Border Background="#24262A" BorderBrush="#34363A" BorderThickness="0,0,0,1" Padding="6,2">
+                                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="5">
+                                                    <TextBlock Text="Checking a folder includes every eligible file below it."
+                                                               Classes="muted" FontSize="8.5" VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <Button Grid.Column="1" Classes="secondary" Content="Expand all"
+                                                            Click="OnExpandAllChangesTreeClick" Padding="6,2" MinHeight="22" FontSize="9" />
+                                                    <Button Grid.Column="2" Classes="secondary" Content="Collapse all"
+                                                            Click="OnCollapseAllChangesTreeClick" Padding="6,2" MinHeight="22" FontSize="9" />
+                                                </Grid>
+                                            </Border>
+                                            <TreeView x:Name="ChangesFolderTree" Grid.Row="1" ItemsSource="{Binding ChangeTree}"
+                                                      SelectedItem="{Binding SelectedChangeTreeNode, Mode=TwoWay}"
+                                                      SelectionChanged="OnChangeTreeSelectionChanged"
+                                                      Classes="compactTree" Background="Transparent" BorderThickness="0" Margin="3">
+                                                <TreeView.Styles>
+                                                    <Style Selector="TreeViewItem">
+                                                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                                    </Style>
+                                                </TreeView.Styles>
+                                                <TreeView.ItemTemplate>
+                                                    <TreeDataTemplate ItemsSource="{Binding Children}">
+                                                        <Grid ColumnDefinitions="16,20,*,Auto" Height="22" Margin="0" ToolTip.Tip="{Binding RelativePath}">
+                                                            <TextBlock Text="{Binding Icon}" Foreground="{Binding AccentColor}"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                            <CheckBox Grid.Column="1" IsVisible="{Binding CanIncludeRecursively}"
+                                                                      IsChecked="{Binding IsIncluded, Mode=OneWay}"
+                                                                      Click="OnChangeTreeIncludeClick"
+                                                                      VerticalAlignment="Center" Margin="0,0,4,0"
+                                                                      ToolTip.Tip="Include or keep this folder recursively" />
+                                                            <TextBlock Grid.Column="2" Text="{Binding Name}" Foreground="{Binding AccentColor}"
+                                                                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                                       VerticalAlignment="Center" />
+                                                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="5" Margin="5,0,2,0">
+                                                                <TextBlock IsVisible="{Binding IsDirectory}"
+                                                                           Text="{Binding LeafCount, StringFormat={}{0:N0} file(s)}"
+                                                                           Foreground="{Binding AccentColor}" FontSize="9" FontWeight="SemiBold" />
+                                                                <TextBlock IsVisible="{Binding HasChange}" Text="{Binding Change.PreparationState}"
+                                                                           Foreground="{Binding Change.PreparationColor}" FontSize="8.5" />
+                                                                <TextBlock IsVisible="{Binding Change.HasLock}" Text="✓"
+                                                                           Foreground="{Binding Change.LockColor}" FontSize="10" FontWeight="Bold"
+                                                                           ToolTip.Tip="{Binding Change.LockOwner}" />
+                                                                <TextBlock IsVisible="{Binding HasChange}" Text="{Binding Detail}"
+                                                                           Foreground="#666D78" FontSize="8" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </TreeDataTemplate>
+                                                </TreeView.ItemTemplate>
+                                            </TreeView>
+                                        </Grid>
                                     </TabItem>
 
                                     <TabItem Header="Local only">
@@ -737,15 +974,20 @@
                         </Border>
 
                         <Border Grid.Row="2" Grid.ColumnSpan="3" Classes="card" Padding="9">
-                            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="7">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="7">
                                 <TextBlock Text="Commit" FontWeight="SemiBold" VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="{Binding ChangePreparationSummary}" Classes="muted" FontSize="9.5"
                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                <Button Grid.Row="1" Grid.Column="2" Classes="secondary" Content="Stage selected" Click="OnStageAllClick" />
-                                <Button Grid.Row="1" Grid.Column="3" Classes="danger" Content="Rollback selected…" Click="OnRollbackIncludedChangesClick" />
-                                <Button Grid.Row="1" Grid.Column="4" Classes="primary" Content="Commit selected" Click="OnCommitClick"
+                                <Button Grid.Row="1" Grid.Column="2" Classes="secondary" Content="AI description"
+                                        Click="OnGenerateAiCommitDescriptionClick"
+                                        IsEnabled="{Binding CanGenerateAiCommitDescription}"
+                                        ToolTip.Tip="Uses the connected project AI to draft a message; it never commits automatically" />
+                                <Button Grid.Row="1" Grid.Column="3" Classes="secondary" Content="Stage selected" Click="OnStageAllClick" />
+                                <Button Grid.Row="1" Grid.Column="4" Classes="danger" Content="Rollback selected…" Click="OnRollbackIncludedChangesClick" />
+                                <Button Grid.Row="1" Grid.Column="5" Classes="primary" Content="Commit selected" Click="OnCommitClick"
                                         IsEnabled="{Binding CanCommitPreparedChanges}" />
                                 <TextBox Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding CommitMessage}"
+                                         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="34" MaxHeight="76"
                                          PlaceholderText="Describe the selected changes…" />
                             </Grid>
                         </Border>
@@ -880,15 +1122,35 @@
                                           Background="#4B4D52" Cursor="SizeWestEast" />
 
                             <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
-                                <Grid RowDefinitions="42,*">
+                                <Grid RowDefinitions="42,Auto,*">
                                     <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="File preview" FontWeight="SemiBold" FontSize="12" />
-                                            <TextBlock Text="{Binding CodePreviewSummary}" Classes="muted" FontSize="9"
-                                                       TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="File preview" FontWeight="SemiBold" FontSize="12" />
+                                                <TextBlock Text="{Binding CodePreviewSummary}" Classes="muted" FontSize="9"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Classes="secondary" Content="AI summary"
+                                                    Click="OnGenerateAiCodeSummaryClick"
+                                                    IsEnabled="{Binding CanGenerateAiCodeSummary}"
+                                                    ToolTip.Tip="Summarize the selected file with the connected project AI" />
+                                        </Grid>
                                     </Border>
-                                    <Grid Grid.Row="1">
+                                    <Border Grid.Row="1" IsVisible="{Binding HasCodeAiSummary}"
+                                            Background="#202633" BorderBrush="#35445B" BorderThickness="0,0,0,1"
+                                            Padding="10,7" MaxHeight="170">
+                                        <Grid RowDefinitions="Auto,*" ColumnDefinitions="*,Auto">
+                                            <TextBlock Text="AI file summary" Foreground="#78D7B7" FontWeight="SemiBold" FontSize="10" />
+                                            <Button Grid.Column="1" Classes="secondary" Content="Close" Padding="7,2" MinHeight="22"
+                                                    Click="OnClearAiCodeSummaryClick" />
+                                            <ScrollViewer Grid.Row="1" Grid.ColumnSpan="2" Margin="0,5,0,0"
+                                                          VerticalScrollBarVisibility="Auto">
+                                                <controls:MarkdownMessageView Text="{Binding CodeAiSummary}"
+                                                                              RenderMarkdown="{Binding AiRenderMarkdown}" />
+                                            </ScrollViewer>
+                                        </Grid>
+                                    </Border>
+                                    <Grid Grid.Row="2">
                                         <Image Source="{Binding CodePreviewImage}" IsVisible="{Binding CodePreviewIsImage}"
                                                Stretch="Uniform" Margin="14" />
                                         <controls:SyntaxHighlightedCodeView Text="{Binding CodePreviewText}"
@@ -1619,7 +1881,13 @@
                                                 <TextBlock Text="Create pull request" FontSize="15" FontWeight="SemiBold" />
                                                 <TextBlock Text="The source branch must already be pushed to the remote."
                                                            Classes="muted" FontSize="10" TextWrapping="Wrap" />
-                                                <TextBox Text="{Binding NewPullRequestTitle}" PlaceholderText="Title" />
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                                    <TextBox Text="{Binding NewPullRequestTitle}" PlaceholderText="Title" />
+                                                    <Button Grid.Column="1" Classes="secondary" Content="AI draft"
+                                                            Click="OnGenerateAiPullRequestDraftClick"
+                                                            IsEnabled="{Binding CanGenerateAiPullRequestDraft}"
+                                                            ToolTip.Tip="Uses the connected project AI to draft the title and description; it never creates the pull request" />
+                                                </Grid>
                                                 <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
                                                     <StackPanel Spacing="3">
                                                         <TextBlock Text="Head branch" FontSize="10" Classes="muted" />
@@ -1802,7 +2070,7 @@
                                             <TextBlock Text="Create a release" FontWeight="SemiBold" />
                                             <TextBlock Text="Dispatches the release workflow with its version input. No local tag or commit is created."
                                                        Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
-                                            <TextBox Text="{Binding CiReleaseVersion}" PlaceholderText="0.1.14" />
+                                            <TextBox Text="{Binding CiReleaseVersion}" PlaceholderText="0.1.15" />
                                             <Button Classes="primary" Content="Build release on CI" HorizontalAlignment="Left"
                                                     Click="OnDispatchReleaseCiClick" />
                                         </StackPanel>
@@ -3823,7 +4091,7 @@
                 </TabItem>
 
                 <TabItem x:Name="AiWorkspaceTab" Header="AI Assistant">
-                    <Grid Margin="0,8,0,0" ColumnDefinitions="390,6,*">
+                    <Grid Margin="0,8,0,0" ColumnDefinitions="350,6,250,6,*">
                         <Border Classes="card" Padding="12">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Spacing="9">
@@ -3931,11 +4199,68 @@
                         <GridSplitter Grid.Column="1" Width="6" ResizeDirection="Columns"
                                       Background="#393B40" Cursor="SizeWestEast" />
 
-                        <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto" RowSpacing="7">
+                        <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                                <StackPanel Margin="9,8,9,6" Spacing="2">
+                                    <TextBlock Text="Conversations" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="Persistent per project" Classes="muted" FontSize="9.5" />
+                                </StackPanel>
+                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="5" Margin="7,0,7,7">
+                                    <TextBox Text="{Binding NewAiConversationTitle}"
+                                             PlaceholderText="Conversation title…" Padding="6,3" />
+                                    <Button Grid.Column="1" Classes="primary" Content="+" Width="30"
+                                            Click="OnCreateAiConversationClick" ToolTip.Tip="New conversation" />
+                                </Grid>
+                                <ListBox Grid.Row="2" ItemsSource="{Binding AiConversations}"
+                                         SelectedItem="{Binding SelectedAiConversation}"
+                                         Classes="compactList" Background="#0B1221" BorderThickness="0"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Height="44" Margin="6,1" RowDefinitions="Auto,Auto"
+                                                  ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Bottom" />
+                                                <TextBlock Grid.Row="1" Text="{Binding UpdatedText}" Classes="muted"
+                                                           FontSize="8.5" VerticalAlignment="Top" />
+                                                <TextBlock Grid.RowSpan="2" Grid.Column="1" Text="WT"
+                                                           Foreground="#65D6B5" FontSize="8.5"
+                                                           IsVisible="{Binding UseWorktree}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <StackPanel Grid.Row="3" Margin="7" Spacing="5">
+                                    <CheckBox Content="Render Markdown" IsChecked="{Binding AiRenderMarkdown}" />
+                                    <CheckBox Content="Isolated worktree" IsChecked="{Binding AiConversationUseWorktree}"
+                                              ToolTip.Tip="Creates a codex/ai-* branch outside the main working tree on first connection" />
+                                    <TextBlock Text="Pre-prompt" Classes="muted" FontSize="9" />
+                                    <TextBox Text="{Binding AiConversationPrePrompt}" AcceptsReturn="True"
+                                             TextWrapping="Wrap" MinHeight="48" MaxHeight="90"
+                                             PlaceholderText="Conversation-specific instructions…" />
+                                    <TextBlock Text="{Binding AiConversationWorkspace}" Classes="muted" FontSize="8.5"
+                                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AiConversationWorkspace}" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                                        <Button Content="Save settings" Click="OnSaveAiConversationClick" />
+                                        <Button Grid.Column="1" Classes="danger" Content="Delete"
+                                                Click="OnDeleteAiConversationClick" />
+                                    </Grid>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <GridSplitter Grid.Column="3" Width="6" ResizeDirection="Columns"
+                                      Background="#393B40" Cursor="SizeWestEast" />
+
+                        <Grid Grid.Column="4" RowDefinitions="Auto,*,Auto" RowSpacing="7">
                             <Border Classes="card" Padding="10">
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                                     <StackPanel>
-                                        <TextBlock Text="Project Codex chat" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding SelectedAiConversation.Title, FallbackValue='Project Codex chat'}"
+                                                   FontSize="16" FontWeight="SemiBold" />
                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                             <TextBlock Text="{Binding SelectedProject.Name}" Foreground="#65D6B5" FontWeight="SemiBold" />
                                             <TextBlock Text="{Binding SelectedProject.RootPath}" FontSize="10" Classes="muted"
@@ -3977,8 +4302,8 @@
                                                                    FontWeight="SemiBold" />
                                                         <TextBlock Text="{Binding TimestampText}" Classes="muted" FontSize="9.5" />
                                                     </StackPanel>
-                                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
-                                                               FontFamily="Cascadia Mono,JetBrains Mono,Consolas" FontSize="11" />
+                                                    <controls:MarkdownMessageView Text="{Binding Text}"
+                                                                                  RenderMarkdown="{Binding DataContext.AiRenderMarkdown, RelativeSource={RelativeSource AncestorType=Window}}" />
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>
@@ -4233,6 +4558,34 @@
                         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
                             <StackPanel Spacing="8">
                                 <Border Classes="card">
+                                    <StackPanel Spacing="8">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                            <StackPanel Spacing="3">
+                                                <TextBlock Text="{Binding SelectedPlugin.Name, FallbackValue='Select a plugin'}"
+                                                           FontSize="18" FontWeight="SemiBold" />
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding SelectedPlugin.Category}" Foreground="#78D7B7" />
+                                                    <TextBlock Text="{Binding SelectedPlugin.Version, StringFormat='Version {0}'}"
+                                                               Classes="muted" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <Border Grid.Column="1" Background="#203D50" BorderBrush="#3BAA96"
+                                                    BorderThickness="1" CornerRadius="4" Padding="8,3"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding SelectedPlugin.State}"
+                                                           Foreground="#7DE2CC" FontSize="10" FontWeight="SemiBold" />
+                                            </Border>
+                                        </Grid>
+                                        <Border Height="1" Background="#393B40" />
+                                        <TextBlock Text="{Binding SelectedPlugin.Description}"
+                                                   TextWrapping="Wrap" FontSize="12" />
+                                        <TextBlock Text="Select another plugin on the left to inspect its own capabilities and configuration."
+                                                   Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <StackPanel Spacing="8" IsVisible="{Binding IsSelectedUnrealPlugin}">
+                                <Border Classes="card">
                                     <StackPanel Spacing="10">
                                         <Grid ColumnDefinitions="*,Auto">
                                             <StackPanel Spacing="3">
@@ -4310,6 +4663,17 @@
                                                    Classes="muted" FontSize="11" TextWrapping="Wrap" />
                                         <TextBlock Text="CyRevisionUnreal remains useful without CyRevision: its revision dashboard, Git actions, and advisory reservations work independently. Connecting unlocks application refresh and the extended Git/LFS/Sync/backup workflow."
                                                    TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                </StackPanel>
+
+                                <Border Classes="card" IsVisible="{Binding IsSelectedAiPlugin}">
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Text="AI Workspace configuration" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="Open Code &amp; Assets > AI Assistant to manage providers, persistent conversations, Markdown rendering, permissions, pre-prompts, and isolated worktrees."
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="The plugin is optional. Conversation history remains project-scoped under .cyrevision and is ignored by Git."
+                                                   Classes="muted" FontSize="10.5" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>

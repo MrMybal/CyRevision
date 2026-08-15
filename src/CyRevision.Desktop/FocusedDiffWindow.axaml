@@ -10,7 +10,7 @@
         MinWidth="720"
         MinHeight="460"
         Background="#1E1F22"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterScreen">
     <Window.Styles>
         <Style Selector="Button.secondary">
             <Setter Property="Background" Value="#393B40" />

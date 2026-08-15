@@ -80,7 +80,9 @@ public sealed class AiIntegrationPlugin : IAiIntegrationPlugin
                 return new AiChatConnectionResult(
                     true,
                     _codexChatSession.ThreadId,
-                    $"Connected to Codex for {request.ProjectName}.");
+                    string.IsNullOrWhiteSpace(request.ThreadId)
+                        ? $"Connected to a new Codex conversation for {request.ProjectName}."
+                        : $"Resumed Codex conversation for {request.ProjectName}.");
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {

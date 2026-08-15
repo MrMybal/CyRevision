@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.15 Alpha — 2026-08-15
+
+- added project-scoped AI conversations with persistent history, optional Markdown rendering, reusable prompts, isolated worktrees and automatic local Codex availability detection;
+- added AI-assisted commit and pull-request descriptions plus file summaries, while preserving explicit project permissions and read-only defaults;
+- added detachable synchronized workspaces across Git, code, assets and administration tools, with double-click opening and independent window stacking;
+- expanded project administration with persistent ordering and accent colors, safe catalogue removal with optional CyRevision cache cleanup, and a complete project-license editor;
+- redesigned Overview with dedicated Members, Visible tabs and License pages, per-project visibility presets and always-accessible recovery controls;
+- improved the change editor with recursive folder selection, expanded folder trees, sortable checked/name/state/lock/area columns, per-project column visibility and compact file/path presentation.
+
 ## 0.1.14 Alpha — 2026-08-15
 
 - expanded the Unreal integration across UE 4.27–5.8 with C++ and Blueprint-only installation paths, a native revision-control provider, compact toolbar and context-menu tools, lock/WIP views, compatibility diagnostics and safer writable-file behavior;

@@ -88,6 +88,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private readonly RepositoryConsoleService _repositoryConsoleService;
     private readonly ProjectGitCacheStore _projectGitCacheStore = new();
     private readonly GitIgnoreService _gitIgnoreService = new();
+    private readonly ProjectLicenseService _projectLicenseService = new();
     private readonly Dictionary<string, string> _gitIgnoreDrafts = new(StringComparer.Ordinal);
     private readonly Stopwatch _applicationUptime = Stopwatch.StartNew();
     private readonly SemaphoreSlim _operationGate = new(1, 1);
@@ -103,7 +104,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private bool _createHistoricalBranchInWorktree = true;
     private string _historicalWorktreeStatus = "No CyRevision historical worktree loaded.";
     private string _changeSearch = string.Empty;
-    private string _changeSort = "File";
+    private string _changeSort = "Name";
     private string _branchSearch = string.Empty;
     private string _branchSort = "Name";
     private string _selectedBranchSummary = "Select a branch to inspect its commits without switching.";
@@ -122,6 +123,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private string _changeSummary = "0 modification";
     private string _changeSummaryColor = "#A9ABB2";
     private string _currentProjectName = "No project";
+    private int _projectLicenseLoadVersion;
+    private ProjectLicenseSnapshot? _projectLicenseSnapshot;
+    private ProjectLicenseTemplate? _selectedProjectLicenseTemplate;
+    private string _projectLicenseDraft = string.Empty;
+    private string _projectLicenseFileName = "LICENSE";
+    private string _projectLicenseHolder = Environment.UserName;
+    private string _projectLicenseYear = DateTimeOffset.Now.Year.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    private string _projectLicenseStatus = "Select a project to inspect its license.";
+    private string _projectLicenseDetectedId = "None";
+    private bool _isProjectLicenseLoading;
     private bool _isProjectLoading;
     private double _projectLoadProgress;
     private string _projectLoadStage = "No project selected";
@@ -497,9 +508,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private string _codePreviewText = string.Empty;
     private Bitmap? _codePreviewImage;
     private bool _codePreviewIsImage;
+    private bool _codePreviewSupportsAiSummary;
     private string _codePreviewPath = string.Empty;
     private string _codePreviewSummary = "Select a file to preview it.";
     private string _codeSelectionSummary = "Select lines in the preview, then request their Git history.";
+    private string _codeAiSummary = string.Empty;
     private bool _isCodeWorkspaceLoading;
     private bool _isAiIntegrationEnabled;
     private AiProviderDescriptor? _selectedAiProvider;
@@ -683,6 +696,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         _applicationLogService = applicationLogService;
         _repositoryConsoleService = repositoryConsoleService;
         _localChangePreferencesStore = new LocalChangePreferencesStore(applicationPaths.ConfigurationDirectory);
+        _selectedProjectLicenseTemplate = _projectLicenseService.Templates.First();
         _applicationLogService.EntryWritten += OnApplicationLogEntryWritten;
         ReplaceCollection(ApplicationLogEntries, _applicationLogService.LoadRecent());
         ApplyApplicationLogFilter();
@@ -694,6 +708,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     }
 
     public ObservableCollection<ProjectItemViewModel> Projects { get; } = [];
+
+    public IReadOnlyList<string> ProjectAccentColors { get; } =
+    [
+        "#4E9F8A", "#4C9BE8", "#7B7FF0", "#A66DE0", "#D65C9A",
+        "#E06C75", "#E89A4C", "#D9B949", "#70A95B", "#7E8799"
+    ];
+
+    public IReadOnlyList<ProjectLicenseTemplate> ProjectLicenseTemplates => _projectLicenseService.Templates;
 
     public ObservableCollection<GitChangeViewModel> Changes { get; } = new BatchObservableCollection<GitChangeViewModel>();
 
@@ -916,7 +938,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public IReadOnlyList<PullRequestReviewAction> PullRequestReviewActions { get; } = Enum.GetValues<PullRequestReviewAction>();
 
-    public IReadOnlyList<string> ChangeSortOptions { get; } = ["File", "State", "Lock", "Area"];
+    public IReadOnlyList<string> ChangeSortOptions { get; } = ["Checked", "Name", "State", "Lock", "Area"];
 
     public IReadOnlyList<string> BranchSortOptions { get; } =
         ["Name", "Status", "Last update", "Last author", "Ahead", "Behind"];
@@ -1897,6 +1919,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             _ = ResetCodexChatForProjectAsync(value);
             int loadVersion = Interlocked.Increment(ref _projectLoadVersion);
             CurrentProjectName = value?.Name ?? "No project";
+            OnPropertyChanged(nameof(SelectedProjectAccentColor));
+            NotifyProjectOrderStateChanged();
             OnPropertyChanged(nameof(GitConnectionKind));
             OnPropertyChanged(nameof(RuntimeModeSummary));
             bool hasCachedSession = value is not null && _projectSessionCache.ContainsKey(value.Id);
@@ -1910,11 +1934,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             RestoreRepositoryConsoleForProject(value);
             OnPropertyChanged(nameof(HasSelectedProject));
             OnPropertyChanged(nameof(CanConnectCodex));
+            NotifyAiGenerationStateChanged();
             NotifyMemberPanelLayoutChanged();
             OnPropertyChanged(nameof(RepositoryConsoleWorkingDirectory));
             OnPropertyChanged(nameof(CanRunRepositoryCommand));
             LoadRepositoryConsoleHistory();
             ApplyApplicationLogFilter();
+            int licenseLoadVersion = Interlocked.Increment(ref _projectLicenseLoadVersion);
+            _ = LoadProjectLicenseAsync(value, licenseLoadVersion);
+            OnPropertyChanged(nameof(ProjectLicenseTargetExists));
+            OnPropertyChanged(nameof(CanSaveProjectLicense));
             if (value is not null && Directory.Exists(value.RootPath) &&
                 Directory.EnumerateFiles(value.RootPath, "*.uproject", SearchOption.TopDirectoryOnly).Any())
             {
@@ -1934,6 +1963,108 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             }
         }
     }
+
+    public string SelectedProjectAccentColor =>
+        SelectedProject?.AccentColor ?? ProjectItemViewModel.DefaultAccentColor;
+
+    public ProjectLicenseTemplate? SelectedProjectLicenseTemplate
+    {
+        get => _selectedProjectLicenseTemplate;
+        set => SetProperty(ref _selectedProjectLicenseTemplate, value);
+    }
+
+    public string ProjectLicenseDraft
+    {
+        get => _projectLicenseDraft;
+        set
+        {
+            if (SetProperty(ref _projectLicenseDraft, value)) OnPropertyChanged(nameof(CanSaveProjectLicense));
+        }
+    }
+
+    public string ProjectLicenseFileName
+    {
+        get => _projectLicenseFileName;
+        set
+        {
+            if (!SetProperty(ref _projectLicenseFileName, value)) return;
+            OnPropertyChanged(nameof(ProjectLicenseTargetExists));
+            OnPropertyChanged(nameof(CanSaveProjectLicense));
+        }
+    }
+
+    public string ProjectLicenseHolder
+    {
+        get => _projectLicenseHolder;
+        set => SetProperty(ref _projectLicenseHolder, value);
+    }
+
+    public string ProjectLicenseYear
+    {
+        get => _projectLicenseYear;
+        set => SetProperty(ref _projectLicenseYear, value);
+    }
+
+    public string ProjectLicenseStatus
+    {
+        get => _projectLicenseStatus;
+        private set => SetProperty(ref _projectLicenseStatus, value);
+    }
+
+    public string ProjectLicenseDetectedId
+    {
+        get => _projectLicenseDetectedId;
+        private set => SetProperty(ref _projectLicenseDetectedId, value);
+    }
+
+    public bool IsProjectLicenseLoading
+    {
+        get => _isProjectLicenseLoading;
+        private set => SetProperty(ref _isProjectLicenseLoading, value);
+    }
+
+    public bool ProjectLicenseTargetExists
+    {
+        get
+        {
+            try
+            {
+                return SelectedProject is not null &&
+                       File.Exists(Path.Combine(
+                           SelectedProject.RootPath,
+                           ProjectLicenseService.ValidateFileName(ProjectLicenseFileName)));
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+    }
+
+    public bool CanSaveProjectLicense
+    {
+        get
+        {
+            if (SelectedProject is null || string.IsNullOrWhiteSpace(ProjectLicenseDraft)) return false;
+            try
+            {
+                ProjectLicenseService.ValidateFileName(ProjectLicenseFileName);
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+    }
+
+    public bool CanMoveSelectedProjectUp =>
+        SelectedProject is not null && Projects.IndexOf(SelectedProject) > 0;
+
+    public bool CanMoveSelectedProjectDown =>
+        SelectedProject is not null &&
+        Projects.IndexOf(SelectedProject) is int index &&
+        index >= 0 && index < Projects.Count - 1;
 
     public GitChangeViewModel? SelectedChange
     {
@@ -3389,6 +3520,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             {
                 OnPropertyChanged(nameof(CanEnableSelectedPlugin));
                 OnPropertyChanged(nameof(CanDisableSelectedPlugin));
+                OnPropertyChanged(nameof(IsSelectedUnrealPlugin));
+                OnPropertyChanged(nameof(IsSelectedAiPlugin));
             }
         }
     }
@@ -3396,6 +3529,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public bool CanEnableSelectedPlugin => SelectedPlugin is { IsEnabled: false };
 
     public bool CanDisableSelectedPlugin => SelectedPlugin is { IsEnabled: true };
+
+    public bool IsSelectedUnrealPlugin =>
+        string.Equals(SelectedPlugin?.Id, "cyrevision.unreal", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsSelectedAiPlugin =>
+        string.Equals(SelectedPlugin?.Id, "cyrevision.ai", StringComparison.OrdinalIgnoreCase);
 
     public bool IsUnrealIntegrationEnabled
     {
@@ -3659,6 +3798,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             if (SetProperty(ref _selectedCodeNode, value))
             {
+                CodeAiSummary = string.Empty;
+                OnPropertyChanged(nameof(CanGenerateAiCodeSummary));
                 _ = LoadCodeNodeAsync(value);
             }
         }
@@ -3806,7 +3947,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public string CodePreviewText
     {
         get => _codePreviewText;
-        private set => SetProperty(ref _codePreviewText, value);
+        private set
+        {
+            if (!SetProperty(ref _codePreviewText, value)) return;
+            OnPropertyChanged(nameof(CanGenerateAiCodeSummary));
+        }
     }
 
     public Bitmap? CodePreviewImage
@@ -3822,6 +3967,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             if (!SetProperty(ref _codePreviewIsImage, value)) return;
             OnPropertyChanged(nameof(CodePreviewIsText));
+            OnPropertyChanged(nameof(CanGenerateAiCodeSummary));
         }
     }
 
@@ -3844,6 +3990,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         get => _codeSelectionSummary;
         private set => SetProperty(ref _codeSelectionSummary, value);
     }
+
+    public string CodeAiSummary
+    {
+        get => _codeAiSummary;
+        private set
+        {
+            if (!SetProperty(ref _codeAiSummary, value)) return;
+            OnPropertyChanged(nameof(HasCodeAiSummary));
+        }
+    }
+
+    public bool HasCodeAiSummary => !string.IsNullOrWhiteSpace(CodeAiSummary);
 
     public bool IsAiIntegrationEnabled
     {
@@ -3946,6 +4104,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             OnPropertyChanged(nameof(CanConnectCodex));
             OnPropertyChanged(nameof(CanSendAiChat));
             OnPropertyChanged(nameof(CodexConnectButtonText));
+            NotifyAiGenerationStateChanged();
         }
     }
 
@@ -3957,6 +4116,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             if (!SetProperty(ref _isCodexChatBusy, value)) return;
             OnPropertyChanged(nameof(CanConnectCodex));
             OnPropertyChanged(nameof(CanSendAiChat));
+            NotifyAiGenerationStateChanged();
         }
     }
 
@@ -3989,6 +4149,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public bool CanSendAiChat =>
         IsCodexChatConnected && !IsCodexChatBusy && !string.IsNullOrWhiteSpace(AiPrompt);
+
+    public bool CanGenerateAiCommitDescription =>
+        IsCodexChatConnected && !IsCodexChatBusy && IncludedChangeCount > 0;
+
+    public bool CanGenerateAiPullRequestDraft =>
+        IsCodexChatConnected && !IsCodexChatBusy && SelectedProject?.Definition.Features.GitEnabled == true;
+
+    public bool CanGenerateAiCodeSummary =>
+        IsCodexChatConnected && !IsCodexChatBusy &&
+        SelectedCodeNode is { IsDirectory: false, IsPlaceholder: false } &&
+        CodePreviewIsText && _codePreviewSupportsAiSummary && !string.IsNullOrWhiteSpace(CodePreviewText);
 
     public string CodexConnectButtonText => IsCodexChatConnected ? "Disconnect" : "Connect";
 
@@ -4336,7 +4507,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
             IReadOnlyList<ProjectDefinition> definitions = await _projectCatalog.GetAllAsync();
             Projects.Clear();
-            foreach (ProjectDefinition definition in definitions.OrderByDescending(project => project.LastOpenedAt))
+            IEnumerable<ProjectDefinition> orderedDefinitions = definitions.Any(project => project.SidebarOrder is not null)
+                ? definitions.OrderBy(project => project.SidebarOrder ?? int.MaxValue)
+                : definitions.OrderByDescending(project => project.LastOpenedAt);
+            foreach (ProjectDefinition definition in orderedDefinitions)
             {
                 if (Projects.Any(project => ProjectPathsEqual(project.RootPath, definition.RootPath)))
                 {
@@ -4344,6 +4518,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 }
                 Projects.Add(new ProjectItemViewModel(definition));
             }
+
+            await PersistProjectOrderAsync();
 
             if (!string.IsNullOrWhiteSpace(_initialProjectPath) && Directory.Exists(_initialProjectPath))
             {
@@ -4622,6 +4798,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             CodePreviewPath = string.Empty;
             CodePreviewImage = null;
             CodePreviewIsImage = false;
+            SetCodePreviewSupportsAiSummary(false);
             CodePreviewSummary = "Select a file to preview it.";
             ApplyCodeWorkspaceSnapshot(cached);
             return;
@@ -4638,6 +4815,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         CodePreviewPath = string.Empty;
         CodePreviewImage = null;
         CodePreviewIsImage = false;
+        SetCodePreviewSupportsAiSummary(false);
         CodePreviewSummary = "Select a file to preview it.";
         _codeWorkspaceLastUpdated = null;
         CodeWorkspaceSummary = project is null
@@ -5800,11 +5978,389 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             if (ReferenceEquals(_aiAgentCancellation, cancellation))
             {
+                await SaveCurrentAiConversationAsync().ConfigureAwait(true);
                 IsCodexChatBusy = false;
                 _aiAgentCancellation = null;
                 cancellation.Dispose();
             }
         }
+    }
+
+    public async Task GenerateAiCommitDescriptionAsync()
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        GitChangeViewModel[] included = Changes
+            .Where(change => change.IsIncluded && !change.IsLocalOnly)
+            .ToArray();
+        if (project is null || included.Length == 0)
+        {
+            StatusMessage = "Select at least one change before generating a commit description.";
+            return;
+        }
+
+        string selectionKey = BuildAiChangeSelectionKey(included);
+
+        StatusMessage = "AI is preparing the commit descriptionâ€¦";
+        string? response = await RunConnectedAiUtilityAsync(
+            $"Generate a commit description for {included.Length} selected change(s).",
+            token => BuildAiCommitPromptAsync(project, included, token),
+            "commit description");
+        if (string.IsNullOrWhiteSpace(response)) return;
+
+        string currentSelectionKey = BuildAiChangeSelectionKey(Changes
+            .Where(change => change.IsIncluded && !change.IsLocalOnly));
+        if (SelectedProject?.Id != project.Id || !string.Equals(selectionKey, currentSelectionKey, StringComparison.Ordinal))
+        {
+            StatusMessage = "AI commit description kept in the AI conversation because the selected changes changed.";
+            return;
+        }
+
+        CommitMessage = ParseAiCommitMessage(response);
+        StatusMessage = "AI commit description ready. Review it before committing.";
+    }
+
+    public async Task GenerateAiPullRequestDraftAsync()
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        if (project is null || !project.Definition.Features.GitEnabled)
+        {
+            PullRequestStatus = "Select a Git project before generating a pull request draft.";
+            return;
+        }
+
+        string head = string.IsNullOrWhiteSpace(NewPullRequestHeadBranch)
+            ? CurrentBranch
+            : NewPullRequestHeadBranch.Trim();
+        string baseBranch = string.IsNullOrWhiteSpace(NewPullRequestBaseBranch)
+            ? "main"
+            : NewPullRequestBaseBranch.Trim();
+        if (string.IsNullOrWhiteSpace(head) || head == "â€”" || head.StartsWith("Loading", StringComparison.OrdinalIgnoreCase))
+        {
+            PullRequestStatus = "Enter the pull request head branch first.";
+            return;
+        }
+
+        NewPullRequestHeadBranch = head;
+        NewPullRequestBaseBranch = baseBranch;
+        PullRequestStatus = "AI is preparing the pull request draftâ€¦";
+        string? response = await RunConnectedAiUtilityAsync(
+            $"Draft a pull request from {head} to {baseBranch}.",
+            token => BuildAiPullRequestPromptAsync(project, head, baseBranch, token),
+            "pull request draft");
+        if (string.IsNullOrWhiteSpace(response)) return;
+
+        if (SelectedProject?.Id != project.Id ||
+            !string.Equals(NewPullRequestHeadBranch.Trim(), head, StringComparison.Ordinal) ||
+            !string.Equals(NewPullRequestBaseBranch.Trim(), baseBranch, StringComparison.Ordinal))
+        {
+            PullRequestStatus = "AI pull request draft kept in the AI conversation because the selected branches changed.";
+            return;
+        }
+
+        (string title, string body) = ParseAiPullRequestDraft(response);
+        NewPullRequestTitle = title;
+        NewPullRequestBody = body;
+        PullRequestStatus = "AI pull request draft ready. Review it before creating the pull request.";
+    }
+
+    public async Task GenerateAiCodeSummaryAsync()
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        CodeTreeNode? node = SelectedCodeNode;
+        if (project is null || node is not { IsDirectory: false, IsPlaceholder: false } ||
+            CodePreviewIsImage || string.IsNullOrWhiteSpace(CodePreviewText))
+        {
+            StatusMessage = "Select a readable code file before asking AI for a summary.";
+            return;
+        }
+
+        string previewText = CodePreviewText;
+        string relativePath = node.RelativePath;
+        CodeAiSummary = "AI is summarizing this fileâ€¦";
+        string? response = await RunConnectedAiUtilityAsync(
+            $"Summarize {relativePath}.",
+            _ => Task.FromResult(BuildAiCodeSummaryPrompt(project, relativePath, previewText)),
+            "code summary");
+        if (SelectedProject?.Id != project.Id ||
+            !string.Equals(SelectedCodeNode?.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase))
+            return;
+        CodeAiSummary = string.IsNullOrWhiteSpace(response)
+            ? "The AI assistant did not return a summary."
+            : response.Trim();
+    }
+
+    public void ClearAiCodeSummary() => CodeAiSummary = string.Empty;
+
+    private async Task<string?> RunConnectedAiUtilityAsync(
+        string displayRequest,
+        Func<CancellationToken, Task<string>> promptFactory,
+        string operationName)
+    {
+        IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        ProjectItemViewModel? project = SelectedProject;
+        if (!IsCodexChatConnected || IsCodexChatBusy || plugin is null || project is null)
+        {
+            StatusMessage = "Connect an AI assistant for this project first.";
+            return null;
+        }
+
+        _aiAgentCancellation?.Cancel();
+        _aiAgentCancellation?.Dispose();
+        CancellationTokenSource cancellation = new();
+        _aiAgentCancellation = cancellation;
+        AiChatMessageViewModel userMessage = new("user", displayRequest);
+        AiChatMessageViewModel assistantMessage = new("assistant", string.Empty);
+        AiChatMessages.Add(userMessage);
+        AiChatMessages.Add(assistantMessage);
+        IsCodexChatBusy = true;
+        CodexConnectionStatus = $"Codex is generating the {operationName}â€¦";
+        Progress<AiChatProgress> progress = new(update =>
+        {
+            if (update.Kind == "delta")
+                assistantMessage.Append(update.Text);
+            else if (update.Kind is "status" or "error")
+                CodexConnectionStatus = update.Text;
+        });
+
+        try
+        {
+            string prompt = await promptFactory(cancellation.Token);
+            AiChatTurnResult result = await plugin.SendCodexChatAsync(prompt, progress, cancellation.Token);
+            if (string.IsNullOrWhiteSpace(assistantMessage.Text))
+                assistantMessage.Append(string.IsNullOrWhiteSpace(result.Response) ? result.Diagnostic : result.Response);
+            AiResponse = assistantMessage.Text;
+            CodexConnectionStatus = result.Succeeded
+                ? $"Codex generated the {operationName}."
+                : $"Codex could not generate the {operationName}: {result.Diagnostic}";
+            _applicationLogService.Information(
+                "ai.codex",
+                $"generated {operationName} success={result.Succeeded} thread=\"{CodexChatThreadId}\" duration={result.Duration.TotalMilliseconds:N0}ms",
+                project.RootPath);
+            return result.Succeeded ? assistantMessage.Text : null;
+        }
+        catch (OperationCanceledException)
+        {
+            CodexConnectionStatus = $"AI {operationName} cancelled.";
+            if (string.IsNullOrWhiteSpace(assistantMessage.Text)) assistantMessage.Append("Generation cancelled.");
+            return null;
+        }
+        catch (Exception exception)
+        {
+            CodexConnectionStatus = exception.Message;
+            if (string.IsNullOrWhiteSpace(assistantMessage.Text)) assistantMessage.Append($"Generation error: {exception.Message}");
+            _applicationLogService.Error("ai.codex", $"{operationName} generation failed", exception, project.RootPath);
+            return null;
+        }
+        finally
+        {
+            if (ReferenceEquals(_aiAgentCancellation, cancellation))
+            {
+                await SaveCurrentAiConversationAsync().ConfigureAwait(true);
+                IsCodexChatBusy = false;
+                _aiAgentCancellation = null;
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    private async Task<string> BuildAiCommitPromptAsync(
+        ProjectItemViewModel project,
+        IReadOnlyList<GitChangeViewModel> included,
+        CancellationToken cancellationToken)
+    {
+        StringBuilder prompt = new();
+        prompt.AppendLine("Act as a senior developer preparing a Git commit message.");
+        prompt.AppendLine($"Repository: {project.Name}");
+        prompt.AppendLine($"Branch: {CurrentBranch}");
+        prompt.AppendLine($"UI language: {_localization.CurrentLanguageCode}");
+        prompt.AppendLine("Only describe the selected changes listed below. Do not suggest commands and do not perform any Git action.");
+        prompt.AppendLine("Return exactly this format, without a Markdown code fence:");
+        prompt.AppendLine("SUBJECT: one imperative subject line, preferably 72 characters or fewer");
+        prompt.AppendLine("BODY:");
+        prompt.AppendLine("an optional concise body explaining the important changes; leave empty when unnecessary");
+        prompt.AppendLine();
+        prompt.AppendLine("SELECTED FILES:");
+        foreach (GitChangeViewModel change in included.Take(120))
+        {
+            prompt.Append("- ").Append(change.State).Append(" | ").Append(change.Path);
+            if (change.Change.IsLfsObject) prompt.Append(" | LFS");
+            if (change.HasLock) prompt.Append(" | ").Append(change.LockOwner);
+            prompt.AppendLine();
+        }
+        if (included.Count > 120) prompt.AppendLine($"- â€¦ {included.Count - 120} additional selected file(s)");
+
+        int patchCount = 0;
+        int remainingPatchCharacters = 42_000;
+        foreach (GitChangeViewModel change in included.Where(change => IsLikelyTextFile(change.Path)).Take(8))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (remainingPatchCharacters <= 0) break;
+            try
+            {
+                string patch = change.IsUntracked
+                    ? await BuildUntrackedFileDiffAsync(project.RootPath, change.Path, cancellationToken)
+                    : await _gitService.GetDiffAsync(
+                        project.RootPath,
+                        change.Path,
+                        change.Change.IsStaged,
+                        cancellationToken);
+                if (string.IsNullOrWhiteSpace(patch)) continue;
+                int take = Math.Min(8_000, Math.Min(remainingPatchCharacters, patch.Length));
+                prompt.AppendLine().AppendLine($"PATCH {change.Path}:");
+                prompt.AppendLine(patch[..take]);
+                if (take < patch.Length) prompt.AppendLine("[patch truncated]");
+                remainingPatchCharacters -= take;
+                patchCount++;
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                prompt.AppendLine($"Patch unavailable for {change.Path}: {exception.Message}");
+            }
+        }
+        if (patchCount == 0) prompt.AppendLine().AppendLine("No textual patch was available; infer the message conservatively from the selected file list.");
+        return prompt.ToString();
+    }
+
+    private async Task<string> BuildAiPullRequestPromptAsync(
+        ProjectItemViewModel project,
+        string head,
+        string baseBranch,
+        CancellationToken cancellationToken)
+    {
+        StringBuilder prompt = new();
+        prompt.AppendLine("Act as a senior developer drafting a pull request.");
+        prompt.AppendLine($"Repository: {project.Name}");
+        prompt.AppendLine($"Head branch: {head}");
+        prompt.AppendLine($"Base branch: {baseBranch}");
+        prompt.AppendLine($"UI language: {_localization.CurrentLanguageCode}");
+        prompt.AppendLine("Do not create, update, merge, or publish anything. Produce a draft for the user to review.");
+        prompt.AppendLine("Return exactly this format, without a Markdown code fence:");
+        prompt.AppendLine("TITLE: concise pull request title");
+        prompt.AppendLine("BODY:");
+        prompt.AppendLine("Markdown description with a short Summary and Testing section. Do not invent tests.");
+        prompt.AppendLine();
+
+        try
+        {
+            GitBranchComparison comparison = await _gitService.CompareBranchesAsync(
+                project.RootPath,
+                head,
+                baseBranch,
+                cancellationToken);
+            GitBranchComparisonCommit[] sourceCommits = comparison.Commits
+                .Where(commit => commit.Presence == GitBranchCommitPresence.SourceOnly)
+                .ToArray();
+            prompt.AppendLine($"SOURCE-ONLY COMMITS: {sourceCommits.Length}");
+            foreach (GitBranchComparisonCommit commit in sourceCommits.Take(80))
+            {
+                GitRevision revision = commit.Revision;
+                prompt.AppendLine($"- {revision.ShortHash} | {revision.Subject} | {revision.AuthorName} | {revision.AuthoredAt:O}");
+            }
+            if (sourceCommits.Length > 80) prompt.AppendLine($"- â€¦ {sourceCommits.Length - 80} additional commit(s)");
+
+            prompt.AppendLine().AppendLine("CHANGED FILES FROM REPRESENTATIVE COMMITS:");
+            foreach (GitBranchComparisonCommit commit in sourceCommits.Take(8))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                GitCommitDetails details = await _gitService.GetCommitDetailsAsync(
+                    project.RootPath,
+                    commit.Revision.Hash,
+                    cancellationToken);
+                prompt.AppendLine($"- {commit.Revision.ShortHash}: +{details.AddedLines}/-{details.DeletedLines}, {details.BinaryFileCount} binary");
+                foreach (GitCommitFileChange file in details.Files.Take(30))
+                    prompt.AppendLine($"  - {file.Kind}: {file.Path} ({file.ChangeSummary})");
+                if (details.Files.Count > 30) prompt.AppendLine($"  - â€¦ {details.Files.Count - 30} additional file(s)");
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            prompt.AppendLine($"Branch comparison unavailable: {exception.Message}");
+            prompt.AppendLine("Recent visible history (use conservatively):");
+            foreach (GitRevision revision in History.Take(40))
+                prompt.AppendLine($"- {revision.ShortHash} | {revision.Subject} | {revision.AuthorName}");
+        }
+        return prompt.ToString();
+    }
+
+    private string BuildAiCodeSummaryPrompt(ProjectItemViewModel project, string relativePath, string content)
+    {
+        const int maximumCharacters = 64_000;
+        string bounded = content.Length <= maximumCharacters ? content : content[..maximumCharacters];
+        return $"""
+               Act as a senior developer reviewing one file. Summarize it for another developer.
+               Repository: {project.Name}
+               File: {relativePath}
+               UI language: {_localization.CurrentLanguageCode}
+
+               Explain the file's purpose, main responsibilities, important data/control flow, dependencies, and noteworthy risks or extension points. Be concise and use readable Markdown. Do not modify the file and do not suggest Git actions.
+               {(content.Length > maximumCharacters ? "The preview is truncated; explicitly mention that the summary covers only the available prefix." : string.Empty)}
+
+               FILE CONTENT:
+               {bounded}
+               """;
+    }
+
+    private static string ParseAiCommitMessage(string response)
+    {
+        string normalized = StripMarkdownFence(response);
+        string[] lines = normalized.Replace("\r\n", "\n").Split('\n');
+        int subjectIndex = Array.FindIndex(lines, line => line.TrimStart().StartsWith("SUBJECT:", StringComparison.OrdinalIgnoreCase));
+        int bodyIndex = Array.FindIndex(lines, line => line.Trim().Equals("BODY:", StringComparison.OrdinalIgnoreCase));
+        if (subjectIndex >= 0)
+        {
+            string subject = lines[subjectIndex][(lines[subjectIndex].IndexOf(':') + 1)..].Trim().Trim('"');
+            string body = bodyIndex >= 0
+                ? string.Join(Environment.NewLine, lines.Skip(bodyIndex + 1)).Trim()
+                : string.Empty;
+            return string.IsNullOrWhiteSpace(body) ? subject : subject + Environment.NewLine + Environment.NewLine + body;
+        }
+        return normalized.Trim();
+    }
+
+    private static (string Title, string Body) ParseAiPullRequestDraft(string response)
+    {
+        string normalized = StripMarkdownFence(response);
+        string[] lines = normalized.Replace("\r\n", "\n").Split('\n');
+        int titleIndex = Array.FindIndex(lines, line => line.TrimStart().StartsWith("TITLE:", StringComparison.OrdinalIgnoreCase));
+        int bodyIndex = Array.FindIndex(lines, line => line.Trim().Equals("BODY:", StringComparison.OrdinalIgnoreCase));
+        string title = titleIndex >= 0
+            ? lines[titleIndex][(lines[titleIndex].IndexOf(':') + 1)..].Trim().Trim('"')
+            : lines.FirstOrDefault(line => !string.IsNullOrWhiteSpace(line))?.Trim().TrimStart('#', ' ').Trim() ?? "Pull request";
+        string body = bodyIndex >= 0
+            ? string.Join(Environment.NewLine, lines.Skip(bodyIndex + 1)).Trim()
+            : string.Join(Environment.NewLine, lines.SkipWhile(line => string.IsNullOrWhiteSpace(line) || line.Contains(title, StringComparison.Ordinal)).SkipWhile(string.IsNullOrWhiteSpace)).Trim();
+        return (title, body);
+    }
+
+    private static string StripMarkdownFence(string text)
+    {
+        string trimmed = text.Trim();
+        if (!trimmed.StartsWith("```", StringComparison.Ordinal)) return trimmed;
+        int firstLineEnd = trimmed.IndexOf('\n');
+        if (firstLineEnd < 0) return trimmed.Trim('`').Trim();
+        string withoutOpening = trimmed[(firstLineEnd + 1)..];
+        int closing = withoutOpening.LastIndexOf("```", StringComparison.Ordinal);
+        return (closing >= 0 ? withoutOpening[..closing] : withoutOpening).Trim();
+    }
+
+    private static bool IsLikelyTextFile(string path)
+    {
+        string extension = Path.GetExtension(path);
+        return extension.ToLowerInvariant() is not
+            (".uasset" or ".umap" or ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".ico" or
+             ".zip" or ".7z" or ".rar" or ".dll" or ".exe" or ".pdb" or ".so" or ".dylib" or ".a" or ".lib");
+    }
+
+    private static string BuildAiChangeSelectionKey(IEnumerable<GitChangeViewModel> changes) =>
+        string.Join("\n", changes
+            .Select(change => $"{change.State}|{change.Path}|{change.Change.IsStaged}")
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase));
+
+    private void NotifyAiGenerationStateChanged()
+    {
+        OnPropertyChanged(nameof(CanGenerateAiCommitDescription));
+        OnPropertyChanged(nameof(CanGenerateAiPullRequestDraft));
+        OnPropertyChanged(nameof(CanGenerateAiCodeSummary));
     }
 
     public void CancelAiChat()
@@ -5820,13 +6376,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         CancellationToken cancellationToken)
     {
         CodexConnectionStatus = $"Connecting Codex to {project.Name}â€¦";
+        string workingDirectory = await ResolveAiConversationWorkspaceAsync(project, cancellationToken)
+            .ConfigureAwait(true);
+        AiConversationViewModel? conversation = SelectedAiConversation;
         AiChatConnectionResult connection = await plugin.ConnectCodexChatAsync(
             new AiChatConnectRequest(
                 project.Name,
                 project.RootPath,
                 executablePath,
                 AiModel,
-                BuildAiWorkspacePermissions()),
+                BuildAiWorkspacePermissions(),
+                conversation?.ThreadId ?? string.Empty,
+                workingDirectory,
+                conversation?.PrePrompt ?? string.Empty),
             cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (SelectedProject?.Id != project.Id)
@@ -5841,10 +6403,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         CodexConnectionStatus = connection.Status;
         if (!connection.Connected) return;
 
-        AiChatMessages.Clear();
-        AiChatMessages.Add(new AiChatMessageViewModel(
-            "system",
-            $"Connected to local Codex. Project: {project.Name}{Environment.NewLine}Workspace: {project.RootPath}"));
+        if (conversation is not null)
+        {
+            conversation.ThreadId = connection.ThreadId;
+            conversation.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+        if (AiChatMessages.Count == 0)
+        {
+            AiChatMessages.Add(new AiChatMessageViewModel(
+                "system",
+                $"Connected to local Codex. Project: {project.Name}{Environment.NewLine}Workspace: {workingDirectory}"));
+        }
+        await SaveCurrentAiConversationAsync(cancellationToken).ConfigureAwait(true);
         _applicationLogService.Information(
             "ai.codex",
             $"connected project=\"{project.Name}\" thread=\"{connection.ThreadId}\"",
@@ -5864,7 +6434,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             }
         }
         IsCodexChatConnected = false;
-        CodexChatThreadId = string.Empty;
+        CodexChatThreadId = SelectedAiConversation?.ThreadId ?? string.Empty;
         _codexChatProjectId = null;
         CodexConnectionStatus = IsCodexDetected ? "Codex detected. Connect when ready." : "Codex is disconnected.";
         if (clearMessages) AiChatMessages.Clear();
@@ -5872,8 +6442,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     private async Task ResetCodexChatForProjectAsync(ProjectItemViewModel? project)
     {
-        if (_codexChatProjectId is null || _codexChatProjectId == project?.Id) return;
-        await DisconnectCodexChatAsync(clearMessages: true);
+        await SaveCurrentAiConversationAsync().ConfigureAwait(true);
+        if (_codexChatProjectId is not null)
+            await DisconnectCodexChatAsync(clearMessages: true).ConfigureAwait(true);
+        await LoadAiConversationsForProjectAsync(project).ConfigureAwait(true);
+        if (project is not null && IsAiIntegrationEnabled && SelectedProject?.Id == project.Id)
+            await DetectCodexAsync(autoConnect: true).ConfigureAwait(true);
     }
 
     private AiWorkspacePermission BuildAiWorkspacePermissions()
@@ -6060,6 +6634,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         CodePreviewPath = string.Empty;
         CodePreviewImage = null;
         CodePreviewIsImage = false;
+        SetCodePreviewSupportsAiSummary(false);
         if (project is null || node is null || node.IsPlaceholder)
         {
             CodePreviewSummary = "Select a file to preview it.";
@@ -6178,6 +6753,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     {
         CodePreviewImage = null;
         CodePreviewIsImage = false;
+        SetCodePreviewSupportsAiSummary(!preview.IsBinary);
         CodePreviewPath = preview.RelativePath;
         CodePreviewText = preview.IsBinary
             ? $"No active CyRevision plugin provides a reader or preview for {Path.GetExtension(preview.RelativePath)} files."
@@ -6205,14 +6781,23 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             CodePreviewText = string.Empty;
             CodePreviewImage = new Bitmap(presentation.ImagePath);
             CodePreviewIsImage = true;
+            SetCodePreviewSupportsAiSummary(false);
             return;
         }
 
         CodePreviewImage = null;
         CodePreviewIsImage = false;
+        SetCodePreviewSupportsAiSummary(true);
         CodePreviewText = string.IsNullOrWhiteSpace(presentation.TextContent)
             ? presentation.Summary
             : presentation.TextContent;
+    }
+
+    private void SetCodePreviewSupportsAiSummary(bool value)
+    {
+        if (_codePreviewSupportsAiSummary == value) return;
+        _codePreviewSupportsAiSummary = value;
+        OnPropertyChanged(nameof(CanGenerateAiCodeSummary));
     }
 
     public async Task LoadCodeDirectoryAsync(
@@ -6838,7 +7423,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }, "Dossier ajouté en mode Sync uniquement (moteur arrêté)");
     }
 
-    public async Task RemoveSelectedProjectAsync()
+    public async Task RemoveSelectedProjectAsync(bool removeGeneratedCaches = false)
     {
         if (SelectedProject is null)
         {
@@ -6852,8 +7437,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             return;
         }
 
-        Guid projectId = SelectedProject.Id;
-        await RunOperationAsync("Retrait du catalogue…", async () =>
+        ProjectItemViewModel projectToRemove = SelectedProject;
+        Guid projectId = projectToRemove.Id;
+        int previousIndex = Projects.IndexOf(projectToRemove);
+        string? cacheCleanupWarning = null;
+        _projectLoadCancellation?.Cancel();
+        _codeWorkspaceCancellation?.Cancel();
+        _codePreviewCancellation?.Cancel();
+        _automaticGitRefreshCancellation?.Cancel();
+        _gitCacheSaveCancellation?.Cancel();
+        await RunOperationAsync("Removing project from CyRevision…", async () =>
         {
             await _projectCatalog.RemoveAsync(projectId);
             ProjectItemViewModel? item = Projects.FirstOrDefault(project => project.Id == projectId);
@@ -6862,12 +7455,187 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 Projects.Remove(item);
             }
 
-            SelectedProject = Projects.FirstOrDefault();
+            EvictProjectCaches(projectId);
+            if (removeGeneratedCaches)
+            {
+                try
+                {
+                    await Task.Run(() => DeleteProjectGeneratedCache(projectToRemove.RootPath));
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    cacheCleanupWarning = exception.Message;
+                    _applicationLogService.Warning(
+                        "projects",
+                        $"cache cleanup failed project=\"{projectToRemove.Name}\" error=\"{exception.Message}\"",
+                        projectToRemove.RootPath);
+                }
+            }
+
+            await PersistProjectOrderAsync();
+            SelectedProject = Projects.Count == 0
+                ? null
+                : Projects[Math.Clamp(previousIndex, 0, Projects.Count - 1)];
             if (SelectedProject is null)
             {
                 ClearRepositoryView();
             }
-        }, "Projet retiré du catalogue — aucun fichier supprimé");
+            NotifyProjectOrderStateChanged();
+            _applicationLogService.Information(
+                "projects",
+                $"removed from catalog project=\"{projectToRemove.Name}\" generated-cache-removed={removeGeneratedCaches}",
+                projectToRemove.RootPath);
+        }, removeGeneratedCaches
+            ? "Project removed from CyRevision · generated caches cleaned"
+            : "Project removed from CyRevision · files on disk were not changed");
+
+        if (cacheCleanupWarning is not null)
+        {
+            StatusMessage = $"Project removed, but its generated cache could not be fully cleaned: {cacheCleanupWarning}";
+        }
+    }
+
+    public async Task MoveSelectedProjectAsync(int offset)
+    {
+        if (SelectedProject is null || offset == 0) return;
+        int currentIndex = Projects.IndexOf(SelectedProject);
+        int targetIndex = Math.Clamp(currentIndex + Math.Sign(offset), 0, Projects.Count - 1);
+        if (currentIndex < 0 || currentIndex == targetIndex) return;
+
+        Projects.Move(currentIndex, targetIndex);
+        await PersistProjectOrderAsync();
+        NotifyProjectOrderStateChanged();
+        StatusMessage = $"{SelectedProject.Name} moved to position {targetIndex + 1}";
+    }
+
+    public async Task SetSelectedProjectAccentColorAsync(string? accentColor)
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        if (project is null || string.IsNullOrWhiteSpace(accentColor) ||
+            !ProjectAccentColors.Contains(accentColor, StringComparer.OrdinalIgnoreCase) ||
+            string.Equals(project.AccentColor, accentColor, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        ProjectDefinition updated = project.Definition with { AccentColor = accentColor };
+        updated.Validate();
+        project.Update(updated);
+        await _projectCatalog.UpsertAsync(updated);
+        OnPropertyChanged(nameof(SelectedProjectAccentColor));
+        StatusMessage = $"Color saved for {project.Name}";
+    }
+
+    public void ApplySelectedProjectLicenseTemplate()
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        ProjectLicenseTemplate? template = SelectedProjectLicenseTemplate;
+        if (project is null || template is null) return;
+
+        int year = int.TryParse(ProjectLicenseYear, out int parsedYear) && parsedYear is >= 1 and <= 9999
+            ? parsedYear
+            : DateTimeOffset.Now.Year;
+        ProjectLicenseYear = year.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        ProjectLicenseDraft = _projectLicenseService.RenderTemplate(
+            template.Id,
+            ProjectLicenseHolder,
+            year,
+            project.Name);
+        ProjectLicenseStatus = $"{template.Name} template prepared locally. Review the complete text before saving.";
+    }
+
+    public async Task RefreshProjectLicenseAsync()
+    {
+        int loadVersion = Interlocked.Increment(ref _projectLicenseLoadVersion);
+        await LoadProjectLicenseAsync(SelectedProject, loadVersion);
+    }
+
+    public async Task ImportProjectLicenseDraftAsync(string path)
+    {
+        try
+        {
+            string draft = await _projectLicenseService.ReadDraftAsync(path);
+            string detectedId = ProjectLicenseService.DetectTemplateId(draft);
+            ProjectLicenseDraft = draft;
+            ProjectLicenseDetectedId = detectedId;
+            SelectedProjectLicenseTemplate = ProjectLicenseTemplates.FirstOrDefault(template =>
+                string.Equals(template.Id, detectedId, StringComparison.OrdinalIgnoreCase))
+                ?? ProjectLicenseTemplates.First(template => template.Id == "Custom");
+            ProjectLicenseStatus = $"Imported {Path.GetFileName(path)} into the editor. The project has not been modified.";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            ProjectLicenseStatus = $"Could not import the license: {exception.Message}";
+        }
+    }
+
+    public async Task SaveProjectLicenseAsync(bool overwrite)
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        if (project is null || !CanSaveProjectLicense) return;
+
+        string fileName = ProjectLicenseService.ValidateFileName(ProjectLicenseFileName);
+        string draft = ProjectLicenseDraft;
+        await RunOperationAsync("Saving project license…", async () =>
+        {
+            await _projectLicenseService.SaveAsync(project.RootPath, fileName, draft, overwrite);
+            _applicationLogService.Information(
+                "project.license",
+                $"saved file=\"{fileName}\" detected=\"{ProjectLicenseService.DetectTemplateId(draft)}\" overwrite={overwrite}",
+                project.RootPath);
+            int loadVersion = Interlocked.Increment(ref _projectLicenseLoadVersion);
+            await LoadProjectLicenseAsync(project, loadVersion);
+        }, $"{fileName} saved for {project.Name}");
+    }
+
+    private async Task LoadProjectLicenseAsync(ProjectItemViewModel? project, int loadVersion)
+    {
+        if (project is null)
+        {
+            _projectLicenseSnapshot = null;
+            ProjectLicenseDraft = string.Empty;
+            ProjectLicenseFileName = "LICENSE";
+            ProjectLicenseDetectedId = "None";
+            ProjectLicenseStatus = "Select a project to inspect its license.";
+            IsProjectLicenseLoading = false;
+            OnPropertyChanged(nameof(ProjectLicenseTargetExists));
+            OnPropertyChanged(nameof(CanSaveProjectLicense));
+            return;
+        }
+
+        IsProjectLicenseLoading = true;
+        ProjectLicenseStatus = $"Inspecting the license for {project.Name}…";
+        try
+        {
+            ProjectLicenseSnapshot snapshot = await _projectLicenseService.InspectAsync(project.RootPath);
+            if (loadVersion != _projectLicenseLoadVersion || SelectedProject?.Id != project.Id) return;
+
+            _projectLicenseSnapshot = snapshot;
+            ProjectLicenseFileName = snapshot.FileName;
+            ProjectLicenseDraft = snapshot.Content;
+            ProjectLicenseDetectedId = snapshot.Exists ? snapshot.DetectedTemplateId : "None";
+            SelectedProjectLicenseTemplate = ProjectLicenseTemplates.FirstOrDefault(template =>
+                string.Equals(template.Id, snapshot.DetectedTemplateId, StringComparison.OrdinalIgnoreCase))
+                ?? ProjectLicenseTemplates.First(template => template.Id == "Custom");
+            ProjectLicenseStatus = snapshot.Exists
+                ? $"{snapshot.FileName} · {snapshot.DetectedTemplateId} · {FormatByteSize(snapshot.Size)} · updated {snapshot.LastModifiedAt?.ToLocalTime():g}"
+                : "No root-level license file was found. Select a starter template or write custom terms.";
+            OnPropertyChanged(nameof(ProjectLicenseTargetExists));
+            OnPropertyChanged(nameof(CanSaveProjectLicense));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            if (loadVersion != _projectLicenseLoadVersion || SelectedProject?.Id != project.Id) return;
+            _projectLicenseSnapshot = null;
+            ProjectLicenseDetectedId = "Unknown";
+            ProjectLicenseStatus = $"Could not inspect the project license: {exception.Message}";
+            _applicationLogService.Warning("project.license", exception.Message, project.RootPath);
+        }
+        finally
+        {
+            if (loadVersion == _projectLicenseLoadVersion && SelectedProject?.Id == project.Id)
+                IsProjectLicenseLoading = false;
+        }
     }
 
     public Task RefreshAsync() => RunOperationAsync("Refreshing tracked and untracked files…", async () =>
@@ -11333,7 +12101,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             "_selectedLanguage" or "_allDocumentationTopics" or "_selectedDocumentationTopic" or
             "_documentationSearch" or "_latestApplicationVersion" or "_updateStatus" or "_updateReleaseNotes" or
             "_hasUpdateAvailable" or "_isCheckingForUpdates" or "_isDownloadingUpdate" or "_updateProgress" or
-            "_selectedPlugin" or "_isUnrealIntegrationEnabled" or "_discordIsRunning") &&
+            "_selectedPlugin" or "_selectedAiConversation" or "_suppressAiConversationSelection" or
+            "_isUnrealIntegrationEnabled" or "_discordIsRunning") &&
                !name.StartsWith("_code", StringComparison.Ordinal) &&
                !name.StartsWith("_selectedCode", StringComparison.Ordinal) &&
                !name.StartsWith("_repositoryConsole", StringComparison.Ordinal) &&
@@ -11349,7 +12118,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             nameof(Projects) or nameof(DocumentationTopics) or nameof(Plugins) or nameof(CodeTree) or nameof(CodeFileList) or
             nameof(CodeFileSearchResults) or nameof(AssetExplorerFiles) or nameof(CodeSearchResults) or
             nameof(CodeHistory) or nameof(CodeSymbols) or nameof(IgnoreFolderSuggestions) or
-            nameof(IgnoreFileTypeSuggestions) or nameof(AiProviders) or
+            nameof(IgnoreFileTypeSuggestions) or nameof(AiProviders) or nameof(AiConversations) or
             nameof(RepositoryCommandHistory) or nameof(FilteredRepositoryCommandHistory) or
             nameof(ApplicationLogEntries) or nameof(FilteredApplicationLogEntries) or nameof(ActiveOperations) or nameof(RecentOperations) or
             nameof(PerformanceMetrics));
@@ -12297,14 +13066,23 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         IOrderedEnumerable<GitChangeViewModel> Sort(IEnumerable<GitChangeViewModel> source) => ChangeSort switch
         {
+            "Checked" => source.OrderByDescending(change => change.IsIncluded)
+                .ThenBy(change => change.FileName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(change => change.Path, StringComparer.OrdinalIgnoreCase),
+            "Name" or "File" => source.OrderBy(change => change.FileName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(change => change.Path, StringComparer.OrdinalIgnoreCase),
             "State" => source.OrderBy(change => change.State, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(change => change.FileName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(change => change.Path, StringComparer.OrdinalIgnoreCase),
             "Lock" => source.OrderByDescending(change => change.HasLock)
                 .ThenBy(change => change.LockOwner, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(change => change.FileName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(change => change.Path, StringComparer.OrdinalIgnoreCase),
             "Area" => source.OrderBy(change => change.Area, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(change => change.FileName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(change => change.Path, StringComparer.OrdinalIgnoreCase),
-            _ => source.OrderBy(change => change.Path, StringComparer.OrdinalIgnoreCase)
+            _ => source.OrderBy(change => change.FileName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(change => change.Path, StringComparer.OrdinalIgnoreCase)
         };
 
         GitChangeViewModel[] visible = terms.Length == 0
@@ -12313,18 +13091,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         IEnumerable<GitChangeViewModel> versioned = visible.Where(change => change.IsTracked);
         IEnumerable<GitChangeViewModel> unversioned = visible.Where(change => change.IsUntracked && !change.IsLocalOnly);
         IEnumerable<GitChangeViewModel> localOnly = visible.Where(change => change.IsLocalOnly);
-        if (ChangeSort == "File")
-        {
-            ReplaceCollection(FilteredVersionedChanges, versioned);
-            ReplaceCollection(FilteredUnversionedChanges, unversioned);
-            ReplaceCollection(FilteredLocalOnlyChanges, localOnly);
-        }
-        else
-        {
-            ReplaceCollection(FilteredVersionedChanges, Sort(versioned));
-            ReplaceCollection(FilteredUnversionedChanges, Sort(unversioned));
-            ReplaceCollection(FilteredLocalOnlyChanges, Sort(localOnly));
-        }
+        ReplaceCollection(FilteredVersionedChanges, Sort(versioned));
+        ReplaceCollection(FilteredUnversionedChanges, Sort(unversioned));
+        ReplaceCollection(FilteredLocalOnlyChanges, Sort(localOnly));
         RebuildChangeTree(visible);
     }
 
@@ -12348,7 +13117,37 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             return;
         }
 
-        ChangeTree.Add(GitChangeTreeNode.CreateLazyGroup(title, groupKind, changes));
+        GitChangeTreeNode group = GitChangeTreeNode.CreateLazyGroup(title, groupKind, changes);
+        group.EnsureChildrenLoaded();
+        ChangeTree.Add(group);
+    }
+
+    public void SetChangeTreeNodeIncluded(GitChangeTreeNode node, bool include)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        _suspendChangePreparationSummary = true;
+        _changePreparationSummaryPending = false;
+        try
+        {
+            foreach (GitChangeViewModel change in node.ContainedChanges)
+            {
+                if (!change.IsLocalOnly) change.IsIncluded = include;
+            }
+        }
+        finally
+        {
+            _suspendChangePreparationSummary = false;
+            _changePreparationSummaryPending = false;
+        }
+
+        if (ChangeSort == "Checked") ApplyChangeFilter();
+        else RefreshChangeTreeIncludedState();
+        UpdateChangePreparationSummary();
+    }
+
+    private void RefreshChangeTreeIncludedState()
+    {
+        foreach (GitChangeTreeNode root in ChangeTree) root.RefreshIncludedState();
     }
 
     private void OnChangePreparationItemChanged(object? sender, EventArgs e)
@@ -12359,6 +13158,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             return;
         }
 
+        if (ChangeSort == "Checked") ApplyChangeFilter();
+        else RefreshChangeTreeIncludedState();
         UpdateChangePreparationSummary();
     }
 
@@ -12415,6 +13216,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         OnPropertyChanged(nameof(KeptChangeCount));
         OnPropertyChanged(nameof(ForeignLockedIncludedCount));
         OnPropertyChanged(nameof(CanCommitPreparedChanges));
+        OnPropertyChanged(nameof(CanGenerateAiCommitDescription));
     }
 
     private async Task SaveLocalChangePreferencesAsync()
@@ -14306,10 +15108,27 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     private async Task SaveAndSelectProjectAsync(ProjectDefinition definition)
     {
-        await _projectCatalog.UpsertAsync(definition);
         ProjectItemViewModel? existing = Projects.FirstOrDefault(project => project.Id == definition.Id) ??
                                          Projects.FirstOrDefault(project =>
                                              ProjectPathsEqual(project.RootPath, definition.RootPath));
+        if (existing is not null)
+        {
+            definition = definition with
+            {
+                SidebarOrder = existing.Definition.SidebarOrder,
+                AccentColor = existing.Definition.AccentColor
+            };
+        }
+        else
+        {
+            definition = definition with
+            {
+                SidebarOrder = 0,
+                AccentColor = ProjectItemViewModel.DefaultAccentColor
+            };
+        }
+
+        await _projectCatalog.UpsertAsync(definition);
         if (existing is null)
         {
             existing = new ProjectItemViewModel(definition);
@@ -14320,7 +15139,58 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             existing.Update(definition);
         }
 
+        await PersistProjectOrderAsync();
         SelectedProject = existing;
+        NotifyProjectOrderStateChanged();
+    }
+
+    private async Task PersistProjectOrderAsync()
+    {
+        for (int index = 0; index < Projects.Count; index++)
+        {
+            ProjectItemViewModel project = Projects[index];
+            if (project.Definition.SidebarOrder == index) continue;
+            ProjectDefinition updated = project.Definition with { SidebarOrder = index };
+            project.Update(updated);
+            await _projectCatalog.UpsertAsync(updated);
+        }
+    }
+
+    private void NotifyProjectOrderStateChanged()
+    {
+        OnPropertyChanged(nameof(CanMoveSelectedProjectUp));
+        OnPropertyChanged(nameof(CanMoveSelectedProjectDown));
+    }
+
+    private void EvictProjectCaches(Guid projectId)
+    {
+        _projectSessionCache.Remove(projectId);
+        _projectSessionCacheUsage.Remove(projectId);
+        _codeWorkspaceCache.Remove(projectId);
+        _codeWorkspaceCacheUsage.Remove(projectId);
+        _latestProjectStatuses.Remove(projectId);
+        _loadedProjectSessions.Remove(projectId);
+        _workspaceLoadCoordinator.InvalidateProject(projectId);
+    }
+
+    private static void DeleteProjectGeneratedCache(string projectRoot)
+    {
+        string normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectRoot));
+        string metadataRoot = Path.GetFullPath(Path.Combine(normalizedRoot, ".cyrevision"));
+        string cacheRoot = Path.GetFullPath(Path.Combine(metadataRoot, "cache"));
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        string expectedPrefix = metadataRoot + Path.DirectorySeparatorChar;
+        if (!cacheRoot.StartsWith(expectedPrefix, comparison))
+        {
+            throw new IOException("CyRevision refused to clean a cache outside the selected project's metadata folder.");
+        }
+
+        if (Directory.Exists(cacheRoot))
+        {
+            Directory.Delete(cacheRoot, recursive: true);
+        }
     }
 
     private ProjectDefinition CreateGitProject(string rootPath)
@@ -14822,6 +15692,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         CodePreviewPath = string.Empty;
         CodePreviewImage = null;
         CodePreviewIsImage = false;
+        SetCodePreviewSupportsAiSummary(false);
         CodeWorkspaceSummary = "Select a project to explore its code.";
         CodeSearchSummary = "Ctrl+Shift+F searches the entire project.";
         CodePreviewSummary = "Select a file to preview it.";
@@ -14919,9 +15790,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         else
         {
             AiStatus = "AI Workspace ready. Read access only by default.";
-            AiResponse = "Open AI Assistant to detect the local Codex installation and start a project-scoped chat.";
-            if (!IsCodexDetected) CodexConnectionStatus = "Open AI Assistant to scan for the local Codex installation.";
+            AiResponse = "CyRevision checks for the local Codex installation automatically and starts a project-scoped chat when it is available.";
+            if (!IsCodexDetected) CodexConnectionStatus = "Checking for the local Codex installation automatically.";
             _ = LoadAiMcpProfileCoreAsync();
+            if (SelectedProject is not null)
+                _ = DetectCodexAsync(autoConnect: true);
         }
     }
 

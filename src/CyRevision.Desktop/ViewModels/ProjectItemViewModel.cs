@@ -4,6 +4,8 @@ namespace CyRevision.Desktop.ViewModels;
 
 public sealed class ProjectItemViewModel : ObservableObject
 {
+    public const string DefaultAccentColor = "#4E9F8A";
+
     private ProjectDefinition _definition;
     private string _branchName = "Not loaded";
     private string _loadDetail = "Select to load";
@@ -23,6 +25,8 @@ public sealed class ProjectItemViewModel : ObservableObject
     public string Name => Definition.Name;
 
     public string RootPath => Definition.RootPath;
+
+    public string AccentColor => Definition.AccentColor ?? DefaultAccentColor;
 
     public string BranchName
     {
@@ -89,6 +93,7 @@ public sealed class ProjectItemViewModel : ObservableObject
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(RootPath));
         OnPropertyChanged(nameof(Mode));
+        OnPropertyChanged(nameof(AccentColor));
     }
 
     public void SetLoading(string detail, double progress)

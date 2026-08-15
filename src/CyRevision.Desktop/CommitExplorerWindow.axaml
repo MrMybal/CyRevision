@@ -10,7 +10,7 @@
         MinWidth="980"
         MinHeight="620"
         Background="#1E1F22"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterScreen">
     <Window.Styles>
         <Style Selector="Border.card">
             <Setter Property="Background" Value="#25272A" />
