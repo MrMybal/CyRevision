@@ -412,7 +412,10 @@ public sealed record AiChatConnectRequest(
     string RepositoryPath,
     string ExecutablePath,
     string Model,
-    AiWorkspacePermission Permissions);
+    AiWorkspacePermission Permissions,
+    string ThreadId = "",
+    string WorkingDirectory = "",
+    string PrePrompt = "");
 
 public sealed record AiChatConnectionResult(
     bool Connected,

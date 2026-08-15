@@ -2,11 +2,13 @@ using System.Collections.ObjectModel;
 
 namespace CyRevision.Desktop.ViewModels;
 
-public sealed class GitChangeTreeNode
+public sealed class GitChangeTreeNode : ObservableObject
 {
     private const int FilePageSize = 500;
     private IReadOnlyList<GitChangeViewModel>? _lazyChanges;
+    private readonly IReadOnlyList<GitChangeViewModel> _containedChanges;
     private readonly bool _isFilePage;
+    private bool _isExpanded;
 
     public GitChangeTreeNode(
         string name,
@@ -17,7 +19,8 @@ public sealed class GitChangeTreeNode
         string? groupKind = null,
         IReadOnlyList<GitChangeViewModel>? lazyChanges = null,
         bool isFilePage = false,
-        bool isPlaceholder = false)
+        bool isPlaceholder = false,
+        bool isExpanded = false)
     {
         Name = name;
         RelativePath = relativePath;
@@ -26,6 +29,7 @@ public sealed class GitChangeTreeNode
         GroupKind = groupKind;
         _lazyChanges = lazyChanges;
         _isFilePage = isFilePage;
+        _isExpanded = isExpanded;
         IsPlaceholder = isPlaceholder;
         GitChangeTreeNode[] initialChildren = children?.ToArray() ?? [];
         if (initialChildren.Length == 0 && lazyChanges is { Count: > 0 })
@@ -33,7 +37,11 @@ public sealed class GitChangeTreeNode
             initialChildren = [CreatePlaceholder()];
         }
         Children = new ObservableCollection<GitChangeTreeNode>(initialChildren);
-        LeafCount = lazyChanges?.Count ?? (change is null ? initialChildren.Sum(child => child.LeafCount) : 1);
+        _containedChanges = lazyChanges
+                            ?? (change is not null
+                                ? [change]
+                                : initialChildren.SelectMany(child => child.ContainedChanges).ToArray());
+        LeafCount = _containedChanges.Count;
     }
 
     public string Name { get; }
@@ -52,11 +60,39 @@ public sealed class GitChangeTreeNode
 
     public bool CanInclude => Change is { IsLocalOnly: false };
 
+    public bool CanIncludeRecursively => _containedChanges.Any(change => !change.IsLocalOnly);
+
+    public bool? IsIncluded
+    {
+        get
+        {
+            bool anyIncluded = false;
+            bool anyKept = false;
+            foreach (GitChangeViewModel change in _containedChanges)
+            {
+                if (change.IsLocalOnly) continue;
+                if (change.IsIncluded) anyIncluded = true;
+                else anyKept = true;
+                if (anyIncluded && anyKept) return null;
+            }
+
+            return anyIncluded;
+        }
+    }
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set => SetProperty(ref _isExpanded, value);
+    }
+
     public string? GroupKind { get; }
 
     public ObservableCollection<GitChangeTreeNode> Children { get; }
 
     public int LeafCount { get; private set; }
+
+    public IReadOnlyList<GitChangeViewModel> ContainedChanges => _containedChanges;
 
     public string Icon => IsPlaceholder ? "…" : IsDirectory ? "▸" : Change?.IsUntracked == true ? "+" : "•";
 
@@ -64,8 +100,7 @@ public sealed class GitChangeTreeNode
         ? $"{LeafCount} file(s)"
         : Change is null
             ? string.Empty
-            : $"{Change.State} · {Change.PreparationState}" +
-              (Change.HasLock ? $" · {Change.LockOwner}" : string.Empty);
+            : $"{Change.State} · {Change.Area}";
 
     public string AccentColor => Change?.StatusColor ?? GroupKind switch
     {
@@ -76,6 +111,15 @@ public sealed class GitChangeTreeNode
     };
 
     internal void IncrementLeafCount() => LeafCount++;
+
+    public void RefreshIncludedState()
+    {
+        OnPropertyChanged(nameof(IsIncluded));
+        foreach (GitChangeTreeNode child in Children)
+        {
+            if (!child.IsPlaceholder) child.RefreshIncludedState();
+        }
+    }
 
     public void EnsureChildrenLoaded()
     {
@@ -159,7 +203,8 @@ public sealed class GitChangeTreeNode
         string.Empty,
         true,
         groupKind: groupKind,
-        lazyChanges: changes);
+        lazyChanges: changes,
+        isExpanded: true);
 
     private GitChangeTreeNode CreateFile(GitChangeViewModel change) => new(
         change.FileName,

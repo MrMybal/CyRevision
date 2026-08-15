@@ -106,6 +106,8 @@ public sealed class GitChangeViewModel : ObservableObject
         ? string.Empty
         : FileLock.IsOurs ? "YOU" : FileLock.OwnerName;
 
+    public string LockIndicator => FileLock is null ? string.Empty : "✓";
+
     public string LockColor => FileLock?.IsOurs == true ? "#78D7B7" : "#E5C07B";
 
     public bool UpdateFileLock(LfsFileLock? fileLock)
@@ -121,6 +123,7 @@ public sealed class GitChangeViewModel : ObservableObject
         OnPropertyChanged(nameof(HasForeignLock));
         OnPropertyChanged(nameof(LockOwner));
         OnPropertyChanged(nameof(LockShort));
+        OnPropertyChanged(nameof(LockIndicator));
         OnPropertyChanged(nameof(LockColor));
         return true;
     }

@@ -7,7 +7,11 @@ internal sealed record ProjectWorkspaceState(
     string ActiveTab,
     string CodeRefreshFrequency,
     int ConsoleSection = 0,
-    Dictionary<string, string>? CategoryTabs = null);
+    Dictionary<string, string>? CategoryTabs = null,
+    string TabVisibilityPreset = "Full workspace",
+    List<string>? HiddenTabs = null,
+    List<string>? HiddenChangeColumns = null,
+    string ChangeSort = "Name");
 
 internal sealed class ProjectWorkspaceStateStore
 {

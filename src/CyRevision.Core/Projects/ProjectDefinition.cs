@@ -13,7 +13,9 @@ public sealed record ProjectDefinition(
     DateTimeOffset? LastOpenedAt = null,
     string? BackupStorePath = null,
     string? ColdArchivePath = null,
-    int? ColdArchiveAfterDays = null)
+    int? ColdArchiveAfterDays = null,
+    int? SidebarOrder = null,
+    string? AccentColor = null)
 {
     public void Validate()
     {
@@ -54,6 +56,18 @@ public sealed record ProjectDefinition(
         if (ColdArchiveAfterDays is <= 0)
         {
             throw new InvalidOperationException("The cold archive age must be greater than zero.");
+        }
+
+        if (SidebarOrder is < 0)
+        {
+            throw new InvalidOperationException("The sidebar order cannot be negative.");
+        }
+
+        if (AccentColor is not null &&
+            (AccentColor.Length != 7 || AccentColor[0] != '#' ||
+             !AccentColor.AsSpan(1).ToString().All(Uri.IsHexDigit)))
+        {
+            throw new InvalidOperationException("The project accent color must use the #RRGGBB format.");
         }
     }
 }
