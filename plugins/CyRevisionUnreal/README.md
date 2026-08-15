@@ -4,13 +4,19 @@
 
 ## Autonomous features
 
-- **Tools > Revision dashboard** shows the branch, working-tree changes, and recent commits;
+- **Revision Control > Connect to Revision Control** now lists **CyRevision** as a native provider;
+- the native provider detects the project Git repository, branch and optional remote, and reports file states without mandatory checkout or permission changes;
+- **Tools > CyRevision** groups revision, collaboration, connection, and Swarm commands in a dedicated category;
+- the configurable main-toolbar button uses the CyRevision icon and can show or hide its name, or be hidden completely;
+- **Tools > CyRevision > Revision dashboard** shows the branch, working-tree changes, and recent commits;
 - stage all files, commit, fetch, pull, and push without leaving Unreal Editor;
+- dedicated **All Git LFS locks**, **My Git LFS locks**, and **Work in progress** views keep real locks separate from non-blocking presence;
 - advisory asset reservations from the Content Browser remain non-blocking;
 - two people may report the same asset: a warning is shown, but nobody is prevented from editing;
 - no Unreal checkout, permission change, or Git LFS lock is created;
 - active markers are renewed every minute and expire after 30 minutes by default.
-- **Tools > Swarm over VPN** configures `CoordinatorRemotingHost`, launches Agent/Coordinator, tests TCP 8008/8009, and includes a complete repair checklist without requiring the desktop client.
+- the Content Browser right-click menu contains a **CyRevision** submenu for normal LFS lock/unlock, work-in-progress reporting, the lock lists, the dashboard, and the desktop client;
+- **Tools > CyRevision > Swarm over VPN** configures `CoordinatorRemotingHost`, launches Agent/Coordinator, tests TCP 8008/8009, and includes a complete repair checklist without requiring the desktop client.
 
 ## Swarm over VPN
 
@@ -47,4 +53,13 @@ Manual installation remains supported:
 2. Regenerate project files and compile the Editor target.
 3. Optionally configure `ExecutablePath`, `GitExecutable`, `BridgeUrl`, and `BridgeToken` under `[CyRevision]` in the Editor per-project user settings.
 
-The source targets the common Unreal Engine 5.3–5.6 Editor APIs. Precompiled binaries are intentionally not shipped because a project or engine build may require a matching toolchain.
+## Engine and project compatibility
+
+- the source plugin targets Unreal Engine **4.27 and 5.0 through 5.8**;
+- C++ projects install the portable source plugin and compile it with their matching Unreal toolchain;
+- Blueprint-only projects require an exact precompiled plugin for their Unreal minor version and operating system;
+- the CyRevision interface detects the engine association and project type before installation, displays the full supported range, and blocks an unsafe or mismatched installation;
+- the current Windows package contains locally compiled Win64 variants for Unreal Engine **5.2 through 5.8**;
+- Unreal 4.27, 5.0, and 5.1 remain source-compatible targets, but their Blueprint-only Win64 variants are not yet bundled.
+
+The precompiled package must match the exact Unreal Engine minor version. A C++ project remains the most portable option because its Editor target builds the plugin from source using the project's own engine and compiler.

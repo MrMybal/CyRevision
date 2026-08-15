@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CyRevision.Desktop.Views.ApplicationStatusBarView"
+             x:CompileBindings="False">
+    <Border Background="#25272A" BorderBrush="#393B40" BorderThickness="0,1,0,0">
+        <Grid ColumnDefinitions="*,Auto,Auto" Margin="12,0" ColumnSpacing="10">
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" FontSize="9.5"
+                       Foreground="#9B9DA3" TextTrimming="CharacterEllipsis" />
+            <ToggleButton Grid.Column="1" Classes="panelToggle" Content="{Binding OperationHistoryCountText}"
+                          IsChecked="{Binding IsActivityCenterExpanded}" Padding="7,1" MinHeight="20"
+                          VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="{Binding RuntimeModeSummary}" VerticalAlignment="Center"
+                       FontSize="9.5" Foreground="#78D7B7" />
+        </Grid>
+    </Border>
+</UserControl>

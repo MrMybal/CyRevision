@@ -148,6 +148,22 @@ public interface IGitRepositoryService
         string startPoint,
         CancellationToken cancellationToken = default);
 
+    Task<GitHistoricalWorktreeResult> CreateHistoricalWorktreeAsync(
+        string repositoryPath,
+        string commitHash,
+        string? branchName = null,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<GitHistoricalWorktree>> GetHistoricalWorktreesAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task RemoveHistoricalWorktreeAsync(
+        string repositoryPath,
+        string worktreePath,
+        bool force = false,
+        CancellationToken cancellationToken = default);
+
     Task CheckoutBranchAsync(
         string repositoryPath,
         string branchName,

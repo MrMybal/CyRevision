@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.14 Alpha — 2026-08-15
+
+- expanded the Unreal integration across UE 4.27–5.8 with C++ and Blueprint-only installation paths, a native revision-control provider, compact toolbar and context-menu tools, lock/WIP views, compatibility diagnostics and safer writable-file behavior;
+- added optional headless Unreal asset inspection with 512 px mesh thumbnails, package metadata, Blueprint semantic summaries and plugin-provided preview/diff handlers shared by every CyRevision file view;
+- introduced the Unreal local build lab with target and engine discovery, Windows/Linux/Android profiles, toolchain guidance, cancellable builds, dense live logs, diagnostics and cached discovery;
+- added project-scoped team chat over VPN or Sync, encrypted incremental storage, optional conversation archives, image/file transfers and richer member visibility;
+- added historical worktree and branch-from-commit workflows, improved global tasks, notifications, compact layouts and English/French localization coverage;
+- added a project-scoped Codex chat using the local Codex App Server, automatic desktop/CLI detection, streamed responses, cancellation and explicit read-only or workspace-write permissions;
+- bounded large text previews to 256 KiB, moved decoding and symbol extraction off the UI thread, and switched very large documents to a lightweight renderer to prevent interface freezes.
+
 ## 0.1.13 Alpha — 2026-08-14
 
 - accelerated very large repositories with batched virtualized collections, bounded caches, cancellable Git processes, persistent project snapshots and a low-cost background change monitor that avoids rescanning when switching projects;

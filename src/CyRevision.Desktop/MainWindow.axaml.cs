@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using CyRevision.Code;
@@ -68,6 +69,8 @@ public partial class MainWindow : Window
     {
         _viewModel = viewModel;
         DataContext = viewModel;
+        _viewModel.UnrealBuildLogLines.CollectionChanged += OnUnrealBuildLogLinesChanged;
+        _viewModel.AiChatMessages.CollectionChanged += OnAiChatMessagesChanged;
         ChangesFolderTree.AddHandler(TreeViewItem.ExpandedEvent, OnChangesTreeItemExpanded);
         SolutionTreePanel.AddHandler(TreeViewItem.ExpandedEvent, OnSolutionTreeItemExpanded);
         _localization = localization;
@@ -151,6 +154,10 @@ public partial class MainWindow : Window
         _repositoryChangeMonitor = null;
         WorkspaceTabs.SelectionChanged -= OnWorkspaceTabSelectionChanged;
         ConsoleAndLogsTabs.SelectionChanged -= OnConsoleAndLogsTabSelectionChanged;
+        _viewModel.UnrealBuildLogLines.CollectionChanged -= OnUnrealBuildLogLinesChanged;
+        _viewModel.AiChatMessages.CollectionChanged -= OnAiChatMessagesChanged;
+        foreach (AiChatMessageViewModel message in _viewModel.AiChatMessages)
+            message.PropertyChanged -= OnAiChatMessagePropertyChanged;
         _viewModel.PropertyChanged -= OnMainViewModelPropertyChanged;
         _focusedDiffWindow?.Close();
         _focusedDiffWindow = null;
@@ -167,6 +174,49 @@ public partial class MainWindow : Window
         _detachedWorkspaceWindows.Clear();
         _uiLocalizer?.Dispose();
         MainRevisionCompositionView.DiffVisibilityChanged -= OnCompositionDiffVisibilityChanged;
+    }
+
+    private void OnUnrealBuildLogLinesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (AutoScrollUnrealBuildLogCheckBox.IsChecked != true ||
+                _viewModel.UnrealBuildLogLines.Count == 0)
+            {
+                return;
+            }
+
+            UnrealBuildLogList.ScrollIntoView(_viewModel.UnrealBuildLogLines[^1]);
+        }, DispatcherPriority.Background);
+    }
+
+    private void OnAiChatMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (AiChatMessageViewModel message in e.OldItems)
+                message.PropertyChanged -= OnAiChatMessagePropertyChanged;
+        }
+        if (e.NewItems is not null)
+        {
+            foreach (AiChatMessageViewModel message in e.NewItems)
+                message.PropertyChanged += OnAiChatMessagePropertyChanged;
+        }
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_viewModel.AiChatMessages.Count > 0)
+                AiChatList.ScrollIntoView(_viewModel.AiChatMessages[^1]);
+        }, DispatcherPriority.Background);
+    }
+
+    private void OnAiChatMessagePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(AiChatMessageViewModel.Text)) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_viewModel.AiChatMessages.Count > 0)
+                AiChatList.ScrollIntoView(_viewModel.AiChatMessages[^1]);
+        }, DispatcherPriority.Background);
     }
 
     private void OnMainViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -966,10 +1016,10 @@ public partial class MainWindow : Window
         WorkspaceCategory.Code => [SolutionExplorerWorkspaceTab, CodeWorkspaceTab, ConsoleWorkspaceTab, AssetDiffWorkspaceTab, AiWorkspaceTab, McpWorkspaceTab],
         WorkspaceCategory.Network =>
         [
-            SynchronizationWorkspaceTab, VpnWorkspaceTab, SwarmWorkspaceTab, VpnFilesWorkspaceTab,
+            SynchronizationWorkspaceTab, VpnWorkspaceTab, SwarmWorkspaceTab, VpnFilesWorkspaceTab, TeamChatWorkspaceTab,
             RemoteBuildsWorkspaceTab, DiscordWorkspaceTab, WorkInProgressWorkspaceTab
         ],
-        _ => [PluginsWorkspaceTab, UnrealWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab]
+        _ => [PluginsWorkspaceTab, UnrealWorkspaceTab, UnrealBuildWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab]
     };
 
     private TabItem[] AllWorkspaceTabs() =>
@@ -978,9 +1028,9 @@ public partial class MainWindow : Window
         ConsoleWorkspaceTab, HistoryWorkspaceTab,
         CompositionWorkspaceTab, BranchesWorkspaceTab, PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab,
         LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab, BackupsWorkspaceTab, SynchronizationWorkspaceTab, VpnWorkspaceTab,
-        SwarmWorkspaceTab, VpnFilesWorkspaceTab, RemoteBuildsWorkspaceTab, DiscordWorkspaceTab,
+        SwarmWorkspaceTab, VpnFilesWorkspaceTab, TeamChatWorkspaceTab, RemoteBuildsWorkspaceTab, DiscordWorkspaceTab,
         WorkInProgressWorkspaceTab, AssetDiffWorkspaceTab, AiWorkspaceTab, McpWorkspaceTab,
-        PluginsWorkspaceTab, UnrealWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab
+        PluginsWorkspaceTab, UnrealWorkspaceTab, UnrealBuildWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab
     ];
 
     private void OnShowProjectWorkspaceClick(object? sender, RoutedEventArgs e) =>
@@ -1237,6 +1287,18 @@ public partial class MainWindow : Window
     private async void OnRunAiAgentClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RunAiAgentAsync();
 
+    private async void OnDetectCodexClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.DetectCodexAsync(autoConnect: false);
+
+    private async void OnToggleCodexConnectionClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ToggleCodexChatConnectionAsync();
+
+    private async void OnSendAiChatClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SendCodexChatMessageAsync();
+
+    private void OnCancelAiChatClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.CancelAiChat();
+
     private void OnAddAiMcpStdioClick(object? sender, RoutedEventArgs e) =>
         _viewModel.AddAiMcpServer(CyRevision.Plugin.Abstractions.AiMcpTransport.Stdio);
 
@@ -1286,6 +1348,17 @@ public partial class MainWindow : Window
         await _viewModel.RemoveSelectedProjectAsync();
 
     private async void OnRefreshClick(object? sender, RoutedEventArgs e) => await _viewModel.RefreshAsync();
+
+    private void OnOpenProjectFolderClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = _viewModel.SelectedProject?.RootPath;
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = path,
+            UseShellExecute = true
+        });
+    }
 
     private async void OnAnalyzeGitGraphsClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.AnalyzeGitGraphsAsync();
@@ -1391,6 +1464,36 @@ public partial class MainWindow : Window
 
     private async void OnCreateBranchClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CreateBranchAsync(NewBranchName.Text ?? string.Empty);
+
+    private async void OnCreateBranchFromCommitClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CreateBranchFromSelectedCommitAsync(NewBranchName.Text ?? string.Empty);
+
+    private async void OnRefreshHistoricalWorktreesClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshHistoricalWorktreesAsync();
+
+    private void OnOpenHistoricalWorktreeClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = _viewModel.SelectedHistoricalWorktree?.Path;
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = path,
+            UseShellExecute = true
+        });
+    }
+
+    private async void OnRemoveHistoricalWorktreeClick(object? sender, RoutedEventArgs e)
+    {
+        GitHistoricalWorktree? worktree = _viewModel.SelectedHistoricalWorktree;
+        if (worktree is null) return;
+        if (await ShowConfirmationAsync(
+                "Remove historical worktree",
+                $"Remove the isolated worktree '{worktree.DisplayName}'? Git refuses removal when it contains local changes, so your work stays protected.",
+                "Remove worktree"))
+        {
+            await _viewModel.RemoveSelectedHistoricalWorktreeAsync(force: false);
+        }
+    }
 
     private async void OnCheckoutBranchClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CheckoutSelectedBranchAsync();
@@ -1886,6 +1989,51 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnSaveTeamChatClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveTeamChatAsync();
+
+    private async void OnStartTeamChatClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.StartTeamChatHostAsync();
+
+    private async void OnStopTeamChatClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.StopTeamChatHostAsync();
+
+    private async void OnRefreshTeamChatClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshTeamChatAsync();
+
+    private async void OnSendTeamChatClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SendTeamChatMessageAsync();
+
+    private async void OnPickTeamChatSyncFolderClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select the folder synchronized for team chat");
+        if (path is not null) _viewModel.SetTeamChatSyncFolder(path);
+    }
+
+    private async void OnPickTeamChatAttachmentClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFileAsync("Select an image or file to attach");
+        if (path is not null) _viewModel.SetTeamChatAttachment(path);
+    }
+
+    private async void OnOpenTeamChatAttachmentClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await _viewModel.PrepareSelectedTeamChatAttachmentAsync();
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+        Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+    }
+
+    private async void OnRotateTeamChatTokenClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Rotate team chat token"),
+                Translate("The VPN chat host will stop and authorized teammates must receive the new token through a separate trusted channel."),
+                Translate("Rotate token")))
+        {
+            await _viewModel.RotateTeamChatTokenAsync();
+        }
+    }
+
     private async void OnPickLfsExternalStorageClick(object? sender, RoutedEventArgs e)
     {
         string? path = await PickFolderAsync("Select the dedicated external Git LFS storage directory");
@@ -2076,6 +2224,62 @@ public partial class MainWindow : Window
 
     private async void OnConfigureUnrealBridgeClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.ConfigureUnrealBridgeAsync();
+
+    private async void OnSaveUnrealAssetInspectionClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveUnrealAssetInspectionOptionsAsync();
+
+    private async void OnRefreshUnrealAssetInspectionClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshUnrealAssetInspectionCacheAsync();
+
+    private async void OnClearUnrealAssetInspectionClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Clear Unreal asset preview cache"),
+                Translate("Delete the generated Unreal thumbnails and metadata for this project? Source assets are never modified."),
+                Translate("Clear cache")))
+        {
+            await _viewModel.ClearUnrealAssetInspectionCacheAsync();
+        }
+    }
+
+    private async void OnDiscoverUnrealBuildClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.DiscoverUnrealBuildEnvironmentAsync(forceRefresh: true);
+
+    private async void OnSaveUnrealBuildPresetClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveUnrealBuildPresetAsync();
+
+    private void OnApplyUnrealBuildPresetClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.ApplySelectedUnrealBuildPreset();
+
+    private async void OnDeleteUnrealBuildPresetClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.DeleteSelectedUnrealBuildPresetAsync();
+
+    private async void OnRunUnrealBuildClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RunSelectedUnrealBuildAsync();
+
+    private async void OnRunUnrealBuildRangeClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RunUnrealBuildRangeAsync();
+
+    private void OnCancelUnrealBuildClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.CancelUnrealBuild();
+
+    private async void OnPickUnrealLinuxToolchainClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select the Unreal Linux cross-compiler root");
+        if (path is not null) _viewModel.UnrealLinuxToolchainPath = path;
+    }
+
+    private async void OnPickUnrealAndroidSdkClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select the Android SDK root");
+        if (path is not null) _viewModel.UnrealAndroidSdkPath = path;
+    }
+
+    private async void OnPickUnrealBuildOutputClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select the Unreal build output folder");
+        if (path is not null) _viewModel.UnrealBuildOutputPath = path;
+    }
 
     private async void OnCheckForUpdatesClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CheckForUpdatesAsync();

@@ -30,16 +30,6 @@
             <Setter Property="CornerRadius" Value="4" />
             <Setter Property="FontSize" Value="11" />
         </Style>
-        <Style Selector="DataGrid.compact DataGridRow"><Setter Property="MinHeight" Value="26" /></Style>
-        <Style Selector="DataGrid.compact DataGridCell"><Setter Property="Padding" Value="5,2" /><Setter Property="FontSize" Value="10.5" /></Style>
-        <Style Selector="ListBox.compactList ListBoxItem">
-            <Setter Property="MinHeight" Value="0" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="Margin" Value="0" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        </Style>
-        <Style Selector="ListBox.compactList ListBoxItem:pointerover"><Setter Property="Background" Value="#303A3B" /></Style>
-        <Style Selector="ListBox.compactList ListBoxItem:selected"><Setter Property="Background" Value="#365550" /></Style>
         <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#9B9DA3" /></Style>
     </Window.Styles>
 
@@ -62,7 +52,7 @@
                 <Grid Margin="0,7,0,0" RowDefinitions="Auto,*" RowSpacing="7">
                     <Border Classes="toolCard" Padding="8">
                         <Grid ColumnDefinitions="*,Auto,260,Auto" ColumnSpacing="8">
-                            <TextBox Text="{Binding ExplorerSearch}" PlaceholderText="Search message, author, or hash…" />
+                            <TextBox Text="{Binding ExplorerSearch}" Classes="searchBox" PlaceholderText="Search message, author, or hash…" />
                             <TextBlock Grid.Column="1" Text="Compare with" Classes="muted" VerticalAlignment="Center" />
                             <ComboBox Grid.Column="2" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedComparisonRevision}">
                                 <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Subject}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
@@ -74,7 +64,7 @@
                         <Border Classes="toolCard" Padding="0" ClipToBounds="True">
                             <Grid RowDefinitions="34,*">
                                 <TextBlock Text="Timeline" FontSize="12" FontWeight="SemiBold" Margin="9,0" VerticalAlignment="Center" />
-                                <DataGrid Grid.Row="1" Classes="compact" ItemsSource="{Binding History}"
+                                <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding History}"
                                           SelectedItem="{Binding SelectedExplorerRevision}" AutoGenerateColumns="False"
                                           IsReadOnly="True" GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
                                     <DataGrid.Columns>
@@ -89,7 +79,7 @@
                         <Border Grid.Column="2" Classes="toolCard" Padding="0" ClipToBounds="True">
                             <Grid RowDefinitions="34,1.2*,30,0.7*">
                                 <TextBlock Text="Revision files" FontSize="12" FontWeight="SemiBold" Margin="9,0" VerticalAlignment="Center" />
-                                <DataGrid Grid.Row="1" Classes="compact" ItemsSource="{Binding ExplorerFiles}"
+                                <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding ExplorerFiles}"
                                           SelectedItem="{Binding SelectedExplorerFile}" AutoGenerateColumns="False"
                                           IsReadOnly="True" GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
                                     <DataGrid.Columns>
@@ -99,7 +89,7 @@
                                     </DataGrid.Columns>
                                 </DataGrid>
                                 <TextBlock Grid.Row="2" Text="File history" FontWeight="SemiBold" FontSize="10.5" Margin="9,0" VerticalAlignment="Center" />
-                                <DataGrid Grid.Row="3" Classes="compact" ItemsSource="{Binding ExplorerFileHistory}"
+                                <DataGrid Grid.Row="3" Classes="historyCompact" ItemsSource="{Binding ExplorerFileHistory}"
                                           AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
                                           BorderThickness="0" Background="Transparent">
                                     <DataGrid.Columns>
@@ -131,9 +121,9 @@
                 <Grid Margin="0,7,0,0" RowDefinitions="Auto,*" RowSpacing="7">
                     <Border Classes="toolCard" Padding="8">
                         <Grid ColumnDefinitions="*,150,Auto,Auto" ColumnSpacing="7" RowDefinitions="Auto,Auto,4">
-                            <TextBox x:Name="DetachedCodeSearch" Text="{Binding CodeSearchQuery}"
+                            <TextBox x:Name="DetachedCodeSearch" Text="{Binding CodeSearchQuery}" Classes="searchBox"
                                      PlaceholderText="Search text, symbol, or pattern…" KeyDown="OnCodeSearchKeyDown" />
-                            <TextBox Grid.Column="1" Text="{Binding CodeFilePatterns}" PlaceholderText="*.cs;*.cpp" />
+                            <TextBox Grid.Column="1" Text="{Binding CodeFilePatterns}" Classes="searchBox" PlaceholderText="*.cs;*.cpp" />
                             <Button Grid.Column="2" Classes="toolPrimary" Content="Search" Click="OnCodeSearchClick" />
                             <Button Grid.Column="3" Classes="toolButton" Content="Cancel" Click="OnCancelCodeSearchClick" />
                             <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="14" Margin="2,6,0,2">
@@ -143,8 +133,8 @@
                                 <TextBlock Text="{Binding CodeSearchSummary}" Classes="muted" VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <ProgressBar Grid.Row="2" Grid.ColumnSpan="4" IsVisible="{Binding IsCodeSearchRunning}"
-                                         IsIndeterminate="True" Height="3" Margin="1,1,1,0" />
+                            <ProgressBar Grid.Row="2" Grid.ColumnSpan="4" Classes="inlineLoader" IsVisible="{Binding IsCodeSearchRunning}"
+                                         IsIndeterminate="True" Margin="1,1,1,0" />
                         </Grid>
                     </Border>
                     <Grid Grid.Row="1" ColumnDefinitions="1.15*,7,1.35*,7,0.8*">
@@ -155,8 +145,8 @@
                                     <TextBlock Text="Select a match to preview its exact location" Classes="muted" FontSize="8.5" />
                                 </StackPanel>
                                 <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="5,3">
-                                    <TextBox Text="{Binding CodeSearchFileFilter, UpdateSourceTrigger=PropertyChanged}"
-                                             PlaceholderText="Filter results by file name or pathâ€¦" Padding="6,2" />
+                                    <TextBox Text="{Binding CodeSearchFileFilter, UpdateSourceTrigger=PropertyChanged}" Classes="searchBox"
+                                             PlaceholderText="Filter results by file name or path…" Padding="6,2" />
                                     <TextBlock Grid.Column="1" Text="{Binding CodeSearchResultFilterSummary}" Classes="muted"
                                                FontSize="8.5" VerticalAlignment="Center" />
                                 </Grid>
@@ -219,7 +209,7 @@
                         <Border Grid.Column="4" Classes="toolCard" Padding="0" ClipToBounds="True">
                             <TabControl>
                                 <TabItem Header="Git history">
-                                    <DataGrid Classes="compact" ItemsSource="{Binding CodeHistory}"
+                                    <DataGrid Classes="historyCompact" ItemsSource="{Binding CodeHistory}"
                                               AutoGenerateColumns="False" IsReadOnly="True"
                                               GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
                                         <DataGrid.Columns>
@@ -230,7 +220,7 @@
                                     </DataGrid>
                                 </TabItem>
                                 <TabItem Header="Symbols">
-                                    <DataGrid Classes="compact" ItemsSource="{Binding CodeSymbols}" SelectedItem="{Binding SelectedCodeSymbol}"
+                                    <DataGrid Classes="historyCompact" ItemsSource="{Binding CodeSymbols}" SelectedItem="{Binding SelectedCodeSymbol}"
                                               AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
                                               BorderThickness="0" Background="Transparent">
                                         <DataGrid.Columns>

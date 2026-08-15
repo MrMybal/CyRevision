@@ -13,6 +13,8 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
     private Dictionary<string, UnrealConnectionRegistration> _connections = new(StringComparer.OrdinalIgnoreCase);
     private CyRevisionPluginContext? _context;
     private UnrealProjectPluginInstaller? _installer;
+    private UnrealBuildService? _buildService;
+    private UnrealAssetInspectionService? _assetInspectionService;
     private UnrealBridgeServer? _bridge;
 
     public UnrealIntegrationPlugin()
@@ -27,8 +29,8 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
     public CyRevisionPluginDescriptor Descriptor { get; } = new(
         "cyrevision.unreal",
         "Unreal Engine Integration",
-        "0.1.0",
-        "Optional Unreal project integration and Editor plugin installer.",
+        "0.4.0",
+        "Optional Unreal project integration, headless asset previews, Editor plugin installer and multi-version build lab.",
         "Game engines");
 
     public string ProviderId => Descriptor.Id + ".files";
@@ -46,11 +48,16 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
     public async Task InitializeAsync(CyRevisionPluginContext context, CancellationToken cancellationToken = default)
     {
         _context = context;
+        _buildService = new UnrealBuildService(context.ConfigurationDirectory, context.DataDirectory);
         string? payload = ResolveBundledPluginDirectory(context);
         if (payload is not null)
         {
             _installer = new UnrealProjectPluginInstaller(payload);
         }
+        _assetInspectionService = new UnrealAssetInspectionService(
+            context.ConfigurationDirectory,
+            _buildService,
+            InspectProject);
 
         await LoadConnectionsAsync(cancellationToken);
         _bridge = new UnrealBridgeServer(BridgePort, context.ApplicationVersion, () => _connections.Values.ToArray());
@@ -68,6 +75,15 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
         path,
         string.Empty,
         string.Empty,
+        string.Empty,
+        null,
+        UnrealProjectKind.Unknown,
+        UnrealPluginInstallMode.Unavailable,
+        false,
+        "Compatibility cannot be evaluated because the Unreal payload is missing.",
+        UnrealProjectPluginInstaller.SupportedEngineVersions,
+        UnrealProjectPluginInstaller.CurrentPlatform,
+        [],
         false,
         null,
         null,
@@ -135,6 +151,69 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
         return BridgeStatus;
     }
 
+    public Task<UnrealBuildDiscovery> DiscoverBuildEnvironmentAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default) =>
+        GetBuildService().DiscoverAsync(projectPath, cancellationToken);
+
+    public Task<UnrealBuildDiscovery> RefreshBuildEnvironmentAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default) =>
+        GetBuildService().DiscoverAsync(projectPath, cancellationToken, forceRefresh: true);
+
+    public Task<UnrealAssetInspectionOptions> LoadAssetInspectionOptionsAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default) =>
+        GetAssetInspectionService().LoadOptionsAsync(projectPath, cancellationToken);
+
+    public Task SaveAssetInspectionOptionsAsync(
+        string projectPath,
+        UnrealAssetInspectionOptions options,
+        CancellationToken cancellationToken = default) =>
+        GetAssetInspectionService().SaveOptionsAsync(projectPath, options, cancellationToken);
+
+    public Task<UnrealAssetInspectionCacheStatus> GetAssetInspectionCacheStatusAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default) =>
+        GetAssetInspectionService().GetCacheStatusAsync(projectPath, cancellationToken);
+
+    public Task<UnrealAssetInspectionCacheStatus> ClearAssetInspectionCacheAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default) =>
+        GetAssetInspectionService().ClearCacheAsync(projectPath, cancellationToken);
+
+    public Task<UnrealBuildProfile?> LoadBuildProfileAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default) =>
+        GetBuildService().LoadProfileAsync(projectId, cancellationToken);
+
+    public Task SaveBuildProfileAsync(
+        UnrealBuildProfile profile,
+        CancellationToken cancellationToken = default) =>
+        GetBuildService().SaveProfileAsync(profile, cancellationToken);
+
+    public Task<IReadOnlyList<UnrealBuildProfile>> LoadBuildPresetsAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default) =>
+        GetBuildService().LoadPresetsAsync(projectId, cancellationToken);
+
+    public Task SaveBuildPresetAsync(
+        UnrealBuildProfile profile,
+        CancellationToken cancellationToken = default) =>
+        GetBuildService().SavePresetAsync(profile, cancellationToken);
+
+    public Task DeleteBuildPresetAsync(
+        Guid projectId,
+        string presetName,
+        CancellationToken cancellationToken = default) =>
+        GetBuildService().DeletePresetAsync(projectId, presetName, cancellationToken);
+
+    public Task<UnrealBuildResult> RunBuildAsync(
+        UnrealBuildRequest request,
+        IProgress<UnrealBuildProgress>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        GetBuildService().RunAsync(request, progress, cancellationToken);
+
     public async ValueTask DisposeAsync()
     {
         if (_bridge is not null)
@@ -142,6 +221,7 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
             _bridge.ProjectChanged -= OnProjectChanged;
             await _bridge.DisposeAsync();
         }
+        _assetInspectionService?.Dispose();
         _gate.Dispose();
         BridgeStatus = BridgeStatus with { IsRunning = false, Detail = "Bridge is stopped." };
     }
@@ -160,6 +240,24 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
         CancellationToken cancellationToken = default)
     {
         if (!CanPreview(request)) return null;
+        if (_assetInspectionService is not null)
+        {
+            try
+            {
+                FilePresentationResult? advanced = await _assetInspectionService
+                    .TryCreatePreviewAsync(request, cancellationToken)
+                    .ConfigureAwait(false);
+                if (advanced is not null) return advanced;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // A headless Unreal timeout should not prevent the lightweight offline preview.
+            }
+            catch (Exception exception) when (exception is IOException or InvalidOperationException)
+            {
+                // Keep the provider useful when the engine is missing or an asset cannot be loaded.
+            }
+        }
         UnrealPackageFingerprint fingerprint = await InspectPackageAsync(request.FilePath, cancellationToken);
         string text = string.Join(Environment.NewLine,
             "Unreal package preview (offline)",
@@ -188,6 +286,24 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
         CancellationToken cancellationToken = default)
     {
         if (!CanCompare(request)) return null;
+        if (_assetInspectionService is not null)
+        {
+            try
+            {
+                FilePresentationResult? semantic = await _assetInspectionService
+                    .TryCreateDiffAsync(request, cancellationToken)
+                    .ConfigureAwait(false);
+                if (semantic is not null) return semantic;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Fall back to the fast offline package fingerprint when headless inspection times out.
+            }
+            catch (Exception exception) when (exception is IOException or InvalidOperationException or JsonException)
+            {
+                // A malformed or unsupported package must not break the universal diff surface.
+            }
+        }
         Task<UnrealPackageFingerprint> baselineTask = InspectPackageAsync(request.BaselinePath, cancellationToken);
         Task<UnrealPackageFingerprint> candidateTask = InspectPackageAsync(request.CandidatePath, cancellationToken);
         await Task.WhenAll(baselineTask, candidateTask);
@@ -207,6 +323,36 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
             $"Detected names removed: {(removedNames.Length == 0 ? "none" : string.Join(", ", removedNames))}",
             string.Empty,
             "This comparison is provided by the enabled Unreal plugin without opening the engine.");
+
+        FilePresentationResult? renderedCandidate = null;
+        if (_assetInspectionService is not null)
+        {
+            try
+            {
+                FileInfo candidateInfo = new(request.CandidatePath);
+                renderedCandidate = await _assetInspectionService.TryCreatePreviewAsync(
+                        new FilePreviewRequest(
+                            request.ProjectRoot,
+                            request.RelativePath,
+                            request.CandidatePath,
+                            candidateInfo.Exists ? candidateInfo.Length : 0),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }
+            catch (Exception exception) when (exception is IOException or InvalidOperationException) { }
+        }
+
+        if (renderedCandidate is { Kind: FilePresentationKind.Image, ImagePath: not null })
+        {
+            return new FilePresentationResult(
+                ProviderId,
+                FilePresentationKind.Image,
+                equivalent ? "Unreal packages appear equivalent · rendered candidate" : "Unreal package changed · rendered candidate",
+                text + Environment.NewLine + Environment.NewLine + renderedCandidate.TextContent,
+                renderedCandidate.ImagePath,
+                renderedCandidate.Metadata);
+        }
         return new FilePresentationResult(
             ProviderId,
             FilePresentationKind.Metadata,
@@ -216,6 +362,12 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
 
     private void OnProjectChanged(object? sender, UnrealProjectChangedEventArgs eventArgs) =>
         ProjectChanged?.Invoke(this, eventArgs);
+
+    private UnrealBuildService GetBuildService() =>
+        _buildService ?? throw new InvalidOperationException("Unreal integration plugin is not initialized.");
+
+    private UnrealAssetInspectionService GetAssetInspectionService() =>
+        _assetInspectionService ?? throw new InvalidOperationException("Unreal asset inspection service is not initialized.");
 
     private async Task LoadConnectionsAsync(CancellationToken cancellationToken)
     {

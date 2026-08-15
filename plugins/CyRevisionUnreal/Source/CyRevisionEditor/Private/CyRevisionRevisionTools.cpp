@@ -1,5 +1,6 @@
 #include "CyRevisionRevisionTools.h"
 
+#include "Async/Async.h"
 #include "Dom/JsonObject.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/PlatformProcess.h"
@@ -69,6 +70,56 @@ FString EscapeGitArgument(FString Value)
     Value.ReplaceInline(TEXT("\r"), TEXT(" "));
     Value.ReplaceInline(TEXT("\n"), TEXT(" "));
     return FString::Printf(TEXT("\"%s\""), *Value);
+}
+
+bool RunGitProcess(
+    const FString& GitExecutable,
+    const FString& ProjectDirectory,
+    const FString& Command,
+    FString& Output,
+    FString& Error)
+{
+    const FString Arguments = FString::Printf(TEXT("-C %s %s"), *EscapeGitArgument(ProjectDirectory), *Command);
+    int32 ReturnCode = INDEX_NONE;
+    const bool bStarted = FPlatformProcess::ExecProcess(*GitExecutable, *Arguments, &ReturnCode, &Output, &Error);
+    return bStarted && ReturnCode == 0;
+}
+
+void AppendLfsLocks(
+    const TSharedPtr<FJsonObject>& Root,
+    const FString& Field,
+    bool bMine,
+    TArray<FCyRevisionLfsLock>& OutLocks)
+{
+    const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
+    if (!Root.IsValid() || !Root->TryGetArrayField(Field, Values) || Values == nullptr)
+    {
+        return;
+    }
+
+    for (const TSharedPtr<FJsonValue>& Value : *Values)
+    {
+        const TSharedPtr<FJsonObject> LockObject = Value.IsValid() ? Value->AsObject() : nullptr;
+        if (!LockObject.IsValid())
+        {
+            continue;
+        }
+
+        FCyRevisionLfsLock Lock;
+        LockObject->TryGetStringField(TEXT("id"), Lock.Id);
+        LockObject->TryGetStringField(TEXT("path"), Lock.Path);
+        LockObject->TryGetStringField(TEXT("locked_at"), Lock.LockedAt);
+        const TSharedPtr<FJsonObject>* OwnerObject = nullptr;
+        if (LockObject->TryGetObjectField(TEXT("owner"), OwnerObject) && OwnerObject && OwnerObject->IsValid())
+        {
+            (*OwnerObject)->TryGetStringField(TEXT("name"), Lock.Owner);
+        }
+        Lock.bMine = bMine;
+        if (!Lock.Path.IsEmpty())
+        {
+            OutLocks.Add(MoveTemp(Lock));
+        }
+    }
 }
 
 FString JoinUrl(FString Base, const FString& Relative)
@@ -275,6 +326,126 @@ void FCyRevisionRevisionTools::NotifyProjectChanged(const FString& Action) const
     Request->ProcessRequest();
 }
 
+void FCyRevisionRevisionTools::QueryLfsLocksAsync(
+    TFunction<void(TArray<FCyRevisionLfsLock>, FString)> Completion) const
+{
+    FString GitExecutable = TEXT("git");
+    GConfig->GetString(TEXT("CyRevision"), TEXT("GitExecutable"), GitExecutable, GEditorPerProjectIni);
+    if (GitExecutable.IsEmpty())
+    {
+        GitExecutable = TEXT("git");
+    }
+    const FString ProjectDirectory = GetProjectDirectory();
+
+    Async(EAsyncExecution::ThreadPool,
+        [GitExecutable, ProjectDirectory, Completion = MoveTemp(Completion)]() mutable
+        {
+            TArray<FCyRevisionLfsLock> Locks;
+            FString Output;
+            FString Error;
+            const bool bVerified = RunGitProcess(
+                GitExecutable,
+                ProjectDirectory,
+                TEXT("lfs locks --verify --json"),
+                Output,
+                Error);
+
+            TSharedPtr<FJsonObject> Json;
+            if (bVerified)
+            {
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Output);
+                if (FJsonSerializer::Deserialize(Reader, Json) && Json.IsValid())
+                {
+                    AppendLfsLocks(Json, TEXT("ours"), true, Locks);
+                    AppendLfsLocks(Json, TEXT("theirs"), false, Locks);
+                }
+            }
+            else
+            {
+                Output.Reset();
+                FString FallbackError;
+                if (RunGitProcess(
+                        GitExecutable,
+                        ProjectDirectory,
+                        TEXT("lfs locks --json"),
+                        Output,
+                        FallbackError))
+                {
+                    const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Output);
+                    if (FJsonSerializer::Deserialize(Reader, Json) && Json.IsValid())
+                    {
+                        AppendLfsLocks(Json, TEXT("locks"), false, Locks);
+                        Error = TEXT("The LFS server did not identify personal locks; all locks are shown together.");
+                    }
+                }
+                else if (!FallbackError.IsEmpty())
+                {
+                    Error = MoveTemp(FallbackError);
+                }
+            }
+
+            Locks.Sort([](const FCyRevisionLfsLock& Left, const FCyRevisionLfsLock& Right)
+            {
+                if (Left.bMine != Right.bMine)
+                {
+                    return Left.bMine;
+                }
+                return Left.Path.Compare(Right.Path, ESearchCase::IgnoreCase) < 0;
+            });
+
+            AsyncTask(ENamedThreads::GameThread,
+                [Completion = MoveTemp(Completion), Locks = MoveTemp(Locks), Error = MoveTemp(Error)]() mutable
+                {
+                    Completion(MoveTemp(Locks), MoveTemp(Error));
+                });
+        });
+}
+
+void FCyRevisionRevisionTools::SetLfsLockState(const TArray<FString>& RelativePaths, bool bLock)
+{
+    int32 Succeeded = 0;
+    TArray<FString> Failures;
+    for (const FString& RelativePath : RelativePaths)
+    {
+        if (RelativePath.IsEmpty())
+        {
+            continue;
+        }
+
+        FString Output;
+        FString Error;
+        const FString Command = FString::Printf(
+            TEXT("lfs %s %s"),
+            bLock ? TEXT("lock") : TEXT("unlock"),
+            *EscapeGitArgument(RelativePath));
+        if (RunGit(Command, Output, Error))
+        {
+            ++Succeeded;
+        }
+        else
+        {
+            Failures.Add(FString::Printf(
+                TEXT("%s: %s"),
+                *RelativePath,
+                Error.IsEmpty() ? TEXT("Git LFS command failed") : *Error.TrimStartAndEnd()));
+        }
+    }
+
+    FString Message = FString::Printf(
+        TEXT("%d file(s) %s."),
+        Succeeded,
+        bLock ? TEXT("locked") : TEXT("unlocked"));
+    if (Failures.Num() > 0)
+    {
+        Message += TEXT("\n\n") + FString::Join(Failures, TEXT("\n"));
+    }
+    FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
+    if (Succeeded > 0)
+    {
+        NotifyProjectChanged(bLock ? TEXT("lfs-lock") : TEXT("lfs-unlock"));
+    }
+}
+
 void FCyRevisionRevisionTools::Shutdown()
 {
     if (const TSharedPtr<SWindow> Window = DashboardWindow.Pin())
@@ -297,10 +468,7 @@ bool FCyRevisionRevisionTools::RunGit(const FString& Command, FString& Output, F
         GitExecutable = TEXT("git");
     }
 
-    const FString Arguments = FString::Printf(TEXT("-C %s %s"), *EscapeGitArgument(GetProjectDirectory()), *Command);
-    int32 ReturnCode = INDEX_NONE;
-    const bool bStarted = FPlatformProcess::ExecProcess(*GitExecutable, *Arguments, &ReturnCode, &Output, &Error);
-    return bStarted && ReturnCode == 0;
+    return RunGitProcess(GitExecutable, GetProjectDirectory(), Command, Output, Error);
 }
 
 void FCyRevisionRevisionTools::RunGitAction(const FString& Command, const FString& Action)

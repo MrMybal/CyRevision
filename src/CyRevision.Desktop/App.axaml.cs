@@ -116,6 +116,8 @@ public partial class App : Application
             SwarmSetupService swarmSetup = new(vpnNetworkSetup);
             JsonVpnFileExchangeProfileStore vpnFileProfiles = new(paths.VpnDirectory);
             VpnFileExchangeService vpnFileExchange = new();
+            JsonTeamChatProfileStore teamChatProfiles = new(Path.Combine(paths.ConfigurationDirectory, "team-chat"));
+            TeamChatService teamChat = new(paths.TeamChatDirectory);
             JsonLfsManagementProfileStore lfsManagementProfiles = new(paths.LfsManagementDirectory);
             LfsStorageManager lfsStorageManager = new();
             JsonRemoteBuildConnectionStore remoteBuildConnections = new(paths.RemoteBuildDirectory);
@@ -126,6 +128,7 @@ public partial class App : Application
                 catalog, gitService, paths, syncProfiles, syncRuntimeResolver, syncIgnoreFiles, gitExchange, assetDiff,
                 vpnProfiles, new WireGuardKeyService(), vpnConfiguration, vpnEngine, vpnRuntimeResolver,
                 vpnNetworkSetup, vpnSyncExchange, swarmProfiles, swarmSetup, vpnFileProfiles, vpnFileExchange,
+                teamChatProfiles, teamChat,
                 lfsManagementProfiles, lfsStorageManager, remoteBuildConnections, remoteBuildSnapshots,
                 localization, documentation, updates, discordStore, discordAgent, discordConnections,
                 pluginManager, new CodeWorkspaceService(), pullRequests, ciWorkflows, applicationLog, repositoryConsole, initialProjectPath);
@@ -166,16 +169,26 @@ public partial class App : Application
     private void OnUnhandledException(object sender, UnhandledExceptionEventArgs eventArgs)
     {
         if (eventArgs.ExceptionObject is Exception exception)
+        {
             _applicationLogService?.Error("Unhandled", "An unhandled application exception occurred.", exception);
+            PublishApplicationError("Unhandled application error", exception.Message);
+        }
         else
+        {
             _applicationLogService?.Error("Unhandled", $"Unhandled error: {eventArgs.ExceptionObject}");
+            PublishApplicationError("Unhandled application error", eventArgs.ExceptionObject?.ToString() ?? "Unknown error");
+        }
     }
 
     private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs eventArgs)
     {
         _applicationLogService?.Error("Task", "An unobserved background task failed.", eventArgs.Exception);
+        PublishApplicationError("Background task failed", eventArgs.Exception.GetBaseException().Message);
         eventArgs.SetObserved();
     }
+
+    private void PublishApplicationError(string title, string detail) =>
+        Dispatcher.UIThread.Post(() => _viewModel?.PublishApplicationError(title, detail));
 
     private void ApplyStartupRegistrationAtLaunch()
     {

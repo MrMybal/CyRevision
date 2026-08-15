@@ -75,6 +75,22 @@ public sealed class CodeWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task LargeTextPreviewIsBoundedAndMarkedAsTruncated()
+    {
+        using TemporaryDirectory workspace = new();
+        string path = Path.Combine(workspace.Path, "Generated.cpp");
+        await File.WriteAllTextAsync(path, new string('x', 2 * 1024 * 1024));
+
+        CodeFilePreview preview = await new CodeWorkspaceService()
+            .ReadPreviewAsync(workspace.Path, "Generated.cpp");
+
+        Assert.False(preview.IsBinary);
+        Assert.True(preview.WasTruncated);
+        Assert.Equal(256 * 1024, preview.Text.Length);
+        Assert.Equal(2 * 1024 * 1024, preview.Size);
+    }
+
+    [Fact]
     public void SelectionOffsetsAreConvertedToInclusiveLines()
     {
         string text = "one\ntwo\nthree\nfour";

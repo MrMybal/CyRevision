@@ -1,5 +1,7 @@
 #include "CyRevisionEditorModule.h"
+#include "CyRevisionEngineCompatibility.h"
 #include "CyRevisionRevisionTools.h"
+#include "CyRevisionSourceControlProvider.h"
 #include "CyRevisionSwarmTools.h"
 
 #include "AssetRegistry/AssetData.h"
@@ -7,6 +9,7 @@
 #include "Dom/JsonObject.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Commands/UIAction.h"
+#include "Features/IModularFeatures.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformProcess.h"
@@ -21,11 +24,14 @@
 #include "Misc/SecureHash.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "Styling/SlateStyle.h"
+#include "Styling/SlateStyleRegistry.h"
 #include "ToolMenus.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SWindow.h"
 #include "Widgets/Text/STextBlock.h"
@@ -38,6 +44,28 @@ namespace
 {
 constexpr int32 ReservationSchemaVersion = 1;
 constexpr double DefaultReservationMinutes = 30.0;
+const TCHAR* ToolbarEnabledKey = TEXT("ShowToolbarButton");
+const TCHAR* ToolbarLabelKey = TEXT("ShowToolbarLabel");
+
+FToolMenuSection& FindOrAddLabeledSection(UToolMenu* Menu, const FName Name, const FText& Label)
+{
+    FToolMenuSection& Section = Menu->FindOrAddSection(Name);
+    Section.Label = Label;
+    return Section;
+}
+
+bool GetCyRevisionBool(const TCHAR* Key, bool DefaultValue)
+{
+    bool Value = DefaultValue;
+    GConfig->GetBool(TEXT("CyRevisionInterface"), Key, Value, GEditorPerProjectIni);
+    return Value;
+}
+
+void SetCyRevisionBool(const TCHAR* Key, bool Value)
+{
+    GConfig->SetBool(TEXT("CyRevisionInterface"), Key, Value, GEditorPerProjectIni);
+    GConfig->Flush(false, GEditorPerProjectIni);
+}
 
 struct FCyRevisionPresenceLocation
 {
@@ -316,6 +344,15 @@ struct FCyRevisionSoftReservation
     bool bExpired = false;
 };
 
+struct FCyRevisionCollaborationItem
+{
+    FString Id;
+    FString File;
+    FString Owner;
+    FString Updated;
+    bool bMine = false;
+};
+
 namespace
 {
 TArray<TSharedPtr<FCyRevisionSoftReservation>> ReadReservations(const FCyRevisionPresenceLocation& Location)
@@ -430,17 +467,37 @@ TSharedRef<FJsonObject> MakeReservationJson(
 
 void FCyRevisionEditorModule::StartupModule()
 {
+    RegisterStyle();
+    SourceControlProvider = MakeUnique<FCyRevisionSourceControlProvider>();
+    IModularFeatures::Get().RegisterModularFeature(TEXT("SourceControl"), SourceControlProvider.Get());
     RevisionTools = MakeUnique<FCyRevisionRevisionTools>();
     SwarmTools = MakeUnique<FCyRevisionSwarmTools>();
     UToolMenus::RegisterStartupCallback(
         FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FCyRevisionEditorModule::RegisterMenus));
+#if CYREVISION_UE5
     HeartbeatHandle = FTSTicker::GetCoreTicker().AddTicker(
+#else
+    HeartbeatHandle = FTicker::GetCoreTicker().AddTicker(
+#endif
         FTickerDelegate::CreateRaw(this, &FCyRevisionEditorModule::HandleHeartbeat),
         60.0f);
 }
 
 void FCyRevisionEditorModule::ShutdownModule()
 {
+    if (const TSharedPtr<SWindow> Window = CollaborationWindow.Pin())
+    {
+        Window->RequestDestroyWindow();
+    }
+    CollaborationList.Reset();
+    CollaborationStatusText.Reset();
+    CollaborationWindow.Reset();
+    if (SourceControlProvider)
+    {
+        SourceControlProvider->Close();
+        IModularFeatures::Get().UnregisterModularFeature(TEXT("SourceControl"), SourceControlProvider.Get());
+        SourceControlProvider.Reset();
+    }
     if (RevisionTools)
     {
         RevisionTools->Shutdown();
@@ -453,51 +510,162 @@ void FCyRevisionEditorModule::ShutdownModule()
     }
     if (HeartbeatHandle.IsValid())
     {
+#if CYREVISION_UE5
         FTSTicker::GetCoreTicker().RemoveTicker(HeartbeatHandle);
+#else
+        FTicker::GetCoreTicker().RemoveTicker(HeartbeatHandle);
+#endif
         HeartbeatHandle.Reset();
     }
     UToolMenus::UnRegisterStartupCallback(this);
     UToolMenus::UnregisterOwner(this);
+    UnregisterStyle();
     ReservationList.Reset();
     ReservationStatusText.Reset();
     ReservationWindow.Reset();
 }
 
+void FCyRevisionEditorModule::RegisterStyle()
+{
+    if (Style.IsValid())
+    {
+        return;
+    }
+
+    const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("CyRevisionUnreal"));
+    if (!Plugin.IsValid())
+    {
+        return;
+    }
+
+    Style = MakeShared<FSlateStyleSet>(TEXT("CyRevisionUnrealStyle"));
+    Style->SetContentRoot(FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources")));
+    Style->Set(
+        TEXT("CyRevision.Icon"),
+        new FSlateImageBrush(Style->RootToContentDir(TEXT("Icon128"), TEXT(".png")), FVector2D(20.0f, 20.0f)));
+    Style->Set(
+        TEXT("CyRevision.Icon.Small"),
+        new FSlateImageBrush(Style->RootToContentDir(TEXT("Icon128"), TEXT(".png")), FVector2D(16.0f, 16.0f)));
+    FSlateStyleRegistry::RegisterSlateStyle(*Style);
+}
+
+void FCyRevisionEditorModule::UnregisterStyle()
+{
+    if (Style.IsValid())
+    {
+        FSlateStyleRegistry::UnRegisterSlateStyle(*Style);
+        Style.Reset();
+    }
+}
+
 void FCyRevisionEditorModule::RegisterMenus()
 {
     FToolMenuOwnerScoped OwnerScoped(this);
+    const FSlateIcon Icon = Style.IsValid()
+        ? FSlateIcon(Style->GetStyleSetName(), TEXT("CyRevision.Icon"))
+        : FSlateIcon();
+
+    UToolMenu* ToolbarPopup = UToolMenus::Get()->RegisterMenu(TEXT("CyRevision.ToolbarPopup"));
+    BuildCyRevisionMenu(ToolbarPopup);
 
     UToolMenu* ToolsMenu = UToolMenus::Get()->ExtendMenu(TEXT("LevelEditor.MainMenu.Tools"));
-    FToolMenuSection& Section = ToolsMenu->FindOrAddSection(TEXT("CyRevision"));
-    Section.AddMenuEntry(
+    FToolMenuSection& Section = FindOrAddLabeledSection(
+        ToolsMenu,
+        TEXT("CyRevision"),
+        LOCTEXT("CyRevisionToolsSection", "CYREVISION"));
+    Section.AddSubMenu(
+        TEXT("CyRevisionTools"),
+        LOCTEXT("CyRevisionToolsLabel", "CyRevision"),
+        LOCTEXT("CyRevisionToolsTooltip", "Revision control, LFS locks, work-in-progress presence, and project network tools."),
+        FNewToolMenuDelegate::CreateRaw(this, &FCyRevisionEditorModule::BuildCyRevisionMenu),
+        false,
+        Icon);
+
+    UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu(TEXT("LevelEditor.LevelEditorToolBar.AssetsToolBar"));
+    FToolMenuSection& ToolbarSection = ToolbarMenu->FindOrAddSection(TEXT("CyRevision"));
+    ToolbarSection.AddDynamicEntry(
+        TEXT("CyRevisionToolbarDynamic"),
+        FNewToolMenuSectionDelegate::CreateRaw(this, &FCyRevisionEditorModule::AddToolbarEntry));
+
+    UToolMenu* AssetMenu = UToolMenus::Get()->ExtendMenu(TEXT("ContentBrowser.AssetContextMenu"));
+    FToolMenuSection& AssetSection = AssetMenu->FindOrAddSection(TEXT("CyRevision"));
+    AssetSection.AddDynamicEntry(
+        TEXT("CyRevisionAssetActions"),
+        FNewToolMenuSectionDelegate::CreateRaw(this, &FCyRevisionEditorModule::AddAssetContextEntries));
+}
+
+void FCyRevisionEditorModule::BuildCyRevisionMenu(UToolMenu* Menu)
+{
+    if (!Menu)
+    {
+        return;
+    }
+
+    const FSlateIcon Icon = Style.IsValid()
+        ? FSlateIcon(Style->GetStyleSetName(), TEXT("CyRevision.Icon.Small"))
+        : FSlateIcon();
+
+    FToolMenuSection& General = FindOrAddLabeledSection(
+        Menu,
+        TEXT("General"),
+        LOCTEXT("CyRevisionGeneralSection", "REVISION CONTROL"));
+    General.AddMenuEntry(
         TEXT("OpenCyRevision"),
         LOCTEXT("OpenCyRevisionLabel", "Open in CyRevision"),
         LOCTEXT("OpenCyRevisionTooltip", "Opens the external CyRevision client for the current Unreal project."),
-        FSlateIcon(),
+        Icon,
         FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::OpenCyRevision)));
-    Section.AddMenuEntry(
-        TEXT("ShowCyRevisionReservations"),
-        LOCTEXT("ShowReservationsLabel", "Advisory reservations"),
-        LOCTEXT("ShowReservationsTooltip", "Shows who is working on each asset without checkout or locking."),
-        FSlateIcon(),
-        FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::ShowReservations)));
-    Section.AddMenuEntry(
+    General.AddMenuEntry(
         TEXT("ShowCyRevisionDashboard"),
         LOCTEXT("ShowRevisionDashboardLabel", "Revision dashboard"),
         LOCTEXT("ShowRevisionDashboardTooltip", "Manage Git revisions inside Unreal Editor. CyRevision is optional."),
-        FSlateIcon(),
+        Icon,
         FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::ShowRevisionDashboard)));
-    Section.AddMenuEntry(
+    General.AddMenuEntry(
         TEXT("TestCyRevisionConnection"),
         LOCTEXT("TestConnectionLabel", "Test CyRevision connection"),
         LOCTEXT("TestConnectionTooltip", "Checks the authenticated local connection to CyRevision."),
-        FSlateIcon(),
+        Icon,
         FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::TestCyRevisionConnection)));
-    Section.AddMenuEntry(
+
+    FToolMenuSection& Collaboration = FindOrAddLabeledSection(
+        Menu,
+        TEXT("Collaboration"),
+        LOCTEXT("CyRevisionCollaborationSection", "LOCKS & PRESENCE"));
+    Collaboration.AddMenuEntry(
+        TEXT("ShowCyRevisionAllLocks"),
+        LOCTEXT("ShowAllLocksLabel", "All Git LFS locks"),
+        LOCTEXT("ShowAllLocksTooltip", "Shows every lock reported by the project Git LFS server."),
+        Icon,
+        FUIAction(FExecuteAction::CreateLambda([this]()
+        {
+            ShowCollaborationWindow(ECyRevisionCollaborationView::AllLocks);
+        })));
+    Collaboration.AddMenuEntry(
+        TEXT("ShowCyRevisionMyLocks"),
+        LOCTEXT("ShowMyLocksLabel", "My Git LFS locks"),
+        LOCTEXT("ShowMyLocksTooltip", "Shows only locks owned by the current Git LFS identity."),
+        Icon,
+        FUIAction(FExecuteAction::CreateLambda([this]()
+        {
+            ShowCollaborationWindow(ECyRevisionCollaborationView::MyLocks);
+        })));
+    Collaboration.AddMenuEntry(
+        TEXT("ShowCyRevisionReservations"),
+        LOCTEXT("ShowReservationsLabel", "Work in progress"),
+        LOCTEXT("ShowReservationsTooltip", "Shows who is working on each asset without checkout or locking."),
+        Icon,
+        FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::ShowReservations)));
+
+    FToolMenuSection& Network = FindOrAddLabeledSection(
+        Menu,
+        TEXT("Network"),
+        LOCTEXT("CyRevisionNetworkSection", "DISTRIBUTED TOOLS"));
+    Network.AddMenuEntry(
         TEXT("ShowCyRevisionSwarm"),
         LOCTEXT("ShowSwarmLabel", "Swarm over VPN"),
         LOCTEXT("ShowSwarmTooltip", "Configure, launch and test Unreal Swarm over the project WireGuard network."),
-        FSlateIcon(),
+        Icon,
         FUIAction(FExecuteAction::CreateLambda([this]()
         {
             if (SwarmTools)
@@ -506,42 +674,192 @@ void FCyRevisionEditorModule::RegisterMenus()
             }
         })));
 
-    UToolMenu* AssetMenu = UToolMenus::Get()->ExtendMenu(TEXT("ContentBrowser.AssetContextMenu"));
-    FToolMenuSection& AssetSection = AssetMenu->FindOrAddSection(TEXT("CyRevision"));
-    AssetSection.AddDynamicEntry(
-        TEXT("CyRevisionSoftReservationActions"),
-        FNewToolMenuSectionDelegate::CreateRaw(this, &FCyRevisionEditorModule::AddAssetContextEntries));
+    FToolMenuSection& Interface = FindOrAddLabeledSection(
+        Menu,
+        TEXT("Interface"),
+        LOCTEXT("CyRevisionInterfaceSection", "INTERFACE"));
+    Interface.AddMenuEntry(
+        TEXT("CyRevisionToggleToolbar"),
+        LOCTEXT("ToggleToolbarLabel", "Show CyRevision toolbar button"),
+        LOCTEXT("ToggleToolbarTooltip", "Shows or hides the CyRevision button in the main Unreal toolbar."),
+        Icon,
+        FUIAction(
+            FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::ToggleToolbarEnabled),
+            FCanExecuteAction(),
+            FIsActionChecked::CreateRaw(this, &FCyRevisionEditorModule::IsToolbarEnabled)),
+        EUserInterfaceActionType::ToggleButton);
+    Interface.AddMenuEntry(
+        TEXT("CyRevisionToggleToolbarLabel"),
+        LOCTEXT("ToggleToolbarNameLabel", "Show name beside toolbar icon"),
+        LOCTEXT("ToggleToolbarNameTooltip", "Shows or hides the CyRevision name beside its toolbar icon."),
+        Icon,
+        FUIAction(
+            FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::ToggleToolbarLabel),
+            FCanExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::IsToolbarEnabled),
+            FIsActionChecked::CreateRaw(this, &FCyRevisionEditorModule::IsToolbarLabelVisible)),
+        EUserInterfaceActionType::ToggleButton);
+}
+
+void FCyRevisionEditorModule::AddToolbarEntry(FToolMenuSection& Section)
+{
+    if (!IsToolbarEnabled())
+    {
+        return;
+    }
+
+    const FSlateIcon Icon = Style.IsValid()
+        ? FSlateIcon(Style->GetStyleSetName(), TEXT("CyRevision.Icon"))
+        : FSlateIcon();
+    const FText Label = IsToolbarLabelVisible()
+        ? LOCTEXT("ToolbarCyRevisionLabel", "CyRevision")
+        : FText::GetEmpty();
+    FToolMenuEntry Entry = FToolMenuEntry::InitComboButton(
+        TEXT("CyRevisionToolbarButton"),
+        FUIAction(),
+        FOnGetContent::CreateLambda([]()
+        {
+            return UToolMenus::Get()->GenerateWidget(
+                TEXT("CyRevision.ToolbarPopup"),
+                FToolMenuContext());
+        }),
+        Label,
+        LOCTEXT("ToolbarCyRevisionTooltip", "Open CyRevision revision, lock, work-in-progress, and network tools."),
+        Icon,
+        false);
+    Section.AddEntry(MoveTemp(Entry));
 }
 
 void FCyRevisionEditorModule::AddAssetContextEntries(FToolMenuSection& Section)
 {
     const UContentBrowserAssetContextMenuContext* Context = Section.FindContext<UContentBrowserAssetContextMenuContext>();
-    if (!Context || Context->SelectedAssets.IsEmpty())
+    if (!Context)
     {
         return;
     }
 
+#if CYREVISION_UE5
     const TArray<FAssetData> SelectedAssets = Context->SelectedAssets;
-    Section.AddMenuEntry(
+#else
+    TArray<FAssetData> SelectedAssets;
+    for (const TWeakObjectPtr<UObject>& SelectedObject : Context->SelectedObjects)
+    {
+        if (const UObject* Object = SelectedObject.Get())
+        {
+            SelectedAssets.Emplace(Object);
+        }
+    }
+#endif
+    if (SelectedAssets.Num() == 0)
+    {
+        return;
+    }
+    const FSlateIcon Icon = Style.IsValid()
+        ? FSlateIcon(Style->GetStyleSetName(), TEXT("CyRevision.Icon.Small"))
+        : FSlateIcon();
+    Section.AddSubMenu(
+        TEXT("CyRevisionAssetSubMenu"),
+        LOCTEXT("CyRevisionAssetSubMenuLabel", "CyRevision"),
+        LOCTEXT("CyRevisionAssetSubMenuTooltip", "Revision, LFS lock, and work-in-progress actions for the selected assets."),
+        FNewToolMenuDelegate::CreateLambda([this, SelectedAssets](UToolMenu* Menu)
+        {
+            AddAssetContextSubMenu(Menu, SelectedAssets);
+        }),
+        false,
+        Icon);
+}
+
+void FCyRevisionEditorModule::AddAssetContextSubMenu(UToolMenu* Menu, TArray<FAssetData> SelectedAssets)
+{
+    if (!Menu)
+    {
+        return;
+    }
+
+    const FSlateIcon Icon = Style.IsValid()
+        ? FSlateIcon(Style->GetStyleSetName(), TEXT("CyRevision.Icon.Small"))
+        : FSlateIcon();
+    FToolMenuSection& Presence = FindOrAddLabeledSection(
+        Menu,
+        TEXT("Presence"),
+        LOCTEXT("AssetPresenceSection", "WORK IN PROGRESS"));
+    Presence.AddMenuEntry(
         TEXT("CyRevisionMarkInProgress"),
         LOCTEXT("MarkInProgressLabel", "Report: I am working on this"),
         LOCTEXT(
             "MarkInProgressTooltip",
             "Creates an advisory marker. The asset stays editable and no checkout or LFS lock is created."),
-        FSlateIcon(),
+        Icon,
         FUIAction(FExecuteAction::CreateLambda([this, SelectedAssets]() { MarkAssetsInProgress(SelectedAssets); })));
-    Section.AddMenuEntry(
+    Presence.AddMenuEntry(
         TEXT("CyRevisionReleaseAdvisory"),
         LOCTEXT("ReleaseAdvisoryLabel", "Release my advisory"),
         LOCTEXT("ReleaseAdvisoryTooltip", "Removes only your own advisory markers for the selected assets."),
-        FSlateIcon(),
+        Icon,
         FUIAction(FExecuteAction::CreateLambda([this, SelectedAssets]() { ReleaseAssets(SelectedAssets); })));
-    Section.AddMenuEntry(
+    Presence.AddMenuEntry(
         TEXT("CyRevisionViewAdvisories"),
-        LOCTEXT("ViewAdvisoriesLabel", "View advisory reservations"),
+        LOCTEXT("ViewAdvisoriesLabel", "View work in progress"),
         LOCTEXT("ViewAdvisoriesTooltip", "Shows active and expired advisory markers for this project."),
-        FSlateIcon(),
+        Icon,
         FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::ShowReservations)));
+
+    FToolMenuSection& Locks = FindOrAddLabeledSection(
+        Menu,
+        TEXT("Locks"),
+        LOCTEXT("AssetLocksSection", "GIT LFS LOCKS"));
+    Locks.AddMenuEntry(
+        TEXT("CyRevisionLockSelected"),
+        LOCTEXT("LockSelectedLabel", "Lock selected file(s)"),
+        LOCTEXT("LockSelectedTooltip", "Creates normal Git LFS locks for the selected asset files."),
+        Icon,
+        FUIAction(FExecuteAction::CreateLambda([this, SelectedAssets]()
+        {
+            SetSelectedAssetsLfsLock(SelectedAssets, true);
+        })));
+    Locks.AddMenuEntry(
+        TEXT("CyRevisionUnlockSelected"),
+        LOCTEXT("UnlockSelectedLabel", "Unlock selected file(s)"),
+        LOCTEXT("UnlockSelectedTooltip", "Releases your normal Git LFS locks for the selected asset files. It never force-unlocks another user."),
+        Icon,
+        FUIAction(FExecuteAction::CreateLambda([this, SelectedAssets]()
+        {
+            SetSelectedAssetsLfsLock(SelectedAssets, false);
+        })));
+    Locks.AddMenuEntry(
+        TEXT("CyRevisionViewAllLocks"),
+        LOCTEXT("ViewAllLocksLabel", "View all project locks"),
+        LOCTEXT("ViewAllLocksTooltip", "Shows every lock reported by the Git LFS server."),
+        Icon,
+        FUIAction(FExecuteAction::CreateLambda([this]()
+        {
+            ShowCollaborationWindow(ECyRevisionCollaborationView::AllLocks);
+        })));
+    Locks.AddMenuEntry(
+        TEXT("CyRevisionViewMyLocks"),
+        LOCTEXT("ViewMyLocksLabel", "View my locks"),
+        LOCTEXT("ViewMyLocksTooltip", "Shows locks owned by the current Git LFS identity."),
+        Icon,
+        FUIAction(FExecuteAction::CreateLambda([this]()
+        {
+            ShowCollaborationWindow(ECyRevisionCollaborationView::MyLocks);
+        })));
+
+    FToolMenuSection& General = FindOrAddLabeledSection(
+        Menu,
+        TEXT("General"),
+        LOCTEXT("AssetGeneralSection", "CYREVISION"));
+    General.AddMenuEntry(
+        TEXT("CyRevisionOpenClientForAsset"),
+        LOCTEXT("OpenClientForAssetLabel", "Open project in CyRevision"),
+        LOCTEXT("OpenClientForAssetTooltip", "Opens the current Unreal project in the CyRevision desktop application."),
+        Icon,
+        FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::OpenCyRevision)));
+    General.AddMenuEntry(
+        TEXT("CyRevisionOpenDashboardForAsset"),
+        LOCTEXT("OpenDashboardForAssetLabel", "Revision dashboard"),
+        LOCTEXT("OpenDashboardForAssetTooltip", "Opens the autonomous project revision dashboard."),
+        Icon,
+        FUIAction(FExecuteAction::CreateRaw(this, &FCyRevisionEditorModule::ShowRevisionDashboard)));
 }
 
 void FCyRevisionEditorModule::OpenCyRevision() const
@@ -565,6 +883,60 @@ void FCyRevisionEditorModule::TestCyRevisionConnection()
     if (RevisionTools)
     {
         RevisionTools->TestConnection();
+    }
+}
+
+void FCyRevisionEditorModule::ToggleToolbarEnabled()
+{
+    SetCyRevisionBool(ToolbarEnabledKey, !IsToolbarEnabled());
+    UToolMenus::Get()->RefreshAllWidgets();
+}
+
+void FCyRevisionEditorModule::ToggleToolbarLabel()
+{
+    SetCyRevisionBool(ToolbarLabelKey, !IsToolbarLabelVisible());
+    UToolMenus::Get()->RefreshAllWidgets();
+}
+
+bool FCyRevisionEditorModule::IsToolbarEnabled() const
+{
+    return GetCyRevisionBool(ToolbarEnabledKey, true);
+}
+
+bool FCyRevisionEditorModule::IsToolbarLabelVisible() const
+{
+    return GetCyRevisionBool(ToolbarLabelKey, true);
+}
+
+void FCyRevisionEditorModule::SetSelectedAssetsLfsLock(TArray<FAssetData> Assets, bool bLock)
+{
+    if (!RevisionTools)
+    {
+        return;
+    }
+
+    TArray<FString> RelativePaths;
+    for (const FAssetData& Asset : Assets)
+    {
+        const FString RelativePath = GetAssetRelativeFilename(Asset);
+        if (!RelativePath.IsEmpty())
+        {
+            RelativePaths.AddUnique(RelativePath);
+        }
+    }
+
+    if (RelativePaths.Num() == 0)
+    {
+        FMessageDialog::Open(
+            EAppMsgType::Ok,
+            LOCTEXT("NoAssetFiles", "No on-disk asset file could be resolved for the selection."));
+        return;
+    }
+
+    RevisionTools->SetLfsLockState(RelativePaths, bLock);
+    if (CollaborationWindow.IsValid())
+    {
+        RefreshCollaborationWindow();
     }
 }
 
@@ -621,7 +993,7 @@ void FCyRevisionEditorModule::MarkAssetsInProgress(TArray<FAssetData> Assets)
     {
         Message += TEXT("\n\n") + Location.Detail;
     }
-    if (!ConflictingOwners.IsEmpty())
+    if (ConflictingOwners.Num() > 0)
     {
         Message += TEXT("\n\nDéjà signalé(s) par : ");
         Message += FString::Join(ConflictingOwners.Array(), TEXT(", "));
@@ -667,6 +1039,265 @@ void FCyRevisionEditorModule::ReleaseAssets(TArray<FAssetData> Assets)
     if (RevisionTools)
     {
         RevisionTools->NotifyProjectChanged(TEXT("advisory-release"));
+    }
+}
+
+void FCyRevisionEditorModule::ShowCollaborationWindow(ECyRevisionCollaborationView InitialView)
+{
+    if (InitialView == ECyRevisionCollaborationView::WorkInProgress)
+    {
+        ShowReservations();
+        return;
+    }
+
+    CollaborationView = InitialView;
+    if (const TSharedPtr<SWindow> ExistingWindow = CollaborationWindow.Pin())
+    {
+        ExistingWindow->BringToFront(true);
+        ApplyCollaborationFilter();
+        RefreshCollaborationWindow();
+        return;
+    }
+
+    TSharedRef<SWindow> Window = SNew(SWindow)
+        .Title(LOCTEXT("CollaborationWindowTitle", "CyRevision - Locks & Work in progress"))
+        .ClientSize(FVector2D(1060.0f, 620.0f))
+        .SupportsMaximize(true)
+        .SupportsMinimize(true);
+    CollaborationWindow = Window;
+    Window->SetOnWindowClosed(FOnWindowClosed::CreateLambda([this](const TSharedRef<SWindow>&)
+    {
+        CollaborationList.Reset();
+        CollaborationStatusText.Reset();
+        CollaborationWindow.Reset();
+        CollaborationItems.Reset();
+        CollaborationLockItems.Reset();
+        bCollaborationRefreshInProgress = false;
+    }));
+
+    Window->SetContent(
+        SNew(SBorder)
+        .Padding(12.0f)
+        [
+            SNew(SVerticalBox)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("CollaborationHeading", "Project collaboration state"))
+                    .Font(FCoreStyle::GetDefaultFontStyle("Bold", 18))
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(4.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("AllLocksTab", "All locks"))
+                    .ToolTipText(LOCTEXT("AllLocksTabTooltip", "Show every Git LFS lock for the project."))
+                    .OnClicked_Lambda([this]()
+                    {
+                        SetCollaborationView(ECyRevisionCollaborationView::AllLocks);
+                        return FReply::Handled();
+                    })
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(4.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("MyLocksTab", "My locks"))
+                    .ToolTipText(LOCTEXT("MyLocksTabTooltip", "Show locks owned by the current Git LFS identity."))
+                    .OnClicked_Lambda([this]()
+                    {
+                        SetCollaborationView(ECyRevisionCollaborationView::MyLocks);
+                        return FReply::Handled();
+                    })
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(4.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("WipTab", "Work in progress"))
+                    .ToolTipText(LOCTEXT("WipTabTooltip", "Open the non-blocking work-in-progress presence list."))
+                    .OnClicked_Lambda([this]()
+                    {
+                        SetCollaborationView(ECyRevisionCollaborationView::WorkInProgress);
+                        return FReply::Handled();
+                    })
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(12.0f, 0.0f, 0.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("RefreshCollaboration", "Refresh"))
+                    .OnClicked_Lambda([this]()
+                    {
+                        RefreshCollaborationWindow();
+                        return FReply::Handled();
+                    })
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0.0f, 6.0f, 0.0f, 8.0f)
+            [
+                SAssignNew(CollaborationStatusText, STextBlock)
+                .Text(LOCTEXT("CollaborationLoading", "Loading Git LFS locks..."))
+                .AutoWrapText(true)
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(4.0f, 0.0f, 4.0f, 4.0f)
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot().FillWidth(3.0f)[SNew(STextBlock).Text(LOCTEXT("LockFileColumn", "File"))]
+                + SHorizontalBox::Slot().FillWidth(1.3f)[SNew(STextBlock).Text(LOCTEXT("LockOwnerColumn", "Locked by"))]
+                + SHorizontalBox::Slot().FillWidth(1.4f)[SNew(STextBlock).Text(LOCTEXT("LockDateColumn", "Date"))]
+                + SHorizontalBox::Slot().FillWidth(1.0f)[SNew(STextBlock).Text(LOCTEXT("LockIdColumn", "Lock ID"))]
+                + SHorizontalBox::Slot().FillWidth(0.55f)[SNew(STextBlock).Text(LOCTEXT("LockMineColumn", "Owner"))]
+            ]
+            + SVerticalBox::Slot()
+            .FillHeight(1.0f)
+            [
+                SAssignNew(CollaborationList, SListView<TSharedPtr<FCyRevisionCollaborationItem>>)
+                .ListItemsSource(&CollaborationItems)
+                .SelectionMode(ESelectionMode::Multi)
+                .OnGenerateRow_Lambda([](
+                    TSharedPtr<FCyRevisionCollaborationItem> Item,
+                    const TSharedRef<STableViewBase>& OwnerTable)
+                {
+                    return SNew(STableRow<TSharedPtr<FCyRevisionCollaborationItem>>, OwnerTable)
+                        .Padding(FMargin(3.0f, 3.0f))
+                        [
+                            SNew(SHorizontalBox)
+                            + SHorizontalBox::Slot().FillWidth(3.0f)
+                            [SNew(STextBlock).Text(FText::FromString(Item->File))]
+                            + SHorizontalBox::Slot().FillWidth(1.3f)
+                            [SNew(STextBlock).Text(FText::FromString(Item->Owner))]
+                            + SHorizontalBox::Slot().FillWidth(1.4f)
+                            [SNew(STextBlock).Text(FText::FromString(Item->Updated))]
+                            + SHorizontalBox::Slot().FillWidth(1.0f)
+                            [SNew(STextBlock).Text(FText::FromString(Item->Id))]
+                            + SHorizontalBox::Slot().FillWidth(0.55f)
+                            [SNew(STextBlock).Text(Item->bMine ? LOCTEXT("MineLock", "Mine") : LOCTEXT("TeamLock", "Team"))]
+                        ];
+                })
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0.0f, 8.0f, 0.0f, 0.0f)
+            [
+                SNew(STextBlock)
+                .Text(LOCTEXT(
+                    "LocksSafetyReminder",
+                    "Lock lists are read-only here. Use the Content Browser > CyRevision submenu to lock or normally unlock selected assets; another user's lock is never force-removed."))
+                .AutoWrapText(true)
+            ]
+        ]);
+
+    FSlateApplication::Get().AddWindow(Window);
+    ApplyCollaborationFilter();
+    RefreshCollaborationWindow();
+}
+
+void FCyRevisionEditorModule::SetCollaborationView(ECyRevisionCollaborationView View)
+{
+    if (View == ECyRevisionCollaborationView::WorkInProgress)
+    {
+        ShowReservations();
+        return;
+    }
+
+    CollaborationView = View;
+    ApplyCollaborationFilter();
+}
+
+void FCyRevisionEditorModule::RefreshCollaborationWindow()
+{
+    if (!RevisionTools || bCollaborationRefreshInProgress || !CollaborationWindow.IsValid())
+    {
+        return;
+    }
+
+    bCollaborationRefreshInProgress = true;
+    if (CollaborationStatusText.IsValid())
+    {
+        CollaborationStatusText->SetText(LOCTEXT("LoadingLocksStatus", "Loading Git LFS locks from the remote server..."));
+    }
+
+    const TWeakPtr<SWindow> ExpectedWindow = CollaborationWindow;
+    RevisionTools->QueryLfsLocksAsync(
+        [ExpectedWindow](TArray<FCyRevisionLfsLock> Locks, FString Error)
+        {
+            FCyRevisionEditorModule* Module = FModuleManager::GetModulePtr<FCyRevisionEditorModule>(TEXT("CyRevisionEditor"));
+            if (!Module || !ExpectedWindow.IsValid() || Module->CollaborationWindow.Pin() != ExpectedWindow.Pin())
+            {
+                return;
+            }
+
+            TArray<TSharedPtr<FCyRevisionCollaborationItem>> Items;
+            Items.Reserve(Locks.Num());
+            for (FCyRevisionLfsLock& Lock : Locks)
+            {
+                TSharedPtr<FCyRevisionCollaborationItem> Item = MakeShared<FCyRevisionCollaborationItem>();
+                Item->Id = MoveTemp(Lock.Id);
+                Item->File = MoveTemp(Lock.Path);
+                Item->Owner = MoveTemp(Lock.Owner);
+                Item->Updated = MoveTemp(Lock.LockedAt);
+                Item->bMine = Lock.bMine;
+                Items.Add(MoveTemp(Item));
+            }
+            Module->ApplyLfsLocks(MoveTemp(Items), Error);
+        });
+}
+
+void FCyRevisionEditorModule::ApplyLfsLocks(
+    TArray<TSharedPtr<FCyRevisionCollaborationItem>> Locks,
+    const FString& Error)
+{
+    bCollaborationRefreshInProgress = false;
+    CollaborationLockItems = MoveTemp(Locks);
+    ApplyCollaborationFilter();
+
+    if (CollaborationStatusText.IsValid())
+    {
+        int32 MineCount = 0;
+        for (const TSharedPtr<FCyRevisionCollaborationItem>& Item : CollaborationLockItems)
+        {
+            MineCount += Item->bMine ? 1 : 0;
+        }
+        FString Status = FString::Printf(
+            TEXT("%d project lock(s) - %d owned by me - %d owned by teammates"),
+            CollaborationLockItems.Num(),
+            MineCount,
+            CollaborationLockItems.Num() - MineCount);
+        if (!Error.TrimStartAndEnd().IsEmpty())
+        {
+            Status += TEXT("\n") + Error.TrimStartAndEnd();
+        }
+        CollaborationStatusText->SetText(FText::FromString(Status));
+    }
+}
+
+void FCyRevisionEditorModule::ApplyCollaborationFilter()
+{
+    CollaborationItems.Reset();
+    for (const TSharedPtr<FCyRevisionCollaborationItem>& Item : CollaborationLockItems)
+    {
+        if (CollaborationView == ECyRevisionCollaborationView::AllLocks || Item->bMine)
+        {
+            CollaborationItems.Add(Item);
+        }
+    }
+    if (CollaborationList.IsValid())
+    {
+        CollaborationList->RequestListRefresh();
     }
 }
 
