@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 4,
-  "VersionName": "0.4.0",
+  "Version": 10,
+  "VersionName": "0.9.1",
   "FriendlyName": "CyRevision Collaboration",
-  "Description": "Autonomous revision and Swarm-over-VPN tools, advisory reservations, and an optional authenticated CyRevision bridge.",
+  "Description": "Native CyRevision revision-control provider, advisory reservations, optional headless asset previews and semantic Blueprint diffs, Swarm-over-VPN tools, and an authenticated desktop bridge.",
   "Category": "Source Control",
   "CreatedBy": "CyRevision",
   "CanContainContent": false,
@@ -12,7 +12,7 @@
     {
       "Name": "CyRevisionEditor",
       "Type": "Editor",
-      "LoadingPhase": "PostEngineInit"
+      "LoadingPhase": "Default"
     }
   ]
 }

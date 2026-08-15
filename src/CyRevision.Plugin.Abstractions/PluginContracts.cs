@@ -72,11 +72,42 @@ public interface IFilePresentationProvider
         CancellationToken cancellationToken = default);
 }
 
+public enum UnrealProjectKind
+{
+    Unknown,
+    BlueprintOnly,
+    Cpp
+}
+
+public enum UnrealPluginInstallMode
+{
+    Unavailable,
+    Source,
+    Precompiled
+}
+
+public static class UnrealPluginCompatibility
+{
+    public static IReadOnlyList<string> SupportedEngineVersions { get; } =
+    [
+        "4.27", "5.0", "5.1", "5.2", "5.3", "5.4", "5.5", "5.6", "5.7", "5.8"
+    ];
+}
+
 public sealed record UnrealProjectInspection(
     bool IsValid,
     string ProjectRoot,
     string ProjectFile,
     string ProjectName,
+    string EngineAssociation,
+    string? EngineVersion,
+    UnrealProjectKind ProjectKind,
+    UnrealPluginInstallMode InstallMode,
+    bool IsCompatible,
+    string CompatibilityStatus,
+    IReadOnlyList<string> SupportedEngineVersions,
+    string PrecompiledPlatform,
+    IReadOnlyList<string> AvailablePrecompiledVersions,
     bool IsEditorPluginInstalled,
     string? InstalledPluginVersion,
     string? BundledPluginVersion,
@@ -96,6 +127,152 @@ public sealed record UnrealBridgeStatus(
     string Endpoint,
     int AuthorizedProjectCount,
     string Detail);
+
+/// <summary>
+/// Per-project settings for the optional Unreal asset inspector. The feature is deliberately
+/// disabled by default because starting an Unreal commandlet is more expensive than the
+/// lightweight package fingerprint used by the regular preview provider.
+/// </summary>
+public sealed record UnrealAssetInspectionOptions(
+    bool Enabled,
+    int PreviewResolution,
+    long CacheBudgetBytes,
+    bool RenderMeshThumbnails,
+    int CommandTimeoutSeconds)
+{
+    public static UnrealAssetInspectionOptions Default { get; } = new(
+        false,
+        512,
+        2L * 1024 * 1024 * 1024,
+        true,
+        180);
+}
+
+public sealed record UnrealAssetInspectionCacheStatus(
+    string CacheDirectory,
+    long SizeBytes,
+    int EntryCount,
+    DateTimeOffset? LastUpdated,
+    string Summary);
+
+public enum UnrealBuildTargetKind
+{
+    Project,
+    Plugin
+}
+
+public enum UnrealBuildPlatform
+{
+    Win64,
+    Linux,
+    Android
+}
+
+public enum UnrealBuildConfiguration
+{
+    DebugGame,
+    Development,
+    Shipping
+}
+
+public sealed record UnrealBuildTargetDescriptor(
+    string Id,
+    string DisplayName,
+    UnrealBuildTargetKind Kind,
+    string TargetName,
+    string SourcePath,
+    string TargetType);
+
+public sealed record UnrealEngineInstallation(
+    string Version,
+    string RootPath,
+    string BuildScriptPath,
+    string RunUatPath,
+    bool IsInstalledBuild,
+    string RecommendedLinuxToolchain,
+    string RecommendedClangVersion,
+    string? DetectedLinuxToolchainPath,
+    string? DetectedClangVersion,
+    bool LinuxToolchainReady,
+    string? DetectedAndroidSdkPath,
+    bool AndroidToolchainReady,
+    string ToolchainSummary);
+
+public sealed record UnrealBuildDiscovery(
+    string ProjectFile,
+    IReadOnlyList<UnrealEngineInstallation> Engines,
+    IReadOnlyList<UnrealBuildTargetDescriptor> Targets,
+    string Summary,
+    bool IsCached = false,
+    DateTimeOffset? CapturedAt = null);
+
+public sealed record UnrealBuildProfile(
+    Guid ProjectId,
+    string EngineRoot,
+    string TargetId,
+    UnrealBuildPlatform Platform,
+    UnrealBuildConfiguration Configuration,
+    string LinuxToolchainPath,
+    string AndroidSdkPath,
+    string AndroidNdkPath,
+    string JavaHomePath,
+    string OutputDirectory,
+    bool CookAndPackage,
+    bool AutoConfigureToolchains,
+    int TimeoutMinutes,
+    DateTimeOffset UpdatedAt,
+    string PresetName = "Default",
+    int MaximumParallelBuilds = 1);
+
+public sealed record UnrealBuildRequest(
+    Guid ProjectId,
+    string ProjectFile,
+    UnrealEngineInstallation Engine,
+    UnrealBuildTargetDescriptor Target,
+    UnrealBuildPlatform Platform,
+    UnrealBuildConfiguration Configuration,
+    string LinuxToolchainPath,
+    string AndroidSdkPath,
+    string AndroidNdkPath,
+    string JavaHomePath,
+    string OutputDirectory,
+    bool CookAndPackage,
+    bool AutoConfigureToolchains,
+    int TimeoutMinutes);
+
+public sealed record UnrealBuildProgress(
+    DateTimeOffset Timestamp,
+    string Stream,
+    string Text);
+
+public enum UnrealBuildDiagnosticSeverity
+{
+    Information,
+    Warning,
+    Error
+}
+
+public sealed record UnrealBuildDiagnostic(
+    UnrealBuildDiagnosticSeverity Severity,
+    string Code,
+    string Message,
+    string File,
+    int? Line,
+    string RawLine);
+
+public sealed record UnrealBuildResult(
+    bool Succeeded,
+    int ExitCode,
+    string EngineVersion,
+    string TargetName,
+    UnrealBuildPlatform Platform,
+    TimeSpan Duration,
+    string LogPath,
+    string OutputPath,
+    string Summary,
+    IReadOnlyList<UnrealBuildDiagnostic>? Diagnostics = null,
+    int WarningCount = 0,
+    int ErrorCount = 0);
 
 public sealed class UnrealProjectChangedEventArgs(string projectRoot, string action) : EventArgs
 {
@@ -120,6 +297,57 @@ public interface IUnrealIntegrationPlugin : ICyRevisionPlugin
     Task<UnrealBridgeStatus> ConfigureProjectConnectionAsync(
         string projectPath,
         string cyRevisionExecutablePath,
+        CancellationToken cancellationToken = default);
+
+    Task<UnrealAssetInspectionOptions> LoadAssetInspectionOptionsAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default);
+
+    Task SaveAssetInspectionOptionsAsync(
+        string projectPath,
+        UnrealAssetInspectionOptions options,
+        CancellationToken cancellationToken = default);
+
+    Task<UnrealAssetInspectionCacheStatus> GetAssetInspectionCacheStatusAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default);
+
+    Task<UnrealAssetInspectionCacheStatus> ClearAssetInspectionCacheAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default);
+
+    Task<UnrealBuildDiscovery> DiscoverBuildEnvironmentAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default);
+
+    Task<UnrealBuildDiscovery> RefreshBuildEnvironmentAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default);
+
+    Task<UnrealBuildProfile?> LoadBuildProfileAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default);
+
+    Task SaveBuildProfileAsync(
+        UnrealBuildProfile profile,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<UnrealBuildProfile>> LoadBuildPresetsAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default);
+
+    Task SaveBuildPresetAsync(
+        UnrealBuildProfile profile,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteBuildPresetAsync(
+        Guid projectId,
+        string presetName,
+        CancellationToken cancellationToken = default);
+
+    Task<UnrealBuildResult> RunBuildAsync(
+        UnrealBuildRequest request,
+        IProgress<UnrealBuildProgress>? progress = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -172,6 +400,34 @@ public sealed record AiAgentResult(
     int ExitCode,
     TimeSpan Duration);
 
+public sealed record AiCodexDetectionResult(
+    bool IsInstalled,
+    bool IsRunning,
+    string ExecutablePath,
+    string Version,
+    string Status);
+
+public sealed record AiChatConnectRequest(
+    string ProjectName,
+    string RepositoryPath,
+    string ExecutablePath,
+    string Model,
+    AiWorkspacePermission Permissions);
+
+public sealed record AiChatConnectionResult(
+    bool Connected,
+    string ThreadId,
+    string Status);
+
+public sealed record AiChatProgress(string Kind, string Text);
+
+public sealed record AiChatTurnResult(
+    bool Succeeded,
+    string Response,
+    string Diagnostic,
+    string TurnId,
+    TimeSpan Duration);
+
 public interface IAiIntegrationPlugin : ICyRevisionPlugin
 {
     IReadOnlyList<AiProviderDescriptor> Providers { get; }
@@ -187,6 +443,39 @@ public interface IAiIntegrationPlugin : ICyRevisionPlugin
     Task SaveMcpProfileAsync(
         AiMcpProjectProfile profile,
         CancellationToken cancellationToken = default);
+
+    bool IsCodexChatConnected => false;
+
+    Task<AiCodexDetectionResult> DetectCodexAsync(
+        string executablePath = "codex",
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new AiCodexDetectionResult(
+            false,
+            false,
+            string.Empty,
+            string.Empty,
+            "This AI plugin does not provide a Codex App Server connection."));
+
+    Task<AiChatConnectionResult> ConnectCodexChatAsync(
+        AiChatConnectRequest request,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new AiChatConnectionResult(
+            false,
+            string.Empty,
+            "This AI plugin does not provide a Codex App Server connection."));
+
+    Task<AiChatTurnResult> SendCodexChatAsync(
+        string message,
+        IProgress<AiChatProgress>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new AiChatTurnResult(
+            false,
+            string.Empty,
+            "This AI plugin does not provide a Codex App Server connection.",
+            string.Empty,
+            TimeSpan.Zero));
+
+    Task DisconnectCodexChatAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 
 public enum AiMcpTransport

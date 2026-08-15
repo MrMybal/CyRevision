@@ -9,7 +9,9 @@ namespace CyRevision.Code;
 public sealed class CodeWorkspaceService
 {
     private const int MaximumDirectoryEntries = 5_000;
-    private const int MaximumPreviewBytes = 2 * 1024 * 1024;
+    // A preview is intentionally smaller than the source file. The syntax view is interactive,
+    // so feeding it several megabytes of generated/build output would stall the UI compositor.
+    private const int MaximumPreviewBytes = 256 * 1024;
     private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         ".git", ".svn", ".hg", ".idea", ".vs", ".cache", ".cyrevision", "bin", "obj", "Binaries",
@@ -79,28 +81,47 @@ public sealed class CodeWorkspaceService
             throw new FileNotFoundException("The selected file no longer exists.", fullPath);
         }
 
-        await using FileStream stream = new(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        int length = (int)Math.Min(stream.Length, MaximumPreviewBytes);
+        await using FileStream stream = new(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 64 * 1024,
+            useAsync: true);
+        long sourceLength = stream.Length;
+        int length = (int)Math.Min(sourceLength, MaximumPreviewBytes);
         byte[] bytes = new byte[length];
-        int read = await stream.ReadAsync(bytes, cancellationToken);
-        bool binary = IsBinary(bytes.AsSpan(0, Math.Min(read, 8_192)));
-        string language = DetectLanguage(fullPath);
-        if (binary)
+        int read = 0;
+        while (read < length)
         {
-            return new CodeFilePreview(relativePath, language, string.Empty, 0, info.Length, true, false, []);
+            int chunk = await stream.ReadAsync(bytes.AsMemory(read, length - read), cancellationToken)
+                .ConfigureAwait(false);
+            if (chunk == 0) break;
+            read += chunk;
         }
 
-        string text = Encoding.UTF8.GetString(bytes, 0, read);
-        int lineCount = text.Length == 0 ? 0 : text.Count(character => character == '\n') + 1;
-        return new CodeFilePreview(
-            relativePath,
-            language,
-            text,
-            lineCount,
-            info.Length,
-            false,
-            stream.Length > MaximumPreviewBytes,
-            ExtractSymbols(text, language));
+        return await Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            bool binary = IsBinary(bytes.AsSpan(0, Math.Min(read, 8_192)));
+            string language = DetectLanguage(fullPath);
+            if (binary)
+            {
+                return new CodeFilePreview(relativePath, language, string.Empty, 0, sourceLength, true, false, []);
+            }
+
+            string text = Encoding.UTF8.GetString(bytes, 0, read);
+            int lineCount = text.Length == 0 ? 0 : text.Count(character => character == '\n') + 1;
+            return new CodeFilePreview(
+                relativePath,
+                language,
+                text,
+                lineCount,
+                sourceLength,
+                false,
+                sourceLength > read,
+                ExtractSymbols(text, language));
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<CodeSearchReport> SearchAsync(

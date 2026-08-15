@@ -17,9 +17,11 @@ public class CyRevisionEditor : ModuleRules
             "InputCore",
             "Json",
             "Projects",
+            "RenderCore",
             "Slate",
             "SlateCore",
             "Sockets",
+            "SourceControl",
             "ToolMenus",
             "UnrealEd",
             "XmlParser"

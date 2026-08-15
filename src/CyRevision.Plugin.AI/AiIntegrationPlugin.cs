@@ -10,13 +10,15 @@ namespace CyRevision.Plugin.AI;
 public sealed class AiIntegrationPlugin : IAiIntegrationPlugin
 {
     private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromMinutes(10) };
+    private readonly SemaphoreSlim _codexConnectionGate = new(1, 1);
     private CyRevisionPluginContext? _context;
     private JsonAiMcpProfileStore? _mcpProfileStore;
+    private CodexAppServerSession? _codexChatSession;
 
     public CyRevisionPluginDescriptor Descriptor { get; } = new(
         "cyrevision.ai",
         "AI Workspace",
-        "0.2.0",
+        "0.3.0",
         "Optional Codex CLI, API, local-model, and project-scoped MCP integration.",
         "AI");
 
@@ -49,10 +51,85 @@ public sealed class AiIntegrationPlugin : IAiIntegrationPlugin
             : RunApiAsync(request, cancellationToken);
     }
 
-    public ValueTask DisposeAsync()
+    public bool IsCodexChatConnected => _codexChatSession?.IsConnected == true;
+
+    public async ValueTask DisposeAsync()
     {
+        await DisconnectCodexChatAsync().ConfigureAwait(false);
+        _codexConnectionGate.Dispose();
         _httpClient.Dispose();
-        return ValueTask.CompletedTask;
+    }
+
+    public Task<AiCodexDetectionResult> DetectCodexAsync(
+        string executablePath = "codex",
+        CancellationToken cancellationToken = default) =>
+        CodexLocalDetector.DetectAsync(executablePath, cancellationToken);
+
+    public async Task<AiChatConnectionResult> ConnectCodexChatAsync(
+        AiChatConnectRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await _codexConnectionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await DisconnectCodexChatCoreAsync().ConfigureAwait(false);
+            try
+            {
+                _codexChatSession = await CodexAppServerSession.ConnectAsync(request, cancellationToken)
+                    .ConfigureAwait(false);
+                return new AiChatConnectionResult(
+                    true,
+                    _codexChatSession.ThreadId,
+                    $"Connected to Codex for {request.ProjectName}.");
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                _codexChatSession = null;
+                return new AiChatConnectionResult(false, string.Empty, exception.Message);
+            }
+        }
+        finally
+        {
+            _codexConnectionGate.Release();
+        }
+    }
+
+    public Task<AiChatTurnResult> SendCodexChatAsync(
+        string message,
+        IProgress<AiChatProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        CodexAppServerSession? session = _codexChatSession;
+        return session is null || !session.IsConnected
+            ? Task.FromResult(new AiChatTurnResult(
+                false,
+                string.Empty,
+                "Codex is not connected to the selected project.",
+                string.Empty,
+                TimeSpan.Zero))
+            : session.SendAsync(message, progress, cancellationToken);
+    }
+
+    public async Task DisconnectCodexChatAsync(CancellationToken cancellationToken = default)
+    {
+        await _codexConnectionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await DisconnectCodexChatCoreAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _codexConnectionGate.Release();
+        }
+    }
+
+    private async Task DisconnectCodexChatCoreAsync()
+    {
+        CodexAppServerSession? session = Interlocked.Exchange(ref _codexChatSession, null);
+        if (session is not null)
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     public Task<AiMcpProjectProfile> GetMcpProfileAsync(

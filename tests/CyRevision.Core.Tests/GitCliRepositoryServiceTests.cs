@@ -396,6 +396,35 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
         Assert.NotNull(details.LastUpdatedAt);
     }
 
+    [Fact]
+    public async Task HistoricalBranchUsesManagedWorktreeWithoutSwitchingMainRepository()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "snapshot.txt"), "historical");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Historical snapshot", ["snapshot.txt"]);
+        GitRevision revision = Assert.Single(await service.GetHistoryAsync(_temporaryDirectory));
+
+        GitHistoricalWorktreeResult created = await service.CreateHistoricalWorktreeAsync(
+            _temporaryDirectory, revision.Hash, "test/historical-snapshot");
+
+        Assert.True(created.Succeeded);
+        Assert.True(File.Exists(Path.Combine(created.WorktreePath, "snapshot.txt")));
+        Assert.Equal("main", (await service.GetStatusAsync(_temporaryDirectory)).CurrentBranch);
+        GitHistoricalWorktree managed = Assert.Single((await service.GetHistoricalWorktreesAsync(_temporaryDirectory))
+            .Where(item => item.IsManagedByCyRevision));
+        Assert.Equal("test/historical-snapshot", managed.Branch);
+
+        await service.RemoveHistoricalWorktreeAsync(_temporaryDirectory, managed.Path);
+        Assert.False(Directory.Exists(managed.Path));
+        Assert.DoesNotContain(await service.GetHistoricalWorktreesAsync(_temporaryDirectory),
+            item => string.Equals(item.Path, managed.Path, StringComparison.OrdinalIgnoreCase));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_temporaryDirectory))

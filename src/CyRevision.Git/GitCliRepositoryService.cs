@@ -1113,6 +1113,93 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         return RunGitWithoutOutputAsync(repositoryPath, ["switch", "-c", branchName, startPoint], cancellationToken);
     }
 
+    public async Task<GitHistoricalWorktreeResult> CreateHistoricalWorktreeAsync(
+        string repositoryPath,
+        string commitHash,
+        string? branchName = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(commitHash);
+        if (!string.IsNullOrWhiteSpace(branchName)) ValidateReferenceName(branchName);
+        string repository = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryPath));
+        string root = GetManagedWorktreeRoot(repository);
+        Directory.CreateDirectory(root);
+        string label = string.IsNullOrWhiteSpace(branchName) ? "detached" : SanitizeWorktreeName(branchName);
+        string shortHash = commitHash.Length > 9 ? commitHash[..9] : commitHash;
+        string worktree = Path.Combine(root, $"{label}-{shortHash}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}");
+        List<string> arguments = ["worktree", "add", "--quiet"];
+        if (string.IsNullOrWhiteSpace(branchName)) arguments.Add("--detach");
+        else { arguments.Add("-b"); arguments.Add(branchName.Trim()); }
+        arguments.Add(worktree);
+        arguments.Add(commitHash);
+        ProcessResult result = await RunGitResultAsync(repository, arguments, cancellationToken).ConfigureAwait(false);
+        EnsureSuccess(result, "Unable to create the historical worktree.");
+        return new GitHistoricalWorktreeResult(
+            true,
+            repository,
+            worktree,
+            commitHash,
+            branchName?.Trim() ?? string.Empty,
+            string.IsNullOrWhiteSpace(branchName)
+                ? $"Detached historical worktree created at {worktree}."
+                : $"Branch {branchName.Trim()} created in isolated worktree {worktree}.");
+    }
+
+    public async Task<IReadOnlyList<GitHistoricalWorktree>> GetHistoricalWorktreesAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default)
+    {
+        string repository = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryPath));
+        ProcessResult result = await RunGitResultAsync(repository, ["worktree", "list", "--porcelain"], cancellationToken)
+            .ConfigureAwait(false);
+        EnsureSuccess(result, "Unable to list Git worktrees.");
+        string managedRoot = GetManagedWorktreeRoot(repository);
+        List<GitHistoricalWorktree> worktrees = [];
+        foreach (string block in result.StandardOutput.Replace("\r\n", "\n").Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+        {
+            string path = string.Empty;
+            string head = string.Empty;
+            string branch = string.Empty;
+            bool detached = false;
+            bool locked = false;
+            bool prunable = false;
+            foreach (string line in block.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (line.StartsWith("worktree ", StringComparison.Ordinal)) path = line[9..].Trim();
+                else if (line.StartsWith("HEAD ", StringComparison.Ordinal)) head = line[5..].Trim();
+                else if (line.StartsWith("branch ", StringComparison.Ordinal)) branch = line[7..].Trim().Replace("refs/heads/", string.Empty, StringComparison.Ordinal);
+                else if (line.Equals("detached", StringComparison.Ordinal)) detached = true;
+                else if (line.StartsWith("locked", StringComparison.Ordinal)) locked = true;
+                else if (line.StartsWith("prunable", StringComparison.Ordinal)) prunable = true;
+            }
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            string full = Path.GetFullPath(path);
+            bool managed = IsWithinDirectory(full, managedRoot);
+            DateTimeOffset? created = Directory.Exists(full) ? new DateTimeOffset(Directory.GetCreationTimeUtc(full), TimeSpan.Zero) : null;
+            worktrees.Add(new GitHistoricalWorktree(full, head, branch, detached, locked, prunable, managed, created));
+        }
+        return worktrees.OrderByDescending(item => item.CreatedAt).ToArray();
+    }
+
+    public async Task RemoveHistoricalWorktreeAsync(
+        string repositoryPath,
+        string worktreePath,
+        bool force = false,
+        CancellationToken cancellationToken = default)
+    {
+        string repository = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryPath));
+        string worktree = Path.TrimEndingDirectorySeparator(Path.GetFullPath(worktreePath));
+        string managedRoot = GetManagedWorktreeRoot(repository);
+        if (!IsWithinDirectory(worktree, managedRoot) || string.Equals(worktree, managedRoot, PathComparison))
+            throw new GitOperationException("CyRevision only removes historical worktrees created inside its managed worktree directory.");
+        List<string> arguments = ["worktree", "remove"];
+        if (force) arguments.Add("--force");
+        arguments.Add(worktree);
+        ProcessResult result = await RunGitResultAsync(repository, arguments, cancellationToken).ConfigureAwait(false);
+        EnsureSuccess(result, "Unable to remove the historical worktree.");
+        await RunGitWithoutOutputAsync(repository, ["worktree", "prune"], cancellationToken).ConfigureAwait(false);
+    }
+
     public Task CheckoutBranchAsync(
         string repositoryPath,
         string branchName,
@@ -2029,6 +2116,32 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             throw new ArgumentException("The Git reference is invalid.", nameof(value));
         }
     }
+
+    private static string GetManagedWorktreeRoot(string repositoryPath)
+    {
+        string repository = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryPath));
+        string parent = Path.GetDirectoryName(repository)
+                        ?? throw new GitOperationException("The repository has no parent directory for isolated worktrees.");
+        return Path.Combine(parent, ".cyrevision-worktrees", SanitizeWorktreeName(Path.GetFileName(repository)));
+    }
+
+    private static string SanitizeWorktreeName(string value)
+    {
+        string normalized = value.Replace('/', '-').Replace('\\', '-');
+        return string.Concat(normalized.Select(character =>
+            char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' ? character : '_'));
+    }
+
+    private static bool IsWithinDirectory(string candidate, string directory)
+    {
+        string fullCandidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
+        string fullDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+        return fullCandidate.StartsWith(fullDirectory + Path.DirectorySeparatorChar, PathComparison);
+    }
+
+    private static StringComparison PathComparison => OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
 
     [GeneratedRegex(@"(?:ahead (?<ahead>\d+))|(?:behind (?<behind>\d+))", RegexOptions.CultureInvariant)]
     private static partial Regex AheadBehindRegex();

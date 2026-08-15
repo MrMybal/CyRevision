@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Sockets;
 using System.Reflection;
@@ -31,7 +32,7 @@ using CyRevision.Vpn;
 
 namespace CyRevision.Desktop.ViewModels;
 
-public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
+public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDisposable
 {
     private static readonly FieldInfo[] ProjectSessionFields = typeof(MainWindowViewModel)
         .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
@@ -66,6 +67,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly SwarmSetupService _swarmSetupService;
     private readonly IVpnFileExchangeProfileStore _vpnFileExchangeProfileStore;
     private readonly VpnFileExchangeService _vpnFileExchangeService;
+    private readonly ITeamChatProfileStore _teamChatProfileStore;
+    private readonly TeamChatService _teamChatService;
     private readonly ILfsManagementProfileStore _lfsManagementProfileStore;
     private readonly LfsStorageManager _lfsStorageManager;
     private readonly JsonRemoteBuildConnectionStore _remoteBuildConnectionStore;
@@ -96,6 +99,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private GitChangeTreeNode? _selectedChangeTreeNode;
     private GitBranch? _selectedBranch;
     private GitRevision? _selectedBranchRevision;
+    private GitHistoricalWorktree? _selectedHistoricalWorktree;
+    private bool _createHistoricalBranchInWorktree = true;
+    private string _historicalWorktreeStatus = "No CyRevision historical worktree loaded.";
     private string _changeSearch = string.Empty;
     private string _changeSort = "File";
     private string _branchSearch = string.Empty;
@@ -108,6 +114,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private BackupSnapshotViewModel? _selectedBackup;
     private bool _isBusy;
     private string _statusMessage = "Initialisation…";
+    private bool _isActivityCenterExpanded;
+    private bool _isActivityCenterDismissed;
     private string _toolStatus = "Git : vérification…";
     private string _currentBranch = "—";
     private string _repositoryPath = "Aucun projet ouvert";
@@ -346,6 +354,26 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private VpnPeerViewModel? _selectedVpnFilePeer;
     private VpnSharedFileViewModel? _selectedVpnSharedFile;
     private string _vpnFileStatus = "VPN file exchange is not configured.";
+    private TeamChatProfile? _currentTeamChatProfile;
+    private TeamChatHost? _teamChatHost;
+    private TeamChatSyncWatcher? _teamChatSyncWatcher;
+    private CancellationTokenSource? _teamChatRefreshCancellation;
+    private TeamChatMessage? _selectedTeamChatMessage;
+    private TeamChatTransport _selectedTeamChatTransport = TeamChatTransport.Vpn;
+    private string _teamChatDisplayName = Environment.UserName;
+    private string _teamChatListenAddress = "127.0.0.1";
+    private string _teamChatPort = TeamChatDefaults.Port.ToString();
+    private string _teamChatPeerEndpoint = $"127.0.0.1:{TeamChatDefaults.Port}";
+    private string _teamChatAccessToken = string.Empty;
+    private string _teamChatSyncFolderPath = string.Empty;
+    private string _teamChatMessageText = string.Empty;
+    private string _teamChatAttachmentPath = string.Empty;
+    private string _teamChatStatus = "Team chat is not configured.";
+    private bool _teamChatSaveConversations = true;
+    private bool _teamChatEncryptStoredConversations;
+    private string _teamChatRetentionDays = "365";
+    private string _teamChatMaxAttachmentMb = "50";
+    private bool _isTeamChatHostRunning;
     private RemoteBuildCredentials? _currentRemoteBuildCredentials;
     private RemoteBuildJobStatus? _currentRemoteBuildJob;
     private CancellationTokenSource? _remoteBuildCancellation;
@@ -401,8 +429,36 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _unrealProjectPath = string.Empty;
     private string _unrealPluginSummary = "Enable the Unreal Engine Integration plugin to inspect and install CyRevisionUnreal.";
     private string _unrealBridgeSummary = "The optional Unreal bridge is disabled.";
+    private bool _unrealAdvancedAssetInspectionEnabled;
+    private bool _unrealRenderMeshThumbnails = true;
+    private string _unrealAssetPreviewResolution = "512";
+    private string _unrealAssetCacheBudgetGigabytes = "2";
+    private string _unrealAssetInspectionSummary = "Advanced asset previews are disabled. Lightweight offline metadata remains available.";
     private UnrealProjectInspection? _unrealProjectInspection;
     private IUnrealIntegrationPlugin? _subscribedUnrealPlugin;
+    private UnrealBuildDiscovery? _unrealBuildDiscovery;
+    private UnrealEngineInstallation? _selectedUnrealBuildEngine;
+    private UnrealEngineInstallation? _unrealBuildRangeFrom;
+    private UnrealEngineInstallation? _unrealBuildRangeTo;
+    private UnrealBuildTargetDescriptor? _selectedUnrealBuildTarget;
+    private UnrealBuildPlatform _selectedUnrealBuildPlatform = UnrealBuildPlatform.Win64;
+    private UnrealBuildConfiguration _selectedUnrealBuildConfiguration = UnrealBuildConfiguration.Development;
+    private string _unrealLinuxToolchainPath = string.Empty;
+    private string _unrealAndroidSdkPath = string.Empty;
+    private string _unrealAndroidNdkPath = string.Empty;
+    private string _unrealJavaHomePath = string.Empty;
+    private string _unrealBuildOutputPath = string.Empty;
+    private string _unrealBuildTimeoutMinutes = "120";
+    private string _unrealBuildPresetName = "Default";
+    private string _unrealBuildMaximumParallel = "1";
+    private UnrealBuildProfile? _selectedUnrealBuildPreset;
+    private UnrealBuildResult? _selectedUnrealBuildResult;
+    private bool _unrealBuildCookAndPackage;
+    private bool _unrealBuildAutoConfigureToolchains = true;
+    private bool _isUnrealBuildRunning;
+    private string _unrealBuildStatus = "Discover the Unreal project to list engines and buildable targets.";
+    private string _unrealBuildLog = "No local Unreal build has run.";
+    private CancellationTokenSource? _unrealBuildCancellation;
     private CancellationTokenSource? _codeSearchCancellation;
     private CancellationTokenSource? _codeFileFilterCancellation;
     private CancellationTokenSource? _codeWorkspaceCancellation;
@@ -412,14 +468,14 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private readonly HashSet<string> _loadingCodeDirectories = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, CachedProjectSession> _projectSessionCache = [];
     private readonly LinkedList<Guid> _projectSessionCacheUsage = [];
-    private readonly HashSet<string> _loadedWorkspaceData = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _loadingWorkspaceData = new(StringComparer.Ordinal);
+    private readonly WorkspaceLoadCoordinator _workspaceLoadCoordinator = new();
     private readonly Dictionary<Guid, GitRepositoryStatus> _latestProjectStatuses = [];
     private readonly HashSet<Guid> _loadedProjectSessions = [];
     private bool _isRestoringProjectSession;
     private string _codeAutoRefreshFrequency = "Low · 5 min";
     private DateTimeOffset? _codeWorkspaceLastUpdated;
     private CancellationTokenSource? _aiAgentCancellation;
+    private CancellationTokenSource? _codexConnectionCancellation;
     private CodeTreeNode? _selectedCodeNode;
     private CodeFileEntry? _selectedCodeFileSearchResult;
     private IReadOnlyList<CodeFileEntry> _codeFileSearchResults = [];
@@ -454,6 +510,15 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private string _aiPrompt = string.Empty;
     private string _aiResponse = "Enable the optional AI Workspace plugin to connect Codex or an API provider.";
     private string _aiStatus = "AI integration disabled.";
+    private bool _isCodexDetected;
+    private bool _isCodexRunning;
+    private bool _isCodexChatConnected;
+    private bool _isCodexChatBusy;
+    private string _codexConnectionStatus = "Codex has not been scanned yet.";
+    private string _codexDetectedVersion = string.Empty;
+    private string _codexDetectedPath = string.Empty;
+    private string _codexChatThreadId = string.Empty;
+    private Guid? _codexChatProjectId;
     private bool _aiAllowModify;
     private bool _aiAllowNetwork;
     private bool _aiStageAfterRun;
@@ -559,6 +624,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         SwarmSetupService swarmSetupService,
         IVpnFileExchangeProfileStore vpnFileExchangeProfileStore,
         VpnFileExchangeService vpnFileExchangeService,
+        ITeamChatProfileStore teamChatProfileStore,
+        TeamChatService teamChatService,
         ILfsManagementProfileStore lfsManagementProfileStore,
         LfsStorageManager lfsStorageManager,
         JsonRemoteBuildConnectionStore remoteBuildConnectionStore,
@@ -596,6 +663,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _swarmSetupService = swarmSetupService;
         _vpnFileExchangeProfileStore = vpnFileExchangeProfileStore;
         _vpnFileExchangeService = vpnFileExchangeService;
+        _teamChatProfileStore = teamChatProfileStore;
+        _teamChatService = teamChatService;
         _lfsManagementProfileStore = lfsManagementProfileStore;
         _lfsStorageManager = lfsStorageManager;
         _remoteBuildConnectionStore = remoteBuildConnectionStore;
@@ -728,11 +797,34 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<ProjectParticipantViewModel> VpnProjectMembers { get; } = [];
 
+    public ObservableCollection<TeamChatMessage> TeamChatMessages { get; } = [];
+
+    public ObservableCollection<TeamChatParticipant> TeamChatParticipants { get; } = [];
+
+    public IReadOnlyList<TeamChatTransport> TeamChatTransports { get; } = Enum.GetValues<TeamChatTransport>();
+
     public ObservableCollection<AdvisoryReservationViewModel> AdvisoryReservations { get; } = [];
 
     public ObservableCollection<DocumentationTopic> DocumentationTopics { get; } = [];
 
     public ObservableCollection<PluginItemViewModel> Plugins { get; } = [];
+
+    public ObservableCollection<UnrealEngineInstallation> UnrealBuildEngines { get; } = [];
+
+    public ObservableCollection<UnrealBuildTargetDescriptor> UnrealBuildTargets { get; } = [];
+
+    public ObservableCollection<UnrealBuildResult> UnrealBuildResults { get; } = [];
+
+    public ObservableCollection<UnrealBuildProgress> UnrealBuildLogLines { get; } = new BatchObservableCollection<UnrealBuildProgress>();
+
+    public ObservableCollection<UnrealBuildDiagnostic> UnrealBuildDiagnostics { get; } = new BatchObservableCollection<UnrealBuildDiagnostic>();
+
+    public ObservableCollection<UnrealBuildProfile> UnrealBuildPresets { get; } = [];
+
+    public IReadOnlyList<UnrealBuildPlatform> UnrealBuildPlatforms { get; } = Enum.GetValues<UnrealBuildPlatform>();
+
+    public IReadOnlyList<UnrealBuildConfiguration> UnrealBuildConfigurations { get; } =
+        Enum.GetValues<UnrealBuildConfiguration>();
 
     public ObservableCollection<CodeTreeNode> CodeTree { get; } = new BatchObservableCollection<CodeTreeNode>();
 
@@ -775,6 +867,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public ObservableCollection<AiProviderDescriptor> AiProviders { get; } = [];
 
+    public ObservableCollection<AiChatMessageViewModel> AiChatMessages { get; } = [];
+
     public ObservableCollection<AiMcpServerViewModel> AiMcpServers { get; } = [];
 
     public ObservableCollection<PullRequestSummary> PullRequests { get; } = new BatchObservableCollection<PullRequestSummary>();
@@ -804,6 +898,10 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<ApplicationLogEntry> FilteredApplicationLogEntries { get; } = new BatchObservableCollection<ApplicationLogEntry>();
 
     public ObservableCollection<OperationTaskViewModel> ActiveOperations { get; } = [];
+
+    public ObservableCollection<OperationTaskViewModel> RecentOperations { get; } = [];
+
+    public ObservableCollection<GitHistoricalWorktree> HistoricalWorktrees { get; } = [];
 
     public IReadOnlyList<string> RepositoryShells { get; } = OperatingSystem.IsWindows()
         ? ["PowerShell", "Command Prompt"]
@@ -1794,10 +1892,13 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             _gitCacheSaveCancellation?.Cancel();
             _branchHistoryCancellation?.Cancel();
             _explorerRevisionCancellation?.Cancel();
+            _codexConnectionCancellation?.Cancel();
             CancelDebouncedUiActions();
+            _ = ResetCodexChatForProjectAsync(value);
             int loadVersion = Interlocked.Increment(ref _projectLoadVersion);
             CurrentProjectName = value?.Name ?? "No project";
             OnPropertyChanged(nameof(GitConnectionKind));
+            OnPropertyChanged(nameof(RuntimeModeSummary));
             bool hasCachedSession = value is not null && _projectSessionCache.ContainsKey(value.Id);
             if (!hasCachedSession)
             {
@@ -1808,6 +1909,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             RestoreCodeWorkspaceForProject(value);
             RestoreRepositoryConsoleForProject(value);
             OnPropertyChanged(nameof(HasSelectedProject));
+            OnPropertyChanged(nameof(CanConnectCodex));
             NotifyMemberPanelLayoutChanged();
             OnPropertyChanged(nameof(RepositoryConsoleWorkingDirectory));
             OnPropertyChanged(nameof(CanRunRepositoryCommand));
@@ -1877,6 +1979,24 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         get => _selectedBranchRevision;
         set => SetProperty(ref _selectedBranchRevision, value);
+    }
+
+    public GitHistoricalWorktree? SelectedHistoricalWorktree
+    {
+        get => _selectedHistoricalWorktree;
+        set => SetProperty(ref _selectedHistoricalWorktree, value);
+    }
+
+    public bool CreateHistoricalBranchInWorktree
+    {
+        get => _createHistoricalBranchInWorktree;
+        set => SetProperty(ref _createHistoricalBranchInWorktree, value);
+    }
+
+    public string HistoricalWorktreeStatus
+    {
+        get => _historicalWorktreeStatus;
+        private set => SetProperty(ref _historicalWorktreeStatus, value);
     }
 
     public string ChangeSearch
@@ -1999,9 +2119,50 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public bool HasActiveOperations => ActiveOperations.Count > 0;
 
+    public bool HasRecentOperations => RecentOperations.Count > 0;
+
+    public bool HasOperationAlerts => RecentOperations.Any(task => task.IsAttention);
+
+    public bool HasActivityCenterContent =>
+        !_isActivityCenterDismissed && (IsLongOperationActive || HasOperationAlerts || IsActivityCenterExpanded);
+
+    public bool IsActivityCenterExpanded
+    {
+        get => _isActivityCenterExpanded;
+        set
+        {
+            if (value && _isActivityCenterDismissed)
+            {
+                _isActivityCenterDismissed = false;
+                OnPropertyChanged(nameof(HasActivityCenterContent));
+            }
+            if (SetProperty(ref _isActivityCenterExpanded, value))
+                OnPropertyChanged(nameof(HasActivityCenterContent));
+        }
+    }
+
     public string ActiveOperationCountText => ActiveOperations.Count == 1
         ? "1 task running"
         : $"{ActiveOperations.Count:N0} tasks running";
+
+    public string ActivityCenterBadgeText
+    {
+        get
+        {
+            int alerts = RecentOperations.Count(task => task.IsAttention);
+            if (ActiveOperations.Count > 0 && alerts > 0) return $"{ActiveOperations.Count:N0} active · {alerts:N0} alert(s)";
+            if (ActiveOperations.Count > 0) return ActiveOperationCountText;
+            return alerts == 1 ? "1 alert" : $"{alerts:N0} alerts";
+        }
+    }
+
+    public string OperationHistoryCountText => RecentOperations.Count == 0
+        ? "Tasks"
+        : $"Tasks {RecentOperations.Count:N0}";
+
+    public string ActivityCenterHeadline => IsLongOperationActive
+        ? LongOperationStage
+        : RecentOperations.FirstOrDefault(task => task.IsAttention)?.Detail ?? StatusMessage;
 
     public bool IsLongOperationActive => IsProjectLoading || IsBusy || HasActiveOperations;
 
@@ -2011,6 +2172,20 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public string LongOperationStage => IsProjectLoading ? ProjectLoadStage : StatusMessage;
 
+    public string RuntimeModeSummary
+    {
+        get
+        {
+            if (SelectedProject is null) return "No project selected";
+            List<string> modes = [];
+            if (SelectedProject.Definition.Features.GitEnabled)
+                modes.Add(SelectedProject.Definition.Features.StandardGitRemoteEnabled ? "Git remote" : "Git local");
+            if (SelectedProject.Definition.Features.PeerSyncEnabled) modes.Add("Sync enabled");
+            if (SelectedProject.Definition.Features.BackupEnabled) modes.Add("Backup enabled");
+            return modes.Count == 0 ? "Folder only" : string.Join(" · ", modes);
+        }
+    }
+
     public string StatusMessage
     {
         get => _statusMessage;
@@ -2019,6 +2194,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             if (SetProperty(ref _statusMessage, value))
             {
                 OnPropertyChanged(nameof(LongOperationStage));
+                OnPropertyChanged(nameof(ActivityCenterHeadline));
             }
         }
     }
@@ -2953,6 +3129,102 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public bool VpnFileHostRunning => _vpnFileExchangeHost?.IsRunning == true;
 
+    public TeamChatTransport SelectedTeamChatTransport
+    {
+        get => _selectedTeamChatTransport;
+        set => SetProperty(ref _selectedTeamChatTransport, value);
+    }
+
+    public string TeamChatDisplayName
+    {
+        get => _teamChatDisplayName;
+        set => SetProperty(ref _teamChatDisplayName, value);
+    }
+
+    public string TeamChatListenAddress
+    {
+        get => _teamChatListenAddress;
+        set => SetProperty(ref _teamChatListenAddress, value);
+    }
+
+    public string TeamChatPort
+    {
+        get => _teamChatPort;
+        set => SetProperty(ref _teamChatPort, value);
+    }
+
+    public string TeamChatPeerEndpoint
+    {
+        get => _teamChatPeerEndpoint;
+        set => SetProperty(ref _teamChatPeerEndpoint, value);
+    }
+
+    public string TeamChatAccessToken
+    {
+        get => _teamChatAccessToken;
+        set => SetProperty(ref _teamChatAccessToken, value);
+    }
+
+    public string TeamChatSyncFolderPath
+    {
+        get => _teamChatSyncFolderPath;
+        set => SetProperty(ref _teamChatSyncFolderPath, value);
+    }
+
+    public string TeamChatMessageText
+    {
+        get => _teamChatMessageText;
+        set => SetProperty(ref _teamChatMessageText, value);
+    }
+
+    public string TeamChatAttachmentPath
+    {
+        get => _teamChatAttachmentPath;
+        set => SetProperty(ref _teamChatAttachmentPath, value);
+    }
+
+    public bool TeamChatSaveConversations
+    {
+        get => _teamChatSaveConversations;
+        set => SetProperty(ref _teamChatSaveConversations, value);
+    }
+
+    public bool TeamChatEncryptStoredConversations
+    {
+        get => _teamChatEncryptStoredConversations;
+        set => SetProperty(ref _teamChatEncryptStoredConversations, value);
+    }
+
+    public string TeamChatRetentionDays
+    {
+        get => _teamChatRetentionDays;
+        set => SetProperty(ref _teamChatRetentionDays, value);
+    }
+
+    public string TeamChatMaxAttachmentMb
+    {
+        get => _teamChatMaxAttachmentMb;
+        set => SetProperty(ref _teamChatMaxAttachmentMb, value);
+    }
+
+    public TeamChatMessage? SelectedTeamChatMessage
+    {
+        get => _selectedTeamChatMessage;
+        set => SetProperty(ref _selectedTeamChatMessage, value);
+    }
+
+    public string TeamChatStatus
+    {
+        get => _teamChatStatus;
+        private set => SetProperty(ref _teamChatStatus, value);
+    }
+
+    public bool IsTeamChatHostRunning
+    {
+        get => _isTeamChatHostRunning;
+        private set => SetProperty(ref _isTeamChatHostRunning, value);
+    }
+
     public string DiscordWebhookUrl
     {
         get => _discordWebhookUrl;
@@ -3149,12 +3421,236 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         private set => SetProperty(ref _unrealBridgeSummary, value);
     }
 
+    public bool UnrealAdvancedAssetInspectionEnabled
+    {
+        get => _unrealAdvancedAssetInspectionEnabled;
+        set => SetProperty(ref _unrealAdvancedAssetInspectionEnabled, value);
+    }
+
+    public bool UnrealRenderMeshThumbnails
+    {
+        get => _unrealRenderMeshThumbnails;
+        set => SetProperty(ref _unrealRenderMeshThumbnails, value);
+    }
+
+    public string UnrealAssetPreviewResolution
+    {
+        get => _unrealAssetPreviewResolution;
+        set => SetProperty(ref _unrealAssetPreviewResolution, value);
+    }
+
+    public string UnrealAssetCacheBudgetGigabytes
+    {
+        get => _unrealAssetCacheBudgetGigabytes;
+        set => SetProperty(ref _unrealAssetCacheBudgetGigabytes, value);
+    }
+
+    public string UnrealAssetInspectionSummary
+    {
+        get => _unrealAssetInspectionSummary;
+        private set => SetProperty(ref _unrealAssetInspectionSummary, value);
+    }
+
     public string UnrealEditorPluginVersion => _unrealProjectInspection?.BundledPluginVersion ?? "—";
 
     public string UnrealInstalledPluginVersion => _unrealProjectInspection?.InstalledPluginVersion ?? "Not installed";
 
+    public string UnrealEngineVersion => _unrealProjectInspection?.EngineVersion is { Length: > 0 } version
+        ? $"Unreal Engine {version}"
+        : "Unreal Engine not resolved";
+
+    public string UnrealProjectKindSummary => _unrealProjectInspection?.ProjectKind switch
+    {
+        UnrealProjectKind.Cpp => "C++ project",
+        UnrealProjectKind.BlueprintOnly => "Blueprint-only project",
+        _ => "Project type unknown"
+    };
+
+    public string UnrealInstallModeSummary => _unrealProjectInspection?.InstallMode switch
+    {
+        UnrealPluginInstallMode.Source => "Source plugin",
+        UnrealPluginInstallMode.Precompiled => "Exact precompiled plugin",
+        _ => "No safe installation mode"
+    };
+
+    public string UnrealCompatibilityStatus => _unrealProjectInspection?.CompatibilityStatus
+                                                ?? "Select an Unreal project to evaluate compatibility.";
+
+    public string UnrealSupportedVersions => $"Supported engines: {string.Join(", ",
+        _unrealProjectInspection?.SupportedEngineVersions ?? UnrealPluginCompatibility.SupportedEngineVersions)}";
+
+    public string UnrealPrecompiledVersions
+    {
+        get
+        {
+            string platform = _unrealProjectInspection?.PrecompiledPlatform
+                              ?? (OperatingSystem.IsWindows() ? "Win64" :
+                                  OperatingSystem.IsMacOS() ? "Mac" :
+                                  OperatingSystem.IsLinux() ? "Linux" : "Unknown");
+            IReadOnlyList<string> versions = _unrealProjectInspection?.AvailablePrecompiledVersions ?? [];
+            return versions.Count > 0
+                ? $"Blueprint-only binaries ({platform}): {string.Join(", ", versions)}"
+                : $"Blueprint-only binaries ({platform}): none bundled";
+        }
+    }
+
+    public bool IsUnrealPluginCompatible => _unrealProjectInspection?.IsCompatible == true;
+
     public bool CanInstallUnrealEditorPlugin =>
-        IsUnrealIntegrationEnabled && _unrealProjectInspection?.IsValid == true;
+        IsUnrealIntegrationEnabled && _unrealProjectInspection is { IsValid: true, IsCompatible: true };
+
+    public bool CanConfigureUnrealAssetInspection =>
+        IsUnrealIntegrationEnabled && _unrealProjectInspection is { IsValid: true, IsCompatible: true };
+
+    public UnrealEngineInstallation? SelectedUnrealBuildEngine
+    {
+        get => _selectedUnrealBuildEngine;
+        set
+        {
+            if (!SetProperty(ref _selectedUnrealBuildEngine, value) || value is null) return;
+            if (UnrealBuildAutoConfigureToolchains)
+            {
+                UnrealLinuxToolchainPath = value.DetectedLinuxToolchainPath ?? string.Empty;
+                UnrealAndroidSdkPath = value.DetectedAndroidSdkPath ?? string.Empty;
+            }
+            OnPropertyChanged(nameof(CanRunUnrealBuild));
+        }
+    }
+
+    public UnrealEngineInstallation? UnrealBuildRangeFrom
+    {
+        get => _unrealBuildRangeFrom;
+        set => SetProperty(ref _unrealBuildRangeFrom, value);
+    }
+
+    public UnrealEngineInstallation? UnrealBuildRangeTo
+    {
+        get => _unrealBuildRangeTo;
+        set => SetProperty(ref _unrealBuildRangeTo, value);
+    }
+
+    public UnrealBuildTargetDescriptor? SelectedUnrealBuildTarget
+    {
+        get => _selectedUnrealBuildTarget;
+        set
+        {
+            if (SetProperty(ref _selectedUnrealBuildTarget, value))
+                OnPropertyChanged(nameof(CanRunUnrealBuild));
+        }
+    }
+
+    public UnrealBuildPlatform SelectedUnrealBuildPlatform
+    {
+        get => _selectedUnrealBuildPlatform;
+        set => SetProperty(ref _selectedUnrealBuildPlatform, value);
+    }
+
+    public UnrealBuildConfiguration SelectedUnrealBuildConfiguration
+    {
+        get => _selectedUnrealBuildConfiguration;
+        set => SetProperty(ref _selectedUnrealBuildConfiguration, value);
+    }
+
+    public string UnrealLinuxToolchainPath
+    {
+        get => _unrealLinuxToolchainPath;
+        set => SetProperty(ref _unrealLinuxToolchainPath, value);
+    }
+
+    public string UnrealAndroidSdkPath
+    {
+        get => _unrealAndroidSdkPath;
+        set => SetProperty(ref _unrealAndroidSdkPath, value);
+    }
+
+    public string UnrealAndroidNdkPath
+    {
+        get => _unrealAndroidNdkPath;
+        set => SetProperty(ref _unrealAndroidNdkPath, value);
+    }
+
+    public string UnrealJavaHomePath
+    {
+        get => _unrealJavaHomePath;
+        set => SetProperty(ref _unrealJavaHomePath, value);
+    }
+
+    public string UnrealBuildOutputPath
+    {
+        get => _unrealBuildOutputPath;
+        set => SetProperty(ref _unrealBuildOutputPath, value);
+    }
+
+    public string UnrealBuildTimeoutMinutes
+    {
+        get => _unrealBuildTimeoutMinutes;
+        set => SetProperty(ref _unrealBuildTimeoutMinutes, value);
+    }
+
+    public string UnrealBuildPresetName
+    {
+        get => _unrealBuildPresetName;
+        set => SetProperty(ref _unrealBuildPresetName, value);
+    }
+
+    public string UnrealBuildMaximumParallel
+    {
+        get => _unrealBuildMaximumParallel;
+        set => SetProperty(ref _unrealBuildMaximumParallel, value);
+    }
+
+    public UnrealBuildProfile? SelectedUnrealBuildPreset
+    {
+        get => _selectedUnrealBuildPreset;
+        set => SetProperty(ref _selectedUnrealBuildPreset, value);
+    }
+
+    public UnrealBuildResult? SelectedUnrealBuildResult
+    {
+        get => _selectedUnrealBuildResult;
+        set
+        {
+            if (SetProperty(ref _selectedUnrealBuildResult, value))
+                ReplaceCollection(UnrealBuildDiagnostics, value?.Diagnostics ?? []);
+        }
+    }
+
+    public bool UnrealBuildCookAndPackage
+    {
+        get => _unrealBuildCookAndPackage;
+        set => SetProperty(ref _unrealBuildCookAndPackage, value);
+    }
+
+    public bool UnrealBuildAutoConfigureToolchains
+    {
+        get => _unrealBuildAutoConfigureToolchains;
+        set => SetProperty(ref _unrealBuildAutoConfigureToolchains, value);
+    }
+
+    public bool IsUnrealBuildRunning
+    {
+        get => _isUnrealBuildRunning;
+        private set
+        {
+            if (SetProperty(ref _isUnrealBuildRunning, value))
+                OnPropertyChanged(nameof(CanRunUnrealBuild));
+        }
+    }
+
+    public bool CanRunUnrealBuild => IsUnrealIntegrationEnabled && !IsUnrealBuildRunning &&
+                                      SelectedUnrealBuildEngine is not null && SelectedUnrealBuildTarget is not null;
+
+    public string UnrealBuildStatus
+    {
+        get => _unrealBuildStatus;
+        private set => SetProperty(ref _unrealBuildStatus, value);
+    }
+
+    public string UnrealBuildLog
+    {
+        get => _unrealBuildLog;
+        private set => SetProperty(ref _unrealBuildLog, value);
+    }
 
     public CodeTreeNode? SelectedCodeNode
     {
@@ -3352,7 +3848,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public bool IsAiIntegrationEnabled
     {
         get => _isAiIntegrationEnabled;
-        private set => SetProperty(ref _isAiIntegrationEnabled, value);
+        private set
+        {
+            if (!SetProperty(ref _isAiIntegrationEnabled, value)) return;
+            OnPropertyChanged(nameof(CanConnectCodex));
+        }
     }
 
     public AiProviderDescriptor? SelectedAiProvider
@@ -3402,7 +3902,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public string AiPrompt
     {
         get => _aiPrompt;
-        set => SetProperty(ref _aiPrompt, value);
+        set
+        {
+            if (!SetProperty(ref _aiPrompt, value)) return;
+            OnPropertyChanged(nameof(CanSendAiChat));
+        }
     }
 
     public string AiResponse
@@ -3416,6 +3920,77 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         get => _aiStatus;
         private set => SetProperty(ref _aiStatus, value);
     }
+
+    public bool IsCodexDetected
+    {
+        get => _isCodexDetected;
+        private set
+        {
+            if (!SetProperty(ref _isCodexDetected, value)) return;
+            OnPropertyChanged(nameof(CanConnectCodex));
+        }
+    }
+
+    public bool IsCodexRunning
+    {
+        get => _isCodexRunning;
+        private set => SetProperty(ref _isCodexRunning, value);
+    }
+
+    public bool IsCodexChatConnected
+    {
+        get => _isCodexChatConnected;
+        private set
+        {
+            if (!SetProperty(ref _isCodexChatConnected, value)) return;
+            OnPropertyChanged(nameof(CanConnectCodex));
+            OnPropertyChanged(nameof(CanSendAiChat));
+            OnPropertyChanged(nameof(CodexConnectButtonText));
+        }
+    }
+
+    public bool IsCodexChatBusy
+    {
+        get => _isCodexChatBusy;
+        private set
+        {
+            if (!SetProperty(ref _isCodexChatBusy, value)) return;
+            OnPropertyChanged(nameof(CanConnectCodex));
+            OnPropertyChanged(nameof(CanSendAiChat));
+        }
+    }
+
+    public string CodexConnectionStatus
+    {
+        get => _codexConnectionStatus;
+        private set => SetProperty(ref _codexConnectionStatus, value);
+    }
+
+    public string CodexDetectedVersion
+    {
+        get => _codexDetectedVersion;
+        private set => SetProperty(ref _codexDetectedVersion, value);
+    }
+
+    public string CodexDetectedPath
+    {
+        get => _codexDetectedPath;
+        private set => SetProperty(ref _codexDetectedPath, value);
+    }
+
+    public string CodexChatThreadId
+    {
+        get => _codexChatThreadId;
+        private set => SetProperty(ref _codexChatThreadId, value);
+    }
+
+    public bool CanConnectCodex =>
+        IsAiIntegrationEnabled && IsCodexDetected && SelectedProject is not null && !IsCodexChatBusy;
+
+    public bool CanSendAiChat =>
+        IsCodexChatConnected && !IsCodexChatBusy && !string.IsNullOrWhiteSpace(AiPrompt);
+
+    public string CodexConnectButtonText => IsCodexChatConnected ? "Disconnect" : "Connect";
 
     public bool AiAllowModify
     {
@@ -3832,8 +4407,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         ProjectItemViewModel? project = SelectedProject;
         if (project is null || string.IsNullOrWhiteSpace(workspaceName)) return;
-        string key = $"{project.Id:N}:{workspaceName}";
-        if (_loadedWorkspaceData.Contains(key) || !_loadingWorkspaceData.Add(key)) return;
+        using WorkspaceLoadCoordinator.WorkspaceLoadLease? load =
+            _workspaceLoadCoordinator.TryBegin(project.Id, workspaceName);
+        if (load is null) return;
 
         OperationTaskViewModel task = BeginTrackedTask(
             $"Load {workspaceName}",
@@ -3844,6 +4420,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             switch (workspaceName)
             {
+                case "BranchesWorkspaceTab":
+                    await RefreshHistoricalWorktreesAsync();
+                    break;
                 case "LfsLocksWorkspaceTab":
                     await LoadLfsLocksCoreAsync(expectedProjectId: project.Id);
                     break;
@@ -3877,6 +4456,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                     await EnsureAssetExplorerLoadedAsync();
                     break;
                 case "AiWorkspaceTab":
+                    await LoadAiMcpProfileCoreAsync();
+                    await DetectCodexAsync(autoConnect: true);
+                    break;
                 case "McpWorkspaceTab":
                     await LoadAiMcpProfileCoreAsync();
                     break;
@@ -3889,8 +4471,16 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 case "UnrealWorkspaceTab":
                     RefreshUnrealInspection();
                     break;
+                case "UnrealBuildWorkspaceTab":
+                    RefreshUnrealInspection();
+                    if (_unrealBuildDiscovery is null && IsUnrealProjectDetected)
+                        await DiscoverUnrealBuildEnvironmentAsync();
+                    break;
                 case "MembersWorkspaceTab":
                     await RefreshProjectMembersCoreAsync(testConnections: false);
+                    break;
+                case "TeamChatWorkspaceTab":
+                    await LoadTeamChatAsync();
                     break;
                 case "DiagnosticsWorkspaceTab":
                     RefreshPerformanceDiagnostics();
@@ -3905,7 +4495,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 CompleteTrackedTask(task, "Cancelled", "The selected project changed");
                 return;
             }
-            _loadedWorkspaceData.Add(key);
+            load.Complete();
             CompleteTrackedTask(task, "Completed", $"Ready in {stopwatch.Elapsed.TotalMilliseconds:N0} ms");
             RecordPerformanceMetric("Workspace", workspaceName, stopwatch.Elapsed, project.Name);
             _applicationLogService.Debug(
@@ -3923,7 +4513,6 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
         finally
         {
-            _loadingWorkspaceData.Remove(key);
             if (ActiveOperations.Contains(task)) CompleteTrackedTask(task, "Finished", task.Detail);
         }
     }
@@ -5031,6 +5620,272 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         UpdateAiMcpStatus("Emergency block removed. Individual server policies still apply.");
     }
 
+    public async Task DetectCodexAsync(bool autoConnect = false)
+    {
+        IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        if (plugin is null)
+        {
+            CodexConnectionStatus = "Enable the AI Workspace plugin before scanning for Codex.";
+            return;
+        }
+
+        _codexConnectionCancellation?.Cancel();
+        _codexConnectionCancellation?.Dispose();
+        CancellationTokenSource cancellation = new();
+        _codexConnectionCancellation = cancellation;
+        ProjectItemViewModel? project = SelectedProject;
+        IsCodexChatBusy = true;
+        CodexConnectionStatus = "Scanning the local Codex installation and running desktop processesâ€¦";
+        try
+        {
+            AiCodexDetectionResult detection = await plugin.DetectCodexAsync(AiExecutablePath, cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            IsCodexDetected = detection.IsInstalled;
+            IsCodexRunning = detection.IsRunning;
+            CodexDetectedPath = detection.ExecutablePath;
+            CodexDetectedVersion = detection.Version;
+            CodexConnectionStatus = detection.Status;
+            if (detection.IsInstalled && !string.IsNullOrWhiteSpace(detection.ExecutablePath))
+                AiExecutablePath = detection.ExecutablePath;
+
+            _applicationLogService.Information(
+                "ai.codex",
+                $"detection installed={detection.IsInstalled} running={detection.IsRunning} version=\"{detection.Version}\" executable=\"{detection.ExecutablePath}\"",
+                project?.RootPath);
+
+            if (autoConnect && detection.IsInstalled && detection.IsRunning && project is not null &&
+                SelectedProject?.Id == project.Id && _codexChatProjectId != project.Id)
+            {
+                await ConnectCodexChatCoreAsync(plugin, detection.ExecutablePath, project, cancellation.Token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(_codexConnectionCancellation, cancellation))
+                CodexConnectionStatus = "Codex scan cancelled.";
+        }
+        catch (Exception exception)
+        {
+            CodexConnectionStatus = exception.Message;
+            _applicationLogService.Error("ai.codex", "detection failed", exception, project?.RootPath);
+        }
+        finally
+        {
+            if (ReferenceEquals(_codexConnectionCancellation, cancellation))
+            {
+                IsCodexChatBusy = false;
+                _codexConnectionCancellation = null;
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    public async Task ToggleCodexChatConnectionAsync()
+    {
+        if (IsCodexChatConnected)
+        {
+            await DisconnectCodexChatAsync(clearMessages: false);
+            return;
+        }
+
+        IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        ProjectItemViewModel? project = SelectedProject;
+        if (plugin is null || project is null)
+        {
+            CodexConnectionStatus = "Enable AI Workspace and select a project first.";
+            return;
+        }
+
+        if (!IsCodexDetected)
+        {
+            await DetectCodexAsync(autoConnect: false);
+            plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+            project = SelectedProject;
+            if (!IsCodexDetected || plugin is null || project is null) return;
+        }
+
+        _codexConnectionCancellation?.Cancel();
+        _codexConnectionCancellation?.Dispose();
+        CancellationTokenSource cancellation = new();
+        _codexConnectionCancellation = cancellation;
+        IsCodexChatBusy = true;
+        try
+        {
+            await ConnectCodexChatCoreAsync(plugin, AiExecutablePath, project, cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            CodexConnectionStatus = "Codex connection cancelled.";
+        }
+        catch (Exception exception)
+        {
+            CodexConnectionStatus = exception.Message;
+            _applicationLogService.Error("ai.codex", "connection failed", exception, project.RootPath);
+        }
+        finally
+        {
+            if (ReferenceEquals(_codexConnectionCancellation, cancellation))
+            {
+                IsCodexChatBusy = false;
+                _codexConnectionCancellation = null;
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    public async Task SendCodexChatMessageAsync()
+    {
+        string message = AiPrompt.Trim();
+        if (message.Length == 0) return;
+        if (!IsCodexChatConnected)
+        {
+            await ToggleCodexChatConnectionAsync();
+            if (!IsCodexChatConnected) return;
+        }
+
+        IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        ProjectItemViewModel? project = SelectedProject;
+        if (plugin is null || project is null) return;
+
+        _aiAgentCancellation?.Cancel();
+        _aiAgentCancellation?.Dispose();
+        CancellationTokenSource cancellation = new();
+        _aiAgentCancellation = cancellation;
+
+        AiChatMessageViewModel userMessage = new("user", message);
+        AiChatMessageViewModel assistantMessage = new("assistant", string.Empty);
+        AiChatMessages.Add(userMessage);
+        AiChatMessages.Add(assistantMessage);
+        AiPrompt = string.Empty;
+        IsCodexChatBusy = true;
+        CodexConnectionStatus = "Codex is working in this projectâ€¦";
+        Progress<AiChatProgress> progress = new(update =>
+        {
+            if (update.Kind == "delta")
+            {
+                assistantMessage.Append(update.Text);
+            }
+            else if (update.Kind is "status" or "error")
+            {
+                CodexConnectionStatus = update.Text;
+            }
+        });
+
+        try
+        {
+            AiChatTurnResult result = await plugin.SendCodexChatAsync(message, progress, cancellation.Token);
+            if (string.IsNullOrWhiteSpace(assistantMessage.Text))
+                assistantMessage.Append(string.IsNullOrWhiteSpace(result.Response) ? result.Diagnostic : result.Response);
+            AiResponse = assistantMessage.Text;
+            CodexConnectionStatus = result.Succeeded
+                ? $"Codex completed the turn in {result.Duration:g}."
+                : $"Codex could not complete the turn: {result.Diagnostic}";
+            _applicationLogService.Information(
+                "ai.codex",
+                $"turn completed success={result.Succeeded} thread=\"{CodexChatThreadId}\" turn=\"{result.TurnId}\" duration={result.Duration.TotalMilliseconds:N0}ms",
+                project.RootPath);
+        }
+        catch (OperationCanceledException)
+        {
+            CodexConnectionStatus = "Codex turn cancelled.";
+            if (string.IsNullOrWhiteSpace(assistantMessage.Text)) assistantMessage.Append("Turn cancelled.");
+        }
+        catch (Exception exception)
+        {
+            CodexConnectionStatus = exception.Message;
+            if (string.IsNullOrWhiteSpace(assistantMessage.Text)) assistantMessage.Append($"Connection error: {exception.Message}");
+            _applicationLogService.Error("ai.codex", "turn failed", exception, project.RootPath);
+        }
+        finally
+        {
+            if (ReferenceEquals(_aiAgentCancellation, cancellation))
+            {
+                IsCodexChatBusy = false;
+                _aiAgentCancellation = null;
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    public void CancelAiChat()
+    {
+        _aiAgentCancellation?.Cancel();
+        _codexConnectionCancellation?.Cancel();
+    }
+
+    private async Task ConnectCodexChatCoreAsync(
+        IAiIntegrationPlugin plugin,
+        string executablePath,
+        ProjectItemViewModel project,
+        CancellationToken cancellationToken)
+    {
+        CodexConnectionStatus = $"Connecting Codex to {project.Name}â€¦";
+        AiChatConnectionResult connection = await plugin.ConnectCodexChatAsync(
+            new AiChatConnectRequest(
+                project.Name,
+                project.RootPath,
+                executablePath,
+                AiModel,
+                BuildAiWorkspacePermissions()),
+            cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (SelectedProject?.Id != project.Id)
+        {
+            await plugin.DisconnectCodexChatAsync(cancellationToken);
+            return;
+        }
+
+        IsCodexChatConnected = connection.Connected;
+        CodexChatThreadId = connection.ThreadId;
+        _codexChatProjectId = connection.Connected ? project.Id : null;
+        CodexConnectionStatus = connection.Status;
+        if (!connection.Connected) return;
+
+        AiChatMessages.Clear();
+        AiChatMessages.Add(new AiChatMessageViewModel(
+            "system",
+            $"Connected to local Codex. Project: {project.Name}{Environment.NewLine}Workspace: {project.RootPath}"));
+        _applicationLogService.Information(
+            "ai.codex",
+            $"connected project=\"{project.Name}\" thread=\"{connection.ThreadId}\"",
+            project.RootPath);
+    }
+
+    private async Task DisconnectCodexChatAsync(bool clearMessages)
+    {
+        IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
+        _aiAgentCancellation?.Cancel();
+        if (plugin is not null)
+        {
+            try { await plugin.DisconnectCodexChatAsync(); }
+            catch (Exception exception)
+            {
+                _applicationLogService.Warning("ai.codex", $"disconnect warning: {exception.Message}", SelectedProject?.RootPath);
+            }
+        }
+        IsCodexChatConnected = false;
+        CodexChatThreadId = string.Empty;
+        _codexChatProjectId = null;
+        CodexConnectionStatus = IsCodexDetected ? "Codex detected. Connect when ready." : "Codex is disconnected.";
+        if (clearMessages) AiChatMessages.Clear();
+    }
+
+    private async Task ResetCodexChatForProjectAsync(ProjectItemViewModel? project)
+    {
+        if (_codexChatProjectId is null || _codexChatProjectId == project?.Id) return;
+        await DisconnectCodexChatAsync(clearMessages: true);
+    }
+
+    private AiWorkspacePermission BuildAiWorkspacePermissions()
+    {
+        AiWorkspacePermission permissions = AiWorkspacePermission.ReadRepository;
+        if (AiAllowModify) permissions |= AiWorkspacePermission.ModifyFiles;
+        if (AiAllowNetwork) permissions |= AiWorkspacePermission.NetworkAccess;
+        if (AiStageAfterRun) permissions |= AiWorkspacePermission.StageChanges;
+        if (AiCommitAfterRun) permissions |= AiWorkspacePermission.CreateCommit;
+        return permissions;
+    }
+
     public async Task RunAiAgentAsync()
     {
         IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
@@ -5045,11 +5900,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        AiWorkspacePermission permissions = AiWorkspacePermission.ReadRepository;
-        if (AiAllowModify) permissions |= AiWorkspacePermission.ModifyFiles;
-        if (AiAllowNetwork) permissions |= AiWorkspacePermission.NetworkAccess;
-        if (AiStageAfterRun) permissions |= AiWorkspacePermission.StageChanges;
-        if (AiCommitAfterRun) permissions |= AiWorkspacePermission.CreateCommit;
+        AiWorkspacePermission permissions = BuildAiWorkspacePermissions();
         AiMcpProjectProfile mcpProfile = CreateCurrentAiMcpProfile();
         AiAgentRequest request = new(
             SelectedProject.RootPath,
@@ -5067,6 +5918,8 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
         _aiAgentCancellation?.Cancel();
         _aiAgentCancellation?.Dispose();
+        _unrealBuildCancellation?.Cancel();
+        _unrealBuildCancellation?.Dispose();
         _aiAgentCancellation = new CancellationTokenSource();
         CancellationToken aiCancellationToken = _aiAgentCancellation.Token;
         await RunOperationAsync("Running AI agent…", async () =>
@@ -5514,6 +6367,352 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             UnrealBridgeStatus bridge = await plugin.ConfigureProjectConnectionAsync(UnrealProjectPath, executable);
             UnrealBridgeSummary = FormatBridgeStatus(bridge);
         }, "Unreal project authorized on the private loopback bridge");
+    }
+
+    public async Task SaveUnrealAssetInspectionOptionsAsync()
+    {
+        IUnrealIntegrationPlugin? plugin = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        if (plugin is null || string.IsNullOrWhiteSpace(UnrealProjectPath))
+        {
+            StatusMessage = "Enable the Unreal Engine Integration plugin and select an Unreal project.";
+            return;
+        }
+        if (!int.TryParse(UnrealAssetPreviewResolution, out int resolution) || resolution is < 128 or > 2048)
+        {
+            StatusMessage = "Preview resolution must be between 128 and 2048 pixels.";
+            return;
+        }
+        if (!double.TryParse(UnrealAssetCacheBudgetGigabytes, out double budgetGigabytes) || budgetGigabytes is < 0.25 or > 100)
+        {
+            StatusMessage = "Cache budget must be between 0.25 and 100 GB.";
+            return;
+        }
+
+        await RunOperationAsync("Saving Unreal asset preview settings...", async () =>
+        {
+            UnrealAssetInspectionOptions options = new(
+                UnrealAdvancedAssetInspectionEnabled,
+                resolution,
+                (long)(budgetGigabytes * 1024 * 1024 * 1024),
+                UnrealRenderMeshThumbnails,
+                180);
+            await plugin.SaveAssetInspectionOptionsAsync(UnrealProjectPath, options);
+            await RefreshUnrealAssetInspectionCacheCoreAsync(plugin);
+        }, UnrealAdvancedAssetInspectionEnabled
+            ? "Advanced Unreal asset previews enabled"
+            : "Advanced Unreal asset previews disabled");
+    }
+
+    public async Task RefreshUnrealAssetInspectionCacheAsync()
+    {
+        IUnrealIntegrationPlugin? plugin = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        if (plugin is null || string.IsNullOrWhiteSpace(UnrealProjectPath)) return;
+        await RunOperationAsync("Reading Unreal asset preview cache...", async () =>
+        {
+            await RefreshUnrealAssetInspectionCacheCoreAsync(plugin);
+        }, "Unreal asset preview cache refreshed");
+    }
+
+    public async Task ClearUnrealAssetInspectionCacheAsync()
+    {
+        IUnrealIntegrationPlugin? plugin = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        if (plugin is null || string.IsNullOrWhiteSpace(UnrealProjectPath)) return;
+        await RunOperationAsync("Clearing Unreal asset preview cache...", async () =>
+        {
+            UnrealAssetInspectionCacheStatus status = await plugin.ClearAssetInspectionCacheAsync(UnrealProjectPath);
+            UnrealAssetInspectionSummary = status.Summary;
+        }, "Unreal asset preview cache cleared");
+    }
+
+    public async Task DiscoverUnrealBuildEnvironmentAsync(bool forceRefresh = false)
+    {
+        IUnrealIntegrationPlugin? plugin = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        if (plugin is null || SelectedProject is null || string.IsNullOrWhiteSpace(UnrealProjectPath))
+        {
+            UnrealBuildStatus = "Enable the Unreal integration plugin and select a valid Unreal project.";
+            return;
+        }
+
+        await RunOperationAsync("Discovering Unreal build targets and toolchains...", async () =>
+        {
+            UnrealBuildDiscovery discovery = forceRefresh
+                ? await plugin.RefreshBuildEnvironmentAsync(UnrealProjectPath)
+                : await plugin.DiscoverBuildEnvironmentAsync(UnrealProjectPath);
+            _unrealBuildDiscovery = discovery;
+            ReplaceCollection(UnrealBuildEngines, discovery.Engines);
+            ReplaceCollection(UnrealBuildTargets, discovery.Targets);
+
+            UnrealBuildProfile? profile = await plugin.LoadBuildProfileAsync(SelectedProject.Id);
+            ReplaceCollection(UnrealBuildPresets, await plugin.LoadBuildPresetsAsync(SelectedProject.Id));
+            SelectedUnrealBuildPreset = UnrealBuildPresets.FirstOrDefault(item =>
+                                            string.Equals(item.PresetName, profile?.PresetName, StringComparison.OrdinalIgnoreCase))
+                                        ?? UnrealBuildPresets.FirstOrDefault();
+            SelectedUnrealBuildEngine = UnrealBuildEngines.FirstOrDefault(engine =>
+                                            string.Equals(engine.RootPath, profile?.EngineRoot, StringComparison.OrdinalIgnoreCase))
+                                        ?? UnrealBuildEngines.FirstOrDefault();
+            SelectedUnrealBuildTarget = UnrealBuildTargets.FirstOrDefault(target => target.Id == profile?.TargetId)
+                                        ?? UnrealBuildTargets.FirstOrDefault();
+            UnrealBuildRangeFrom = UnrealBuildEngines.OrderBy(engine => ParseUnrealVersion(engine.Version)).FirstOrDefault();
+            UnrealBuildRangeTo = UnrealBuildEngines.OrderByDescending(engine => ParseUnrealVersion(engine.Version)).FirstOrDefault();
+            if (profile is not null)
+            {
+                SelectedUnrealBuildPlatform = profile.Platform;
+                SelectedUnrealBuildConfiguration = profile.Configuration;
+                UnrealLinuxToolchainPath = profile.LinuxToolchainPath;
+                UnrealAndroidSdkPath = profile.AndroidSdkPath;
+                UnrealAndroidNdkPath = profile.AndroidNdkPath;
+                UnrealJavaHomePath = profile.JavaHomePath;
+                UnrealBuildOutputPath = profile.OutputDirectory;
+                UnrealBuildCookAndPackage = profile.CookAndPackage;
+                UnrealBuildAutoConfigureToolchains = profile.AutoConfigureToolchains;
+                UnrealBuildTimeoutMinutes = profile.TimeoutMinutes.ToString();
+                UnrealBuildPresetName = profile.PresetName;
+                UnrealBuildMaximumParallel = Math.Clamp(profile.MaximumParallelBuilds, 1, 4).ToString();
+            }
+            else if (string.IsNullOrWhiteSpace(UnrealBuildOutputPath))
+            {
+                UnrealBuildOutputPath = Path.Combine(SelectedProject.RootPath, "Saved", "CyRevision", "Builds");
+            }
+            UnrealBuildStatus = discovery.Summary;
+            OnPropertyChanged(nameof(CanRunUnrealBuild));
+        }, "Unreal build environment ready");
+    }
+
+    public Task RunSelectedUnrealBuildAsync() => SelectedUnrealBuildEngine is null
+        ? Task.CompletedTask
+        : RunUnrealBuildMatrixAsync([SelectedUnrealBuildEngine]);
+
+    public async Task SaveUnrealBuildPresetAsync()
+    {
+        IUnrealIntegrationPlugin? plugin = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        if (plugin is null || SelectedProject is null) return;
+        if (!int.TryParse(UnrealBuildTimeoutMinutes, out int timeoutMinutes) || timeoutMinutes is < 1 or > 1440)
+            throw new InvalidDataException("Build timeout must be between 1 and 1440 minutes.");
+        if (!int.TryParse(UnrealBuildMaximumParallel, out int maximumParallel) || maximumParallel is < 1 or > 4)
+            throw new InvalidDataException("Parallel build count must be between 1 and 4.");
+        UnrealBuildProfile profile = CreateUnrealBuildProfile(SelectedProject.Id, timeoutMinutes) with
+        {
+            PresetName = string.IsNullOrWhiteSpace(UnrealBuildPresetName) ? "Default" : UnrealBuildPresetName.Trim(),
+            MaximumParallelBuilds = maximumParallel
+        };
+        await plugin.SaveBuildPresetAsync(profile);
+        ReplaceCollection(UnrealBuildPresets, await plugin.LoadBuildPresetsAsync(SelectedProject.Id));
+        SelectedUnrealBuildPreset = UnrealBuildPresets.FirstOrDefault(item =>
+            item.PresetName.Equals(profile.PresetName, StringComparison.OrdinalIgnoreCase));
+        UnrealBuildStatus = $"Build preset '{profile.PresetName}' saved.";
+    }
+
+    public void ApplySelectedUnrealBuildPreset()
+    {
+        if (SelectedUnrealBuildPreset is not { } profile) return;
+        SelectedUnrealBuildEngine = UnrealBuildEngines.FirstOrDefault(item =>
+            string.Equals(item.RootPath, profile.EngineRoot, StringComparison.OrdinalIgnoreCase)) ?? SelectedUnrealBuildEngine;
+        SelectedUnrealBuildTarget = UnrealBuildTargets.FirstOrDefault(item => item.Id == profile.TargetId) ?? SelectedUnrealBuildTarget;
+        SelectedUnrealBuildPlatform = profile.Platform;
+        SelectedUnrealBuildConfiguration = profile.Configuration;
+        UnrealLinuxToolchainPath = profile.LinuxToolchainPath;
+        UnrealAndroidSdkPath = profile.AndroidSdkPath;
+        UnrealAndroidNdkPath = profile.AndroidNdkPath;
+        UnrealJavaHomePath = profile.JavaHomePath;
+        UnrealBuildOutputPath = profile.OutputDirectory;
+        UnrealBuildCookAndPackage = profile.CookAndPackage;
+        UnrealBuildAutoConfigureToolchains = profile.AutoConfigureToolchains;
+        UnrealBuildTimeoutMinutes = profile.TimeoutMinutes.ToString();
+        UnrealBuildPresetName = profile.PresetName;
+        UnrealBuildMaximumParallel = Math.Clamp(profile.MaximumParallelBuilds, 1, 4).ToString();
+        UnrealBuildStatus = $"Build preset '{profile.PresetName}' applied.";
+    }
+
+    public async Task DeleteSelectedUnrealBuildPresetAsync()
+    {
+        IUnrealIntegrationPlugin? plugin = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        if (plugin is null || SelectedProject is null || SelectedUnrealBuildPreset is null) return;
+        string name = SelectedUnrealBuildPreset.PresetName;
+        await plugin.DeleteBuildPresetAsync(SelectedProject.Id, name);
+        ReplaceCollection(UnrealBuildPresets, await plugin.LoadBuildPresetsAsync(SelectedProject.Id));
+        SelectedUnrealBuildPreset = UnrealBuildPresets.FirstOrDefault();
+        UnrealBuildStatus = $"Build preset '{name}' deleted.";
+    }
+
+    public Task RunUnrealBuildRangeAsync()
+    {
+        if (UnrealBuildRangeFrom is null || UnrealBuildRangeTo is null) return Task.CompletedTask;
+        Version from = ParseUnrealVersion(UnrealBuildRangeFrom.Version);
+        Version to = ParseUnrealVersion(UnrealBuildRangeTo.Version);
+        if (from > to) (from, to) = (to, from);
+        UnrealEngineInstallation[] engines = UnrealBuildEngines
+            .Where(engine => ParseUnrealVersion(engine.Version) >= from && ParseUnrealVersion(engine.Version) <= to)
+            .OrderBy(engine => ParseUnrealVersion(engine.Version))
+            .ToArray();
+        return RunUnrealBuildMatrixAsync(engines);
+    }
+
+    public void CancelUnrealBuild() => _unrealBuildCancellation?.Cancel();
+
+    private async Task RunUnrealBuildMatrixAsync(IReadOnlyList<UnrealEngineInstallation> engines)
+    {
+        IUnrealIntegrationPlugin? plugin = _pluginManager.GetPlugin<IUnrealIntegrationPlugin>();
+        ProjectItemViewModel? project = SelectedProject;
+        UnrealBuildTargetDescriptor? target = SelectedUnrealBuildTarget;
+        if (plugin is null || project is null || target is null || _unrealBuildDiscovery is null || engines.Count == 0)
+        {
+            UnrealBuildStatus = "Discover engines and select a build target first.";
+            return;
+        }
+        if (!int.TryParse(UnrealBuildMaximumParallel, out int maximumParallel) || maximumParallel is < 1 or > 4)
+        {
+            UnrealBuildStatus = "Parallel build count must be between 1 and 4.";
+            return;
+        }
+        if (!int.TryParse(UnrealBuildTimeoutMinutes, out int timeoutMinutes) || timeoutMinutes is < 1 or > 1440)
+        {
+            UnrealBuildStatus = "Build timeout must be between 1 and 1440 minutes.";
+            return;
+        }
+
+        _unrealBuildCancellation?.Cancel();
+        _unrealBuildCancellation?.Dispose();
+        CancellationTokenSource cancellation = new();
+        _unrealBuildCancellation = cancellation;
+        IsUnrealBuildRunning = true;
+        UnrealBuildResults.Clear();
+        UnrealBuildDiagnostics.Clear();
+        UnrealBuildLogLines.Clear();
+        List<UnrealBuildProgress> logLines = [];
+        object logGate = new();
+        Stopwatch publishClock = Stopwatch.StartNew();
+        OperationTaskViewModel trackedTask = BeginTrackedTask(
+            $"Unreal build matrix ({engines.Count})", project.Name, target.DisplayName);
+        trackedTask.State = "Running";
+        try
+        {
+            UnrealBuildProfile activeProfile = CreateUnrealBuildProfile(project.Id, timeoutMinutes) with
+            {
+                PresetName = string.IsNullOrWhiteSpace(UnrealBuildPresetName) ? "Default" : UnrealBuildPresetName.Trim(),
+                MaximumParallelBuilds = maximumParallel
+            };
+            await plugin.SaveBuildProfileAsync(activeProfile, cancellation.Token);
+            using SemaphoreSlim buildSlots = new(maximumParallel, maximumParallel);
+            ConcurrentBag<UnrealBuildResult> completed = [];
+
+            async Task RunEngineAsync(UnrealEngineInstallation engine)
+            {
+                await buildSlots.WaitAsync(cancellation.Token);
+                try
+                {
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    string state = $"Building {target.DisplayName} with UE {engine.Version} for {SelectedUnrealBuildPlatform}...";
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        UnrealBuildStatus = state;
+                        trackedTask.Detail = state;
+                    });
+                IProgress<UnrealBuildProgress> progress = new Progress<UnrealBuildProgress>(item =>
+                {
+                    UnrealBuildProgress[]? snapshot = null;
+                    lock (logGate)
+                    {
+                        logLines.Add(item);
+                        if (logLines.Count > 5000) logLines.RemoveRange(0, Math.Min(500, logLines.Count - 5000));
+                        if (publishClock.ElapsedMilliseconds >= 150 || item.Stream == "system")
+                        {
+                            publishClock.Restart();
+                            snapshot = logLines.ToArray();
+                        }
+                    }
+                    if (snapshot is not null)
+                        Dispatcher.UIThread.Post(() => ReplaceCollection(UnrealBuildLogLines, snapshot), DispatcherPriority.Background);
+                });
+                UnrealBuildRequest request = CreateUnrealBuildRequest(project.Id, engine, target, timeoutMinutes);
+                UnrealBuildResult result = await plugin.RunBuildAsync(request, progress, cancellation.Token);
+                    completed.Add(result);
+                    Dispatcher.UIThread.Post(() => UnrealBuildResults.Insert(0, result));
+                _applicationLogService.Information(
+                    "unreal-build",
+                    $"engine={result.EngineVersion} target=\"{result.TargetName}\" platform={result.Platform} " +
+                    $"exit={result.ExitCode} duration={result.Duration.TotalSeconds:N1}s log=\"{result.LogPath}\"",
+                    project.RootPath);
+                }
+                finally
+                {
+                    buildSlots.Release();
+                }
+            }
+
+            await Task.WhenAll(engines.Select(RunEngineAsync));
+            UnrealBuildProgress[] finalLog;
+            lock (logGate) finalLog = logLines.ToArray();
+            ReplaceCollection(UnrealBuildLogLines, finalLog);
+            UnrealBuildLog = string.Join(Environment.NewLine, finalLog.TakeLast(250)
+                .Select(item => $"{item.Timestamp:HH:mm:ss} [{item.Stream}] {item.Text}"));
+            int succeeded = completed.Count(result => result.Succeeded);
+            int failed = engines.Count - succeeded;
+            UnrealBuildStatus = $"Build matrix finished: {succeeded} succeeded, {failed} failed.";
+            CompleteTrackedTask(trackedTask, failed == 0 ? "Completed" : "Failed", UnrealBuildStatus);
+        }
+        catch (OperationCanceledException)
+        {
+            UnrealBuildStatus = "Unreal build cancelled.";
+            CompleteTrackedTask(trackedTask, "Cancelled", UnrealBuildStatus);
+        }
+        catch (Exception exception)
+        {
+            UnrealBuildStatus = exception.Message;
+            CompleteTrackedTask(trackedTask, "Failed", exception.Message);
+            _applicationLogService.Error("unreal-build", "local build failed", exception, project.RootPath);
+        }
+        finally
+        {
+            IsUnrealBuildRunning = false;
+            if (ActiveOperations.Contains(trackedTask))
+                CompleteTrackedTask(trackedTask, "Finished", UnrealBuildStatus);
+            if (ReferenceEquals(_unrealBuildCancellation, cancellation)) _unrealBuildCancellation = null;
+            cancellation.Dispose();
+        }
+    }
+
+    private UnrealBuildProfile CreateUnrealBuildProfile(Guid projectId, int timeoutMinutes) => new(
+        projectId,
+        SelectedUnrealBuildEngine?.RootPath ?? string.Empty,
+        SelectedUnrealBuildTarget?.Id ?? string.Empty,
+        SelectedUnrealBuildPlatform,
+        SelectedUnrealBuildConfiguration,
+        UnrealLinuxToolchainPath,
+        UnrealAndroidSdkPath,
+        UnrealAndroidNdkPath,
+        UnrealJavaHomePath,
+        UnrealBuildOutputPath,
+        UnrealBuildCookAndPackage,
+        UnrealBuildAutoConfigureToolchains,
+        timeoutMinutes,
+        DateTimeOffset.UtcNow,
+        string.IsNullOrWhiteSpace(UnrealBuildPresetName) ? "Default" : UnrealBuildPresetName.Trim(),
+        int.TryParse(UnrealBuildMaximumParallel, out int maximumParallel) ? Math.Clamp(maximumParallel, 1, 4) : 1);
+
+    private UnrealBuildRequest CreateUnrealBuildRequest(
+        Guid projectId,
+        UnrealEngineInstallation engine,
+        UnrealBuildTargetDescriptor target,
+        int timeoutMinutes) => new(
+        projectId,
+        _unrealBuildDiscovery?.ProjectFile ?? UnrealProjectPath,
+        engine,
+        target,
+        SelectedUnrealBuildPlatform,
+        SelectedUnrealBuildConfiguration,
+        UnrealLinuxToolchainPath,
+        UnrealAndroidSdkPath,
+        UnrealAndroidNdkPath,
+        UnrealJavaHomePath,
+        UnrealBuildOutputPath,
+        UnrealBuildCookAndPackage,
+        UnrealBuildAutoConfigureToolchains,
+        timeoutMinutes);
+
+    private static Version ParseUnrealVersion(string value)
+    {
+        string normalized = string.Join('.', value.Split('.').Take(3));
+        return Version.TryParse(normalized, out Version? version) ? version : new Version();
     }
 
     public async Task CheckForUpdatesAsync()
@@ -6793,6 +7992,29 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }, $"Branche {branchName.Trim()} créée");
     }
 
+    private async Task RefreshHistoricalWorktreesLegacyAsync()
+    {
+        if (SelectedProject is null) return;
+        IReadOnlyList<GitHistoricalWorktree> worktrees = await _gitService.GetHistoricalWorktreesAsync(SelectedProject.RootPath);
+        GitHistoricalWorktree[] managed = worktrees.Where(item => item.IsManagedByCyRevision).ToArray();
+        ReplaceCollection(HistoricalWorktrees, managed);
+        SelectedHistoricalWorktree = managed.FirstOrDefault();
+        HistoricalWorktreeStatus = managed.Length == 0
+            ? "No isolated historical worktree."
+            : $"{managed.Length:N0} isolated worktree(s) · main repository remains unchanged.";
+    }
+
+    private async Task RemoveSelectedHistoricalWorktreeLegacyAsync(bool force)
+    {
+        if (SelectedProject is null || SelectedHistoricalWorktree is null) return;
+        string path = SelectedHistoricalWorktree.Path;
+        await RunOperationAsync("Removing historical worktree...", async () =>
+        {
+            await _gitService.RemoveHistoricalWorktreeAsync(SelectedProject.RootPath, path, force);
+            await RefreshHistoricalWorktreesAsync();
+        }, "Historical worktree removed");
+    }
+
     public async Task CheckoutSelectedBranchAsync()
     {
         if (SelectedProject is null || SelectedBranch is null || SelectedBranch.IsCurrent)
@@ -7942,7 +9164,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         }
 
         await SetSyncthingExecutableAsync(installation.ExecutablePath!);
-        SyncthingRuntimeSummary = $"{installation.Source} Â· {installation.Details}";
+        SyncthingRuntimeSummary = $"{installation.Source} · {installation.Details}";
     }
 
     public async Task SaveSyncthingSettingsAsync()
@@ -7959,7 +9181,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        await RunOperationAsync("Saving Syncthing settingsâ€¦", async () =>
+        await RunOperationAsync("Saving Syncthing settings…", async () =>
         {
             _currentSyncProfile = await _syncthingProfileStore.SaveAsync(_currentSyncProfile with
             {
@@ -7986,7 +9208,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        await RunOperationAsync("Saving independent shared folderâ€¦", async () =>
+        await RunOperationAsync("Saving independent shared folder…", async () =>
         {
             if (_currentSyncProfile is null)
             {
@@ -7997,7 +9219,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                     installation.ExecutablePath!,
                     ResolveSyncExchangeDirectory(SelectedProject.Definition));
                 SyncthingExecutablePath = _currentSyncProfile.ExecutablePath;
-                SyncthingRuntimeSummary = $"{installation.Source} Â· {installation.Details}";
+                SyncthingRuntimeSummary = $"{installation.Source} · {installation.Details}";
             }
 
             string path = Path.GetFullPath(SharedSyncFolderPath.Trim());
@@ -8021,7 +9243,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 _currentSyncProfile with { SharedFolders = folders });
             ReplaceCollection(SharedSyncFolders, folders.OrderBy(folder => folder.Name, StringComparer.CurrentCultureIgnoreCase));
             SelectedSharedSyncFolder = SharedSyncFolders.First(folder => folder.Id == id);
-            SharedSyncFolderStatus = $"{folders.Length:N0} independent folder(s) Â· available in every project mode.";
+            SharedSyncFolderStatus = $"{folders.Length:N0} independent folder(s) · available in every project mode.";
             if (_syncEngine?.Status.State is SyncEngineState.Running or SyncEngineState.Paused)
                 await ConfigureCurrentSyncFolderAsync();
         }, "Independent shared folder saved");
@@ -8031,7 +9253,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     {
         if (_currentSyncProfile is null || SelectedSharedSyncFolder is null) return;
         SyncthingSharedFolder selected = SelectedSharedSyncFolder;
-        await RunOperationAsync("Removing independent shared folderâ€¦", async () =>
+        await RunOperationAsync("Removing independent shared folder…", async () =>
         {
             SyncthingSharedFolder[] folders = _currentSyncProfile.SharedFolders
                 .Where(folder => folder.Id != selected.Id).ToArray();
@@ -8058,7 +9280,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             StatusMessage = "Start CyRevision Syncthing and select a shared folder first.";
             return;
         }
-        await RunOperationAsync("Scanning independent shared folderâ€¦", async () =>
+        await RunOperationAsync("Scanning independent shared folder…", async () =>
         {
             using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
             await api.ScanFolderAsync(SelectedSharedSyncFolder.FolderId);
@@ -8068,7 +9290,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public Task RefreshSyncthingWorkspaceAsync() =>
         RunOperationAsync(
-            "Refreshing Syncthing devices, differences, and logsâ€¦",
+            "Refreshing Syncthing devices, differences, and logs…",
             RefreshSyncthingWorkspaceCoreAsync,
             "Syncthing workspace refreshed");
 
@@ -8080,7 +9302,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        await RunOperationAsync("Scanning the synchronized folderâ€¦", async () =>
+        await RunOperationAsync("Scanning the synchronized folder…", async () =>
         {
             using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
             await api.ScanFolderAsync(_currentSyncProfile.FolderId);
@@ -8117,7 +9339,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        await RunOperationAsync("Saving .stignoreâ€¦", async () =>
+        await RunOperationAsync("Saving .stignore…", async () =>
         {
             await _syncthingIgnoreFileService.WriteAsync(
                 _currentSyncProfile.ExchangeDirectory,
@@ -8160,7 +9382,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 installation.ExecutablePath!,
                 ResolveSyncExchangeDirectory(SelectedProject.Definition));
             SyncthingExecutablePath = _currentSyncProfile.ExecutablePath;
-            SyncthingRuntimeSummary = $"{installation.Source} Â· {installation.Details}";
+            SyncthingRuntimeSummary = $"{installation.Source} · {installation.Details}";
         }
 
         if (!SelectedProject.Definition.Features.PeerSyncEnabled &&
@@ -8750,7 +9972,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public void SetSwarmCacheFolder(string path) => SwarmCacheFolder = path;
 
     public async Task SaveSwarmAsync() => await RunOperationAsync(
-        "Saving the Unreal Swarm VPN sessionâ€¦",
+            "Saving the Unreal Swarm VPN session…",
         async () =>
         {
             SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
@@ -8759,7 +9981,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "Unreal Swarm VPN session saved");
 
     public async Task DiagnoseSwarmAsync() => await RunOperationAsync(
-        "Testing Swarm, VPN, DNS, firewall and coordinator portsâ€¦",
+            "Testing Swarm, VPN, DNS, firewall and coordinator ports…",
         async () =>
         {
             VpnProjectProfile vpn = await SaveVpnFormCoreAsync();
@@ -8788,7 +10010,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "Swarm VPN diagnostic completed");
 
     public async Task ApplySwarmOptionsAsync() => await RunOperationAsync(
-        "Applying Swarm Agent settings with backupâ€¦",
+            "Applying Swarm Agent settings with backup…",
         async () =>
         {
             SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
@@ -8798,7 +10020,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "Swarm Agent configuration applied");
 
     public async Task ApplySwarmDnsAsync() => await RunOperationAsync(
-        "Applying the project-owned local Swarm DNS aliasâ€¦",
+            "Applying the project-owned local Swarm DNS alias…",
         async () =>
         {
             SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
@@ -8808,7 +10030,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "Local Swarm DNS alias applied");
 
     public async Task RemoveSwarmDnsAsync() => await RunOperationAsync(
-        "Removing only the CyRevision Swarm DNS blockâ€¦",
+            "Removing only the CyRevision Swarm DNS block…",
         async () =>
         {
             SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
@@ -8818,7 +10040,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "Local Swarm DNS alias removed");
 
     public async Task LaunchSwarmAgentAsync() => await RunOperationAsync(
-        "Launching Swarm Agentâ€¦",
+            "Launching Swarm Agent…",
         async () =>
         {
             SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
@@ -8828,7 +10050,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "Swarm Agent launched");
 
     public async Task LaunchSwarmCoordinatorAsync() => await RunOperationAsync(
-        "Launching Swarm Coordinatorâ€¦",
+            "Launching Swarm Coordinator…",
         async () =>
         {
             SwarmProjectProfile profile = await SaveSwarmFormCoreAsync();
@@ -8842,7 +10064,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     public void SetVpnFileSharedFolderPath(string path) => VpnFileSharedFolderPath = path;
 
     public async Task SaveVpnFileExchangeAsync() => await RunOperationAsync(
-        "Saving secure VPN file exchangeâ€¦",
+            "Saving secure VPN file exchange…",
         async () =>
         {
             VpnFileExchangeCredentials credentials = await SaveVpnFileExchangeFormCoreAsync();
@@ -8851,7 +10073,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "Secure VPN file exchange saved");
 
     public async Task StartVpnFileExchangeAsync() => await RunOperationAsync(
-        "Starting the VPN-only file endpointâ€¦",
+            "Starting the VPN-only file endpoint…",
         async () =>
         {
             VpnProjectProfile vpn = await SaveVpnFormCoreAsync();
@@ -8868,7 +10090,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "VPN file endpoint started");
 
     public async Task StopVpnFileExchangeAsync() => await RunOperationAsync(
-        "Stopping the VPN file endpointâ€¦",
+            "Stopping the VPN file endpoint…",
         async () =>
         {
             if (_vpnFileExchangeHost is not null)
@@ -8882,7 +10104,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "VPN file endpoint stopped");
 
     public async Task TestVpnFilePeerAsync() => await RunOperationAsync(
-        "Testing the selected VPN file peerâ€¦",
+            "Testing the selected VPN file peer…",
         async () =>
         {
             VpnPeerViewModel peer = SelectedVpnFilePeer
@@ -8894,7 +10116,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "VPN file peer authenticated");
 
     public async Task RefreshVpnSharedFilesAsync() => await RunOperationAsync(
-        "Reading the selected peer shared folderâ€¦",
+            "Reading the selected peer shared folder…",
         async () =>
         {
             VpnPeerViewModel peer = SelectedVpnFilePeer
@@ -8909,7 +10131,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         "Remote shared folder refreshed");
 
     public async Task SendVpnFileAsync(string path) => await RunOperationAsync(
-        "Sending and verifying the file through WireGuardâ€¦",
+            "Sending and verifying the file through WireGuard…",
         async () =>
         {
             VpnPeerViewModel peer = SelectedVpnFilePeer
@@ -8917,12 +10139,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             VpnFileExchangeCredentials credentials = await SaveVpnFileExchangeFormCoreAsync();
             VpnFileTransferResult result = await _vpnFileExchangeService.SendFileAsync(
                 peer.TunnelAddress, credentials.Profile.Port, credentials.AccessToken, path);
-            VpnFileStatus = $"Sent {result.Name} · {result.Size:N0} bytes · SHA-256 {result.Sha256[..12]}â€¦";
+            VpnFileStatus = $"Sent {result.Name} · {result.Size:N0} bytes · SHA-256 {result.Sha256[..12]}…";
         },
         "VPN file sent and verified");
 
     public async Task DownloadVpnSharedFileAsync(string destinationPath) => await RunOperationAsync(
-        "Downloading and verifying the shared file through WireGuardâ€¦",
+            "Downloading and verifying the shared file through WireGuard…",
         async () =>
         {
             VpnPeerViewModel peer = SelectedVpnFilePeer
@@ -8936,12 +10158,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 credentials.AccessToken,
                 remote.RelativePath,
                 destinationPath);
-            VpnFileStatus = $"Received {result.Name} · SHA-256 {result.Sha256[..12]}â€¦ · {result.DestinationPath}";
+            VpnFileStatus = $"Received {result.Name} · SHA-256 {result.Sha256[..12]}… · {result.DestinationPath}";
         },
         "Shared file downloaded and verified");
 
     public async Task RotateVpnFileTokenAsync() => await RunOperationAsync(
-        "Rotating the project file-exchange tokenâ€¦",
+            "Rotating the project file-exchange token…",
         async () =>
         {
             if (SelectedProject is null)
@@ -8959,6 +10181,252 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             OnPropertyChanged(nameof(VpnFileHostRunning));
         },
         "VPN file token rotated");
+
+    public void SetTeamChatSyncFolder(string path) => TeamChatSyncFolderPath = path;
+
+    public void SetTeamChatAttachment(string path) => TeamChatAttachmentPath = path;
+
+    public async Task LoadTeamChatAsync()
+    {
+        if (SelectedProject is null) return;
+        await StopTeamChatWatcherAsync();
+        TeamChatProfile profile = await _teamChatProfileStore.GetOrCreateAsync(SelectedProject.Id, Environment.UserName);
+        profile = profile with { ProjectRoot = SelectedProject.RootPath };
+        _currentTeamChatProfile = profile;
+        ApplyTeamChatProfile(profile);
+        try
+        {
+            await RefreshTeamChatCoreAsync(profile);
+            if (profile.Transport == TeamChatTransport.SyncFolder) StartTeamChatWatcher(profile);
+        }
+        catch (Exception exception) when (exception is SocketException or IOException or InvalidOperationException)
+        {
+            ReplaceCollection(TeamChatMessages, []);
+            TeamChatStatus = $"Profile loaded - conversation endpoint is not reachable yet: {exception.Message}";
+        }
+    }
+
+    public async Task SaveTeamChatAsync() => await RunOperationAsync(
+        "Saving team chat settings...",
+        async () =>
+        {
+            TeamChatProfile profile = BuildTeamChatProfile();
+            await _teamChatProfileStore.SaveAsync(profile);
+            _currentTeamChatProfile = profile;
+            await StopTeamChatWatcherAsync();
+            if (profile.Transport == TeamChatTransport.SyncFolder) StartTeamChatWatcher(profile);
+            TeamChatStatus = $"Saved - {profile.Transport} - {(profile.SaveConversations ? "conversation archive enabled" : "session only")}.";
+        },
+        "Team chat settings saved");
+
+    public async Task StartTeamChatHostAsync() => await RunOperationAsync(
+        "Starting the VPN team chat host...",
+        async () =>
+        {
+            TeamChatProfile profile = BuildTeamChatProfile() with { Transport = TeamChatTransport.Vpn };
+            await _teamChatProfileStore.SaveAsync(profile);
+            if (_teamChatHost is not null) await _teamChatHost.DisposeAsync();
+            _teamChatHost = await _teamChatService.StartVpnHostAsync(profile);
+            _currentTeamChatProfile = profile;
+            IsTeamChatHostRunning = true;
+            TeamChatStatus = $"Listening on {_teamChatHost.Endpoint} - private/VPN addresses only - token authenticated.";
+        },
+        "VPN team chat host started");
+
+    public async Task StopTeamChatHostAsync() => await RunOperationAsync(
+        "Stopping the team chat host...",
+        async () =>
+        {
+            if (_teamChatHost is not null)
+            {
+                await _teamChatHost.DisposeAsync();
+                _teamChatHost = null;
+            }
+            IsTeamChatHostRunning = false;
+            TeamChatStatus = "VPN team chat host stopped.";
+        },
+        "Team chat host stopped");
+
+    public async Task SendTeamChatMessageAsync() => await RunOperationAsync(
+        "Sending the team chat message...",
+        async () =>
+        {
+            TeamChatProfile profile = BuildTeamChatProfile();
+            await _teamChatProfileStore.SaveAsync(profile);
+            TeamChatMessage message = profile.Transport == TeamChatTransport.SyncFolder
+                ? await _teamChatService.SendSyncAsync(profile, TeamChatMessageText, TeamChatAttachmentPath)
+                : await _teamChatService.SendVpnAsync(profile, TeamChatMessageText, TeamChatAttachmentPath);
+            _currentTeamChatProfile = profile;
+            TeamChatMessageText = string.Empty;
+            TeamChatAttachmentPath = string.Empty;
+            if (message.DeliveryState == TeamChatDeliveryState.Pending)
+            {
+                MergeTeamChatMessages([message]);
+                TeamChatStatus = "Message queued locally; the VPN host is unavailable and CyRevision will retry.";
+            }
+            else
+            {
+                await RefreshTeamChatCoreAsync(profile);
+            }
+            SelectedTeamChatMessage = TeamChatMessages.FirstOrDefault(item => item.Id == message.Id)
+                                      ?? TeamChatMessages.LastOrDefault();
+            _applicationLogService.Information(
+                "team-chat",
+                $"sent transport={profile.Transport} attachment={message.AttachmentSize}B",
+                SelectedProject?.RootPath);
+        },
+        "Team chat message sent");
+
+    public async Task RefreshTeamChatAsync() => await RunOperationAsync(
+        "Refreshing the team conversation...",
+        async () =>
+        {
+            TeamChatProfile profile = BuildTeamChatProfile();
+            await RefreshTeamChatCoreAsync(profile);
+        },
+        "Team conversation refreshed");
+
+    public async Task RotateTeamChatTokenAsync() => await RunOperationAsync(
+        "Rotating the team chat token...",
+        async () =>
+        {
+            if (SelectedProject is null) throw new InvalidOperationException("Select a project first.");
+            if (_teamChatHost is not null)
+            {
+                await _teamChatHost.DisposeAsync();
+                _teamChatHost = null;
+            }
+            IsTeamChatHostRunning = false;
+            TeamChatProfile profile = await _teamChatProfileStore.RotateTokenAsync(SelectedProject.Id);
+            _currentTeamChatProfile = profile;
+            ApplyTeamChatProfile(profile);
+            TeamChatStatus = "Access token rotated. Share the new token separately with authorized teammates.";
+        },
+        "Team chat token rotated");
+
+    private async Task RefreshTeamChatCoreAsync(TeamChatProfile profile)
+    {
+        TeamChatMessage? selected = SelectedTeamChatMessage;
+        TeamChatSnapshot snapshot = profile.Transport == TeamChatTransport.SyncFolder
+            ? await _teamChatService.ReadSyncSnapshotAsync(profile)
+            : await _teamChatService.ReadVpnSnapshotAsync(profile);
+        MergeTeamChatMessages(snapshot.Messages);
+        ReplaceCollection(TeamChatParticipants, snapshot.Participants);
+        SelectedTeamChatMessage = selected is null
+            ? TeamChatMessages.LastOrDefault()
+            : TeamChatMessages.FirstOrDefault(item => item.Id == selected.Id) ?? TeamChatMessages.LastOrDefault();
+        TeamChatStatus = $"{TeamChatMessages.Count:N0} message(s) · {snapshot.Participants.Count(item => item.IsOnline):N0} online · " +
+                         $"{profile.Transport} · parsed {snapshot.FilesParsed:N0}/{snapshot.FilesScanned:N0}.";
+    }
+
+    public async Task<string?> PrepareSelectedTeamChatAttachmentAsync()
+    {
+        if (SelectedTeamChatMessage is null || string.IsNullOrWhiteSpace(SelectedTeamChatMessage.AttachmentName)) return null;
+        if (!string.IsNullOrWhiteSpace(SelectedTeamChatMessage.AttachmentLocalPath) &&
+            File.Exists(SelectedTeamChatMessage.AttachmentLocalPath)) return SelectedTeamChatMessage.AttachmentLocalPath;
+        if (_currentTeamChatProfile is null) return null;
+        TeamChatProfile profile = BuildTeamChatProfile();
+        TeamChatMessage downloaded = profile.Transport == TeamChatTransport.SyncFolder
+            ? await _teamChatService.PrepareSyncAttachmentAsync(profile, SelectedTeamChatMessage)
+            : await _teamChatService.DownloadVpnAttachmentAsync(profile, SelectedTeamChatMessage);
+        MergeTeamChatMessages([downloaded]);
+        SelectedTeamChatMessage = TeamChatMessages.FirstOrDefault(item => item.Id == downloaded.Id);
+        return downloaded.AttachmentLocalPath;
+    }
+
+    private void MergeTeamChatMessages(IEnumerable<TeamChatMessage> messages)
+    {
+        Dictionary<Guid, TeamChatMessage> merged = TeamChatMessages.ToDictionary(item => item.Id);
+        foreach (TeamChatMessage message in messages) merged[message.Id] = message;
+        ReplaceCollection(TeamChatMessages, merged.Values.OrderBy(item => item.SentAt).TakeLast(2000));
+    }
+
+    private void StartTeamChatWatcher(TeamChatProfile profile)
+    {
+        if (string.IsNullOrWhiteSpace(profile.SyncFolderPath)) return;
+        _teamChatSyncWatcher = _teamChatService.WatchSync(profile);
+        _teamChatSyncWatcher.ChangedAvailable += OnTeamChatSyncChanged;
+    }
+
+    private void OnTeamChatSyncChanged(object? sender, EventArgs eventArgs)
+    {
+        _teamChatRefreshCancellation?.Cancel();
+        _teamChatRefreshCancellation?.Dispose();
+        CancellationTokenSource cancellation = new();
+        _teamChatRefreshCancellation = cancellation;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(300, cancellation.Token);
+                await Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    if (_currentTeamChatProfile is { Transport: TeamChatTransport.SyncFolder } profile)
+                        await RefreshTeamChatCoreAsync(profile);
+                });
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception)
+            {
+                _applicationLogService.Warning("team-chat", $"background refresh failed: {exception.Message}", SelectedProject?.RootPath);
+            }
+        }, cancellation.Token);
+    }
+
+    private async Task StopTeamChatWatcherAsync()
+    {
+        _teamChatRefreshCancellation?.Cancel();
+        _teamChatRefreshCancellation?.Dispose();
+        _teamChatRefreshCancellation = null;
+        if (_teamChatSyncWatcher is null) return;
+        _teamChatSyncWatcher.ChangedAvailable -= OnTeamChatSyncChanged;
+        await _teamChatSyncWatcher.DisposeAsync();
+        _teamChatSyncWatcher = null;
+    }
+
+    private TeamChatProfile BuildTeamChatProfile()
+    {
+        if (SelectedProject is null) throw new InvalidOperationException("Select a project first.");
+        if (!int.TryParse(TeamChatPort, out int port) || port is < 1 or > 65535)
+            throw new InvalidDataException("Team chat port is invalid.");
+        if (!int.TryParse(TeamChatRetentionDays, out int retentionDays) || retentionDays is < 0 or > 36500)
+            throw new InvalidDataException("Conversation retention must be between 0 and 36500 days.");
+        if (!long.TryParse(TeamChatMaxAttachmentMb, out long maximumMb) || maximumMb is < 1 or > 2048)
+            throw new InvalidDataException("Attachment limit must be between 1 and 2048 MB.");
+        string token = string.IsNullOrWhiteSpace(TeamChatAccessToken)
+            ? _currentTeamChatProfile?.AccessToken ?? throw new InvalidOperationException("Load team chat first.")
+            : TeamChatAccessToken.Trim();
+        return new TeamChatProfile(
+            SelectedProject.Id,
+            string.IsNullOrWhiteSpace(TeamChatDisplayName) ? Environment.UserName : TeamChatDisplayName.Trim(),
+            SelectedTeamChatTransport,
+            TeamChatListenAddress.Trim(),
+            port,
+            TeamChatPeerEndpoint.Trim(),
+            token,
+            TeamChatSyncFolderPath.Trim(),
+            TeamChatSaveConversations,
+            retentionDays,
+            checked(maximumMb * 1024 * 1024),
+            DateTimeOffset.UtcNow,
+            SelectedProject.RootPath,
+            TeamChatEncryptStoredConversations);
+    }
+
+    private void ApplyTeamChatProfile(TeamChatProfile profile)
+    {
+        SelectedTeamChatTransport = profile.Transport;
+        TeamChatDisplayName = profile.DisplayName;
+        TeamChatListenAddress = profile.ListenAddress;
+        TeamChatPort = profile.Port.ToString();
+        TeamChatPeerEndpoint = profile.PeerEndpoint;
+        TeamChatAccessToken = profile.AccessToken;
+        TeamChatSyncFolderPath = profile.SyncFolderPath;
+        TeamChatSaveConversations = profile.SaveConversations;
+        TeamChatEncryptStoredConversations = profile.EncryptStoredConversations;
+        TeamChatRetentionDays = profile.RetentionDays.ToString();
+        TeamChatMaxAttachmentMb = Math.Max(1, profile.MaxAttachmentBytes / (1024 * 1024)).ToString();
+    }
 
     public async Task ConnectDiscordAgentAsync()
     {
@@ -9232,7 +10700,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     public Task RefreshProjectMembersAsync() =>
         RunOperationAsync(
-            "Refreshing project membersâ€¦",
+            "Refreshing project members…",
             () => RefreshProjectMembersCoreAsync(testConnections: true),
             "Project member overview refreshed");
 
@@ -9328,15 +10796,15 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                 peer.TunnelAddress,
                 peer.Capabilities,
                 !peer.Peer.Enabled ? "Disabled" : online ? "Connected" : "Configured",
-                connectivity?.LastHandshakeAt?.ToLocalTime().ToString("g") ?? "â€”",
+                connectivity?.LastHandshakeAt?.ToLocalTime().ToString("g") ?? "—",
                 peer.Endpoint,
                 online ? "#78D7B7" : peer.Peer.Enabled ? "#E5C07B" : "#7E8189",
                 online));
         }
 
         ProjectMembersSummary =
-            $"Sync {SyncProjectMembers.Count(member => member.IsOnline)}/{SyncProjectMembers.Count} online Â· " +
-            $"Git {GitProjectMembers.Count} contributor(s) Â· " +
+            $"Sync {SyncProjectMembers.Count(member => member.IsOnline)}/{SyncProjectMembers.Count} online · " +
+            $"Git {GitProjectMembers.Count} contributor(s) · " +
             $"VPN {VpnProjectMembers.Count(member => member.IsOnline)}/{VpnProjectMembers.Count} connected";
         NotifyMemberPanelLayoutChanged();
     }
@@ -9614,6 +11082,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(IsLongOperationIndeterminate));
         OnPropertyChanged(nameof(LongOperationProgress));
         OnPropertyChanged(nameof(LongOperationStage));
+        OnPropertyChanged(nameof(HasActivityCenterContent));
+        OnPropertyChanged(nameof(ActivityCenterHeadline));
+        OnPropertyChanged(nameof(ActivityCenterBadgeText));
     }
 
     private OperationTaskViewModel BeginTrackedTask(string title, string projectName, string detail = "")
@@ -9626,16 +11097,58 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private void CompleteTrackedTask(OperationTaskViewModel task, string state, string detail)
     {
-        task.State = state;
-        task.Detail = detail;
+        task.Complete(state, detail);
         ActiveOperations.Remove(task);
+        RecentOperations.Remove(task);
+        RecentOperations.Insert(0, task);
+        while (RecentOperations.Count > 80) RecentOperations.RemoveAt(RecentOperations.Count - 1);
+        if (task.IsAttention)
+        {
+            IsActivityCenterExpanded = true;
+        }
         NotifyActiveOperationsChanged();
+    }
+
+    public void PublishApplicationError(string title, string detail)
+    {
+        OperationTaskViewModel notification = new(title, SelectedProject?.Name ?? "Application", detail);
+        notification.Complete("Failed", detail);
+        RecentOperations.Insert(0, notification);
+        while (RecentOperations.Count > 80) RecentOperations.RemoveAt(RecentOperations.Count - 1);
+        IsActivityCenterExpanded = true;
+        NotifyActiveOperationsChanged();
+    }
+
+    public void DismissRecentOperation(OperationTaskViewModel task)
+    {
+        RecentOperations.Remove(task);
+        NotifyActiveOperationsChanged();
+    }
+
+    public void ClearRecentOperations()
+    {
+        RecentOperations.Clear();
+        IsActivityCenterExpanded = false;
+        NotifyActiveOperationsChanged();
+    }
+
+    public void DismissActivityCenter()
+    {
+        _isActivityCenterDismissed = true;
+        IsActivityCenterExpanded = false;
+        OnPropertyChanged(nameof(HasActivityCenterContent));
     }
 
     private void NotifyActiveOperationsChanged()
     {
         OnPropertyChanged(nameof(HasActiveOperations));
+        OnPropertyChanged(nameof(HasRecentOperations));
+        OnPropertyChanged(nameof(HasOperationAlerts));
+        OnPropertyChanged(nameof(HasActivityCenterContent));
         OnPropertyChanged(nameof(ActiveOperationCountText));
+        OnPropertyChanged(nameof(ActivityCenterBadgeText));
+        OnPropertyChanged(nameof(ActivityCenterHeadline));
+        OnPropertyChanged(nameof(OperationHistoryCountText));
         NotifyLongOperationStateChanged();
     }
 
@@ -9791,8 +11304,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             _projectSessionCacheUsage.RemoveFirst();
             _projectSessionCache.Remove(oldest);
             _latestProjectStatuses.Remove(oldest);
-            string prefix = $"{oldest:N}:";
-            _loadedWorkspaceData.RemoveWhere(key => key.StartsWith(prefix, StringComparison.Ordinal));
+            _workspaceLoadCoordinator.InvalidateProject(oldest);
         }
     }
 
@@ -9816,7 +11328,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
         return name is not (
             "_selectedProject" or "_projectLoadVersion" or "_projectLoadProgress" or "_projectLoadStage" or
-            "_isProjectLoading" or "_isRestoringProjectSession" or "_isBusy" or "_statusMessage" or "_syncEngine" or "_syncEngineProjectId" or
+            "_isProjectLoading" or "_isRestoringProjectSession" or "_isBusy" or "_statusMessage" or "_isActivityCenterExpanded" or "_syncEngine" or "_syncEngineProjectId" or
             "_vpnFileExchangeHost" or "_subscribedUnrealPlugin" or "_currentRemoteBuildJob" or "_availableUpdate" or
             "_selectedLanguage" or "_allDocumentationTopics" or "_selectedDocumentationTopic" or
             "_documentationSearch" or "_latestApplicationVersion" or "_updateStatus" or "_updateReleaseNotes" or
@@ -9839,7 +11351,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             nameof(CodeHistory) or nameof(CodeSymbols) or nameof(IgnoreFolderSuggestions) or
             nameof(IgnoreFileTypeSuggestions) or nameof(AiProviders) or
             nameof(RepositoryCommandHistory) or nameof(FilteredRepositoryCommandHistory) or
-            nameof(ApplicationLogEntries) or nameof(FilteredApplicationLogEntries) or nameof(ActiveOperations) or
+            nameof(ApplicationLogEntries) or nameof(FilteredApplicationLogEntries) or nameof(ActiveOperations) or nameof(RecentOperations) or
             nameof(PerformanceMetrics));
     }
 
@@ -11262,11 +12774,11 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         SelectedSharedSyncFolder = SharedSyncFolders.FirstOrDefault();
         SharedSyncFolderStatus = SharedSyncFolders.Count == 0
             ? "No independent shared folder configured."
-            : $"{SharedSyncFolders.Count:N0} independent folder(s) Â· usable without project Sync.";
+            : $"{SharedSyncFolders.Count:N0} independent folder(s) · usable without project Sync.";
         SyncthingRuntimeInstallation installation = _syncthingRuntimeResolver.Detect(_currentSyncProfile?.ExecutablePath);
         SyncthingExecutablePath = _currentSyncProfile?.ExecutablePath ?? string.Empty;
         SyncthingRuntimeSummary = installation.IsAvailable
-            ? $"{installation.Source} Â· {installation.Details}"
+            ? $"{installation.Source} · {installation.Details}"
             : installation.Details;
         SelectedSyncthingFolderMode = _currentSyncProfile?.FolderMode ?? SyncthingFolderMode.SendReceive;
         SyncthingRescanInterval = (_currentSyncProfile?.RescanIntervalSeconds ?? 60).ToString();
@@ -11294,11 +12806,17 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
 
     private async Task LoadVpnProfileCoreAsync()
     {
+        await StopTeamChatWatcherAsync();
         if (_vpnFileExchangeHost is not null)
         {
             await _vpnFileExchangeHost.DisposeAsync();
             _vpnFileExchangeHost = null;
             OnPropertyChanged(nameof(VpnFileHostRunning));
+        }
+        if (_teamChatHost is not null)
+        {
+            await _teamChatHost.DisposeAsync();
+            _teamChatHost = null;
         }
         if (SelectedProject is null)
         {
@@ -12222,7 +13740,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
                     ShortDeviceId(device.DeviceId),
                     device.Paused ? "Paused" : "Device",
                     online ? "Connected" : "Offline",
-                    connection?.LastSeenAt?.ToLocalTime().ToString("g") ?? "â€”",
+                    connection?.LastSeenAt?.ToLocalTime().ToString("g") ?? "—",
                     connection?.Address ?? string.Join(", ", device.Addresses ?? []),
                     online ? "#78D7B7" : "#A9ABB2",
                     online));
@@ -12232,9 +13750,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             ReplaceCollection(SyncthingLogs, logsTask.Result.OrderByDescending(entry => entry.Timestamp).Take(500));
             SyncthingFolderStatus folder = statusTask.Result;
             SyncthingFolderSummary = folder.IsInSync
-                ? $"Up to date Â· {folder.InSyncFiles:N0} file(s) Â· state {folder.State}"
-                : $"{folder.NeededFiles:N0} incoming file(s) / {FormatByteSize(folder.NeededBytes)} Â· " +
-                  $"{folder.ReceiveOnlyChangedFiles:N0} local change(s) / {FormatByteSize(folder.ReceiveOnlyChangedBytes)} Â· " +
+                ? $"Up to date · {folder.InSyncFiles:N0} file(s) · state {folder.State}"
+                : $"{folder.NeededFiles:N0} incoming file(s) / {FormatByteSize(folder.NeededBytes)} · " +
+                  $"{folder.ReceiveOnlyChangedFiles:N0} local change(s) / {FormatByteSize(folder.ReceiveOnlyChangedBytes)} · " +
                   $"{folder.ErrorCount:N0} error(s)";
             UpdateSyncStatus(await _syncEngine.RefreshStatusAsync());
         }
@@ -12247,7 +13765,7 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
     private static string ShortDeviceId(string deviceId) =>
         string.IsNullOrWhiteSpace(deviceId)
             ? "Unknown"
-            : deviceId.Length <= 12 ? deviceId : deviceId[..12] + "â€¦";
+            : deviceId.Length <= 12 ? deviceId : deviceId[..12] + "…";
 
     private async Task LoadPeerMembersCoreAsync()
     {
@@ -13359,6 +14877,12 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             _unrealProjectInspection = null;
             UnrealPluginSummary = "Enable the Unreal Engine Integration plugin to inspect and install CyRevisionUnreal.";
             UnrealBridgeSummary = "The optional Unreal bridge is disabled.";
+            UnrealAdvancedAssetInspectionEnabled = false;
+            UnrealAssetInspectionSummary = "Enable the Unreal Engine Integration plugin to configure headless asset previews.";
+            _unrealBuildDiscovery = null;
+            ReplaceCollection(UnrealBuildEngines, []);
+            ReplaceCollection(UnrealBuildTargets, []);
+            UnrealBuildStatus = "Enable the Unreal integration plugin to use the build lab.";
         }
         else
         {
@@ -13370,6 +14894,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(UnrealEditorPluginVersion));
         OnPropertyChanged(nameof(UnrealInstalledPluginVersion));
         OnPropertyChanged(nameof(CanInstallUnrealEditorPlugin));
+        OnPropertyChanged(nameof(CanConfigureUnrealAssetInspection));
+        OnPropertyChanged(nameof(CanRunUnrealBuild));
+        NotifyUnrealCompatibilityChanged();
 
         IAiIntegrationPlugin? ai = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
         IsAiIntegrationEnabled = ai is not null;
@@ -13380,12 +14907,20 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         {
             AiStatus = "AI integration disabled.";
             AiResponse = "Enable the optional AI Workspace plugin from the Plugins tab.";
+            IsCodexDetected = false;
+            IsCodexRunning = false;
+            IsCodexChatConnected = false;
+            CodexDetectedPath = string.Empty;
+            CodexDetectedVersion = string.Empty;
+            CodexChatThreadId = string.Empty;
+            CodexConnectionStatus = "AI integration disabled.";
             ClearAiMcpProfile();
         }
         else
         {
             AiStatus = "AI Workspace ready. Read access only by default.";
-            AiResponse = "Choose a provider, review permissions, and describe a task.";
+            AiResponse = "Open AI Assistant to detect the local Codex installation and start a project-scoped chat.";
+            if (!IsCodexDetected) CodexConnectionStatus = "Open AI Assistant to scan for the local Codex installation.";
             _ = LoadAiMcpProfileCoreAsync();
         }
     }
@@ -13399,7 +14934,9 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
             OnPropertyChanged(nameof(UnrealEditorPluginVersion));
             OnPropertyChanged(nameof(UnrealInstalledPluginVersion));
             OnPropertyChanged(nameof(CanInstallUnrealEditorPlugin));
+            OnPropertyChanged(nameof(CanConfigureUnrealAssetInspection));
             OnPropertyChanged(nameof(IsUnrealProjectDetected));
+            NotifyUnrealCompatibilityChanged();
             return;
         }
 
@@ -13408,7 +14945,47 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(UnrealEditorPluginVersion));
         OnPropertyChanged(nameof(UnrealInstalledPluginVersion));
         OnPropertyChanged(nameof(CanInstallUnrealEditorPlugin));
+        OnPropertyChanged(nameof(CanConfigureUnrealAssetInspection));
         OnPropertyChanged(nameof(IsUnrealProjectDetected));
+        NotifyUnrealCompatibilityChanged();
+        _ = LoadUnrealAssetInspectionOptionsAsync(plugin, UnrealProjectPath);
+    }
+
+    private async Task LoadUnrealAssetInspectionOptionsAsync(IUnrealIntegrationPlugin plugin, string projectPath)
+    {
+        try
+        {
+            UnrealAssetInspectionOptions options = await plugin.LoadAssetInspectionOptionsAsync(projectPath);
+            if (!string.Equals(projectPath, UnrealProjectPath, StringComparison.OrdinalIgnoreCase)) return;
+            UnrealAdvancedAssetInspectionEnabled = options.Enabled;
+            UnrealRenderMeshThumbnails = options.RenderMeshThumbnails;
+            UnrealAssetPreviewResolution = options.PreviewResolution.ToString();
+            UnrealAssetCacheBudgetGigabytes = (options.CacheBudgetBytes / (1024d * 1024 * 1024)).ToString("0.##");
+            await RefreshUnrealAssetInspectionCacheCoreAsync(plugin);
+        }
+        catch (Exception exception)
+        {
+            UnrealAssetInspectionSummary = $"Asset preview settings could not be loaded: {exception.Message}";
+        }
+    }
+
+    private async Task RefreshUnrealAssetInspectionCacheCoreAsync(IUnrealIntegrationPlugin plugin)
+    {
+        UnrealAssetInspectionCacheStatus status = await plugin.GetAssetInspectionCacheStatusAsync(UnrealProjectPath);
+        UnrealAssetInspectionSummary = (UnrealAdvancedAssetInspectionEnabled
+            ? "On-demand headless inspection enabled · "
+            : "Advanced inspection disabled · ") + status.Summary;
+    }
+
+    private void NotifyUnrealCompatibilityChanged()
+    {
+        OnPropertyChanged(nameof(UnrealEngineVersion));
+        OnPropertyChanged(nameof(UnrealProjectKindSummary));
+        OnPropertyChanged(nameof(UnrealInstallModeSummary));
+        OnPropertyChanged(nameof(UnrealCompatibilityStatus));
+        OnPropertyChanged(nameof(UnrealSupportedVersions));
+        OnPropertyChanged(nameof(UnrealPrecompiledVersions));
+        OnPropertyChanged(nameof(IsUnrealPluginCompatible));
     }
 
     private void AttachUnrealPluginEvents(IUnrealIntegrationPlugin plugin)
@@ -13612,11 +15189,19 @@ public sealed class MainWindowViewModel : ObservableObject, IAsyncDisposable
         _codeSearchCancellation?.Dispose();
         _aiAgentCancellation?.Cancel();
         _aiAgentCancellation?.Dispose();
+        _codexConnectionCancellation?.Cancel();
+        _codexConnectionCancellation?.Dispose();
         await StopSyncCoreAsync(updateUi: false);
         if (_vpnFileExchangeHost is not null)
         {
             await _vpnFileExchangeHost.DisposeAsync();
             _vpnFileExchangeHost = null;
+        }
+        await StopTeamChatWatcherAsync();
+        if (_teamChatHost is not null)
+        {
+            await _teamChatHost.DisposeAsync();
+            _teamChatHost = null;
         }
         DetachUnrealPluginEvents();
         await _pluginManager.DisposeAsync();

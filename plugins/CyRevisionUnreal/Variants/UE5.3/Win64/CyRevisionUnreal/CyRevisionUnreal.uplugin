@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 7,
+	"VersionName": "0.7.0",
+	"FriendlyName": "CyRevision Collaboration",
+	"Description": "Native CyRevision revision-control provider, autonomous Git and Swarm-over-VPN tools, advisory reservations, and an optional authenticated desktop bridge.",
+	"Category": "Source Control",
+	"CreatedBy": "CyRevision",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"EngineVersion": "5.3.0",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Installed": true,
+	"Modules": [
+		{
+			"Name": "CyRevisionEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}

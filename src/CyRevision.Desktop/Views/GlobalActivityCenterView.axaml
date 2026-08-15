@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CyRevision.Desktop.Views.GlobalActivityCenterView"
+             x:CompileBindings="False">
+    <Border IsVisible="{Binding HasActivityCenterContent}"
+            Background="#F0202633" BorderBrush="#4A5D7A" BorderThickness="1"
+            CornerRadius="5" Padding="7,4">
+        <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
+            <Grid ColumnDefinitions="220,*,Auto,Auto,Auto" ColumnSpacing="8">
+                <TextBlock Text="{Binding ActivityCenterHeadline}" Foreground="#B8C7E6" FontSize="9.5"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <ProgressBar Grid.Column="1" Classes="inlineLoader" Minimum="0" Maximum="100"
+                             Value="{Binding LongOperationProgress}"
+                             IsIndeterminate="{Binding IsLongOperationIndeterminate}"
+                             IsVisible="{Binding IsLongOperationActive}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding ActivityCenterBadgeText}" Foreground="#78D7B7"
+                           FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <ToggleButton Grid.Column="3" Classes="panelToggle" Content="Details"
+                              IsChecked="{Binding IsActivityCenterExpanded}" Padding="7,2" MinHeight="21" />
+                <Button Grid.Column="4" Classes="secondary" Content="Ã—" Click="OnDismissCenterClick"
+                        Padding="6,0" MinHeight="20" FontSize="11"
+                        ToolTip.Tip="Hide this activity panel. Tasks remain available from the status bar." />
+            </Grid>
+
+            <Grid Grid.Row="1" IsVisible="{Binding IsActivityCenterExpanded}"
+                  RowDefinitions="Auto,Auto,*" MaxHeight="190" RowSpacing="3">
+                <ItemsControl ItemsSource="{Binding ActiveOperations}" IsVisible="{Binding HasActiveOperations}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="68,155,*,90" ColumnSpacing="7" Margin="0,1">
+                                <TextBlock Text="{Binding State}" Foreground="{Binding StateBrush}"
+                                           FontFamily="Cascadia Mono, Consolas" FontSize="8.5" FontWeight="SemiBold" />
+                                <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="8.5" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="2" Text="{Binding Detail}" Foreground="#9B9DA3"
+                                           FontSize="8.5" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="3" Text="{Binding ProjectName}" Foreground="#61AFEF"
+                                           FontSize="8.5" TextTrimming="CharacterEllipsis" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,2,0,1">
+                    <TextBlock Text="Recent operations" FontSize="9" FontWeight="SemiBold" />
+                    <Button Grid.Column="1" Classes="secondary" Content="Clear" Click="OnClearHistoryClick"
+                            Padding="7,1" MinHeight="20" FontSize="9" />
+                </Grid>
+
+                <ListBox Grid.Row="2" ItemsSource="{Binding RecentOperations}" Classes="compactList"
+                         IsVisible="{Binding HasRecentOperations}" MaxHeight="118"
+                         Background="#151A24" BorderBrush="#354159" BorderThickness="1">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="68,155,*,72,90,Auto" ColumnSpacing="7" Margin="5,1">
+                                <TextBlock Text="{Binding State}" Foreground="{Binding StateBrush}"
+                                           FontFamily="Cascadia Mono, Consolas" FontSize="8.5" FontWeight="SemiBold" />
+                                <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="8.5" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="2" Text="{Binding Detail}" Foreground="#9B9DA3"
+                                           FontSize="8.5" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="3" Text="{Binding DurationText}" FontSize="8.5" Foreground="#B8C1D8" />
+                                <TextBlock Grid.Column="4" Text="{Binding ProjectName}" Foreground="#61AFEF"
+                                           FontSize="8.5" TextTrimming="CharacterEllipsis" />
+                                <Button Grid.Column="5" Classes="secondary" Content="×" Click="OnDismissClick"
+                                        Padding="5,0" MinHeight="18" FontSize="10" ToolTip.Tip="Dismiss notification" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

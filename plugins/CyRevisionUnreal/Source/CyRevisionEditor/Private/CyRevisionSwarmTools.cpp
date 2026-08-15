@@ -249,7 +249,7 @@ void FCyRevisionSwarmTools::TestCoordinator()
         return;
     }
     FAddressInfoResult Addresses = Sockets->GetAddressInfo(*Host, nullptr, EAddressInfoFlags::Default, NAME_None);
-    if (Addresses.Results.IsEmpty())
+    if (Addresses.Results.Num() == 0)
     {
         SetStatus(TEXT("Coordinator name did not resolve. Use its VPN IPv4 or apply the CyRevision local alias."));
         return;

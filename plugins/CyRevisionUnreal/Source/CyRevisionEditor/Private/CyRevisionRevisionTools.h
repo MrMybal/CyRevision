@@ -6,6 +6,15 @@ class SEditableTextBox;
 class STextBlock;
 class SWindow;
 
+struct FCyRevisionLfsLock
+{
+    FString Id;
+    FString Path;
+    FString Owner;
+    FString LockedAt;
+    bool bMine = false;
+};
+
 class FCyRevisionRevisionTools
 {
 public:
@@ -13,6 +22,8 @@ public:
     void OpenCyRevision() const;
     void TestConnection(bool bShowDialog = true);
     void NotifyProjectChanged(const FString& Action) const;
+    void QueryLfsLocksAsync(TFunction<void(TArray<FCyRevisionLfsLock>, FString)> Completion) const;
+    void SetLfsLockState(const TArray<FString>& RelativePaths, bool bLock);
     void Shutdown();
 
 private:

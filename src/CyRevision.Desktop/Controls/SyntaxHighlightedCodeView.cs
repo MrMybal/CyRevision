@@ -9,6 +9,8 @@ namespace CyRevision.Desktop.Controls;
 
 public sealed class SyntaxHighlightedCodeView : UserControl
 {
+    private const int MaximumHighlightedCharacters = 96 * 1024;
+    private const int MaximumHighlightedLines = 3_000;
     public static readonly StyledProperty<string> TextProperty = AvaloniaProperty.Register<SyntaxHighlightedCodeView, string>(
         nameof(Text), string.Empty);
 
@@ -37,6 +39,7 @@ public sealed class SyntaxHighlightedCodeView : UserControl
     private readonly TextBlock _lineNumbers;
     private readonly SelectableTextBlock _code;
     private readonly ScrollViewer _scrollViewer;
+    private int _presentationVersion;
 
     public SyntaxHighlightedCodeView()
     {
@@ -122,13 +125,25 @@ public sealed class SyntaxHighlightedCodeView : UserControl
         base.OnPropertyChanged(change);
         if (change.Property == TextProperty || change.Property == FilePathProperty)
         {
-            UpdatePresentation();
+            QueuePresentationUpdate();
         }
         else if (change.Property == TargetFilePathProperty || change.Property == TargetLineProperty ||
                  change.Property == TargetColumnProperty || change.Property == TargetLengthProperty)
         {
             UpdateTargetLocation();
         }
+    }
+
+    private void QueuePresentationUpdate()
+    {
+        int version = Interlocked.Increment(ref _presentationVersion);
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (version == Volatile.Read(ref _presentationVersion))
+            {
+                UpdatePresentation();
+            }
+        }, DispatcherPriority.Background);
     }
 
     private void UpdatePresentation()
@@ -138,6 +153,16 @@ public sealed class SyntaxHighlightedCodeView : UserControl
         _lineNumbers.Text = string.Join('\n', Enumerable.Range(1, lineCount));
 
         InlineCollection inlines = new();
+        if (text.Length > MaximumHighlightedCharacters || lineCount > MaximumHighlightedLines)
+        {
+            // One run keeps Avalonia's visual tree small for generated files, logs and large
+            // solutions. The preview stays selectable and scrollable without thousands of runs.
+            inlines.Add(new Run(text) { Foreground = PlainBrush });
+            _code.Inlines = inlines;
+            UpdateTargetLocation();
+            return;
+        }
+
         int lineStart = 0;
         while (lineStart < text.Length)
         {

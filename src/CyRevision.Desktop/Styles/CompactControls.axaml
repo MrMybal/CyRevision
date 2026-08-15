@@ -1,0 +1,51 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Style Selector="TreeView.compactTree TreeViewItem">
+        <Setter Property="MinHeight" Value="22" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="FontSize" Value="10.5" />
+    </Style>
+    <Style Selector="ListBox.compactLog ListBoxItem">
+        <Setter Property="MinHeight" Value="18" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox.compactList ListBoxItem">
+        <Setter Property="MinHeight" Value="22" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox.compactList ListBoxItem:pointerover">
+        <Setter Property="Background" Value="#303A3B" />
+    </Style>
+    <Style Selector="ListBox.compactList ListBoxItem:selected">
+        <Setter Property="Background" Value="#365550" />
+        <Setter Property="Foreground" Value="#F2F3F5" />
+    </Style>
+    <Style Selector="DataGrid.historyCompact DataGridRow">
+        <Setter Property="MinHeight" Value="23" />
+        <Setter Property="FontSize" Value="10.5" />
+    </Style>
+    <Style Selector="DataGrid.historyCompact DataGridCell">
+        <Setter Property="Padding" Value="5,0" />
+        <Setter Property="FontSize" Value="10.5" />
+    </Style>
+    <Style Selector="DataGrid.historyCompact DataGridColumnHeader">
+        <Setter Property="Height" Value="24" />
+        <Setter Property="MinHeight" Value="24" />
+        <Setter Property="Padding" Value="5,1" />
+        <Setter Property="FontSize" Value="9.5" />
+    </Style>
+    <Style Selector="TextBox.searchBox">
+        <Setter Property="MinHeight" Value="25" />
+        <Setter Property="Padding" Value="7,3" />
+        <Setter Property="FontSize" Value="10.5" />
+    </Style>
+    <Style Selector="ProgressBar.inlineLoader">
+        <Setter Property="Height" Value="3" />
+        <Setter Property="MinHeight" Value="3" />
+    </Style>
+</Styles>
