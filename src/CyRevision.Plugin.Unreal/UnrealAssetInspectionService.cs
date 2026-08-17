@@ -8,7 +8,7 @@ namespace CyRevision.Plugin.Unreal;
 
 internal sealed class UnrealAssetInspectionService : IDisposable
 {
-    private const int SchemaVersion = 3;
+    private const int SchemaVersion = 4;
     private const string RenderAttemptMarkerName = "render-attempted";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private static readonly StringComparison PathComparison = OperatingSystem.IsWindows()
@@ -174,11 +174,22 @@ internal sealed class UnrealAssetInspectionService : IDisposable
 
         string baselineJson = await File.ReadAllTextAsync(baseline.ManifestPath, cancellationToken).ConfigureAwait(false);
         string candidateJson = await File.ReadAllTextAsync(candidate.ManifestPath, cancellationToken).ConfigureAwait(false);
-        BlueprintSemanticDiffResult? diff = BlueprintSemanticDiff.Compare(
+        BlueprintSemanticDiffResult? blueprintDiff = BlueprintSemanticDiff.Compare(
             baselineJson,
             candidateJson,
             request.RelativePath);
-        if (diff is null) return null;
+        MaterialSemanticDiffResult? materialDiff = blueprintDiff is null
+            ? MaterialSemanticDiff.Compare(baselineJson, candidateJson, request.RelativePath)
+            : null;
+        UnrealMetadataSemanticDiffResult? metadataDiff = blueprintDiff is null && materialDiff is null
+            ? UnrealMetadataSemanticDiff.Compare(baselineJson, candidateJson, request.RelativePath)
+            : null;
+        if (blueprintDiff is null && materialDiff is null && metadataDiff is null) return null;
+
+        string summary = blueprintDiff?.Summary ?? materialDiff?.Summary ?? metadataDiff!.Summary;
+        string text = blueprintDiff?.Text ?? materialDiff?.Text ?? metadataDiff!.Text;
+        IReadOnlyDictionary<string, string> metadata =
+            blueprintDiff?.Metadata ?? materialDiff?.Metadata ?? metadataDiff!.Metadata;
 
         File.SetLastAccessTimeUtc(baseline.ManifestPath, DateTime.UtcNow);
         File.SetLastAccessTimeUtc(candidate.ManifestPath, DateTime.UtcNow);
@@ -186,16 +197,16 @@ internal sealed class UnrealAssetInspectionService : IDisposable
             ? new FilePresentationResult(
                 "cyrevision.unreal.files",
                 FilePresentationKind.Image,
-                diff.Summary,
-                diff.Text,
+                summary,
+                text,
                 candidate.ImagePath,
-                diff.Metadata)
+                metadata)
             : new FilePresentationResult(
                 "cyrevision.unreal.files",
                 FilePresentationKind.Metadata,
-                diff.Summary,
-                diff.Text,
-                Metadata: diff.Metadata);
+                summary,
+                text,
+                Metadata: metadata);
     }
 
     private async Task<InspectionEntry?> EnsureInspectionAsync(

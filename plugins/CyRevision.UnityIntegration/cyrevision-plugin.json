@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "cyrevision.unity",
+  "name": "Unity Integration",
+  "version": "0.1.0",
+  "description": "Optional Unity project detection, autonomous Editor companion installer, and authenticated local bridge. Asset previews are not included in this first version.",
+  "category": "Game engines",
+  "entryAssembly": "CyRevision.Plugin.Unity.dll",
+  "entryType": "CyRevision.Plugin.Unity.UnityIntegrationPlugin",
+  "enabledByDefault": false
+}

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
@@ -53,6 +54,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private readonly ISyncthingProfileStore _syncthingProfileStore;
     private readonly SyncthingRuntimeResolver _syncthingRuntimeResolver;
     private readonly SyncthingIgnoreFileService _syncthingIgnoreFileService;
+    private readonly JsonLineSyncHistoryStore _syncHistoryStore;
+    private readonly SyncConflictService _syncConflictService;
     private readonly IGitPeerExchangeService _gitPeerExchangeService;
     private readonly IAssetDiffService _assetDiffService;
     private readonly FilePresentationService _filePresentationService;
@@ -94,6 +97,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly string? _initialProjectPath;
     private readonly HashSet<string> _localOnlyChangePaths = new(StringComparer.OrdinalIgnoreCase);
+    private string[] _legacyProjectPluginIds = [];
     private ProjectItemViewModel? _selectedProject;
     private GitChangeViewModel? _selectedChange;
     private int _selectedDiffLoadVersion;
@@ -170,6 +174,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private string _syncthingFolderSummary = "Start Syncthing to inspect folder differences.";
     private string _syncthingIgnoreRules = string.Empty;
     private string _syncthingIgnoreStatus = "No .stignore file loaded.";
+    private string _syncSourceFolderPath = string.Empty;
+    private string _syncVersionStorePath = string.Empty;
+    private string _syncCompressedBackupPath = string.Empty;
+    private bool _syncCompressedBackupEnabled;
+    private string _syncStorageStatus = "Project folder defaults are active.";
+    private string _syncHistorySearch = string.Empty;
+    private string _syncHistoryPathFilter = string.Empty;
+    private string _syncHistorySummary = "No Sync history loaded.";
+    private readonly HashSet<string> _observedSyncDifferences = new(StringComparer.Ordinal);
+    private IReadOnlyList<SyncConflictItem> _allSyncConflicts = [];
+    private SyncConflictItem? _selectedSyncConflict;
+    private SyncConflictBackup? _selectedSyncConflictBackup;
+    private string _syncConflictSearch = string.Empty;
+    private string _syncConflictRetentionDays = "30";
+    private string _syncConflictSummary = "Scan synchronized folders to detect Syncthing conflict copies.";
+    private bool _isSyncConflictBusy;
     private bool _isSyncthingRefreshing;
     private SyncthingSharedFolder? _selectedSharedSyncFolder;
     private string _sharedSyncFolderName = "Build versions";
@@ -370,13 +390,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private TeamChatSyncWatcher? _teamChatSyncWatcher;
     private CancellationTokenSource? _teamChatRefreshCancellation;
     private TeamChatMessage? _selectedTeamChatMessage;
+    private TeamChatChannel? _selectedTeamChatChannel;
     private TeamChatTransport _selectedTeamChatTransport = TeamChatTransport.Vpn;
+    private readonly Dictionary<Guid, TeamChatMessage> _teamChatMessageCache = [];
     private string _teamChatDisplayName = Environment.UserName;
     private string _teamChatListenAddress = "127.0.0.1";
     private string _teamChatPort = TeamChatDefaults.Port.ToString();
     private string _teamChatPeerEndpoint = $"127.0.0.1:{TeamChatDefaults.Port}";
     private string _teamChatAccessToken = string.Empty;
     private string _teamChatSyncFolderPath = string.Empty;
+    private string _teamChatServerBaseUrl = "https://chat.example.com/";
+    private string _teamChatServerApiToken = string.Empty;
+    private bool _teamChatAllowPrivateServerHttp;
+    private string _teamChatNewChannelName = string.Empty;
+    private string _teamChatNewChannelTopic = string.Empty;
     private string _teamChatMessageText = string.Empty;
     private string _teamChatAttachmentPath = string.Empty;
     private string _teamChatStatus = "Team chat is not configured.";
@@ -663,6 +690,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         _syncthingProfileStore = syncthingProfileStore;
         _syncthingRuntimeResolver = syncthingRuntimeResolver;
         _syncthingIgnoreFileService = syncthingIgnoreFileService;
+        _syncHistoryStore = new JsonLineSyncHistoryStore(Path.Combine(applicationPaths.DataDirectory, "sync-history"));
+        _syncConflictService = new SyncConflictService(Path.Combine(applicationPaths.DataDirectory, "sync-conflicts"));
         _gitPeerExchangeService = gitPeerExchangeService;
         _assetDiffService = assetDiffService;
         _vpnProfileStore = vpnProfileStore;
@@ -813,6 +842,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public ObservableCollection<SyncthingSharedFolder> SharedSyncFolders { get; } = [];
 
+    public ObservableCollection<SyncHistoryEntry> SyncHistory { get; } = [];
+
+    public ObservableCollection<SyncConflictItem> SyncConflicts { get; } = [];
+
+    public ObservableCollection<SyncConflictBackup> SyncConflictBackups { get; } = [];
+
     public ObservableCollection<ProjectParticipantViewModel> SyncProjectMembers { get; } = [];
 
     public ObservableCollection<ProjectParticipantViewModel> GitProjectMembers { get; } = [];
@@ -822,6 +857,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public ObservableCollection<TeamChatMessage> TeamChatMessages { get; } = [];
 
     public ObservableCollection<TeamChatParticipant> TeamChatParticipants { get; } = [];
+
+    public ObservableCollection<TeamChatChannel> TeamChatChannels { get; } = [];
 
     public IReadOnlyList<TeamChatTransport> TeamChatTransports { get; } = Enum.GetValues<TeamChatTransport>();
 
@@ -1919,10 +1956,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             _ = ResetCodexChatForProjectAsync(value);
             int loadVersion = Interlocked.Increment(ref _projectLoadVersion);
             CurrentProjectName = value?.Name ?? "No project";
+            ApplyProjectPluginScope(value);
             OnPropertyChanged(nameof(SelectedProjectAccentColor));
             NotifyProjectOrderStateChanged();
             OnPropertyChanged(nameof(GitConnectionKind));
             OnPropertyChanged(nameof(RuntimeModeSummary));
+            NotifySynchronizationModeChanged();
             bool hasCachedSession = value is not null && _projectSessionCache.ContainsKey(value.Id);
             if (!hasCachedSession)
             {
@@ -1955,6 +1994,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 UnrealProjectPath = string.Empty;
                 RefreshUnrealInspection();
             }
+            DetectSelectedGameEngineProjects(value);
+            DetectSelectedLoreProject(value);
             if (!restoredFromSession)
             {
                 CancellationTokenSource loadCancellation = new();
@@ -2317,6 +2358,74 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }
     }
 
+    public bool IsGitPeerSyncMode =>
+        SelectedProject?.Definition.Features is { GitEnabled: true, PeerSyncEnabled: true };
+
+    public bool IsVersionedSyncMode =>
+        SelectedProject?.Definition.Features is { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: true };
+
+    public bool IsPlainProjectSyncMode =>
+        SelectedProject?.Definition.Features is { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: false };
+
+    public bool IsOptionalSyncMode => SelectedProject?.Definition.Features.PeerSyncEnabled != true;
+
+    public bool ShowProjectFolderSyncSettings => IsPlainProjectSyncMode || IsVersionedSyncMode;
+
+    public string SynchronizationOverviewTabTitle => IsGitPeerSyncMode
+        ? "Git exchange"
+        : IsVersionedSyncMode
+            ? "Versioned folder"
+            : "Project folder";
+
+    public string SynchronizationProfileTitle => SelectedProject?.Definition.Features switch
+    {
+        { GitEnabled: true, PeerSyncEnabled: true } => "Git + Sync · signed repository exchange",
+        { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: true } => "Sync + versions · project history",
+        { GitEnabled: false, PeerSyncEnabled: true } => "Sync · current project state",
+        _ => "Optional Sync · independent team folders"
+    };
+
+    public string SynchronizationProfileDescription => SelectedProject?.Definition.Features switch
+    {
+        { GitEnabled: true, PeerSyncEnabled: true } =>
+            "CyRevision exchanges signed Git bundles, verified LFS objects and peer presence through an isolated folder. The active .git directory is never synchronized directly.",
+        { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: true } =>
+            "The project folder is synchronized with Syncthing versioning, configurable retention and restoration support.",
+        { GitEnabled: false, PeerSyncEnabled: true } =>
+            "The current project files are synchronized without Git history or automatic version retention.",
+        _ =>
+            "Project synchronization is disabled. The isolated Syncthing instance can still share selected build, delivery or team folders."
+    };
+
+    public string SynchronizationScopeSummary
+    {
+        get
+        {
+            if (SelectedProject is null) return "Select a project to configure synchronization.";
+            ProjectFeatures features = SelectedProject.Definition.Features;
+            if (features.GitEnabled && features.PeerSyncEnabled)
+                return $"Protected exchange root: {ResolveSyncExchangeDirectory(SelectedProject.Definition)}";
+            if (features.PeerSyncEnabled && features.BackupEnabled)
+                return $"Versioned source: {ResolveConfiguredSyncSourceFolder(SelectedProject.Definition)} · {SelectedProject.Definition.Retention.Mode}";
+            if (features.PeerSyncEnabled)
+                return $"Synchronized source: {ResolveConfiguredSyncSourceFolder(SelectedProject.Definition)} · current state only";
+            return $"{SharedSyncFolders.Count:N0} independent folder(s) configured · project root excluded";
+        }
+    }
+
+    private void NotifySynchronizationModeChanged()
+    {
+        OnPropertyChanged(nameof(IsGitPeerSyncMode));
+        OnPropertyChanged(nameof(IsVersionedSyncMode));
+        OnPropertyChanged(nameof(IsPlainProjectSyncMode));
+        OnPropertyChanged(nameof(IsOptionalSyncMode));
+        OnPropertyChanged(nameof(ShowProjectFolderSyncSettings));
+        OnPropertyChanged(nameof(SynchronizationOverviewTabTitle));
+        OnPropertyChanged(nameof(SynchronizationProfileTitle));
+        OnPropertyChanged(nameof(SynchronizationProfileDescription));
+        OnPropertyChanged(nameof(SynchronizationScopeSummary));
+    }
+
     public string StatusMessage
     {
         get => _statusMessage;
@@ -2676,6 +2785,116 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         get => _isSyncthingRefreshing;
         private set => SetProperty(ref _isSyncthingRefreshing, value);
     }
+
+    public string SyncSourceFolderPath
+    {
+        get => _syncSourceFolderPath;
+        set => SetProperty(ref _syncSourceFolderPath, value);
+    }
+
+    public string SyncVersionStorePath
+    {
+        get => _syncVersionStorePath;
+        set => SetProperty(ref _syncVersionStorePath, value);
+    }
+
+    public string SyncCompressedBackupPath
+    {
+        get => _syncCompressedBackupPath;
+        set => SetProperty(ref _syncCompressedBackupPath, value);
+    }
+
+    public bool SyncCompressedBackupEnabled
+    {
+        get => _syncCompressedBackupEnabled;
+        set => SetProperty(ref _syncCompressedBackupEnabled, value);
+    }
+
+    public string SyncStorageStatus
+    {
+        get => _syncStorageStatus;
+        private set => SetProperty(ref _syncStorageStatus, value);
+    }
+
+    public string SyncHistorySearch
+    {
+        get => _syncHistorySearch;
+        set => SetProperty(ref _syncHistorySearch, value);
+    }
+
+    public string SyncHistoryPathFilter
+    {
+        get => _syncHistoryPathFilter;
+        set => SetProperty(ref _syncHistoryPathFilter, value);
+    }
+
+    public string SyncHistorySummary
+    {
+        get => _syncHistorySummary;
+        private set => SetProperty(ref _syncHistorySummary, value);
+    }
+
+    public SyncConflictItem? SelectedSyncConflict
+    {
+        get => _selectedSyncConflict;
+        set
+        {
+            if (SetProperty(ref _selectedSyncConflict, value))
+            {
+                OnPropertyChanged(nameof(CanResolveSelectedSyncConflict));
+            }
+        }
+    }
+
+    public SyncConflictBackup? SelectedSyncConflictBackup
+    {
+        get => _selectedSyncConflictBackup;
+        set
+        {
+            if (SetProperty(ref _selectedSyncConflictBackup, value))
+            {
+                OnPropertyChanged(nameof(CanRestoreSelectedSyncConflictBackup));
+            }
+        }
+    }
+
+    public string SyncConflictSearch
+    {
+        get => _syncConflictSearch;
+        set
+        {
+            if (SetProperty(ref _syncConflictSearch, value)) ApplySyncConflictFilter();
+        }
+    }
+
+    public string SyncConflictRetentionDays
+    {
+        get => _syncConflictRetentionDays;
+        set => SetProperty(ref _syncConflictRetentionDays, value);
+    }
+
+    public string SyncConflictSummary
+    {
+        get => _syncConflictSummary;
+        private set => SetProperty(ref _syncConflictSummary, value);
+    }
+
+    public bool IsSyncConflictBusy
+    {
+        get => _isSyncConflictBusy;
+        private set
+        {
+            if (SetProperty(ref _isSyncConflictBusy, value))
+            {
+                OnPropertyChanged(nameof(CanResolveSelectedSyncConflict));
+                OnPropertyChanged(nameof(CanRestoreSelectedSyncConflictBackup));
+            }
+        }
+    }
+
+    public bool CanResolveSelectedSyncConflict => SelectedSyncConflict is not null && !IsSyncConflictBusy;
+
+    public bool CanRestoreSelectedSyncConflictBackup => SelectedSyncConflictBackup is not null && !IsSyncConflictBusy;
 
     public SyncthingSharedFolder? SelectedSharedSyncFolder
     {
@@ -3263,8 +3482,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public TeamChatTransport SelectedTeamChatTransport
     {
         get => _selectedTeamChatTransport;
-        set => SetProperty(ref _selectedTeamChatTransport, value);
+        set
+        {
+            if (!SetProperty(ref _selectedTeamChatTransport, value)) return;
+            OnPropertyChanged(nameof(TeamChatUsesVpn));
+            OnPropertyChanged(nameof(TeamChatUsesSyncFolder));
+            OnPropertyChanged(nameof(TeamChatUsesPrivateServer));
+        }
     }
+
+    public bool TeamChatUsesVpn => SelectedTeamChatTransport == TeamChatTransport.Vpn;
+
+    public bool TeamChatUsesSyncFolder => SelectedTeamChatTransport == TeamChatTransport.SyncFolder;
+
+    public bool TeamChatUsesPrivateServer => SelectedTeamChatTransport == TeamChatTransport.PrivateServer;
 
     public string TeamChatDisplayName
     {
@@ -3300,6 +3531,36 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     {
         get => _teamChatSyncFolderPath;
         set => SetProperty(ref _teamChatSyncFolderPath, value);
+    }
+
+    public string TeamChatServerBaseUrl
+    {
+        get => _teamChatServerBaseUrl;
+        set => SetProperty(ref _teamChatServerBaseUrl, value);
+    }
+
+    public string TeamChatServerApiToken
+    {
+        get => _teamChatServerApiToken;
+        set => SetProperty(ref _teamChatServerApiToken, value);
+    }
+
+    public bool TeamChatAllowPrivateServerHttp
+    {
+        get => _teamChatAllowPrivateServerHttp;
+        set => SetProperty(ref _teamChatAllowPrivateServerHttp, value);
+    }
+
+    public string TeamChatNewChannelName
+    {
+        get => _teamChatNewChannelName;
+        set => SetProperty(ref _teamChatNewChannelName, value);
+    }
+
+    public string TeamChatNewChannelTopic
+    {
+        get => _teamChatNewChannelTopic;
+        set => SetProperty(ref _teamChatNewChannelTopic, value);
     }
 
     public string TeamChatMessageText
@@ -3343,6 +3604,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         get => _selectedTeamChatMessage;
         set => SetProperty(ref _selectedTeamChatMessage, value);
     }
+
+    public TeamChatChannel? SelectedTeamChatChannel
+    {
+        get => _selectedTeamChatChannel;
+        set
+        {
+            if (!SetProperty(ref _selectedTeamChatChannel, value)) return;
+            RefreshVisibleTeamChatMessages();
+            OnPropertyChanged(nameof(SelectedTeamChatChannelTitle));
+            OnPropertyChanged(nameof(SelectedTeamChatChannelTopic));
+        }
+    }
+
+    public string SelectedTeamChatChannelTitle => $"# {SelectedTeamChatChannel?.Name ?? "general"}";
+
+    public string SelectedTeamChatChannelTopic => SelectedTeamChatChannel?.Topic ?? "Project-wide discussion";
 
     public string TeamChatStatus
     {
@@ -3522,13 +3799,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 OnPropertyChanged(nameof(CanDisableSelectedPlugin));
                 OnPropertyChanged(nameof(IsSelectedUnrealPlugin));
                 OnPropertyChanged(nameof(IsSelectedAiPlugin));
+                OnPropertyChanged(nameof(IsSelectedUnityPlugin));
+                OnPropertyChanged(nameof(IsSelectedGodotPlugin));
+                OnPropertyChanged(nameof(IsSelectedLorePlugin));
             }
         }
     }
 
-    public bool CanEnableSelectedPlugin => SelectedPlugin is { IsEnabled: false };
+    public bool CanEnableSelectedPlugin => SelectedProject is not null && SelectedPlugin is { IsEnabled: false };
 
-    public bool CanDisableSelectedPlugin => SelectedPlugin is { IsEnabled: true };
+    public bool CanDisableSelectedPlugin => SelectedProject is not null && SelectedPlugin is { IsEnabled: true };
 
     public bool IsSelectedUnrealPlugin =>
         string.Equals(SelectedPlugin?.Id, "cyrevision.unreal", StringComparison.OrdinalIgnoreCase);
@@ -4497,6 +4777,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public async Task InitializeAsync()
     {
         await _pluginManager.InitializeAsync();
+        _legacyProjectPluginIds = _pluginManager.LoadedPluginIds
+            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         RefreshPluginCatalog();
         await RunOperationAsync("Chargement des projets…", async () =>
         {
@@ -4646,6 +4929,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                     break;
                 case "UnrealWorkspaceTab":
                     RefreshUnrealInspection();
+                    break;
+                case "LoreWorkspaceTab":
+                    RefreshLoreInspection();
+                    if (IsLoreIntegrationEnabled) await DetectLoreCliAsync();
                     break;
                 case "UnrealBuildWorkspaceTab":
                     RefreshUnrealInspection();
@@ -6882,33 +7169,130 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public async Task EnableSelectedPluginAsync()
     {
-        if (SelectedPlugin is null)
+        if (SelectedPlugin is null || SelectedProject is null)
         {
             return;
         }
 
         string pluginId = SelectedPlugin.Id;
+        ProjectItemViewModel project = SelectedProject;
         await RunOperationAsync("Enabling plugin…", async () =>
         {
             await _pluginManager.EnableAsync(pluginId);
-            RefreshPluginCatalog(pluginId);
-        }, "Plugin enabled");
+            await SetProjectPluginStateAsync(project, pluginId, enabled: true);
+        }, $"Plugin enabled for {project.Name}");
     }
 
     public async Task DisableSelectedPluginAsync()
     {
-        if (SelectedPlugin is null)
+        if (SelectedPlugin is null || SelectedProject is null)
         {
             return;
         }
 
         string pluginId = SelectedPlugin.Id;
+        ProjectItemViewModel project = SelectedProject;
         await RunOperationAsync("Disabling plugin…", async () =>
         {
             DetachUnrealPluginEvents();
-            await _pluginManager.DisableAsync(pluginId);
-            RefreshPluginCatalog(pluginId);
-        }, "Plugin disabled");
+            DetachGameEnginePluginEvents(pluginId);
+            await SetProjectPluginStateAsync(project, pluginId, enabled: false);
+        }, $"Plugin disabled for {project.Name}");
+    }
+
+    private void ApplyProjectPluginScope(ProjectItemViewModel? project)
+    {
+        if (project is null)
+        {
+            _pluginManager.SetProjectScope([]);
+            RefreshPluginCatalog();
+            return;
+        }
+
+        string[] pluginIds;
+        if (project.Definition.EnabledPluginIds is null)
+        {
+            // Migrate the former application-wide selection once, then keep it on this project only.
+            pluginIds = [.. _legacyProjectPluginIds];
+            ProjectDefinition migrated = project.Definition with { EnabledPluginIds = pluginIds };
+            project.Update(migrated);
+            _ = PersistMigratedProjectPluginScopeAsync(project, migrated);
+        }
+        else
+        {
+            pluginIds = project.Definition.EnabledPluginIds;
+        }
+
+        _pluginManager.SetProjectScope(pluginIds);
+        RefreshPluginCatalog();
+        _ = EnsureProjectPluginsLoadedAsync(project.Id, pluginIds);
+    }
+
+    private async Task PersistMigratedProjectPluginScopeAsync(
+        ProjectItemViewModel project,
+        ProjectDefinition definition)
+    {
+        try
+        {
+            await _projectCatalog.UpsertAsync(definition);
+        }
+        catch (Exception exception)
+        {
+            _applicationLogService.Error(
+                "plugins",
+                $"could not migrate project plugin scope project=\"{project.Name}\"",
+                exception,
+                project.RootPath);
+        }
+    }
+
+    private async Task EnsureProjectPluginsLoadedAsync(Guid projectId, IReadOnlyCollection<string> pluginIds)
+    {
+        try
+        {
+            foreach (string pluginId in pluginIds)
+            {
+                PluginCatalogEntry? entry = _pluginManager.Entries.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Id, pluginId, StringComparison.OrdinalIgnoreCase));
+                if (entry is null || entry.InstanceLoaded) continue;
+                await _pluginManager.EnableAsync(pluginId);
+            }
+
+            if (SelectedProject?.Id != projectId) return;
+            _pluginManager.SetProjectScope(pluginIds);
+            RefreshPluginCatalog();
+        }
+        catch (Exception exception)
+        {
+            _applicationLogService.Error(
+                "plugins",
+                $"could not load project plugin scope project={projectId:N}",
+                exception,
+                SelectedProject?.Id == projectId ? SelectedProject.RootPath : null);
+        }
+    }
+
+    private async Task SetProjectPluginStateAsync(
+        ProjectItemViewModel project,
+        string pluginId,
+        bool enabled)
+    {
+        HashSet<string> pluginIds = new(
+            project.Definition.EnabledPluginIds ?? [],
+            StringComparer.OrdinalIgnoreCase);
+        if (enabled) pluginIds.Add(pluginId);
+        else pluginIds.Remove(pluginId);
+
+        ProjectDefinition definition = project.Definition with
+        {
+            EnabledPluginIds = pluginIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray()
+        };
+        await _projectCatalog.UpsertAsync(definition);
+        project.Update(definition);
+
+        if (SelectedProject?.Id != project.Id) return;
+        _pluginManager.SetProjectScope(definition.EnabledPluginIds);
+        RefreshPluginCatalog(pluginId);
     }
 
     public async Task InstallUnrealEditorPluginAsync()
@@ -9879,6 +10263,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             };
             await _projectCatalog.UpsertAsync(updated);
             SelectedProject.Update(updated);
+            OnPropertyChanged(nameof(GitConnectionKind));
+            OnPropertyChanged(nameof(RuntimeModeSummary));
+            NotifySynchronizationModeChanged();
+            NotifyMemberPanelLayoutChanged();
             LoadBackupSettings(updated);
             if (!preset.Features.PeerSyncEnabled &&
                 _currentSyncProfile?.SharedFolders.Any(folder => folder.Enabled) != true)
@@ -9908,7 +10296,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             _currentSyncProfile = await _syncthingProfileStore.CreateOrUpdateAsync(
                 SelectedProject.Id,
                 executablePath,
-                ResolveSyncExchangeDirectory(SelectedProject.Definition));
+                ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition));
             SyncthingExecutablePath = _currentSyncProfile.ExecutablePath;
             SyncState = "Sync prêt";
             SyncDetails = $"API locale isolée : {_currentSyncProfile.ApiEndpoint}";
@@ -9948,21 +10336,361 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             StatusMessage = "The rescan interval must be between 0 and 86400 seconds.";
             return;
         }
+        if (!int.TryParse(SyncConflictRetentionDays, out int conflictRetentionDays) || conflictRetentionDays is < 1 or > 3650)
+        {
+            StatusMessage = "Conflict backup retention must be between 1 and 3650 days.";
+            return;
+        }
 
         await RunOperationAsync("Saving Syncthing settings…", async () =>
         {
+            string projectFolder = SelectedProject.Definition.Features.GitEnabled
+                ? _currentSyncProfile.ExchangeDirectory
+                : ResolveConfiguredSyncSourceFolder(SelectedProject.Definition);
+            Directory.CreateDirectory(projectFolder);
+            string? versionStore = IsVersionedSyncMode ? NormalizeOptionalDirectory(SyncVersionStorePath) : null;
+            string? compressedStore = IsVersionedSyncMode ? NormalizeOptionalDirectory(SyncCompressedBackupPath) : null;
+            if (versionStore is not null) Directory.CreateDirectory(versionStore);
+            if (IsVersionedSyncMode && SyncCompressedBackupEnabled && compressedStore is null)
+                throw new InvalidOperationException("Choose a compressed-backup destination first.");
+            if (compressedStore is not null) Directory.CreateDirectory(compressedStore);
             _currentSyncProfile = await _syncthingProfileStore.SaveAsync(_currentSyncProfile with
             {
+                ExchangeDirectory = projectFolder,
                 FolderMode = SelectedSyncthingFolderMode,
                 RescanIntervalSeconds = rescanInterval,
-                FileWatcherEnabled = SyncthingFileWatcherEnabled
+                FileWatcherEnabled = SyncthingFileWatcherEnabled,
+                ProjectFolderPath = SelectedProject.Definition.Features.GitEnabled ? null : projectFolder,
+                VersioningDirectory = IsVersionedSyncMode ? versionStore : null,
+                CompressedBackupDirectory = IsVersionedSyncMode ? compressedStore : null,
+                CompressedBackupEnabled = IsVersionedSyncMode && SyncCompressedBackupEnabled,
+                ConflictBackupRetentionDays = conflictRetentionDays
             });
+            SyncStorageStatus = IsVersionedSyncMode
+                ? $"Source: {projectFolder} · versions: {versionStore ?? "inside the source folder"} · compressed backup: {(SyncCompressedBackupEnabled ? compressedStore : "off")}"
+                : $"Synchronized source: {projectFolder}";
             if (_syncEngine?.Status.State is SyncEngineState.Running or SyncEngineState.Paused)
             {
                 await ConfigureCurrentSyncFolderAsync();
                 await RefreshSyncthingWorkspaceCoreAsync();
             }
         }, $"Syncthing mode saved: {SelectedSyncthingFolderMode.ToDisplayName()}");
+    }
+
+    public void SetSyncSourceFolderPath(string path) => SyncSourceFolderPath = Path.GetFullPath(path);
+
+    public void SetSyncVersionStorePath(string path) => SyncVersionStorePath = Path.GetFullPath(path);
+
+    public void SetSyncCompressedBackupPath(string path) => SyncCompressedBackupPath = Path.GetFullPath(path);
+
+    public async Task CreateCompressedSyncBackupAsync()
+    {
+        if (SelectedProject is null || !IsVersionedSyncMode)
+        {
+            StatusMessage = "Compressed folder backups are available in Sync + Versions mode.";
+            return;
+        }
+
+        string source = ResolveConfiguredSyncSourceFolder(SelectedProject.Definition);
+        string? destination = NormalizeOptionalDirectory(SyncCompressedBackupPath);
+        if (destination is null)
+        {
+            StatusMessage = "Choose a compressed-backup destination first.";
+            return;
+        }
+
+        string sourceFull = Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string destinationFull = Path.GetFullPath(destination).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (destinationFull.StartsWith(sourceFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            StatusMessage = "The compressed-backup destination must be outside the synchronized source folder.";
+            return;
+        }
+
+        await RunOperationAsync("Creating compressed Sync backup…", async () =>
+        {
+            Directory.CreateDirectory(destinationFull);
+            string safeName = string.Concat(SelectedProject.Name.Select(character =>
+                Path.GetInvalidFileNameChars().Contains(character) ? '_' : character));
+            string finalPath = Path.Combine(destinationFull, $"{safeName}-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}.zip");
+            string partialPath = finalPath + ".partial";
+            try
+            {
+                await Task.Run(() => ZipFile.CreateFromDirectory(sourceFull, partialPath, CompressionLevel.Fastest, includeBaseDirectory: false));
+                File.Move(partialPath, finalPath);
+            }
+            finally
+            {
+                if (File.Exists(partialPath)) File.Delete(partialPath);
+            }
+            SyncStorageStatus = $"Compressed backup created: {finalPath}";
+            await RecordSyncHistoryAsync("Project Sync", sourceFull, "Compressed backup", "Local archive", finalPath);
+        }, "Compressed Sync backup created");
+    }
+
+    public async Task RefreshSyncHistoryAsync()
+    {
+        if (SelectedProject is null)
+        {
+            SyncHistory.Clear();
+            SyncHistorySummary = "No project selected.";
+            return;
+        }
+
+        IReadOnlyList<SyncHistoryEntry> entries = await _syncHistoryStore.SearchAsync(
+            SelectedProject.Id,
+            SyncHistorySearch,
+            SyncHistoryPathFilter);
+        ReplaceCollection(SyncHistory, entries);
+        SyncHistorySummary = entries.Count == 0
+            ? "No matching Sync event. History is recorded when the isolated Sync engine observes or performs an operation."
+            : $"{entries.Count:N0} event(s) · newest first · stored locally for {SelectedProject.Name}";
+    }
+
+    public async Task FilterSyncHistoryForFileAsync(string relativePath)
+    {
+        SyncHistoryPathFilter = relativePath.Replace('\\', '/');
+        await RefreshSyncHistoryAsync();
+    }
+
+    public void ClearSyncHistoryFileFilter()
+    {
+        SyncHistoryPathFilter = string.Empty;
+    }
+
+    public async Task RefreshSyncConflictsAsync()
+    {
+        if (SelectedProject is null) return;
+        IsSyncConflictBusy = true;
+        try
+        {
+            await RunOperationAsync("Scanning synchronized folders for conflicts…", async () =>
+            {
+                int removed = await _syncConflictService.PruneExpiredAsync(SelectedProject.Id);
+                IReadOnlyList<SyncConflictScope> scopes = BuildSyncConflictScopes();
+                _allSyncConflicts = await _syncConflictService.ScanAsync(scopes);
+                ApplySyncConflictFilter();
+                await RefreshSyncConflictBackupsCoreAsync();
+                SyncConflictSummary = $"{_allSyncConflicts.Count:N0} unresolved conflict(s) · " +
+                                      $"{SyncConflictBackups.Count:N0} recoverable resolution(s)" +
+                                      (removed > 0 ? $" · {removed:N0} expired backup(s) removed" : string.Empty);
+            }, "Sync conflict scan completed");
+        }
+        finally
+        {
+            IsSyncConflictBusy = false;
+        }
+    }
+
+    public async Task ResolveSelectedSyncConflictAsync(SyncConflictResolution resolution)
+    {
+        if (SelectedProject is null || SelectedSyncConflict is null) return;
+        if (!int.TryParse(SyncConflictRetentionDays, out int retentionDays) || retentionDays is < 1 or > 3650)
+        {
+            StatusMessage = "Conflict backup retention must be between 1 and 3650 days.";
+            return;
+        }
+
+        SyncConflictItem conflict = SelectedSyncConflict;
+        IsSyncConflictBusy = true;
+        try
+        {
+            await RunOperationAsync("Backing up and resolving the Sync conflict…", async () =>
+            {
+                if (_currentSyncProfile is not null && _currentSyncProfile.ConflictBackupRetentionDays != retentionDays)
+                {
+                    _currentSyncProfile = await _syncthingProfileStore.SaveAsync(
+                        _currentSyncProfile with { ConflictBackupRetentionDays = retentionDays });
+                }
+
+                SyncConflictBackup backup = await _syncConflictService.ResolveAsync(
+                    SelectedProject.Id,
+                    conflict,
+                    resolution,
+                    retentionDays);
+                await RecordSyncHistoryAsync(
+                    conflict.Scope,
+                    conflict.RelativeOriginalPath,
+                    resolution == SyncConflictResolution.KeepOriginal
+                        ? "Conflict resolved: original kept"
+                        : "Conflict resolved: conflict version used",
+                    "Protected resolution",
+                    $"recovery={backup.Id:N}; expires={backup.ExpiresAt:O}");
+                await RequestConflictScopeScanAsync(conflict);
+                await RefreshSyncConflictsCoreAsync(pruneExpired: false);
+            }, "Sync conflict resolved; recovery copy retained");
+        }
+        finally
+        {
+            IsSyncConflictBusy = false;
+        }
+    }
+
+    public async Task RestoreSelectedSyncConflictBackupAsync()
+    {
+        if (SelectedProject is null || SelectedSyncConflictBackup is null) return;
+        SyncConflictBackup backup = SelectedSyncConflictBackup;
+        IsSyncConflictBusy = true;
+        try
+        {
+            await RunOperationAsync("Restoring the pre-resolution conflict state…", async () =>
+            {
+                await _syncConflictService.RestoreAsync(backup);
+                await RecordSyncHistoryAsync(
+                    backup.Scope,
+                    backup.RelativeOriginalPath,
+                    "Conflict resolution restored",
+                    "Recovery",
+                    $"recovery={backup.Id:N}");
+                await RequestConflictScopeScanAsync(new SyncConflictItem(
+                    Guid.Empty,
+                    backup.Scope,
+                    backup.RootPath,
+                    backup.RelativeConflictPath,
+                    backup.RelativeOriginalPath,
+                    backup.CreatedAt,
+                    0,
+                    0,
+                    backup.OriginalExisted));
+                await RefreshSyncConflictsCoreAsync(pruneExpired: false);
+            }, "Conflict state restored from CyRevision recovery storage");
+        }
+        finally
+        {
+            IsSyncConflictBusy = false;
+        }
+    }
+
+    public async Task CleanExpiredSyncConflictBackupsAsync()
+    {
+        if (SelectedProject is null) return;
+        IsSyncConflictBusy = true;
+        try
+        {
+            int removed = 0;
+            await RunOperationAsync("Removing expired Sync conflict recovery copies…", async () =>
+            {
+                removed = await _syncConflictService.PruneExpiredAsync(SelectedProject.Id);
+                await RefreshSyncConflictBackupsCoreAsync();
+            }, "Expired Sync conflict recovery cleanup completed");
+            SyncConflictSummary = $"{_allSyncConflicts.Count:N0} unresolved conflict(s) · " +
+                                  $"{SyncConflictBackups.Count:N0} recoverable resolution(s) · {removed:N0} expired removed";
+        }
+        finally
+        {
+            IsSyncConflictBusy = false;
+        }
+    }
+
+    private async Task RefreshSyncConflictsCoreAsync(bool pruneExpired)
+    {
+        if (SelectedProject is null) return;
+        if (pruneExpired) await _syncConflictService.PruneExpiredAsync(SelectedProject.Id);
+        _allSyncConflicts = await _syncConflictService.ScanAsync(BuildSyncConflictScopes());
+        ApplySyncConflictFilter();
+        await RefreshSyncConflictBackupsCoreAsync();
+        SyncConflictSummary = $"{_allSyncConflicts.Count:N0} unresolved conflict(s) · {SyncConflictBackups.Count:N0} recoverable resolution(s)";
+    }
+
+    private async Task RefreshSyncConflictBackupsCoreAsync()
+    {
+        if (SelectedProject is null)
+        {
+            SyncConflictBackups.Clear();
+            return;
+        }
+        IReadOnlyList<SyncConflictBackup> backups = await _syncConflictService.LoadBackupsAsync(SelectedProject.Id);
+        ReplaceCollection(SyncConflictBackups, backups);
+        SelectedSyncConflictBackup = SyncConflictBackups.FirstOrDefault();
+    }
+
+    private IReadOnlyList<SyncConflictScope> BuildSyncConflictScopes()
+    {
+        if (SelectedProject is null) return [];
+        List<SyncConflictScope> scopes = [];
+        if (SelectedProject.Definition.Features.PeerSyncEnabled)
+        {
+            string root = _currentSyncProfile?.ProjectFolderPath
+                          ?? _currentSyncProfile?.ExchangeDirectory
+                          ?? ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition);
+            scopes.Add(new SyncConflictScope(SynchronizationOverviewTabTitle, root));
+        }
+
+        if (_currentSyncProfile is not null)
+        {
+            scopes.AddRange(_currentSyncProfile.SharedFolders
+                .Where(folder => folder.Enabled)
+                .Select(folder => new SyncConflictScope(folder.Name, folder.Path)));
+        }
+
+        return scopes
+            .Where(scope => !string.IsNullOrWhiteSpace(scope.RootPath))
+            .GroupBy(scope => Path.GetFullPath(scope.RootPath), OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToArray();
+    }
+
+    private void ApplySyncConflictFilter()
+    {
+        IEnumerable<SyncConflictItem> filtered = _allSyncConflicts;
+        if (!string.IsNullOrWhiteSpace(SyncConflictSearch))
+        {
+            string search = SyncConflictSearch.Trim();
+            filtered = filtered.Where(item =>
+                item.RelativeOriginalPath.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                item.RelativeConflictPath.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                item.Scope.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                item.Status.Contains(search, StringComparison.OrdinalIgnoreCase));
+        }
+        ReplaceCollection(SyncConflicts, filtered);
+        SelectedSyncConflict = SyncConflicts.FirstOrDefault();
+    }
+
+    private async Task RequestConflictScopeScanAsync(SyncConflictItem conflict)
+    {
+        if (_currentSyncProfile is null ||
+            _syncEngine?.Status.State is not (SyncEngineState.Running or SyncEngineState.Paused)) return;
+        string conflictRoot = Path.GetFullPath(conflict.RootPath);
+        string? folderId = string.Equals(
+            Path.GetFullPath(_currentSyncProfile.ExchangeDirectory),
+            conflictRoot,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+            ? _currentSyncProfile.FolderId
+            : _currentSyncProfile.SharedFolders.FirstOrDefault(folder => string.Equals(
+                Path.GetFullPath(folder.Path),
+                conflictRoot,
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))?.FolderId;
+        if (string.IsNullOrWhiteSpace(folderId)) return;
+        using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
+        await api.ScanFolderAsync(folderId);
+    }
+
+    private async Task RecordSyncHistoryAsync(
+        string scope,
+        string path,
+        string action,
+        string direction,
+        string detail)
+    {
+        if (SelectedProject is null) return;
+        SyncHistoryEntry entry = new(
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow,
+            SelectedProject.Id,
+            scope,
+            path.Replace('\\', '/'),
+            action,
+            direction,
+            detail);
+        await _syncHistoryStore.AppendAsync(entry);
+        if (string.IsNullOrWhiteSpace(SyncHistorySearch) &&
+            string.IsNullOrWhiteSpace(SyncHistoryPathFilter))
+        {
+            SyncHistory.Insert(0, entry);
+            SyncHistorySummary = $"{SyncHistory.Count:N0} event(s) · newest first · persisted per project";
+        }
     }
 
     public void SetSharedSyncFolderPath(string path) => SharedSyncFolderPath = Path.GetFullPath(path);
@@ -9985,7 +10713,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 _currentSyncProfile = await _syncthingProfileStore.CreateOrUpdateAsync(
                     SelectedProject.Id,
                     installation.ExecutablePath!,
-                    ResolveSyncExchangeDirectory(SelectedProject.Definition));
+                    ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition));
                 SyncthingExecutablePath = _currentSyncProfile.ExecutablePath;
                 SyncthingRuntimeSummary = $"{installation.Source} · {installation.Details}";
             }
@@ -10010,8 +10738,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             _currentSyncProfile = await _syncthingProfileStore.SaveAsync(
                 _currentSyncProfile with { SharedFolders = folders });
             ReplaceCollection(SharedSyncFolders, folders.OrderBy(folder => folder.Name, StringComparer.CurrentCultureIgnoreCase));
+            OnPropertyChanged(nameof(SynchronizationScopeSummary));
             SelectedSharedSyncFolder = SharedSyncFolders.First(folder => folder.Id == id);
             SharedSyncFolderStatus = $"{folders.Length:N0} independent folder(s) · available in every project mode.";
+            await RecordSyncHistoryAsync(definition.Name, definition.Path, "Mapping saved", definition.Mode.ToDisplayName(), definition.FolderId);
             if (_syncEngine?.Status.State is SyncEngineState.Running or SyncEngineState.Paused)
                 await ConfigureCurrentSyncFolderAsync();
         }, "Independent shared folder saved");
@@ -10033,10 +10763,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             _currentSyncProfile = await _syncthingProfileStore.SaveAsync(
                 _currentSyncProfile with { SharedFolders = folders });
             ReplaceCollection(SharedSyncFolders, folders);
+            OnPropertyChanged(nameof(SynchronizationScopeSummary));
             SelectedSharedSyncFolder = SharedSyncFolders.FirstOrDefault();
             SharedSyncFolderStatus = folders.Length == 0
                 ? "No independent shared folder configured."
                 : $"{folders.Length:N0} independent folder(s) configured.";
+            await RecordSyncHistoryAsync(selected.Name, selected.Path, "Mapping removed", selected.Mode.ToDisplayName(), selected.FolderId);
         }, "Independent shared folder removed; local files were kept");
     }
 
@@ -10048,10 +10780,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             StatusMessage = "Start CyRevision Syncthing and select a shared folder first.";
             return;
         }
+        SyncthingSharedFolder selected = SelectedSharedSyncFolder;
         await RunOperationAsync("Scanning independent shared folder…", async () =>
         {
             using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
-            await api.ScanFolderAsync(SelectedSharedSyncFolder.FolderId);
+            await api.ScanFolderAsync(selected.FolderId);
+            await RecordSyncHistoryAsync(selected.Name, selected.Path, "Scan requested", selected.Mode.ToDisplayName(), selected.FolderId);
             await RefreshSyncthingWorkspaceCoreAsync();
         }, "Shared folder scan requested");
     }
@@ -10074,6 +10808,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
             await api.ScanFolderAsync(_currentSyncProfile.FolderId);
+            await RecordSyncHistoryAsync(
+                SynchronizationOverviewTabTitle,
+                _currentSyncProfile.ExchangeDirectory,
+                "Scan requested",
+                RuntimeModeSummary,
+                _currentSyncProfile.FolderId);
             await RefreshSyncthingWorkspaceCoreAsync();
         }, "Syncthing folder scan completed");
     }
@@ -10148,7 +10888,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             _currentSyncProfile = await _syncthingProfileStore.CreateOrUpdateAsync(
                 SelectedProject.Id,
                 installation.ExecutablePath!,
-                ResolveSyncExchangeDirectory(SelectedProject.Definition));
+                ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition));
             SyncthingExecutablePath = _currentSyncProfile.ExecutablePath;
             SyncthingRuntimeSummary = $"{installation.Source} · {installation.Details}";
         }
@@ -10168,7 +10908,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         await RunOperationAsync("Démarrage du moteur Sync isolé…", async () =>
         {
-            string desiredExchangePath = ResolveSyncExchangeDirectory(SelectedProject.Definition);
+            string desiredExchangePath = ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition);
             if (!string.Equals(_currentSyncProfile.ExchangeDirectory, desiredExchangePath, StringComparison.OrdinalIgnoreCase))
             {
                 _currentSyncProfile = await _syncthingProfileStore.CreateOrUpdateAsync(
@@ -10191,6 +10931,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             await LoadPeerMembersCoreAsync();
             UpdateSyncStatus(_syncEngine.Status);
             await RefreshSyncthingWorkspaceCoreAsync();
+            await RecordSyncHistoryAsync(
+                SynchronizationOverviewTabTitle,
+                _currentSyncProfile.ExchangeDirectory,
+                "Engine started",
+                RuntimeModeSummary,
+                _syncEngine.DeviceId);
         }, "Synchronisation CyRevision active");
     }
 
@@ -10205,6 +10951,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             await _syncEngine.PauseAsync();
             UpdateSyncStatus(_syncEngine.Status);
+            await RecordSyncHistoryAsync(
+                SynchronizationOverviewTabTitle,
+                _currentSyncProfile?.ExchangeDirectory ?? SelectedProject?.RootPath ?? string.Empty,
+                "Engine paused",
+                "Local runtime",
+                _syncEngine.DeviceId);
         }, "Synchronisation en pause");
     }
 
@@ -10219,12 +10971,25 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             await _syncEngine.ResumeAsync();
             UpdateSyncStatus(_syncEngine.Status);
+            await RecordSyncHistoryAsync(
+                SynchronizationOverviewTabTitle,
+                _currentSyncProfile?.ExchangeDirectory ?? SelectedProject?.RootPath ?? string.Empty,
+                "Engine resumed",
+                "Local runtime",
+                _syncEngine.DeviceId);
         }, "Synchronisation reprise");
     }
 
     public async Task StopSyncAsync()
     {
-        await RunOperationAsync("Arrêt de l'instance Sync CyRevision…", () => StopSyncCoreAsync(), "Instance Sync CyRevision arrêtée");
+        string scope = SynchronizationOverviewTabTitle;
+        string path = _currentSyncProfile?.ExchangeDirectory ?? SelectedProject?.RootPath ?? string.Empty;
+        string deviceId = _syncEngine?.DeviceId ?? "local";
+        await RunOperationAsync("Arrêt de l'instance Sync CyRevision…", async () =>
+        {
+            await StopSyncCoreAsync();
+            await RecordSyncHistoryAsync(scope, path, "Engine stopped", "Local runtime", deviceId);
+        }, "Instance Sync CyRevision arrêtée");
     }
 
     public async Task ExchangeGitAsync()
@@ -10967,8 +11732,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             await RefreshTeamChatCoreAsync(profile);
             if (profile.Transport == TeamChatTransport.SyncFolder) StartTeamChatWatcher(profile);
         }
-        catch (Exception exception) when (exception is SocketException or IOException or InvalidOperationException)
+        catch (Exception exception) when (exception is SocketException or IOException or InvalidOperationException or HttpRequestException)
         {
+            _teamChatMessageCache.Clear();
             ReplaceCollection(TeamChatMessages, []);
             TeamChatStatus = $"Profile loaded - conversation endpoint is not reachable yet: {exception.Message}";
         }
@@ -11021,9 +11787,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             TeamChatProfile profile = BuildTeamChatProfile();
             await _teamChatProfileStore.SaveAsync(profile);
-            TeamChatMessage message = profile.Transport == TeamChatTransport.SyncFolder
-                ? await _teamChatService.SendSyncAsync(profile, TeamChatMessageText, TeamChatAttachmentPath)
-                : await _teamChatService.SendVpnAsync(profile, TeamChatMessageText, TeamChatAttachmentPath);
+            TeamChatMessage message = profile.Transport switch
+            {
+                TeamChatTransport.SyncFolder => await _teamChatService.SendSyncAsync(
+                    profile, TeamChatMessageText, TeamChatAttachmentPath),
+                TeamChatTransport.PrivateServer => await _teamChatService.SendServerAsync(
+                    profile, TeamChatMessageText, TeamChatAttachmentPath),
+                _ => await _teamChatService.SendVpnAsync(profile, TeamChatMessageText, TeamChatAttachmentPath)
+            };
             _currentTeamChatProfile = profile;
             TeamChatMessageText = string.Empty;
             TeamChatAttachmentPath = string.Empty;
@@ -11054,6 +11825,27 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         },
         "Team conversation refreshed");
 
+    public async Task CreateTeamChatChannelAsync() => await RunOperationAsync(
+        "Creating the team chat channel...",
+        async () =>
+        {
+            TeamChatProfile profile = BuildTeamChatProfile();
+            if (profile.Transport != TeamChatTransport.PrivateServer)
+                throw new InvalidOperationException("Custom persistent channels require the Private server transport.");
+            TeamChatChannel channel = await _teamChatService.CreateServerChannelAsync(
+                profile,
+                TeamChatNewChannelName,
+                TeamChatNewChannelTopic);
+            if (TeamChatChannels.All(item => !string.Equals(item.Id, channel.Id, StringComparison.OrdinalIgnoreCase)))
+                TeamChatChannels.Add(channel);
+            SelectedTeamChatChannel = TeamChatChannels.First(item =>
+                string.Equals(item.Id, channel.Id, StringComparison.OrdinalIgnoreCase));
+            TeamChatNewChannelName = string.Empty;
+            TeamChatNewChannelTopic = string.Empty;
+            TeamChatStatus = $"Channel #{channel.Name} is ready on the private server.";
+        },
+        "Team chat channel created");
+
     public async Task RotateTeamChatTokenAsync() => await RunOperationAsync(
         "Rotating the team chat token...",
         async () =>
@@ -11075,11 +11867,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private async Task RefreshTeamChatCoreAsync(TeamChatProfile profile)
     {
         TeamChatMessage? selected = SelectedTeamChatMessage;
-        TeamChatSnapshot snapshot = profile.Transport == TeamChatTransport.SyncFolder
-            ? await _teamChatService.ReadSyncSnapshotAsync(profile)
-            : await _teamChatService.ReadVpnSnapshotAsync(profile);
+        TeamChatSnapshot snapshot = profile.Transport switch
+        {
+            TeamChatTransport.SyncFolder => await _teamChatService.ReadSyncSnapshotAsync(profile),
+            TeamChatTransport.PrivateServer => await _teamChatService.ReadServerSnapshotAsync(profile),
+            _ => await _teamChatService.ReadVpnSnapshotAsync(profile)
+        };
         MergeTeamChatMessages(snapshot.Messages);
         ReplaceCollection(TeamChatParticipants, snapshot.Participants);
+        ApplyTeamChatChannels(snapshot.Channels ?? TeamChatDefaults.Channels, profile.SelectedChannelId);
         SelectedTeamChatMessage = selected is null
             ? TeamChatMessages.LastOrDefault()
             : TeamChatMessages.FirstOrDefault(item => item.Id == selected.Id) ?? TeamChatMessages.LastOrDefault();
@@ -11094,9 +11890,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             File.Exists(SelectedTeamChatMessage.AttachmentLocalPath)) return SelectedTeamChatMessage.AttachmentLocalPath;
         if (_currentTeamChatProfile is null) return null;
         TeamChatProfile profile = BuildTeamChatProfile();
-        TeamChatMessage downloaded = profile.Transport == TeamChatTransport.SyncFolder
-            ? await _teamChatService.PrepareSyncAttachmentAsync(profile, SelectedTeamChatMessage)
-            : await _teamChatService.DownloadVpnAttachmentAsync(profile, SelectedTeamChatMessage);
+        TeamChatMessage downloaded = profile.Transport switch
+        {
+            TeamChatTransport.SyncFolder => await _teamChatService.PrepareSyncAttachmentAsync(profile, SelectedTeamChatMessage),
+            TeamChatTransport.PrivateServer => await _teamChatService.DownloadServerAttachmentAsync(profile, SelectedTeamChatMessage),
+            _ => await _teamChatService.DownloadVpnAttachmentAsync(profile, SelectedTeamChatMessage)
+        };
         MergeTeamChatMessages([downloaded]);
         SelectedTeamChatMessage = TeamChatMessages.FirstOrDefault(item => item.Id == downloaded.Id);
         return downloaded.AttachmentLocalPath;
@@ -11104,9 +11903,47 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     private void MergeTeamChatMessages(IEnumerable<TeamChatMessage> messages)
     {
-        Dictionary<Guid, TeamChatMessage> merged = TeamChatMessages.ToDictionary(item => item.Id);
-        foreach (TeamChatMessage message in messages) merged[message.Id] = message;
-        ReplaceCollection(TeamChatMessages, merged.Values.OrderBy(item => item.SentAt).TakeLast(2000));
+        foreach (TeamChatMessage message in messages) _teamChatMessageCache[message.Id] = message;
+        if (_teamChatMessageCache.Count > 4000)
+        {
+            HashSet<Guid> retained = _teamChatMessageCache.Values.OrderBy(item => item.SentAt).TakeLast(4000)
+                .Select(item => item.Id).ToHashSet();
+            foreach (Guid id in _teamChatMessageCache.Keys.Where(id => !retained.Contains(id)).ToArray())
+                _teamChatMessageCache.Remove(id);
+        }
+        RefreshVisibleTeamChatMessages();
+    }
+
+    private void RefreshVisibleTeamChatMessages()
+    {
+        string channelId = SelectedTeamChatChannel?.Id ?? "general";
+        TeamChatMessage? selected = SelectedTeamChatMessage;
+        ReplaceCollection(TeamChatMessages, _teamChatMessageCache.Values
+            .Where(item => string.Equals(
+                string.IsNullOrWhiteSpace(item.ChannelId) ? "general" : item.ChannelId,
+                channelId,
+                StringComparison.OrdinalIgnoreCase))
+            .OrderBy(item => item.SentAt)
+            .TakeLast(2000));
+        SelectedTeamChatMessage = selected is null
+            ? TeamChatMessages.LastOrDefault()
+            : TeamChatMessages.FirstOrDefault(item => item.Id == selected.Id) ?? TeamChatMessages.LastOrDefault();
+    }
+
+    private void ApplyTeamChatChannels(IEnumerable<TeamChatChannel> channels, string selectedChannelId)
+    {
+        string selected = SelectedTeamChatChannel?.Id ?? selectedChannelId;
+        TeamChatChannel[] normalized = channels
+            .GroupBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(item => item.Position)
+            .ToArray();
+        if (normalized.Length == 0) normalized = TeamChatDefaults.Channels.ToArray();
+        ReplaceCollection(TeamChatChannels, normalized);
+        SelectedTeamChatChannel = TeamChatChannels.FirstOrDefault(item =>
+                                      string.Equals(item.Id, selected, StringComparison.OrdinalIgnoreCase))
+                                  ?? TeamChatChannels.FirstOrDefault(item => item.IsDefault)
+                                  ?? TeamChatChannels.FirstOrDefault();
     }
 
     private void StartTeamChatWatcher(TeamChatProfile profile)
@@ -11178,7 +12015,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             checked(maximumMb * 1024 * 1024),
             DateTimeOffset.UtcNow,
             SelectedProject.RootPath,
-            TeamChatEncryptStoredConversations);
+            TeamChatEncryptStoredConversations,
+            TeamChatServerBaseUrl.Trim(),
+            TeamChatServerApiToken.Trim(),
+            TeamChatAllowPrivateServerHttp,
+            SelectedTeamChatChannel?.Id ?? "general");
     }
 
     private void ApplyTeamChatProfile(TeamChatProfile profile)
@@ -11190,10 +12031,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         TeamChatPeerEndpoint = profile.PeerEndpoint;
         TeamChatAccessToken = profile.AccessToken;
         TeamChatSyncFolderPath = profile.SyncFolderPath;
+        TeamChatServerBaseUrl = profile.ServerBaseUrl;
+        TeamChatServerApiToken = profile.ServerApiToken;
+        TeamChatAllowPrivateServerHttp = profile.AllowPrivateServerHttp;
         TeamChatSaveConversations = profile.SaveConversations;
         TeamChatEncryptStoredConversations = profile.EncryptStoredConversations;
         TeamChatRetentionDays = profile.RetentionDays.ToString();
         TeamChatMaxAttachmentMb = Math.Max(1, profile.MaxAttachmentBytes / (1024 * 1024)).ToString();
+        ApplyTeamChatChannels(TeamChatDefaults.Channels, profile.SelectedChannelId);
     }
 
     public async Task ConnectDiscordAgentAsync()
@@ -12097,12 +12942,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         return name is not (
             "_selectedProject" or "_projectLoadVersion" or "_projectLoadProgress" or "_projectLoadStage" or
             "_isProjectLoading" or "_isRestoringProjectSession" or "_isBusy" or "_statusMessage" or "_isActivityCenterExpanded" or "_syncEngine" or "_syncEngineProjectId" or
-            "_vpnFileExchangeHost" or "_subscribedUnrealPlugin" or "_currentRemoteBuildJob" or "_availableUpdate" or
+            "_vpnFileExchangeHost" or "_subscribedUnrealPlugin" or "_subscribedUnityPlugin" or "_subscribedGodotPlugin" or "_currentRemoteBuildJob" or "_availableUpdate" or
             "_selectedLanguage" or "_allDocumentationTopics" or "_selectedDocumentationTopic" or
             "_documentationSearch" or "_latestApplicationVersion" or "_updateStatus" or "_updateReleaseNotes" or
             "_hasUpdateAvailable" or "_isCheckingForUpdates" or "_isDownloadingUpdate" or "_updateProgress" or
             "_selectedPlugin" or "_selectedAiConversation" or "_suppressAiConversationSelection" or
-            "_isUnrealIntegrationEnabled" or "_discordIsRunning") &&
+            "_isUnrealIntegrationEnabled" or "_isUnityIntegrationEnabled" or "_isGodotIntegrationEnabled" or "_discordIsRunning") &&
                !name.StartsWith("_code", StringComparison.Ordinal) &&
                !name.StartsWith("_selectedCode", StringComparison.Ordinal) &&
                !name.StartsWith("_repositoryConsole", StringComparison.Ordinal) &&
@@ -13560,10 +14405,24 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             SyncthingFolderSummary = "No synchronized folder selected.";
             SyncthingIgnoreRules = string.Empty;
             SyncthingIgnoreStatus = "No .stignore file loaded.";
+            SyncSourceFolderPath = string.Empty;
+            SyncVersionStorePath = string.Empty;
+            SyncCompressedBackupPath = string.Empty;
+            SyncCompressedBackupEnabled = false;
+            SyncStorageStatus = "No project selected.";
             SyncthingDevices.Clear();
             SyncthingDifferences.Clear();
             SyncthingLogs.Clear();
             SharedSyncFolders.Clear();
+            SyncHistory.Clear();
+            SyncHistorySummary = "No project selected.";
+            _allSyncConflicts = [];
+            SyncConflicts.Clear();
+            SyncConflictBackups.Clear();
+            SelectedSyncConflict = null;
+            SelectedSyncConflictBackup = null;
+            SyncConflictRetentionDays = "30";
+            SyncConflictSummary = "No project selected.";
             SelectedSharedSyncFolder = null;
             SharedSyncFolderStatus = "No independent shared folder configured.";
             SyncState = "Sync désactivé";
@@ -13572,7 +14431,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }
 
         _currentSyncProfile = await _syncthingProfileStore.GetAsync(SelectedProject.Id);
+        _observedSyncDifferences.Clear();
         ReplaceCollection(SharedSyncFolders, _currentSyncProfile?.SharedFolders ?? []);
+        OnPropertyChanged(nameof(SynchronizationScopeSummary));
         SelectedSharedSyncFolder = SharedSyncFolders.FirstOrDefault();
         SharedSyncFolderStatus = SharedSyncFolders.Count == 0
             ? "No independent shared folder configured."
@@ -13585,6 +14446,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         SelectedSyncthingFolderMode = _currentSyncProfile?.FolderMode ?? SyncthingFolderMode.SendReceive;
         SyncthingRescanInterval = (_currentSyncProfile?.RescanIntervalSeconds ?? 60).ToString();
         SyncthingFileWatcherEnabled = _currentSyncProfile?.FileWatcherEnabled ?? true;
+        SyncSourceFolderPath = _currentSyncProfile?.ProjectFolderPath ?? SelectedProject.RootPath;
+        SyncVersionStorePath = _currentSyncProfile?.VersioningDirectory ?? string.Empty;
+        SyncCompressedBackupPath = _currentSyncProfile?.CompressedBackupDirectory ?? string.Empty;
+        SyncCompressedBackupEnabled = _currentSyncProfile?.CompressedBackupEnabled ?? false;
+        SyncConflictRetentionDays = (_currentSyncProfile?.ConflictBackupRetentionDays ?? 30).ToString();
+        _allSyncConflicts = [];
+        SyncConflicts.Clear();
+        SelectedSyncConflict = null;
+        SyncStorageStatus = IsVersionedSyncMode
+            ? $"Source: {SyncSourceFolderPath} · versions: {(string.IsNullOrWhiteSpace(SyncVersionStorePath) ? "inside source" : SyncVersionStorePath)} · compressed backup: {(SyncCompressedBackupEnabled ? SyncCompressedBackupPath : "off")}"
+            : $"Synchronized source: {SyncSourceFolderPath}";
         if (_currentSyncProfile is not null)
         {
             await LoadSyncthingIgnoreRulesAsync();
@@ -13604,6 +14476,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             SyncState = "Sync prêt — arrêté";
             SyncDetails = $"Profil isolé sur {_currentSyncProfile.ApiEndpoint}.";
         }
+        await RefreshSyncHistoryAsync();
+        await RefreshSyncConflictBackupsCoreAsync();
+        SyncConflictSummary = $"Conflict scan not run · {SyncConflictBackups.Count:N0} recoverable resolution(s) stored";
     }
 
     private async Task LoadVpnProfileCoreAsync()
@@ -14549,6 +15424,32 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             }
 
             ReplaceCollection(SyncthingDifferences, differencesTask.Result);
+            if (SelectedProject is not null)
+            {
+                string scope = SelectedProject.Definition.Features.PeerSyncEnabled
+                    ? SynchronizationOverviewTabTitle
+                    : SelectedSharedSyncFolder?.Name ?? "Shared folder";
+                List<SyncHistoryEntry> newEntries = [];
+                HashSet<string> currentFingerprints = new(StringComparer.Ordinal);
+                foreach (SyncthingDifferenceItem difference in differencesTask.Result)
+                {
+                    string fingerprint = $"{inspectedFolderId}|{difference.Direction}|{difference.Type}|{difference.Name}|{difference.Size}|{difference.ModifiedAt:O}|{difference.Deleted}";
+                    currentFingerprints.Add(fingerprint);
+                    if (_observedSyncDifferences.Contains(fingerprint)) continue;
+                    newEntries.Add(new SyncHistoryEntry(
+                        Guid.NewGuid(),
+                        DateTimeOffset.UtcNow,
+                        SelectedProject.Id,
+                        scope,
+                        difference.Name,
+                        difference.Deleted ? "Delete observed" : "Difference observed",
+                        difference.Direction,
+                        $"{difference.Type} · {difference.Size:N0} bytes · folder {inspectedFolderId}"));
+                }
+                _observedSyncDifferences.Clear();
+                _observedSyncDifferences.UnionWith(currentFingerprints);
+                await _syncHistoryStore.AppendManyAsync(newEntries);
+            }
             ReplaceCollection(SyncthingLogs, logsTask.Result.OrderByDescending(entry => entry.Timestamp).Take(500));
             SyncthingFolderStatus folder = statusTask.Result;
             SyncthingFolderSummary = folder.IsInSync
@@ -14643,6 +15544,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                                  $"{exported.ResumedLfsObjects + imported.ResumedLfsObjects} repris · " +
                                  $"{exported.DeferredLfsObjects + imported.DeferredLfsObjects} différé(s) · " +
                                  $"{imported.AvailablePeerLfsObjects} disponible(s) chez les pairs";
+        await RecordSyncHistoryAsync(
+            "Git + Sync exchange",
+            _currentSyncProfile.ExchangeDirectory,
+            "Signed Git exchange",
+            "Bidirectional",
+            $"published LFS={exported.PublishedLfsObjects}; imported transactions={imported.ImportedTransactions}; imported LFS={imported.ImportedLfsObjects}");
     }
 
     private GitPeerExchangeOptions BuildGitPeerExchangeOptions()
@@ -14748,7 +15655,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             keepVersions,
             cleanoutDays,
             RescanIntervalSeconds: profile.RescanIntervalSeconds,
-            FileWatcherEnabled: profile.FileWatcherEnabled);
+            FileWatcherEnabled: profile.FileWatcherEnabled,
+            VersioningPath: string.IsNullOrWhiteSpace(profile.VersioningDirectory)
+                ? null
+                : profile.VersioningDirectory);
     }
 
     private async Task StopSyncCoreAsync(bool updateUi = true)
@@ -14811,6 +15721,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         definition.Features.GitEnabled
             ? Path.Combine(_applicationPaths.DataDirectory, "git-exchange", definition.Id.ToString("N"))
             : definition.RootPath;
+
+    private string ResolveConfiguredSyncExchangeDirectory(ProjectDefinition definition) =>
+        definition.Features.GitEnabled
+            ? ResolveSyncExchangeDirectory(definition)
+            : ResolveConfiguredSyncSourceFolder(definition);
+
+    private string ResolveConfiguredSyncSourceFolder(ProjectDefinition definition)
+    {
+        string candidate = !string.IsNullOrWhiteSpace(SyncSourceFolderPath)
+            ? SyncSourceFolderPath
+            : _currentSyncProfile?.ProjectFolderPath ?? definition.RootPath;
+        return Path.GetFullPath(candidate);
+    }
+
+    private static string? NormalizeOptionalDirectory(string? path) =>
+        string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path.Trim());
 
     private string GetGitExchangeStatePath(Guid projectId) =>
         Path.Combine(_applicationPaths.DataDirectory, "git-exchange-state", projectId.ToString("N"));
@@ -15735,7 +16661,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         string? selection = selectedPluginId ?? SelectedPlugin?.Id;
         ReplaceCollection(
             Plugins,
-            _pluginManager.Entries.Select(entry => new PluginItemViewModel(entry)));
+            _pluginManager.Entries.Select(entry => new PluginItemViewModel(
+                entry,
+                _pluginManager.IsActiveForCurrentProject(entry.Id))));
         SelectedPlugin = Plugins.FirstOrDefault(plugin =>
                              string.Equals(plugin.Id, selection, StringComparison.OrdinalIgnoreCase))
                          ?? Plugins.FirstOrDefault();
@@ -15796,6 +16724,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             if (SelectedProject is not null)
                 _ = DetectCodexAsync(autoConnect: true);
         }
+
+        RefreshGameEnginePluginCatalog();
+        RefreshLorePluginCatalog();
     }
 
     private void RefreshUnrealInspection()
@@ -16077,6 +17008,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             _teamChatHost = null;
         }
         DetachUnrealPluginEvents();
+        DetachAllGameEnginePluginEvents();
         await _pluginManager.DisposeAsync();
         _discordAgent.StatusChanged -= OnDiscordAgentStatusChanged;
         await _discordAgent.DisposeAsync();

@@ -16,6 +16,7 @@ using CyRevision.Desktop.SystemIntegration;
 using CyRevision.Desktop.ViewModels;
 using CyRevision.Desktop.Workspace;
 using CyRevision.Git;
+using CyRevision.Sync;
 
 namespace CyRevision.Desktop;
 
@@ -24,6 +25,8 @@ internal enum WorkspaceCategory
     Overview,
     Git,
     Code,
+    Backup,
+    Sync,
     Network,
     Extensions
 }
@@ -31,12 +34,18 @@ internal enum WorkspaceCategory
 internal sealed record WorkspaceTabVisibilityPreset(
     string Name,
     string Description,
+    string BestFor,
+    string IncludedTools,
     IReadOnlySet<string>? VisibleTabs,
-    bool IsCustom = false);
+    bool IsCustom = false)
+{
+    public string TabCountLabel => VisibleTabs is null ? "Manual selection" : $"{VisibleTabs.Count} tabs";
+}
 
 internal sealed class WorkspaceTabVisibilityItem : INotifyPropertyChanged
 {
     private bool _isVisible;
+    private bool _isAvailableInMode = true;
 
     public WorkspaceTabVisibilityItem(string id, string name, string category, bool isVisible)
     {
@@ -49,6 +58,20 @@ internal sealed class WorkspaceTabVisibilityItem : INotifyPropertyChanged
     public string Id { get; }
     public string Name { get; }
     public string Category { get; }
+
+    public bool IsAvailableInMode
+    {
+        get => _isAvailableInMode;
+        set
+        {
+            if (_isAvailableInMode == value) return;
+            _isAvailableInMode = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsAvailableInMode)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AvailabilitySummary)));
+        }
+    }
+
+    public string AvailabilitySummary => IsAvailableInMode ? Category : $"{Category} · unavailable in current mode";
 
     public bool IsVisible
     {
@@ -117,6 +140,8 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         _viewModel.UnrealBuildLogLines.CollectionChanged += OnUnrealBuildLogLinesChanged;
         _viewModel.AiChatMessages.CollectionChanged += OnAiChatMessagesChanged;
+        _viewModel.TeamChatMessages.CollectionChanged += OnTeamChatMessagesChanged;
+        _viewModel.SharedSyncFolders.CollectionChanged += OnSharedSyncFoldersChanged;
         ChangesFolderTree.AddHandler(TreeViewItem.ExpandedEvent, OnChangesTreeItemExpanded);
         SolutionTreePanel.AddHandler(TreeViewItem.ExpandedEvent, OnSolutionTreeItemExpanded);
         _localization = localization;
@@ -205,6 +230,8 @@ public partial class MainWindow : Window
         ConsoleAndLogsTabs.SelectionChanged -= OnConsoleAndLogsTabSelectionChanged;
         _viewModel.UnrealBuildLogLines.CollectionChanged -= OnUnrealBuildLogLinesChanged;
         _viewModel.AiChatMessages.CollectionChanged -= OnAiChatMessagesChanged;
+        _viewModel.TeamChatMessages.CollectionChanged -= OnTeamChatMessagesChanged;
+        _viewModel.SharedSyncFolders.CollectionChanged -= OnSharedSyncFoldersChanged;
         foreach (AiChatMessageViewModel message in _viewModel.AiChatMessages)
             message.PropertyChanged -= OnAiChatMessagePropertyChanged;
         _viewModel.PropertyChanged -= OnMainViewModelPropertyChanged;
@@ -262,6 +289,18 @@ public partial class MainWindow : Window
         }, DispatcherPriority.Background);
     }
 
+    private void OnTeamChatMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_viewModel.TeamChatMessages.Count > 0)
+                TeamChatMessageList.ScrollIntoView(_viewModel.TeamChatMessages[^1]);
+        }, DispatcherPriority.Background);
+    }
+
+    private void OnSharedSyncFoldersChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        Dispatcher.UIThread.Post(() => RefreshWorkspaceModeNavigation(selectPrimary: false));
+
     private void OnAiChatMessagePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(AiChatMessageViewModel.Text)) return;
@@ -278,6 +317,7 @@ public partial class MainWindow : Window
         {
             SaveCurrentProjectWorkspaceState();
             RestoreSelectedProjectWorkspaceState();
+            RefreshWorkspaceModeNavigation(selectPrimary: false);
             ConfigureRepositoryChangeMonitor();
         }
         else if (e.PropertyName == nameof(MainWindowViewModel.CodeAutoRefreshFrequency))
@@ -291,6 +331,18 @@ public partial class MainWindow : Window
         else if (e.PropertyName == nameof(MainWindowViewModel.HasCodeFileSearchResults))
         {
             ApplySolutionExplorerLayout(_solutionExplorerTreeLayout);
+        }
+        else if (e.PropertyName is nameof(MainWindowViewModel.IsUnrealIntegrationEnabled) or
+                 nameof(MainWindowViewModel.IsUnityIntegrationEnabled) or
+                 nameof(MainWindowViewModel.IsGodotIntegrationEnabled) or
+                 nameof(MainWindowViewModel.IsLoreIntegrationEnabled) or
+                 nameof(MainWindowViewModel.IsAiIntegrationEnabled) or
+                 nameof(MainWindowViewModel.IsUnrealProjectDetected) or
+                 nameof(MainWindowViewModel.IsUnityProjectDetected) or
+                 nameof(MainWindowViewModel.IsGodotProjectDetected) or
+                 nameof(MainWindowViewModel.IsLoreProjectDetected))
+        {
+            RefreshWorkspaceModeNavigation(selectPrimary: false);
         }
     }
 
@@ -339,7 +391,7 @@ public partial class MainWindow : Window
             _viewModel.CodeAutoRefreshFrequency = state.CodeRefreshFrequency;
             ConsoleAndLogsTabs.SelectedIndex = Math.Clamp(state.ConsoleSection, 0, 1);
             TabItem requestedTab = AllWorkspaceTabs().FirstOrDefault(item => item.Name == state.ActiveTab) ?? ProjectWorkspaceTab;
-            TabItem tab = IsWorkspaceTabEnabled(requestedTab) ? requestedTab : ProjectWorkspaceTab;
+            TabItem tab = IsWorkspaceTabEnabled(requestedTab) ? requestedTab : PreferredWorkspaceTabForMode();
             ApplyWorkspaceCategory(CategoryFor(tab), selectDefault: false);
             WorkspaceTabs.SelectedItem = tab;
         }
@@ -1139,33 +1191,77 @@ public partial class MainWindow : Window
             new WorkspaceTabVisibilityPreset(
                 "Full workspace",
                 "Show every CyRevision project tool.",
+                "Complete administration and advanced workflows",
+                "Every Git, code, network, AI, Unreal, diagnostic, and extension tool",
                 all),
             new WorkspaceTabVisibilityPreset(
                 "Git essentials",
                 "A compact revision-control workspace without Compose, CI, graphs, network, or AI tools.",
+                "Daily commits and repository review",
+                "Changes, history, branches, pull requests, locks, LFS, and backups",
                 Visible(
-                    "ProjectWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
+                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
                     "BranchesWorkspaceTab", "PullRequestsWorkspaceTab", "LfsLocksWorkspaceTab",
                     "GitLfsWorkspaceTab", "BackupsWorkspaceTab", "HelpWorkspaceTab")),
             new WorkspaceTabVisibilityPreset(
                 "Developer",
                 "Git, code exploration, console, assets, AI, plugins, and diagnostics.",
+                "Programming and assisted code review",
+                "Git, solution explorer, code search, console, assets, AI, MCP, and plugins",
                 Visible(
-                    "ProjectWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
+                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
                     "CompositionWorkspaceTab", "BranchesWorkspaceTab", "PullRequestsWorkspaceTab", "CiWorkspaceTab",
                     "GitGraphsWorkspaceTab", "LfsLocksWorkspaceTab", "GitIgnoreWorkspaceTab", "GitLfsWorkspaceTab",
                     "BackupsWorkspaceTab", "SolutionExplorerWorkspaceTab", "CodeWorkspaceTab", "ConsoleWorkspaceTab",
                     "AssetDiffWorkspaceTab", "AiWorkspaceTab", "McpWorkspaceTab", "PluginsWorkspaceTab",
-                    "UnrealWorkspaceTab", "UnrealBuildWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
+                    "UnrealWorkspaceTab", "UnityWorkspaceTab", "GodotWorkspaceTab", "LoreWorkspaceTab", "UnrealBuildWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
+            new WorkspaceTabVisibilityPreset(
+                "Unreal production",
+                "Revision, asset, build, and Unreal integration tools in one focused workspace.",
+                "Unreal Engine projects and plugin validation",
+                "Git, locks, LFS, assets, CI, console, Unreal connection, builds, and diagnostics",
+                Visible(
+                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab",
+                    "HistoryWorkspaceTab", "CompositionWorkspaceTab", "BranchesWorkspaceTab", "PullRequestsWorkspaceTab",
+                    "CiWorkspaceTab", "GitGraphsWorkspaceTab", "LfsLocksWorkspaceTab", "GitIgnoreWorkspaceTab",
+                    "GitLfsWorkspaceTab", "BackupsWorkspaceTab", "SolutionExplorerWorkspaceTab", "CodeWorkspaceTab",
+                    "ConsoleWorkspaceTab", "AssetDiffWorkspaceTab", "PluginsWorkspaceTab", "UnrealWorkspaceTab", "LoreWorkspaceTab",
+                    "UnrealBuildWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
+            new WorkspaceTabVisibilityPreset(
+                "Game engines",
+                "A focused workspace for Unreal, Unity, and Godot projects with revision and code tools.",
+                "Mixed-engine game development",
+                "Git, code, assets, plugins, Unreal, Unity, Godot, builds, and diagnostics",
+                Visible(
+                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab",
+                    "HistoryWorkspaceTab", "BranchesWorkspaceTab", "PullRequestsWorkspaceTab", "CiWorkspaceTab",
+                    "LfsLocksWorkspaceTab", "GitIgnoreWorkspaceTab", "GitLfsWorkspaceTab", "BackupsWorkspaceTab",
+                    "SolutionExplorerWorkspaceTab", "CodeWorkspaceTab", "ConsoleWorkspaceTab", "AssetDiffWorkspaceTab",
+                    "PluginsWorkspaceTab", "UnrealWorkspaceTab", "UnityWorkspaceTab", "GodotWorkspaceTab", "LoreWorkspaceTab",
+                    "UnrealBuildWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
+            new WorkspaceTabVisibilityPreset(
+                "Team & network",
+                "Collaboration, synchronization, VPN, shared files, chat, and remote execution.",
+                "Distributed teams and self-hosted infrastructure",
+                "Members, Sync, VPN, Swarm, shared files, team chat, Discord, WIP, and remote builds",
+                Visible(
+                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab",
+                    "HistoryWorkspaceTab", "SynchronizationWorkspaceTab", "SyncConflictsWorkspaceTab", "SharedSyncWorkspaceTab", "VpnWorkspaceTab", "SwarmWorkspaceTab",
+                    "VpnFilesWorkspaceTab", "TeamChatWorkspaceTab", "RemoteBuildsWorkspaceTab", "DiscordWorkspaceTab",
+                    "WorkInProgressWorkspaceTab", "ConsoleWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
             new WorkspaceTabVisibilityPreset(
                 "Minimal",
                 "Only Project, Changes, History, Solution Explorer, Console, and Help.",
+                "A clean interface for quick repository checks",
+                "Project, changes, history, solution explorer, console, and help",
                 Visible(
-                    "ProjectWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
+                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
                     "SolutionExplorerWorkspaceTab", "ConsoleWorkspaceTab", "HelpWorkspaceTab")),
             new WorkspaceTabVisibilityPreset(
                 "Custom",
                 "Manual per-tab visibility for this project.",
+                "A workspace tailored to this specific project",
+                "Use the checklist below; changes are saved automatically",
                 null,
                 IsCustom: true)
         ];
@@ -1277,17 +1373,20 @@ public partial class MainWindow : Window
         OverviewCategoryToggle.IsVisible = true;
         GitCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Git).Length > 0;
         CodeCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Code).Length > 0;
+        BackupCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Backup).Length > 0;
+        SyncCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Sync).Length > 0;
         NetworkCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Network).Length > 0;
         ExtensionsCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Extensions).Length > 0;
     }
 
     private void UpdateWorkspaceTabVisibilitySummary()
     {
-        int optionalVisible = _workspaceTabVisibilityItems.Count(item => item.IsVisible);
+        int optionalVisible = _workspaceTabVisibilityItems.Count(item => item.IsVisible && item.IsAvailableInMode);
+        int unavailable = _workspaceTabVisibilityItems.Count(item => !item.IsAvailableInMode);
         int totalVisible = optionalVisible + 2;
-        int total = _workspaceTabVisibilityItems.Count + 2;
+        int total = _workspaceTabVisibilityItems.Count(item => item.IsAvailableInMode) + 2;
         string project = _viewModel?.SelectedProject?.Name ?? "this project";
-        WorkspaceTabVisibilitySummary.Text = $"{totalVisible} of {total} tabs visible · saved for {project} · Project and Visible tabs are always available";
+        WorkspaceTabVisibilitySummary.Text = $"{totalVisible} of {total} compatible tabs visible · {unavailable} unavailable in this mode · saved for {project}";
     }
 
     private void ShowHiddenWorkspaceTabTemporarily(TabItem tab)
@@ -1311,6 +1410,8 @@ public partial class MainWindow : Window
         WorkspaceCategory.Overview => OverviewCategoryToggle,
         WorkspaceCategory.Git => GitCategoryToggle,
         WorkspaceCategory.Code => CodeCategoryToggle,
+        WorkspaceCategory.Backup => BackupCategoryToggle,
+        WorkspaceCategory.Sync => SyncCategoryToggle,
         WorkspaceCategory.Network => NetworkCategoryToggle,
         _ => ExtensionsCategoryToggle
     };
@@ -1320,6 +1421,8 @@ public partial class MainWindow : Window
         WorkspaceCategory.Overview => "Overview",
         WorkspaceCategory.Git => "Git",
         WorkspaceCategory.Code => "Code & Assets",
+        WorkspaceCategory.Backup => "Backup",
+        WorkspaceCategory.Sync => "Sync",
         WorkspaceCategory.Network => "Team & Network",
         _ => "Extensions & Help"
     };
@@ -1347,6 +1450,8 @@ public partial class MainWindow : Window
         "AiWorkspaceTab" => "AI Assistant",
         "McpWorkspaceTab" => "MCP",
         "SynchronizationWorkspaceTab" => "Syncthing",
+        "SyncConflictsWorkspaceTab" => "Sync conflicts",
+        "SharedSyncWorkspaceTab" => "Shared Sync folders",
         "VpnWorkspaceTab" => "WireGuard VPN",
         "SwarmWorkspaceTab" => "Swarm over VPN",
         "VpnFilesWorkspaceTab" => "VPN files",
@@ -1356,6 +1461,9 @@ public partial class MainWindow : Window
         "WorkInProgressWorkspaceTab" => "Work in progress",
         "PluginsWorkspaceTab" => "Plugins",
         "UnrealWorkspaceTab" => "Unreal",
+        "UnityWorkspaceTab" => "Unity",
+        "GodotWorkspaceTab" => "Godot",
+        "LoreWorkspaceTab" => "Lore",
         "UnrealBuildWorkspaceTab" => "Unreal builds",
         "DiagnosticsWorkspaceTab" => "Diagnostics",
         "HelpWorkspaceTab" => "Help",
@@ -1364,6 +1472,15 @@ public partial class MainWindow : Window
 
     private void NavigateToWorkspace(TabItem tab, Control? focusTarget = null)
     {
+        if (!IsWorkspaceTabSupportedByMode(tab))
+        {
+            TabItem fallback = PreferredWorkspaceTabForMode();
+            ApplyWorkspaceCategory(CategoryFor(fallback), selectDefault: false);
+            WorkspaceTabs.SelectedItem = fallback;
+            fallback.Focus();
+            return;
+        }
+
         if (!IsWorkspaceTabEnabled(tab))
         {
             ShowHiddenWorkspaceTabTemporarily(tab);
@@ -1383,6 +1500,12 @@ public partial class MainWindow : Window
 
     private void OnCodeCategoryClick(object? sender, RoutedEventArgs e) =>
         ApplyWorkspaceCategory(WorkspaceCategory.Code, selectDefault: true);
+
+    private void OnBackupCategoryClick(object? sender, RoutedEventArgs e) =>
+        ApplyWorkspaceCategory(WorkspaceCategory.Backup, selectDefault: true);
+
+    private void OnSyncCategoryClick(object? sender, RoutedEventArgs e) =>
+        ApplyWorkspaceCategory(WorkspaceCategory.Sync, selectDefault: true);
 
     private void OnNetworkCategoryClick(object? sender, RoutedEventArgs e) =>
         ApplyWorkspaceCategory(WorkspaceCategory.Network, selectDefault: true);
@@ -1404,6 +1527,8 @@ public partial class MainWindow : Window
         OverviewCategoryToggle.IsChecked = category == WorkspaceCategory.Overview;
         GitCategoryToggle.IsChecked = category == WorkspaceCategory.Git;
         CodeCategoryToggle.IsChecked = category == WorkspaceCategory.Code;
+        BackupCategoryToggle.IsChecked = category == WorkspaceCategory.Backup;
+        SyncCategoryToggle.IsChecked = category == WorkspaceCategory.Sync;
         NetworkCategoryToggle.IsChecked = category == WorkspaceCategory.Network;
         ExtensionsCategoryToggle.IsChecked = category == WorkspaceCategory.Extensions;
 
@@ -1426,14 +1551,91 @@ public partial class MainWindow : Window
         }
     }
 
-    private TabItem[] EnabledTabsFor(WorkspaceCategory category) =>
-        TabsFor(category).Where(IsWorkspaceTabEnabled).ToArray();
+    private TabItem[] EnabledTabsFor(WorkspaceCategory category)
+    {
+        return TabsFor(category).Where(IsWorkspaceTabEnabled).ToArray();
+    }
 
     private bool IsWorkspaceTabEnabled(TabItem tab) =>
-        ReferenceEquals(tab, ProjectWorkspaceTab) ||
-        ReferenceEquals(tab, VisibleTabsWorkspaceTab) ||
-        string.IsNullOrWhiteSpace(tab.Name) ||
-        !_hiddenWorkspaceTabNames.Contains(tab.Name);
+        IsWorkspaceTabSupportedByMode(tab) &&
+        (ReferenceEquals(tab, ProjectWorkspaceTab) ||
+         ReferenceEquals(tab, VisibleTabsWorkspaceTab) ||
+         string.IsNullOrWhiteSpace(tab.Name) ||
+         !_hiddenWorkspaceTabNames.Contains(tab.Name));
+
+    private bool IsWorkspaceTabSupportedByMode(TabItem tab)
+    {
+        CyRevision.Core.Configuration.ProjectFeatures? features = _viewModel?.SelectedProject?.Definition.Features;
+        if (features is null)
+            return ReferenceEquals(tab, ProjectWorkspaceTab) || ReferenceEquals(tab, VisibleTabsWorkspaceTab);
+
+        if (ReferenceEquals(tab, SynchronizationWorkspaceTab)) return features.PeerSyncEnabled;
+        if (ReferenceEquals(tab, SyncConflictsWorkspaceTab))
+            return features.PeerSyncEnabled || _viewModel?.SharedSyncFolders.Count > 0;
+        if (ReferenceEquals(tab, UnrealWorkspaceTab) || ReferenceEquals(tab, UnrealBuildWorkspaceTab))
+            return _viewModel is { IsUnrealIntegrationEnabled: true, IsUnrealProjectDetected: true };
+        if (ReferenceEquals(tab, UnityWorkspaceTab))
+            return _viewModel is { IsUnityIntegrationEnabled: true, IsUnityProjectDetected: true };
+        if (ReferenceEquals(tab, GodotWorkspaceTab))
+            return _viewModel is { IsGodotIntegrationEnabled: true, IsGodotProjectDetected: true };
+        if (ReferenceEquals(tab, LoreWorkspaceTab))
+            return _viewModel is { IsLoreIntegrationEnabled: true, IsLoreProjectDetected: true };
+        if (ReferenceEquals(tab, AiWorkspaceTab)) return _viewModel?.IsAiIntegrationEnabled == true;
+        return !IsGitWorkspaceTab(tab) || features.GitEnabled;
+    }
+
+    private bool IsGitWorkspaceTab(TabItem tab) =>
+        ReferenceEquals(tab, ChangesWorkspaceTab) ||
+        ReferenceEquals(tab, HistoryWorkspaceTab) ||
+        ReferenceEquals(tab, CompositionWorkspaceTab) ||
+        ReferenceEquals(tab, BranchesWorkspaceTab) ||
+        ReferenceEquals(tab, PullRequestsWorkspaceTab) ||
+        ReferenceEquals(tab, CiWorkspaceTab) ||
+        ReferenceEquals(tab, GitGraphsWorkspaceTab) ||
+        ReferenceEquals(tab, LfsLocksWorkspaceTab) ||
+        ReferenceEquals(tab, GitIgnoreWorkspaceTab) ||
+        ReferenceEquals(tab, GitLfsWorkspaceTab);
+
+    private TabItem PreferredWorkspaceTabForMode()
+    {
+        CyRevision.Core.Configuration.ProjectFeatures? features = _viewModel?.SelectedProject?.Definition.Features;
+        if (features?.GitEnabled == true && IsWorkspaceTabEnabled(ChangesWorkspaceTab)) return ChangesWorkspaceTab;
+        if (features?.PeerSyncEnabled == true && IsWorkspaceTabEnabled(SynchronizationWorkspaceTab)) return SynchronizationWorkspaceTab;
+        if (features?.BackupEnabled == true && IsWorkspaceTabEnabled(BackupsWorkspaceTab)) return BackupsWorkspaceTab;
+        return ProjectWorkspaceTab;
+    }
+
+    private void RefreshWorkspaceModeNavigation(bool selectPrimary)
+    {
+        foreach (WorkspaceTabVisibilityItem item in _workspaceTabVisibilityItems)
+        {
+            TabItem? tab = AllWorkspaceTabs().FirstOrDefault(candidate => candidate.Name == item.Id);
+            item.IsAvailableInMode = tab is not null && IsWorkspaceTabSupportedByMode(tab);
+        }
+
+        CyRevision.Core.Configuration.ProjectFeatures? features = _viewModel?.SelectedProject?.Definition.Features;
+        SyncCategoryToggle.Content = features switch
+        {
+            { GitEnabled: true, PeerSyncEnabled: true } => "Git + Sync",
+            { PeerSyncEnabled: true, BackupEnabled: true } => "Sync + Versions",
+            { PeerSyncEnabled: true } => "Sync",
+            _ => "Sync"
+        };
+        FetchRemotesButton.IsVisible = features?.GitEnabled == true;
+        PullButton.IsVisible = features?.GitEnabled == true;
+        PushButton.IsVisible = features?.GitEnabled == true;
+
+        UpdateWorkspaceCategoryToggleVisibility();
+        UpdateWorkspaceTabVisibilitySummary();
+
+        TabItem target = selectPrimary
+            ? PreferredWorkspaceTabForMode()
+            : WorkspaceTabs.SelectedItem is TabItem selected && IsWorkspaceTabEnabled(selected)
+                ? selected
+                : PreferredWorkspaceTabForMode();
+        ApplyWorkspaceCategory(CategoryFor(target), selectDefault: false);
+        WorkspaceTabs.SelectedItem = target;
+    }
 
     private WorkspaceCategory CategoryFor(TabItem tab)
     {
@@ -1454,16 +1656,17 @@ public partial class MainWindow : Window
         WorkspaceCategory.Git =>
         [
             ChangesWorkspaceTab, HistoryWorkspaceTab, CompositionWorkspaceTab, BranchesWorkspaceTab,
-            PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab, LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab,
-            BackupsWorkspaceTab
+            PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab, LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab
         ],
         WorkspaceCategory.Code => [SolutionExplorerWorkspaceTab, CodeWorkspaceTab, ConsoleWorkspaceTab, AssetDiffWorkspaceTab, AiWorkspaceTab, McpWorkspaceTab],
+        WorkspaceCategory.Backup => [BackupsWorkspaceTab],
+        WorkspaceCategory.Sync => [SynchronizationWorkspaceTab, SyncConflictsWorkspaceTab],
         WorkspaceCategory.Network =>
         [
-            SynchronizationWorkspaceTab, VpnWorkspaceTab, SwarmWorkspaceTab, VpnFilesWorkspaceTab, TeamChatWorkspaceTab,
+            SharedSyncWorkspaceTab, VpnWorkspaceTab, SwarmWorkspaceTab, VpnFilesWorkspaceTab, TeamChatWorkspaceTab,
             RemoteBuildsWorkspaceTab, DiscordWorkspaceTab, WorkInProgressWorkspaceTab
         ],
-        _ => [PluginsWorkspaceTab, UnrealWorkspaceTab, UnrealBuildWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab]
+        _ => [PluginsWorkspaceTab, UnrealWorkspaceTab, UnityWorkspaceTab, GodotWorkspaceTab, LoreWorkspaceTab, UnrealBuildWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab]
     };
 
     private TabItem[] AllWorkspaceTabs() =>
@@ -1472,10 +1675,10 @@ public partial class MainWindow : Window
         ChangesWorkspaceTab, SolutionExplorerWorkspaceTab, CodeWorkspaceTab,
         ConsoleWorkspaceTab, HistoryWorkspaceTab,
         CompositionWorkspaceTab, BranchesWorkspaceTab, PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab,
-        LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab, BackupsWorkspaceTab, SynchronizationWorkspaceTab, VpnWorkspaceTab,
+        LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab, BackupsWorkspaceTab, SynchronizationWorkspaceTab, SyncConflictsWorkspaceTab, SharedSyncWorkspaceTab, VpnWorkspaceTab,
         SwarmWorkspaceTab, VpnFilesWorkspaceTab, TeamChatWorkspaceTab, RemoteBuildsWorkspaceTab, DiscordWorkspaceTab,
         WorkInProgressWorkspaceTab, AssetDiffWorkspaceTab, AiWorkspaceTab, McpWorkspaceTab,
-        PluginsWorkspaceTab, UnrealWorkspaceTab, UnrealBuildWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab
+        PluginsWorkspaceTab, UnrealWorkspaceTab, UnityWorkspaceTab, GodotWorkspaceTab, LoreWorkspaceTab, UnrealBuildWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab
     ];
 
     private void OnShowProjectWorkspaceClick(object? sender, RoutedEventArgs e) =>
@@ -1624,6 +1827,8 @@ public partial class MainWindow : Window
                      OverviewCategoryToggle,
                      GitCategoryToggle,
                      CodeCategoryToggle,
+                     BackupCategoryToggle,
+                     SyncCategoryToggle,
                      NetworkCategoryToggle,
                      ExtensionsCategoryToggle
                  })
@@ -2384,8 +2589,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnApplyPresetClick(object? sender, RoutedEventArgs e) =>
+    private async void OnApplyPresetClick(object? sender, RoutedEventArgs e)
+    {
         await _viewModel.ApplySelectedPresetAsync();
+        RefreshWorkspaceModeNavigation(selectPrimary: true);
+        ConfigureRepositoryChangeMonitor();
+    }
 
     private async void OnPickSyncthingClick(object? sender, RoutedEventArgs e)
     {
@@ -2401,6 +2610,33 @@ public partial class MainWindow : Window
 
     private async void OnSaveSyncthingSettingsClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SaveSyncthingSettingsAsync();
+
+    private async void OnPickSyncSourceFolderClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Choose the folder synchronized by this project mode");
+        if (path is not null) _viewModel.SetSyncSourceFolderPath(path);
+    }
+
+    private async void OnPickSyncVersionStoreClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Choose a separate Syncthing version store");
+        if (path is not null) _viewModel.SetSyncVersionStorePath(path);
+    }
+
+    private async void OnPickSyncCompressedBackupFolderClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Choose the compressed Sync backup destination");
+        if (path is not null) _viewModel.SetSyncCompressedBackupPath(path);
+    }
+
+    private async void OnCreateCompressedSyncBackupClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CreateCompressedSyncBackupAsync();
+
+    private async void OnSaveVersionedSyncSettingsClick(object? sender, RoutedEventArgs e)
+    {
+        await _viewModel.SaveBackupSettingsAsync();
+        await _viewModel.SaveSyncthingSettingsAsync();
+    }
 
     private async void OnPickSharedSyncFolderClick(object? sender, RoutedEventArgs e)
     {
@@ -2419,6 +2655,75 @@ public partial class MainWindow : Window
 
     private async void OnRefreshSyncthingClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RefreshSyncthingWorkspaceAsync();
+
+    private void OnOpenSyncSetupWizardClick(object? sender, RoutedEventArgs e) =>
+        SynchronizationDetailTabs.SelectedItem = SyncSetupWizardTab;
+
+    private async void OnRefreshSyncHistoryClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshSyncHistoryAsync();
+
+    private async void OnClearSyncHistoryFileFilterClick(object? sender, RoutedEventArgs e)
+    {
+        _viewModel.ClearSyncHistoryFileFilter();
+        await _viewModel.RefreshSyncHistoryAsync();
+    }
+
+    private async void OnRefreshSyncConflictsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshSyncConflictsAsync();
+
+    private async void OnKeepOriginalSyncConflictClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedSyncConflict is not { } conflict) return;
+        if (await ShowConfirmationAsync(
+                "Keep current original",
+                $"Resolve the conflict for '{conflict.RelativeOriginalPath}' by keeping the current original? CyRevision will save both versions before removing the conflict copy.",
+                "Keep original"))
+        {
+            await _viewModel.ResolveSelectedSyncConflictAsync(SyncConflictResolution.KeepOriginal);
+        }
+    }
+
+    private async void OnUseSyncConflictVersionClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedSyncConflict is not { } conflict) return;
+        if (await ShowConfirmationAsync(
+                "Use conflict version",
+                $"Replace '{conflict.RelativeOriginalPath}' with the selected conflict version? CyRevision will save both versions before replacement.",
+                "Use conflict version"))
+        {
+            await _viewModel.ResolveSelectedSyncConflictAsync(SyncConflictResolution.UseConflict);
+        }
+    }
+
+    private async void OnRestoreSyncConflictClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedSyncConflictBackup is not { } backup) return;
+        if (await ShowConfirmationAsync(
+                "Restore conflict state",
+                $"Restore the original and conflict copy for '{backup.RelativeOriginalPath}' to their state before resolution? Current files at those two paths can be replaced.",
+                "Restore"))
+        {
+            await _viewModel.RestoreSelectedSyncConflictBackupAsync();
+        }
+    }
+
+    private async void OnCleanExpiredSyncConflictsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CleanExpiredSyncConflictBackupsAsync();
+
+    private async void OnShowSelectedFileSyncHistoryClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedCodeNode is not { IsDirectory: false, IsPlaceholder: false } node) return;
+        await _viewModel.FilterSyncHistoryForFileAsync(node.RelativePath);
+        if (_viewModel.SelectedProject?.Definition.Features.PeerSyncEnabled == true)
+        {
+            NavigateToWorkspace(SynchronizationWorkspaceTab);
+            SynchronizationDetailTabs.SelectedItem = SyncHistoryTab;
+        }
+        else
+        {
+            NavigateToWorkspace(SharedSyncWorkspaceTab);
+        }
+    }
 
     private async void OnScanSyncthingClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.ScanSyncthingFolderAsync();
@@ -2600,6 +2905,9 @@ public partial class MainWindow : Window
 
     private async void OnSendTeamChatClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SendTeamChatMessageAsync();
+
+    private async void OnCreateTeamChatChannelClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CreateTeamChatChannelAsync();
 
     private async void OnPickTeamChatSyncFolderClick(object? sender, RoutedEventArgs e)
     {
@@ -2821,6 +3129,85 @@ public partial class MainWindow : Window
 
     private async void OnConfigureUnrealBridgeClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.ConfigureUnrealBridgeAsync();
+
+    private async void OnPickUnityProjectClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select a Unity project");
+        if (path is not null) _viewModel.SetUnityProjectPath(path);
+    }
+
+    private async void OnInstallUnityPluginClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.InstallUnityEditorPluginAsync();
+
+    private async void OnConfigureUnityBridgeClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ConfigureUnityBridgeAsync();
+
+    private async void OnPickGodotProjectClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select a Godot project");
+        if (path is not null) _viewModel.SetGodotProjectPath(path);
+    }
+
+    private async void OnInstallGodotPluginClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.InstallGodotEditorPluginAsync();
+
+    private async void OnConfigureGodotBridgeClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ConfigureGodotBridgeAsync();
+
+    private async void OnPickLoreProjectClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickFolderAsync("Select a Lore or Unreal project");
+        if (path is not null) _viewModel.SetLoreProjectPath(path);
+    }
+
+    private async void OnDetectLoreCliClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.DetectLoreCliAsync();
+
+    private async void OnReadLoreStatusClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ReadLoreStatusAsync();
+
+    private async void OnScanLoreStatusClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Scan Lore working tree"),
+                Translate("Lore status --scan walks the working tree and persists refreshed dirty flags in Lore's local metadata. Project files are not changed. Continue?"),
+                Translate("Scan working tree")))
+        {
+            await _viewModel.ScanLoreStatusAsync();
+        }
+    }
+
+    private async void OnListLoreBranchesClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ListLoreBranchesAsync();
+
+    private async void OnStageLorePathClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.StageLorePathAsync();
+
+    private async void OnCommitLoreClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CommitLoreAsync();
+
+    private async void OnPushLoreClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Push Lore commits"),
+                Translate("Push the local Lore commits to the configured Lore server of record?"),
+                Translate("Push")))
+        {
+            await _viewModel.PushLoreAsync();
+        }
+    }
+
+    private async void OnSyncLoreClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SyncLoreAsync();
+
+    private async void OnCreateLoreBranchClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CreateLoreBranchAsync();
+
+    private async void OnSwitchLoreBranchClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SwitchLoreBranchAsync();
+
+    private async void OnInstallLoreUnrealCompanionClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.InstallLoreUnrealCompanionAsync();
 
     private async void OnSaveUnrealAssetInspectionClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SaveUnrealAssetInspectionOptionsAsync();

@@ -41,6 +41,9 @@ public sealed class PluginManagerTests
 
             await manager.EnableAsync(entry.Id);
             Assert.True(entry.IsEnabled, entry.Status);
+            Assert.Null(manager.GetPlugin<IUnrealIntegrationPlugin>());
+
+            manager.SetProjectScope([entry.Id]);
             Assert.NotNull(manager.GetPlugin<IUnrealIntegrationPlugin>());
 
             await manager.DisableAsync(entry.Id);

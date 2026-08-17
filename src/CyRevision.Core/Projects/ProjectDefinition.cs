@@ -15,7 +15,8 @@ public sealed record ProjectDefinition(
     string? ColdArchivePath = null,
     int? ColdArchiveAfterDays = null,
     int? SidebarOrder = null,
-    string? AccentColor = null)
+    string? AccentColor = null,
+    string[]? EnabledPluginIds = null)
 {
     public void Validate()
     {
@@ -68,6 +69,13 @@ public sealed record ProjectDefinition(
              !AccentColor.AsSpan(1).ToString().All(Uri.IsHexDigit)))
         {
             throw new InvalidOperationException("The project accent color must use the #RRGGBB format.");
+        }
+
+        if (EnabledPluginIds is not null &&
+            (EnabledPluginIds.Any(string.IsNullOrWhiteSpace) ||
+             EnabledPluginIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != EnabledPluginIds.Length))
+        {
+            throw new InvalidOperationException("Project plugin IDs must be non-empty and unique.");
         }
     }
 }

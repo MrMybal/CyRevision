@@ -12,6 +12,7 @@ public sealed class CyRevisionPluginManager : IAsyncDisposable
     private readonly CyRevisionPluginContext _baseContext;
     private readonly List<PluginCatalogEntry> _entries = [];
     private HashSet<string> _enabledPluginIds = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _activeProjectPluginIds = new(StringComparer.OrdinalIgnoreCase);
 
     public CyRevisionPluginManager(
         string applicationDirectory,
@@ -30,6 +31,18 @@ public sealed class CyRevisionPluginManager : IAsyncDisposable
     }
 
     public IReadOnlyList<PluginCatalogEntry> Entries => _entries;
+
+    public IReadOnlyList<string> LoadedPluginIds => _entries
+        .Where(entry => entry.Instance is not null)
+        .Select(entry => entry.Id)
+        .ToArray();
+
+    public void SetProjectScope(IEnumerable<string>? pluginIds)
+    {
+        _activeProjectPluginIds = new HashSet<string>(pluginIds ?? [], StringComparer.OrdinalIgnoreCase);
+    }
+
+    public bool IsActiveForCurrentProject(string pluginId) => _activeProjectPluginIds.Contains(pluginId);
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -74,11 +87,15 @@ public sealed class CyRevisionPluginManager : IAsyncDisposable
     }
 
     public TPlugin? GetPlugin<TPlugin>() where TPlugin : class, ICyRevisionPlugin =>
-        _entries.Select(entry => entry.Instance).OfType<TPlugin>().FirstOrDefault();
+        _entries
+            .Where(entry => _activeProjectPluginIds.Contains(entry.Id))
+            .Select(entry => entry.Instance)
+            .OfType<TPlugin>()
+            .FirstOrDefault();
 
     public IReadOnlyList<TExtension> GetExtensions<TExtension>() where TExtension : class =>
         _entries
-            .Where(entry => entry.IsEnabled)
+            .Where(entry => entry.IsEnabled && _activeProjectPluginIds.Contains(entry.Id))
             .Select(entry => entry.Instance)
             .OfType<TExtension>()
             .ToArray();
@@ -142,7 +159,12 @@ public sealed class CyRevisionPluginManager : IAsyncDisposable
             }
 
             PluginLoadContext loadContext = new(assemblyPath);
-            Assembly assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
+            using FileStream assemblyStream = new(
+                assemblyPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            Assembly assembly = loadContext.LoadFromStream(assemblyStream);
             Type type = assembly.GetType(entry.EntryType, true, false)!;
             if (Activator.CreateInstance(type) is not ICyRevisionPlugin plugin)
             {
@@ -251,6 +273,7 @@ public sealed class PluginCatalogEntry
     public string EntryAssembly { get; }
     public string EntryType { get; }
     public bool IsEnabled { get; internal set; }
+    public bool InstanceLoaded => Instance is not null;
     public string Status { get; internal set; }
     internal ICyRevisionPlugin? Instance { get; set; }
     internal PluginLoadContext? LoadContext { get; set; }

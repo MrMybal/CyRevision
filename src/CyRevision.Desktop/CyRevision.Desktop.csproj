@@ -29,6 +29,9 @@
     <ProjectReference Include="..\CyRevision.Git\CyRevision.Git.csproj" />
     <ProjectReference Include="..\CyRevision.Plugin.Abstractions\CyRevision.Plugin.Abstractions.csproj" />
     <ProjectReference Include="..\CyRevision.Plugin.Unreal\CyRevision.Plugin.Unreal.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\CyRevision.Plugin.Unity\CyRevision.Plugin.Unity.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\CyRevision.Plugin.Godot\CyRevision.Plugin.Godot.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\CyRevision.Plugin.Lore\CyRevision.Plugin.Lore.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.Plugin.AI\CyRevision.Plugin.AI.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.PullRequests\CyRevision.PullRequests.csproj" />
     <ProjectReference Include="..\CyRevision.RemoteBuild\CyRevision.RemoteBuild.csproj" />
@@ -50,9 +53,34 @@
           Link="Plugins\CyRevision.AIIntegration\cyrevision-plugin.json"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevision.UnityIntegration\cyrevision-plugin.json"
+          Link="Plugins\CyRevision.UnityIntegration\cyrevision-plugin.json"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevision.GodotIntegration\cyrevision-plugin.json"
+          Link="Plugins\CyRevision.GodotIntegration\cyrevision-plugin.json"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevision.LoreIntegration\cyrevision-plugin.json"
+          Link="Plugins\CyRevision.LoreIntegration\cyrevision-plugin.json"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\plugins\CyRevisionUnreal\**\*"
           Exclude="..\..\plugins\CyRevisionUnreal\Binaries\**\*;..\..\plugins\CyRevisionUnreal\Intermediate\**\*;..\..\plugins\CyRevisionUnreal\Saved\**\*"
           Link="PluginPayloads\Unreal\CyRevisionUnreal\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevisionUnity\**\*"
+          Link="PluginPayloads\Unity\CyRevisionUnity\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevisionGodot\**\*"
+          Link="PluginPayloads\Godot\CyRevisionGodot\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevisionLore\**\*"
+          Exclude="..\..\plugins\CyRevisionLore\Binaries\**\*;..\..\plugins\CyRevisionLore\Intermediate\**\*;..\..\plugins\CyRevisionLore\Saved\**\*"
+          Link="PluginPayloads\Lore\CyRevisionLore\%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
     <AvaloniaResource Include="Assets\**" />
@@ -61,30 +89,60 @@
   <Target Name="CopyCyRevisionPluginAssembliesToOutput" AfterTargets="Build">
     <PropertyGroup>
       <UnrealPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Unreal\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Unreal.dll</UnrealPluginAssembly>
+      <UnityPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Unity\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Unity.dll</UnityPluginAssembly>
+      <GodotPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Godot\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Godot.dll</GodotPluginAssembly>
       <AiPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.AI\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.AI.dll</AiPluginAssembly>
+      <LorePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Lore\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Lore.dll</LorePluginAssembly>
     </PropertyGroup>
     <MakeDir Directories="$(OutDir)Plugins\CyRevision.UnrealIntegration" />
     <Copy SourceFiles="$(UnrealPluginAssembly)"
           DestinationFolder="$(OutDir)Plugins\CyRevision.UnrealIntegration"
           SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(OutDir)Plugins\CyRevision.UnityIntegration" />
+    <Copy SourceFiles="$(UnityPluginAssembly)"
+          DestinationFolder="$(OutDir)Plugins\CyRevision.UnityIntegration"
+          SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(OutDir)Plugins\CyRevision.GodotIntegration" />
+    <Copy SourceFiles="$(GodotPluginAssembly)"
+          DestinationFolder="$(OutDir)Plugins\CyRevision.GodotIntegration"
+          SkipUnchangedFiles="true" />
     <MakeDir Directories="$(OutDir)Plugins\CyRevision.AIIntegration" />
     <Copy SourceFiles="$(AiPluginAssembly)"
           DestinationFolder="$(OutDir)Plugins\CyRevision.AIIntegration"
+          SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(OutDir)Plugins\CyRevision.LoreIntegration" />
+    <Copy SourceFiles="$(LorePluginAssembly)"
+          DestinationFolder="$(OutDir)Plugins\CyRevision.LoreIntegration"
           SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="CopyCyRevisionPluginAssembliesToPublish" AfterTargets="Publish">
     <PropertyGroup>
       <UnrealPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Unreal\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Unreal.dll</UnrealPluginAssembly>
+      <UnityPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Unity\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Unity.dll</UnityPluginAssembly>
+      <GodotPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Godot\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Godot.dll</GodotPluginAssembly>
       <AiPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.AI\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.AI.dll</AiPluginAssembly>
+      <LorePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Lore\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Lore.dll</LorePluginAssembly>
     </PropertyGroup>
     <MakeDir Directories="$(PublishDir)Plugins\CyRevision.UnrealIntegration" />
     <Copy SourceFiles="$(UnrealPluginAssembly)"
           DestinationFolder="$(PublishDir)Plugins\CyRevision.UnrealIntegration"
           SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(PublishDir)Plugins\CyRevision.UnityIntegration" />
+    <Copy SourceFiles="$(UnityPluginAssembly)"
+          DestinationFolder="$(PublishDir)Plugins\CyRevision.UnityIntegration"
+          SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(PublishDir)Plugins\CyRevision.GodotIntegration" />
+    <Copy SourceFiles="$(GodotPluginAssembly)"
+          DestinationFolder="$(PublishDir)Plugins\CyRevision.GodotIntegration"
+          SkipUnchangedFiles="true" />
     <MakeDir Directories="$(PublishDir)Plugins\CyRevision.AIIntegration" />
     <Copy SourceFiles="$(AiPluginAssembly)"
           DestinationFolder="$(PublishDir)Plugins\CyRevision.AIIntegration"
+          SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(PublishDir)Plugins\CyRevision.LoreIntegration" />
+    <Copy SourceFiles="$(LorePluginAssembly)"
+          DestinationFolder="$(PublishDir)Plugins\CyRevision.LoreIntegration"
           SkipUnchangedFiles="true" />
   </Target>
 </Project>

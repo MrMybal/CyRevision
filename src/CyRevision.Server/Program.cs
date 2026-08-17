@@ -24,6 +24,7 @@ builder.Services.AddSingleton<IGitPeerExchangeService, GitPeerExchangeService>()
 builder.Services.AddSingleton<ISyncthingProfileStore>(_ => new JsonSyncthingProfileStore(options.SyncthingDirectory));
 builder.Services.AddSingleton<IVpnProfileStore>(_ => new JsonVpnProfileStore(options.VpnDirectory));
 builder.Services.AddSingleton<WireGuardKeyService>();
+builder.Services.AddSingleton(_ => new TeamChatServerRepository(options.TeamChatDirectory));
 builder.Services.AddSingleton(_ => new WireGuardConfigService(options.VpnDirectory));
 builder.Services.AddSingleton(provider => new ManagedWireGuardEngine(
     options.VpnDirectory,
@@ -97,6 +98,9 @@ app.MapGet("/api/v1/capabilities", () => Results.Ok(new
     backup = true,
     wireGuardVpn = true,
     vpnOnlyPeers = true,
+    projectTeamChat = true,
+    projectChatChannels = true,
+    projectChatAttachments = true,
     unrealSwarmPreset = true,
     presets = ProjectPresets.All.Select(preset => new { preset.Kind, preset.Name, preset.Description })
 }));
@@ -296,6 +300,35 @@ app.MapDelete("/api/v1/projects/{projectId:guid}/peers/{deviceId:guid}", async (
     await runtime.RevokePeerAsync(projectId, deviceId, cancellationToken);
     return Results.NoContent();
 });
+
+app.MapGet("/api/v1/projects/{projectId:guid}/chat/snapshot", async (
+    Guid projectId,
+    string? user,
+    DateTimeOffset? since,
+    TeamChatServerRepository chat,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await chat.ReadSnapshotAsync(projectId, user ?? "CyRevision user", since, cancellationToken)));
+
+app.MapPost("/api/v1/projects/{projectId:guid}/chat/messages", async (
+    Guid projectId,
+    TeamChatServerSendRequest request,
+    TeamChatServerRepository chat,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await chat.SendAsync(projectId, request, cancellationToken: cancellationToken)));
+
+app.MapPost("/api/v1/projects/{projectId:guid}/chat/channels", async (
+    Guid projectId,
+    TeamChatServerCreateChannelRequest request,
+    TeamChatServerRepository chat,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await chat.CreateChannelAsync(projectId, request, cancellationToken)));
+
+app.MapGet("/api/v1/projects/{projectId:guid}/chat/messages/{messageId:guid}/attachment", async (
+    Guid projectId,
+    Guid messageId,
+    TeamChatServerRepository chat,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await chat.ReadAttachmentAsync(projectId, messageId, cancellationToken)));
 
 app.MapPost("/api/v1/projects/{projectId:guid}/git/exchange", async (
     Guid projectId,

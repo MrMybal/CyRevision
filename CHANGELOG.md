@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.1.16 Alpha — 2026-08-17
+
+- made plugin activation project-scoped, including project-specific tabs and capabilities without disrupting plugins used by other open projects;
+- added optional Unity and Godot integrations with project detection, installation helpers and local CyRevision bridges;
+- added an optional Lore project-management integration with a CyRevision control surface and bundled Unreal plugin installer;
+- expanded Unreal asset inspection with faster cached metadata, semantic Material and package differences, Content Browser filters and work-in-progress indicators;
+- reorganized workspaces by operating mode: Git tools are hidden outside Git modes, Backup remains directly available, and Git + Sync receives a dedicated signed-exchange workspace;
+- added optional shared-folder synchronization to every project plus mode-specific Sync + Versions configuration, searchable synchronization history and a guided setup wizard;
+- added safe synchronization conflict resolution with retained recovery copies and per-file history entry points;
+- improved team chat with a configurable self-hosted server backend, richer messages and persistent project-scoped conversations;
+- fixed excessive empty space in Solution Explorer and clarified project-specific plugin activation in the interface and documentation.
+
 ## 0.1.15 Alpha — 2026-08-15
 
 - added project-scoped AI conversations with persistent history, optional Markdown rendering, reusable prompts, isolated worktrees and automatic local Codex availability detection;

@@ -29,6 +29,16 @@ public sealed record SyncthingProfile(
 
     public bool FileWatcherEnabled { get; init; } = true;
 
+    public string? ProjectFolderPath { get; init; }
+
+    public string? VersioningDirectory { get; init; }
+
+    public string? CompressedBackupDirectory { get; init; }
+
+    public bool CompressedBackupEnabled { get; init; }
+
+    public int ConflictBackupRetentionDays { get; init; } = 30;
+
     public SyncthingIsolationOptions ToIsolationOptions(bool enabled = true) => new(
         ExecutablePath,
         ConfigurationDirectory,

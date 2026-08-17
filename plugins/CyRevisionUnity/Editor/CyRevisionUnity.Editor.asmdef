@@ -1,0 +1,6 @@
+{
+  "name": "CyRevisionUnity.Editor",
+  "rootNamespace": "CyRevision.Unity",
+  "includePlatforms": ["Editor"],
+  "autoReferenced": true
+}

@@ -1,0 +1,9 @@
+{
+  "name": "com.cyrevision.editor",
+  "version": "0.1.0",
+  "displayName": "CyRevision Editor Companion",
+  "description": "Autonomous Unity Editor connection to CyRevision over an authenticated loopback bridge.",
+  "unity": "2021.3",
+  "keywords": ["version control", "git", "lfs", "cyrevision"],
+  "author": { "name": "CyRevision" }
+}

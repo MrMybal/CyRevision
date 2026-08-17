@@ -20,7 +20,8 @@ public sealed class JsonProjectCatalogTests : IDisposable
             RetentionPolicy.KeepForever,
             CreatedAt: DateTimeOffset.UtcNow,
             SidebarOrder: 3,
-            AccentColor: "#4C9BE8");
+            AccentColor: "#4C9BE8",
+            EnabledPluginIds: ["cyrevision.ai", "cyrevision.unreal"]);
 
         await catalog.UpsertAsync(project);
         ProjectDefinition? restored = await catalog.FindByIdAsync(project.Id);
@@ -31,6 +32,7 @@ public sealed class JsonProjectCatalogTests : IDisposable
         Assert.Equal(RetentionMode.Permanent, restored.Retention.Mode);
         Assert.Equal(3, restored.SidebarOrder);
         Assert.Equal("#4C9BE8", restored.AccentColor);
+        Assert.Equal(["cyrevision.ai", "cyrevision.unreal"], restored.EnabledPluginIds);
     }
 
     [Theory]

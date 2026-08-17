@@ -351,6 +351,152 @@ public interface IUnrealIntegrationPlugin : ICyRevisionPlugin
         CancellationToken cancellationToken = default);
 }
 
+public enum GameEngineKind
+{
+    Unity,
+    Godot
+}
+
+public sealed record GameEngineProjectInspection(
+    GameEngineKind Engine,
+    bool IsValid,
+    string ProjectRoot,
+    string ProjectName,
+    string EngineVersion,
+    bool IsCompatible,
+    string CompatibilityStatus,
+    IReadOnlyList<string> SupportedVersions,
+    bool IsEditorPluginInstalled,
+    string? InstalledPluginVersion,
+    string? BundledPluginVersion,
+    bool UpdateAvailable,
+    string Summary);
+
+public sealed record GameEnginePluginInstallationResult(
+    bool Succeeded,
+    GameEngineKind Engine,
+    string ProjectRoot,
+    string DestinationDirectory,
+    string? BackupDirectory,
+    string InstalledVersion,
+    string Message);
+
+public sealed record GameEngineBridgeStatus(
+    GameEngineKind Engine,
+    bool IsRunning,
+    string Endpoint,
+    int AuthorizedProjectCount,
+    string Detail);
+
+public sealed class GameEngineProjectChangedEventArgs(
+    GameEngineKind engine,
+    string projectRoot,
+    string action) : EventArgs
+{
+    public GameEngineKind Engine { get; } = engine;
+
+    public string ProjectRoot { get; } = projectRoot;
+
+    public string Action { get; } = action;
+}
+
+/// <summary>
+/// Optional integration implemented by editor companions such as Unity and Godot.
+/// The first contract deliberately covers project detection, installation and a private
+/// loopback bridge only; file preview providers remain independent capabilities.
+/// </summary>
+public interface IGameEngineIntegrationPlugin : ICyRevisionPlugin
+{
+    event EventHandler<GameEngineProjectChangedEventArgs>? ProjectChanged;
+
+    GameEngineKind Engine { get; }
+
+    GameEngineBridgeStatus BridgeStatus { get; }
+
+    GameEngineProjectInspection InspectProject(string path);
+
+    Task<GameEnginePluginInstallationResult> InstallOrUpdateEditorPluginAsync(
+        string projectPath,
+        string cyRevisionExecutablePath,
+        CancellationToken cancellationToken = default);
+
+    Task<GameEngineBridgeStatus> ConfigureProjectConnectionAsync(
+        string projectPath,
+        string cyRevisionExecutablePath,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record LoreCliDetection(
+    bool IsAvailable,
+    string ExecutablePath,
+    string Version,
+    string Summary);
+
+public sealed record LoreProjectInspection(
+    bool IsProject,
+    string ProjectRoot,
+    string ConfigurationFile,
+    string ServerUrl,
+    string RepositoryName,
+    string CurrentBranch,
+    bool UnrealProjectDetected,
+    bool UnrealCompanionInstalled,
+    string? UnrealCompanionVersion,
+    string Summary);
+
+public sealed record LoreCommandResult(
+    bool Succeeded,
+    int ExitCode,
+    string StandardOutput,
+    string StandardError,
+    TimeSpan Duration,
+    string Summary);
+
+public sealed record LoreUnrealCompanionInstallationResult(
+    bool Succeeded,
+    string ProjectRoot,
+    string DestinationDirectory,
+    string? BackupDirectory,
+    string InstalledVersion,
+    string Message);
+
+/// <summary>
+/// Optional project-management integration for Epic Games Lore. Lore remains an
+/// external server/CLI product; CyRevision never embeds credentials or silently
+/// scans/mutates a Lore workspace.
+/// </summary>
+public interface ILoreIntegrationPlugin : ICyRevisionPlugin
+{
+    LoreCliDetection DetectCli(string? configuredPath = null);
+
+    Task SaveCliPathAsync(
+        string executablePath,
+        CancellationToken cancellationToken = default);
+
+    LoreProjectInspection InspectProject(string path);
+
+    Task<LoreCommandResult> ReadStatusAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default);
+
+    Task<LoreCommandResult> ScanStatusAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default);
+
+    Task<LoreCommandResult> ListBranchesAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default);
+
+    Task<LoreCommandResult> RunProjectCommandAsync(
+        string projectPath,
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken = default);
+
+    Task<LoreUnrealCompanionInstallationResult> InstallOrUpdateUnrealCompanionAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default);
+}
+
 [Flags]
 public enum AiWorkspacePermission
 {
