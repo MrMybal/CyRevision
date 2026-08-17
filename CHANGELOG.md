@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.17 Alpha — 2026-08-17
+
+- fixed the Linux validation build by forcing synchronization-history reversal through LINQ instead of the platform-specific in-place array overload;
+- aligned local and GitHub Actions builds on the .NET 9 SDK required by Avalonia 12.1 source generators, while application binaries continue to target .NET 8;
+- added a repository `global.json` so developer, validation and packaging builds use the same compiler generation.
+
 ## 0.1.16 Alpha — 2026-08-17
 
 - made plugin activation project-scoped, including project-specific tabs and capabilities without disrupting plugins used by other open projects;
