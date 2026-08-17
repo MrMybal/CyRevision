@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "cyrevision.lore",
+  "name": "Lore Project Management",
+  "version": "0.1.0",
+  "description": "Experimental Epic Games Lore CLI workspace management, status, branches, and installable Unreal companion.",
+  "category": "Project management",
+  "entryAssembly": "CyRevision.Plugin.Lore.dll",
+  "entryType": "CyRevision.Plugin.Lore.LoreIntegrationPlugin",
+  "enabledByDefault": false
+}

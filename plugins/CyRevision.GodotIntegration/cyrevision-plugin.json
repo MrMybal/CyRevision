@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "cyrevision.godot",
+  "name": "Godot Integration",
+  "version": "0.1.0",
+  "description": "Optional Godot 4 project detection, autonomous Editor dock installer, and authenticated local bridge. Asset previews are not included in this first version.",
+  "category": "Game engines",
+  "entryAssembly": "CyRevision.Plugin.Godot.dll",
+  "entryType": "CyRevision.Plugin.Godot.GodotIntegrationPlugin",
+  "enabledByDefault": false
+}

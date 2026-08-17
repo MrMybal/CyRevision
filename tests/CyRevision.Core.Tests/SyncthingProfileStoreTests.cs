@@ -25,7 +25,12 @@ public sealed class SyncthingProfileStoreTests : IDisposable
             SharedFolders = [sharedFolder],
             FolderMode = SyncthingFolderMode.SendOnly,
             RescanIntervalSeconds = 120,
-            FileWatcherEnabled = false
+            FileWatcherEnabled = false,
+            ProjectFolderPath = Path.Combine(_root, "source"),
+            VersioningDirectory = Path.Combine(_root, "versions"),
+            CompressedBackupDirectory = Path.Combine(_root, "archives"),
+            CompressedBackupEnabled = true,
+            ConflictBackupRetentionDays = 45
         });
         updated = await store.CreateOrUpdateAsync(projectId, executable, exchange);
         SyncthingProfile? loaded = await store.GetAsync(projectId);
@@ -39,6 +44,11 @@ public sealed class SyncthingProfileStoreTests : IDisposable
         Assert.Equal(updated.ApiKey, loaded.ApiKey);
         Assert.Equal(updated.FolderMode, loaded.FolderMode);
         Assert.Equal(SyncthingFolderMode.SendOnly, loaded.FolderMode);
+        Assert.Equal(Path.Combine(_root, "source"), loaded.ProjectFolderPath);
+        Assert.Equal(Path.Combine(_root, "versions"), loaded.VersioningDirectory);
+        Assert.Equal(Path.Combine(_root, "archives"), loaded.CompressedBackupDirectory);
+        Assert.True(loaded.CompressedBackupEnabled);
+        Assert.Equal(45, loaded.ConflictBackupRetentionDays);
         Assert.Equal(sharedFolder, Assert.Single(loaded.SharedFolders));
         created.ToIsolationOptions().Validate();
         Assert.NotEqual(Path.GetFullPath(exchange), Path.GetFullPath(created.ConfigurationDirectory));

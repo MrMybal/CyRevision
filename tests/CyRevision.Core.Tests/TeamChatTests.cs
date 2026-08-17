@@ -133,6 +133,56 @@ public sealed class TeamChatTests : IDisposable
     }
 
     [Fact]
+    public async Task VpnTransportKeepsChannelsSeparated()
+    {
+        Guid projectId = Guid.NewGuid();
+        int port = ReservePort();
+        TeamChatProfile general = CreateProfile(projectId) with
+        {
+            Port = port,
+            PeerEndpoint = $"127.0.0.1:{port}",
+            SaveConversations = false,
+            SelectedChannelId = "general"
+        };
+        TeamChatProfile builds = general with { SelectedChannelId = "builds" };
+        TeamChatService service = new(Path.Combine(_root, "channel-data"));
+        await using TeamChatHost host = await service.StartVpnHostAsync(general);
+
+        await service.SendVpnAsync(general, "Hello team", null);
+        await service.SendVpnAsync(builds, "Windows build ready", null);
+
+        Assert.Equal("Hello team", Assert.Single(await service.ReadVpnAsync(general)).Text);
+        Assert.Equal("Windows build ready", Assert.Single(await service.ReadVpnAsync(builds)).Text);
+    }
+
+    [Fact]
+    public async Task PrivateServerRepositoryPersistsChannelsMessagesAndAttachments()
+    {
+        Guid projectId = Guid.NewGuid();
+        TeamChatServerRepository repository = new(Path.Combine(_root, "private-server"));
+        TeamChatChannel channel = await repository.CreateChannelAsync(
+            projectId,
+            new TeamChatServerCreateChannelRequest("art-review", "Review textures and materials"));
+        byte[] attachment = [7, 4, 2, 1];
+        string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(attachment)).ToLowerInvariant();
+
+        TeamChatMessage sent = await repository.SendAsync(
+            projectId,
+            new TeamChatServerSendRequest("Alice", channel.Id, "Material update", "preview.png", attachment, hash));
+        TeamChatSnapshot snapshot = await repository.ReadSnapshotAsync(projectId, "Bob");
+        TeamChatServerAttachment downloaded = await repository.ReadAttachmentAsync(projectId, sent.Id);
+
+        Assert.Contains(snapshot.Channels!, item => item.Id == "general");
+        Assert.Contains(snapshot.Channels!, item => item.Id == "art-review");
+        TeamChatMessage loaded = Assert.Single(snapshot.Messages);
+        Assert.Equal("art-review", loaded.ChannelId);
+        Assert.Equal("Material update", loaded.Text);
+        Assert.Contains(snapshot.Participants, item => item.DisplayName == "Bob" && item.IsOnline);
+        Assert.Equal("preview.png", downloaded.Name);
+        Assert.Equal(attachment, downloaded.Bytes);
+    }
+
+    [Fact]
     public async Task IncrementalIndexKeepsTenThousandMessageConversationResponsive()
     {
         const int messageCount = 10_000;

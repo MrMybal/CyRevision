@@ -36,7 +36,8 @@ public sealed record SyncthingFolderConfiguration(
     int? CleanoutDays = null,
     bool Paused = false,
     int RescanIntervalSeconds = 60,
-    bool FileWatcherEnabled = true);
+    bool FileWatcherEnabled = true,
+    string? VersioningPath = null);
 
 public sealed record SyncthingFolderStatus(
     string FolderId,
@@ -387,7 +388,10 @@ public sealed class SyncthingApiClient : IDisposable
             versioning = new
             {
                 type = folder.VersioningType,
-                @params = versioningParameters
+                @params = versioningParameters,
+                fsPath = string.IsNullOrWhiteSpace(folder.VersioningPath)
+                    ? string.Empty
+                    : Path.GetFullPath(folder.VersioningPath)
             }
         };
         await PutJsonAsync("rest/config/folders/" + Uri.EscapeDataString(folder.FolderId), payload, cancellationToken);

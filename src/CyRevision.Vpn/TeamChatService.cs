@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -9,13 +11,16 @@ namespace CyRevision.Vpn;
 public sealed class TeamChatService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static readonly HttpClient SharedHttpClient = new() { Timeout = TimeSpan.FromSeconds(45) };
     private readonly string _dataDirectory;
     private readonly TeamChatIncrementalStore _syncIndex;
+    private readonly HttpClient _httpClient;
 
-    public TeamChatService(string dataDirectory)
+    public TeamChatService(string dataDirectory, HttpClient? httpClient = null)
     {
         _dataDirectory = Path.GetFullPath(dataDirectory);
         _syncIndex = new TeamChatIncrementalStore(_dataDirectory);
+        _httpClient = httpClient ?? SharedHttpClient;
     }
 
     public async Task<TeamChatHost> StartVpnHostAsync(
@@ -38,7 +43,7 @@ public sealed class TeamChatService
         {
             TeamChatWireResponse response = await ExchangeAsync(
                 profile,
-                new TeamChatWireRequest("send", profile.AccessToken, null, item, profile.DisplayName, null),
+                new TeamChatWireRequest("send", profile.AccessToken, null, item, profile.DisplayName, null, profile.SelectedChannelId),
                 cancellationToken);
             if (!response.Succeeded) throw new InvalidOperationException(response.Error);
             await FlushOutboxAsync(profile, cancellationToken).ConfigureAwait(false);
@@ -67,7 +72,7 @@ public sealed class TeamChatService
         await FlushOutboxAsync(profile, cancellationToken).ConfigureAwait(false);
         TeamChatWireResponse response = await ExchangeAsync(
             profile,
-            new TeamChatWireRequest("list", profile.AccessToken, since, null, profile.DisplayName, null),
+            new TeamChatWireRequest("list", profile.AccessToken, since, null, profile.DisplayName, null, profile.SelectedChannelId),
             cancellationToken);
         if (!response.Succeeded) throw new InvalidOperationException(response.Error);
         List<TeamChatMessage> messages = [];
@@ -83,7 +88,7 @@ public sealed class TeamChatService
     {
         await FlushOutboxAsync(profile, cancellationToken).ConfigureAwait(false);
         TeamChatWireResponse response = await ExchangeAsync(profile,
-            new TeamChatWireRequest("list", profile.AccessToken, since, null, profile.DisplayName, null), cancellationToken)
+            new TeamChatWireRequest("list", profile.AccessToken, since, null, profile.DisplayName, null, profile.SelectedChannelId), cancellationToken)
             .ConfigureAwait(false);
         if (!response.Succeeded) throw new InvalidOperationException(response.Error);
         TeamChatMessage[] messages = response.Messages.Select(item => item.Message with
@@ -99,7 +104,7 @@ public sealed class TeamChatService
         if (string.IsNullOrWhiteSpace(message.AttachmentName)) return message;
         if (!string.IsNullOrWhiteSpace(message.AttachmentLocalPath) && File.Exists(message.AttachmentLocalPath)) return message;
         TeamChatWireResponse response = await ExchangeAsync(profile,
-            new TeamChatWireRequest("attachment", profile.AccessToken, null, null, profile.DisplayName, message.Id),
+            new TeamChatWireRequest("attachment", profile.AccessToken, null, null, profile.DisplayName, message.Id, message.ChannelId),
             cancellationToken).ConfigureAwait(false);
         if (!response.Succeeded) throw new InvalidOperationException(response.Error);
         TeamChatWireItem item = response.Messages.Single();
@@ -180,6 +185,100 @@ public sealed class TeamChatService
         return message with { AttachmentLocalPath = destination };
     }
 
+    public async Task<TeamChatMessage> SendServerAsync(
+        TeamChatProfile profile,
+        string text,
+        string? attachmentPath,
+        CancellationToken cancellationToken = default)
+    {
+        TeamChatWireItem item = await CreateWireItemAsync(profile, text, attachmentPath, cancellationToken)
+            .ConfigureAwait(false);
+        TeamChatServerSendRequest payload = new(
+            profile.DisplayName,
+            item.Message.ChannelId,
+            item.Message.Text,
+            item.Message.AttachmentName,
+            item.AttachmentBytes,
+            item.Message.AttachmentSha256);
+        using HttpRequestMessage request = await CreateServerRequestAsync(
+            profile,
+            HttpMethod.Post,
+            $"api/v1/projects/{profile.ProjectId:D}/chat/messages",
+            cancellationToken).ConfigureAwait(false);
+        request.Content = JsonContent.Create(payload, options: JsonOptions);
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        TeamChatMessage message = await response.Content.ReadFromJsonAsync<TeamChatMessage>(JsonOptions, cancellationToken)
+                                  ?? throw new InvalidDataException("The private chat server returned an empty message.");
+        return message with { DeliveryState = TeamChatDeliveryState.Delivered, DeliveryDetail = "Stored by private server" };
+    }
+
+    public async Task<TeamChatSnapshot> ReadServerSnapshotAsync(
+        TeamChatProfile profile,
+        DateTimeOffset? since = null,
+        CancellationToken cancellationToken = default)
+    {
+        string relative = $"api/v1/projects/{profile.ProjectId:D}/chat/snapshot?user={Uri.EscapeDataString(profile.DisplayName)}";
+        if (since is not null) relative += $"&since={Uri.EscapeDataString(since.Value.ToString("O"))}";
+        using HttpRequestMessage request = await CreateServerRequestAsync(profile, HttpMethod.Get, relative, cancellationToken)
+            .ConfigureAwait(false);
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<TeamChatSnapshot>(JsonOptions, cancellationToken)
+               ?? throw new InvalidDataException("The private chat server returned an empty conversation.");
+    }
+
+    public async Task<TeamChatChannel> CreateServerChannelAsync(
+        TeamChatProfile profile,
+        string name,
+        string topic,
+        CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = await CreateServerRequestAsync(
+            profile,
+            HttpMethod.Post,
+            $"api/v1/projects/{profile.ProjectId:D}/chat/channels",
+            cancellationToken).ConfigureAwait(false);
+        request.Content = JsonContent.Create(new TeamChatServerCreateChannelRequest(name, topic), options: JsonOptions);
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<TeamChatChannel>(JsonOptions, cancellationToken)
+               ?? throw new InvalidDataException("The private chat server returned an empty channel.");
+    }
+
+    public async Task<TeamChatMessage> DownloadServerAttachmentAsync(
+        TeamChatProfile profile,
+        TeamChatMessage message,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(message.AttachmentName)) return message;
+        if (!string.IsNullOrWhiteSpace(message.AttachmentLocalPath) && File.Exists(message.AttachmentLocalPath)) return message;
+        using HttpRequestMessage request = await CreateServerRequestAsync(
+            profile,
+            HttpMethod.Get,
+            $"api/v1/projects/{profile.ProjectId:D}/chat/messages/{message.Id:D}/attachment",
+            cancellationToken).ConfigureAwait(false);
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        TeamChatServerAttachment attachment = await response.Content.ReadFromJsonAsync<TeamChatServerAttachment>(JsonOptions, cancellationToken)
+                                              ?? throw new InvalidDataException("The private chat server returned an empty attachment.");
+        if (attachment.Bytes.LongLength > profile.MaxAttachmentBytes)
+            throw new InvalidDataException("Downloaded attachment exceeds the configured size limit.");
+        string actual = Convert.ToHexString(SHA256.HashData(attachment.Bytes)).ToLowerInvariant();
+        if (!string.Equals(actual, attachment.Sha256, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(actual, message.AttachmentSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Downloaded attachment failed SHA-256 verification.");
+        string directory = Path.Combine(ProjectDirectory(profile.ProjectId), "received", message.Id.ToString("N"));
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, SafeFileName(attachment.Name));
+        await File.WriteAllBytesAsync(path, attachment.Bytes, cancellationToken).ConfigureAwait(false);
+        return message with { AttachmentLocalPath = path };
+    }
+
     private async Task<TeamChatWireItem> CreateWireItemAsync(
         TeamChatProfile profile,
         string text,
@@ -203,8 +302,58 @@ public sealed class TeamChatService
         }
         TeamChatMessage message = new(
             Guid.NewGuid(), profile.ProjectId, profile.DisplayName.Trim(), text.Trim(), DateTimeOffset.UtcNow,
-            name, bytes?.LongLength ?? 0, hash, string.Empty, string.Empty);
+            name, bytes?.LongLength ?? 0, hash, string.Empty, string.Empty,
+            ChannelId: NormalizeChannelId(profile.SelectedChannelId));
         return new TeamChatWireItem(message, bytes);
+    }
+
+    private async Task<HttpRequestMessage> CreateServerRequestAsync(
+        TeamChatProfile profile,
+        HttpMethod method,
+        string relativePath,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(profile.ServerApiToken))
+            throw new InvalidOperationException("Enter the private CyRevision server access token.");
+        Uri baseUri = await ValidateServerUriAsync(profile, cancellationToken).ConfigureAwait(false);
+        HttpRequestMessage request = new(method, new Uri(baseUri, relativePath));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", profile.ServerApiToken.Trim());
+        request.Headers.Add("X-CyRevision-Chat-User", profile.DisplayName.Trim());
+        return request;
+    }
+
+    private static async Task<Uri> ValidateServerUriAsync(TeamChatProfile profile, CancellationToken cancellationToken)
+    {
+        if (!Uri.TryCreate(profile.ServerBaseUrl.Trim().TrimEnd('/') + "/", UriKind.Absolute, out Uri? uri) ||
+            uri.Scheme is not ("https" or "http"))
+            throw new InvalidDataException("Private server URL must be an absolute HTTP or HTTPS URL.");
+        if (uri.Scheme == "https") return uri;
+        if (!profile.AllowPrivateServerHttp)
+            throw new InvalidOperationException("HTTPS is required. Enable private HTTP only for a trusted LAN or VPN address.");
+        IPAddress[] addresses = await Dns.GetHostAddressesAsync(uri.Host, cancellationToken).ConfigureAwait(false);
+        if (addresses.Length == 0 || addresses.All(address => !IsPrivateAddress(address)))
+            throw new InvalidOperationException("Plain HTTP is allowed only for loopback, LAN or VPN server addresses.");
+        return uri;
+    }
+
+    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode) return;
+        string detail = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (detail.Length > 600) detail = detail[..600];
+        throw new HttpRequestException(
+            $"Private chat server returned {(int)response.StatusCode} {response.ReasonPhrase}: {detail}",
+            null,
+            response.StatusCode);
+    }
+
+    private static string NormalizeChannelId(string value)
+    {
+        string normalized = new((value ?? string.Empty).Trim().ToLowerInvariant()
+            .Select(character => char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '-')
+            .ToArray());
+        normalized = normalized.Trim('-');
+        return string.IsNullOrWhiteSpace(normalized) ? "general" : normalized;
     }
 
     private async Task<TeamChatMessage> MaterializeAsync(
@@ -272,7 +421,7 @@ public sealed class TeamChatService
             try
             {
                 response = await ExchangeAsync(profile,
-                    new TeamChatWireRequest("send", profile.AccessToken, null, item, profile.DisplayName, null),
+                    new TeamChatWireRequest("send", profile.AccessToken, null, item, profile.DisplayName, null, item.Message.ChannelId),
                     cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is SocketException or IOException)
@@ -398,6 +547,8 @@ public sealed class TeamChatHost : IAsyncDisposable
                     TouchPresence(request.ClientName);
                     response = CreateResponse(true, string.Empty, _messages.Values
                         .Where(item => request.Since is null || item.Message.SentAt > request.Since)
+                        .Where(item => string.IsNullOrWhiteSpace(request.ChannelId) ||
+                                       string.Equals(item.Message.ChannelId, request.ChannelId, StringComparison.OrdinalIgnoreCase))
                         .OrderBy(item => item.Message.SentAt).TakeLast(500)
                         .Select(item => item with { AttachmentBytes = null }).ToArray());
                 }
@@ -536,7 +687,8 @@ internal sealed record TeamChatWireRequest(
     DateTimeOffset? Since,
     TeamChatWireItem? Item,
     string ClientName,
-    Guid? MessageId);
+    Guid? MessageId,
+    string ChannelId = "general");
 
 internal sealed record TeamChatWireResponse(
     bool Succeeded,

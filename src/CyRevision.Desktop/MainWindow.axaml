@@ -361,9 +361,9 @@
                     <Button Classes="secondary" Content="Open folder" Click="OnOpenProjectFolderClick"
                             ToolTip.Tip="Open the selected project folder in the system file manager" />
                     <Button Classes="secondary" Content="Actualiser" Click="OnRefreshClick" />
-                    <Button Classes="secondary" Content="Fetch remotes" Click="OnFetchClick" />
-                    <Button Classes="secondary" Content="Pull" Click="OnPullClick" />
-                    <Button Classes="primary" Content="Push" Click="OnPushClick" />
+                    <Button x:Name="FetchRemotesButton" Classes="secondary" Content="Fetch remotes" Click="OnFetchClick" />
+                    <Button x:Name="PullButton" Classes="secondary" Content="Pull" Click="OnPullClick" />
+                    <Button x:Name="PushButton" Classes="primary" Content="Push" Click="OnPushClick" />
                 </StackPanel>
             </Grid>
 
@@ -376,6 +376,10 @@
                                   Click="OnGitCategoryClick" />
                     <ToggleButton x:Name="CodeCategoryToggle" Classes="workspaceCategory" Content="Code &amp; Assets"
                                   Click="OnCodeCategoryClick" />
+                    <ToggleButton x:Name="BackupCategoryToggle" Classes="workspaceCategory" Content="Backup"
+                                  Click="OnBackupCategoryClick" />
+                    <ToggleButton x:Name="SyncCategoryToggle" Classes="workspaceCategory" Content="Sync"
+                                  Click="OnSyncCategoryClick" />
                     <ToggleButton x:Name="NetworkCategoryToggle" Classes="workspaceCategory" Content="Team &amp; Network"
                                   Click="OnNetworkCategoryClick" />
                     <ToggleButton x:Name="ExtensionsCategoryToggle" Classes="workspaceCategory" Content="Extensions &amp; Help"
@@ -383,7 +387,9 @@
                 </StackPanel>
             </Border>
 
-            <TabControl x:Name="WorkspaceTabs" Grid.Row="2">
+            <TabControl x:Name="WorkspaceTabs" Grid.Row="2"
+                        HorizontalContentAlignment="Stretch"
+                        VerticalContentAlignment="Stretch">
                 <TabItem x:Name="ProjectWorkspaceTab" Header="Project">
                     <ScrollViewer Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
                         <Grid ColumnDefinitions="1.15*,1*" RowDefinitions="Auto" ColumnSpacing="8" RowSpacing="8">
@@ -559,22 +565,48 @@
                         </Border>
 
                         <Border Grid.Row="1" Classes="card" Padding="8">
-                            <Grid ColumnDefinitions="1.2*,Auto,*" ColumnSpacing="8">
-                                <ComboBox x:Name="WorkspaceTabPresetSelector">
-                                    <ComboBox.ItemTemplate>
+                            <Grid RowDefinitions="Auto,Auto" RowSpacing="7">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <StackPanel Spacing="1">
+                                        <TextBlock Text="Workspace presets" FontSize="13" FontWeight="SemiBold" />
+                                        <TextBlock Text="Choose a documented mode, then adjust individual tabs below if needed."
+                                                   Classes="muted" FontSize="9.5" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="primary" Content="Apply selected preset"
+                                            Click="OnApplyWorkspaceTabVisibilityPresetClick" />
+                                </Grid>
+
+                                <ListBox x:Name="WorkspaceTabPresetSelector" Grid.Row="1" Height="102"
+                                         Background="Transparent" BorderThickness="0" Padding="0"
+                                         SelectionMode="Single" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="5" />
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <StackPanel Margin="2">
-                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                                <TextBlock Text="{Binding Description}" FontSize="9.5" Classes="muted"
+                                            <Grid Width="235" Height="88" RowDefinitions="Auto,Auto,Auto,*"
+                                                  ColumnDefinitions="*,Auto" Margin="2" ToolTip.Tip="{Binding IncludedTools}">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11.5"
                                                            TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
+                                                <Border Grid.Column="1" Background="#263247" CornerRadius="4" Padding="6,1">
+                                                    <TextBlock Text="{Binding TabCountLabel}" FontSize="8.5" Foreground="#9CC7FF" />
+                                                </Border>
+                                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Description}"
+                                                           Classes="muted" FontSize="9" TextWrapping="Wrap" Height="26"
+                                                           Margin="0,3,0,0" />
+                                                <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding BestFor}"
+                                                           Foreground="#80D7BD" FontSize="8.5" TextTrimming="CharacterEllipsis"
+                                                           Margin="0,2,0,0" />
+                                                <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="{Binding IncludedTools}"
+                                                           Classes="muted" FontSize="8" TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Bottom" />
+                                            </Grid>
                                         </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
-                                <Button Grid.Column="1" Classes="primary" Content="Apply preset"
-                                        Click="OnApplyWorkspaceTabVisibilityPresetClick" />
-                                <TextBlock Grid.Column="2" VerticalAlignment="Center" Classes="muted" FontSize="10"
-                                           Text="Presets: Full workspace · Git essentials · Developer · Minimal · Custom" />
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </Grid>
                         </Border>
 
@@ -589,12 +621,13 @@
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Grid Width="277" Height="31" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7" Margin="1,0">
-                                            <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalAlignment="Center" />
+                                            <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}"
+                                                      IsEnabled="{Binding IsAvailableInMode}" VerticalAlignment="Center" />
                                             <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
                                                        TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
                                             <Border Grid.Column="2" Background="#252C3A" CornerRadius="3" Padding="5,1"
                                                     VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Category}" FontSize="8.5" Foreground="#9AA8C2" />
+                                                <TextBlock Text="{Binding AvailabilitySummary}" FontSize="8.5" Foreground="#9AA8C2" />
                                             </Border>
                                         </Grid>
                                     </DataTemplate>
@@ -1057,6 +1090,11 @@
                                     <TreeView x:Name="SolutionTreePanel" Grid.Row="1" ItemsSource="{Binding CodeTree}"
                                               SelectedItem="{Binding SelectedCodeNode}" Classes="compactTree"
                                               Background="Transparent" BorderThickness="0" Margin="3">
+                                        <TreeView.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="View Sync history for this file" Click="OnShowSelectedFileSyncHistoryClick" />
+                                            </ContextMenu>
+                                        </TreeView.ContextMenu>
                                         <TreeView.ItemTemplate>
                                             <TreeDataTemplate ItemsSource="{Binding Children}">
                                                 <Grid ColumnDefinitions="22,*,Auto" Margin="1,1" ToolTip.Tip="{Binding RelativePath}">
@@ -1081,6 +1119,11 @@
                                              Classes="compactList"
                                              IsVisible="False" Background="Transparent" BorderThickness="0" Margin="3"
                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                        <ListBox.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="View Sync history for this file" Click="OnShowSelectedFileSyncHistoryClick" />
+                                            </ContextMenu>
+                                        </ListBox.ContextMenu>
                                         <ListBox.ItemsPanel>
                                             <ItemsPanelTemplate>
                                                 <VirtualizingStackPanel />
@@ -1107,7 +1150,12 @@
                                     <DataGrid x:Name="SolutionListPanel" Grid.Row="1" ItemsSource="{Binding CodeFileList}"
                                               SelectedItem="{Binding SelectedCodeNode}" IsVisible="False"
                                               AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
-                                              Background="Transparent" BorderThickness="0">
+                                               Background="Transparent" BorderThickness="0">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="View Sync history for this file" Click="OnShowSelectedFileSyncHistoryClick" />
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="File" Binding="{Binding Name}" Width="190" />
                                             <DataGridTextColumn Header="Path" Binding="{Binding RelativePath}" Width="*" />
@@ -2847,7 +2895,7 @@
                     </TabControl>
                 </TabItem>
 
-                <TabItem x:Name="BackupsWorkspaceTab" Header="Sauvegardes">
+                <TabItem x:Name="BackupsWorkspaceTab" Header="Backups">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.25*,1*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*,Auto">
@@ -2923,8 +2971,92 @@
                 </TabItem>
 
                 <TabItem x:Name="SynchronizationWorkspaceTab" Header="Syncthing">
-                    <TabControl Margin="0,8,0,0">
-                    <TabItem Header="Overview">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="6">
+                    <Border Classes="card" Padding="10,7">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding SynchronizationProfileTitle}" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="#78D7B7" />
+                                <TextBlock Text="{Binding SynchronizationProfileDescription}" FontSize="10"
+                                           Classes="muted" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding SynchronizationScopeSummary}" FontSize="9.5"
+                                           Foreground="#9CC7FF" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" VerticalAlignment="Top">
+                                <Button Classes="secondary" Content="Setup wizard" Click="OnOpenSyncSetupWizardClick"
+                                        Padding="8,3" MinHeight="24" />
+                                <Border IsVisible="{Binding IsGitPeerSyncMode}" Background="#243B52" CornerRadius="4" Padding="7,2">
+                                    <TextBlock Text="GIT EXCHANGE" FontSize="8.5" Foreground="#70B7FF" FontWeight="Bold" />
+                                </Border>
+                                <Border IsVisible="{Binding IsVersionedSyncMode}" Background="#3A3420" CornerRadius="4" Padding="7,2">
+                                    <TextBlock Text="VERSIONED" FontSize="8.5" Foreground="#E5C07B" FontWeight="Bold" />
+                                </Border>
+                                <Border IsVisible="{Binding IsPlainProjectSyncMode}" Background="#1E3B34" CornerRadius="4" Padding="7,2">
+                                    <TextBlock Text="CURRENT STATE" FontSize="8.5" Foreground="#78D7B7" FontWeight="Bold" />
+                                </Border>
+                                <Border IsVisible="{Binding IsOptionalSyncMode}" Background="#30333A" CornerRadius="4" Padding="7,2">
+                                    <TextBlock Text="OPTIONAL FOLDERS" FontSize="8.5" Foreground="#B7BDCA" FontWeight="Bold" />
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <TabControl x:Name="SynchronizationDetailTabs" Grid.Row="1">
+                    <TabItem x:Name="SyncSetupWizardTab" Header="Setup wizard">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <Grid ColumnDefinitions="1*,1*,1*" ColumnSpacing="8">
+                                <Border Classes="card">
+                                    <StackPanel Spacing="8">
+                                        <Border Background="#243B52" CornerRadius="12" Width="28" Height="28" HorizontalAlignment="Left">
+                                            <TextBlock Text="1" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" />
+                                        </Border>
+                                        <TextBlock Text="Choose the mode scope" FontSize="15" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding SynchronizationProfileDescription}" Classes="muted" TextWrapping="Wrap" />
+                                        <Border IsVisible="{Binding IsGitPeerSyncMode}" Background="#10241F" CornerRadius="5" Padding="8">
+                                            <TextBlock Text="Git + Sync uses the protected exchange folder automatically. The repository folder and active .git directory cannot be selected here." Foreground="#78D7B7" TextWrapping="Wrap" />
+                                        </Border>
+                                        <StackPanel IsVisible="{Binding ShowProjectFolderSyncSettings}" Spacing="5">
+                                            <TextBlock Text="Folder to synchronize" FontSize="9" Classes="muted" />
+                                            <TextBox Text="{Binding SyncSourceFolderPath}" />
+                                            <Button Classes="secondary" Content="Choose source folder…" Click="OnPickSyncSourceFolderClick" HorizontalAlignment="Left" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="1" Classes="card">
+                                    <StackPanel Spacing="8">
+                                        <Border Background="#243B52" CornerRadius="12" Width="28" Height="28" HorizontalAlignment="Left">
+                                            <TextBlock Text="2" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" />
+                                        </Border>
+                                        <TextBlock Text="Prepare the isolated runtime" FontSize="15" FontWeight="SemiBold" />
+                                        <TextBlock Text="CyRevision never reuses or stops another Syncthing process. It creates a project-scoped config, data directory, API, and port." Classes="muted" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding SyncthingRuntimeSummary}" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                        <Button Classes="primary" Content="Detect and configure runtime" Click="OnDetectSyncthingClick" HorizontalAlignment="Left" />
+                                        <StackPanel IsVisible="{Binding IsVersionedSyncMode}" Spacing="5">
+                                            <TextBlock Text="Optional separate version store" FontSize="9" Classes="muted" />
+                                            <TextBox Text="{Binding SyncVersionStorePath}" />
+                                            <Button Classes="secondary" Content="Choose version store…" Click="OnPickSyncVersionStoreClick" HorizontalAlignment="Left" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="2" Classes="card">
+                                    <StackPanel Spacing="8">
+                                        <Border Background="#243B52" CornerRadius="12" Width="28" Height="28" HorizontalAlignment="Left">
+                                            <TextBlock Text="3" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" />
+                                        </Border>
+                                        <TextBlock Text="Save, start, and verify" FontSize="15" FontWeight="SemiBold" />
+                                        <TextBlock Text="Save the mode-specific settings, start the isolated engine, then inspect devices, differences, and persistent history." Classes="muted" TextWrapping="Wrap" />
+                                        <Button Classes="primary" Content="Save settings" Click="OnSaveSyncthingSettingsClick" HorizontalAlignment="Left" />
+                                        <WrapPanel>
+                                            <Button Classes="secondary" Content="Start" Click="OnStartSyncClick" Margin="0,2,6,2" />
+                                            <Button Classes="secondary" Content="Refresh" Click="OnRefreshSyncthingClick" Margin="0,2,6,2" />
+                                        </WrapPanel>
+                                        <TextBlock Text="{Binding SyncState}" FontSize="13" Foreground="#78D7B7" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding SyncDetails}" Classes="muted" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </ScrollViewer>
+                    </TabItem>
+                    <TabItem Header="{Binding SynchronizationOverviewTabTitle}">
                     <Grid ColumnDefinitions="1*,1.25*" ColumnSpacing="8">
                         <Border Classes="card">
                             <StackPanel Spacing="10">
@@ -2934,10 +3066,19 @@
                                 <WrapPanel Orientation="Horizontal" Margin="0,5,0,0">
                                     <Button Classes="primary" Content="Detect and configure runtime" Click="OnDetectSyncthingClick" Margin="0,2,7,2" />
                                     <Button Classes="secondary" Content="Refresh devices and differences" Click="OnRefreshSyncthingClick" Margin="0,2,7,2" />
-                                    <Button Classes="secondary" Content="Scan folder" Click="OnScanSyncthingClick" Margin="0,2,7,2" />
+                                    <Button Classes="secondary" Content="Scan folder" Click="OnScanSyncthingClick" Margin="0,2,7,2"
+                                            IsVisible="{Binding ShowProjectFolderSyncSettings}" />
                                 </WrapPanel>
                                 <TextBlock Text="{Binding SyncthingRuntimeSummary}" TextWrapping="Wrap" FontSize="10" Classes="muted" />
-                                <Grid ColumnDefinitions="180,100,*" ColumnSpacing="8">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" IsVisible="{Binding ShowProjectFolderSyncSettings}">
+                                    <StackPanel>
+                                        <TextBlock Text="Folder to synchronize" FontSize="10" Classes="muted" />
+                                        <TextBox Text="{Binding SyncSourceFolderPath}" PlaceholderText="Project root by default" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="secondary" Content="Browse…" Click="OnPickSyncSourceFolderClick"
+                                            VerticalAlignment="Bottom" />
+                                </Grid>
+                                <Grid ColumnDefinitions="180,100,*" ColumnSpacing="8" IsVisible="{Binding ShowProjectFolderSyncSettings}">
                                     <StackPanel>
                                         <TextBlock Text="Folder mode" FontSize="10" Classes="muted" />
                                         <ComboBox ItemsSource="{Binding SyncthingFolderModeNames}" SelectedItem="{Binding SelectedSyncthingFolderModeName}" />
@@ -2962,33 +3103,70 @@
                                     <Button Classes="secondary" Content="Pause" Click="OnPauseSyncClick" Margin="0,4,7,4" />
                                     <Button Classes="secondary" Content="Reprendre" Click="OnResumeSyncClick" Margin="0,4,7,4" />
                                     <Button Classes="danger" Content="Arrêter" Click="OnStopSyncClick" Margin="0,4,7,4" />
-                                    <Button Classes="secondary" Content="Échanger Git maintenant" Click="OnExchangeGitClick" Margin="0,4,7,4" />
+                                    <Button Classes="secondary" Content="Échanger Git maintenant" Click="OnExchangeGitClick"
+                                            IsVisible="{Binding IsGitPeerSyncMode}" Margin="0,4,7,4" />
                                 </WrapPanel>
                                 <Border Background="#10241F" CornerRadius="8" Padding="11" Margin="0,8,0,0">
                                     <TextBlock Text="CyRevision utilise ses propres dossiers config/data, une API locale dédiée et ne recherche ni n'arrête les autres processus Syncthing." TextWrapping="Wrap" FontSize="11" Foreground="#78D7B7" />
                                 </Border>
-                                <Border Height="1" Background="#29324A" Margin="0,5" />
-                                <TextBlock Text="Plan de synchronisation intelligent" FontSize="15" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding SmartSyncPlanSummary}" TextWrapping="Wrap" FontSize="10" Classes="muted" />
-                                <Grid ColumnDefinitions="*,90,Auto" ColumnSpacing="7">
-                                    <ComboBox ItemsSource="{Binding LfsHistoryModes}" SelectedItem="{Binding SelectedLfsHistoryMode}" />
-                                    <TextBox Grid.Column="1" Text="{Binding SmartSyncRecentVersionCount}" PlaceholderText="Versions" />
-                                    <CheckBox Grid.Column="2" Content="Répliquer les backups" IsChecked="{Binding SmartSyncReplicateBackups}" VerticalAlignment="Center" />
-                                </Grid>
-                                <ListBox ItemsSource="{Binding SmartSyncPlanItems}" MaxHeight="210">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="5">
-                                                <TextBlock Text="{Binding Content}" FontWeight="SemiBold" />
-                                                <Border Grid.Column="1" Background="#242C47" CornerRadius="5" Padding="6,2">
-                                                    <TextBlock Text="{Binding Priority}" FontSize="9" Foreground="#B8C1D8" />
-                                                </Border>
-                                                <TextBlock Grid.Row="1" Text="{Binding Strategy}" FontSize="10" Classes="muted" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SizeText}" FontSize="10" Classes="muted" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
+                                <StackPanel IsVisible="{Binding IsGitPeerSyncMode}" Spacing="7">
+                                    <Border Height="1" Background="#29324A" Margin="0,5" />
+                                    <TextBlock Text="Smart Git/LFS exchange policy" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock Text="The working tree and active .git directory remain local. Only signed bundles, inventories and selected LFS objects enter the exchange folder."
+                                               TextWrapping="Wrap" FontSize="9.5" Foreground="#78D7B7" />
+                                    <TextBlock Text="{Binding SmartSyncPlanSummary}" TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                    <Grid ColumnDefinitions="*,90,Auto" ColumnSpacing="7">
+                                        <ComboBox ItemsSource="{Binding LfsHistoryModes}" SelectedItem="{Binding SelectedLfsHistoryMode}" />
+                                        <TextBox Grid.Column="1" Text="{Binding SmartSyncRecentVersionCount}" PlaceholderText="Versions" />
+                                        <CheckBox Grid.Column="2" Content="Replicate backups" IsChecked="{Binding SmartSyncReplicateBackups}" VerticalAlignment="Center" />
+                                    </Grid>
+                                    <ListBox ItemsSource="{Binding SmartSyncPlanItems}" MaxHeight="210">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="5">
+                                                    <TextBlock Text="{Binding Content}" FontWeight="SemiBold" />
+                                                    <Border Grid.Column="1" Background="#242C47" CornerRadius="5" Padding="6,2">
+                                                        <TextBlock Text="{Binding Priority}" FontSize="9" Foreground="#B8C1D8" />
+                                                    </Border>
+                                                    <TextBlock Grid.Row="1" Text="{Binding Strategy}" FontSize="10" Classes="muted" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SizeText}" FontSize="10" Classes="muted" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+
+                                <Border IsVisible="{Binding IsVersionedSyncMode}" Background="#25251E" BorderBrush="#665D35"
+                                        BorderThickness="1" CornerRadius="6" Padding="9" Margin="0,5,0,0">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Versioned project synchronization" FontSize="14" FontWeight="SemiBold" />
+                                        <TextBlock Text="Syncthing keeps recoverable file versions using this project's retention policy. Backup snapshots remain independently available."
+                                                   FontSize="9.5" Classes="muted" TextWrapping="Wrap" />
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <StackPanel>
+                                                <TextBlock Text="Version store (optional separate folder)" FontSize="9" Classes="muted" />
+                                                <TextBox Text="{Binding SyncVersionStorePath}" PlaceholderText="Default: .stversions inside the synchronized folder" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Classes="secondary" Content="Browse…" Click="OnPickSyncVersionStoreClick"
+                                                    VerticalAlignment="Bottom" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
+                                            <CheckBox Content="Compressed backup copy" IsChecked="{Binding SyncCompressedBackupEnabled}"
+                                                      VerticalAlignment="Center" />
+                                            <TextBox Grid.Column="1" Text="{Binding SyncCompressedBackupPath}" PlaceholderText="Destination outside the synchronized folder" />
+                                            <Button Grid.Column="2" Classes="secondary" Content="Browse…" Click="OnPickSyncCompressedBackupFolderClick" />
+                                            <Button Grid.Column="3" Classes="secondary" Content="Create now" Click="OnCreateCompressedSyncBackupClick" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,85,85,85,Auto" ColumnSpacing="6">
+                                            <ComboBox ItemsSource="{Binding RetentionModes}" SelectedItem="{Binding SelectedRetentionMode}" />
+                                            <TextBox Grid.Column="1" Text="{Binding RetentionVersions}" PlaceholderText="Versions" />
+                                            <TextBox Grid.Column="2" Text="{Binding RetentionDays}" PlaceholderText="Days" />
+                                            <TextBox Grid.Column="3" Text="{Binding RetentionBudgetGb}" PlaceholderText="GB" />
+                                            <Button Grid.Column="4" Classes="primary" Content="Save Sync + Versions" Click="OnSaveVersionedSyncSettingsClick" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding SyncStorageStatus}" FontSize="9.5" Foreground="#E5C07B" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </Border>
 
@@ -3030,59 +3208,6 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Shared folders">
-                    <Grid ColumnDefinitions="1.15*,0.85*" ColumnSpacing="8">
-                        <Border Classes="card" Padding="0" ClipToBounds="True">
-                            <Grid RowDefinitions="Auto,*">
-                                <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,7">
-                                    <StackPanel>
-                                        <TextBlock Text="Independent project shares" FontSize="14" FontWeight="SemiBold" />
-                                        <TextBlock Text="Share build versions, deliveries, or another folder without synchronizing the repository."
-                                                   FontSize="9.5" Classes="muted" TextWrapping="Wrap" />
-                                    </StackPanel>
-                                </Border>
-                                <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SharedSyncFolders}"
-                                          SelectedItem="{Binding SelectedSharedSyncFolder}" AutoGenerateColumns="False"
-                                          IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
-                                    <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="1*" />
-                                        <DataGridTextColumn Header="Local folder" Binding="{Binding Path}" Width="2*" />
-                                        <DataGridTextColumn Header="Mode" Binding="{Binding Mode}" Width="105" />
-                                        <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled}" Width="70" />
-                                    </DataGrid.Columns>
-                                </DataGrid>
-                            </Grid>
-                        </Border>
-                        <Border Grid.Column="1" Classes="card">
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="Shared-folder settings" FontSize="14" FontWeight="SemiBold" />
-                                <TextBlock Text="This uses the isolated CyRevision Syncthing instance even when the project mode is Git only."
-                                           TextWrapping="Wrap" FontSize="9.5" Foreground="#78D7B7" />
-                                <TextBlock Text="Name" FontSize="9" Classes="muted" />
-                                <TextBox Text="{Binding SharedSyncFolderName}" PlaceholderText="Build versions" />
-                                <TextBlock Text="Local folder" FontSize="9" Classes="muted" />
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                    <TextBox Text="{Binding SharedSyncFolderPath}" PlaceholderText="Choose a folder outside or inside the repository…" />
-                                    <Button Grid.Column="1" Classes="secondary" Content="Browse…" Click="OnPickSharedSyncFolderClick" />
-                                </Grid>
-                                <TextBlock Text="Direction" FontSize="9" Classes="muted" />
-                                <ComboBox ItemsSource="{Binding SyncthingFolderModeNames}"
-                                          SelectedItem="{Binding SelectedSharedSyncFolderModeName}" />
-                                <WrapPanel Orientation="Horizontal">
-                                    <Button Classes="primary" Content="Add / update" Click="OnSaveSharedSyncFolderClick" Margin="0,3,6,3" />
-                                    <Button Classes="secondary" Content="Scan" Click="OnScanSharedSyncFolderClick" Margin="0,3,6,3" />
-                                    <Button Classes="danger" Content="Remove mapping" Click="OnRemoveSharedSyncFolderClick" Margin="0,3,6,3" />
-                                </WrapPanel>
-                                <TextBlock Text="Removing a mapping never deletes the local folder or its files."
-                                           TextWrapping="Wrap" Classes="muted" FontSize="9.5" />
-                                <Border Background="#1B2237" CornerRadius="5" Padding="8,6">
-                                    <TextBlock Text="{Binding SharedSyncFolderStatus}" TextWrapping="Wrap" Foreground="#78D7B7" />
-                                </Border>
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-                </TabItem>
-
                 <TabItem Header="Devices">
                     <Border Classes="card" Padding="0">
                         <Grid RowDefinitions="Auto,*">
@@ -3119,6 +3244,37 @@
                                     <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="90" />
                                     <DataGridTextColumn Header="Size (bytes)" Binding="{Binding Size}" Width="110" />
                                     <DataGridTextColumn Header="Modified" Binding="{Binding ModifiedAt}" Width="180" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+                </TabItem>
+
+                <TabItem x:Name="SyncHistoryTab" Header="History">
+                    <Border Classes="card" Padding="0">
+                        <Grid RowDefinitions="Auto,*">
+                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,7">
+                                <Grid ColumnDefinitions="1.2*,1*,Auto,Auto" ColumnSpacing="6">
+                                    <StackPanel>
+                                        <TextBlock Text="Persistent Sync history" FontSize="14" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding SyncHistorySummary}" FontSize="9" Classes="muted" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <TextBox Grid.Column="1" Text="{Binding SyncHistorySearch}" Classes="searchBox"
+                                             PlaceholderText="Search path, action, direction, scope, or detail…" />
+                                    <Button Grid.Column="2" Classes="secondary" Content="Clear file filter" Click="OnClearSyncHistoryFileFilterClick" />
+                                    <Button Grid.Column="3" Classes="primary" Content="Search" Click="OnRefreshSyncHistoryClick" />
+                                </Grid>
+                            </Border>
+                            <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SyncHistory}"
+                                      AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
+                                      GridLinesVisibility="Horizontal" Background="Transparent">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Time" Binding="{Binding Timestamp}" Width="155" />
+                                    <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="135" />
+                                    <DataGridTextColumn Header="File / folder" Binding="{Binding Path}" Width="2*" />
+                                    <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="140" />
+                                    <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="120" />
+                                    <DataGridTextColumn Header="Details" Binding="{Binding Detail}" Width="1.3*" />
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>
@@ -3251,6 +3407,180 @@
                     </Border>
                 </TabItem>
                 </TabControl>
+                </Grid>
+                </TabItem>
+
+                <TabItem x:Name="SyncConflictsWorkspaceTab" Header="Conflicts">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*,Auto" RowSpacing="7">
+                        <Border Classes="card" Padding="10,7">
+                            <Grid ColumnDefinitions="*,260,Auto,70,Auto" ColumnSpacing="7">
+                                <StackPanel>
+                                    <TextBlock Text="Safe Sync conflict resolver" FontSize="15" FontWeight="SemiBold" Foreground="#78D7B7" />
+                                    <TextBlock Text="{Binding SyncConflictSummary}" FontSize="9.5" Classes="muted" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <TextBox Grid.Column="1" Text="{Binding SyncConflictSearch, UpdateSourceTrigger=PropertyChanged}"
+                                         Classes="searchBox" PlaceholderText="Filter file, folder, scope, or state…" />
+                                <TextBlock Grid.Column="2" Text="Keep backups" Classes="muted" VerticalAlignment="Center" />
+                                <TextBox Grid.Column="3" Text="{Binding SyncConflictRetentionDays}" HorizontalContentAlignment="Right" ToolTip.Tip="Retention in days" />
+                                <Button Grid.Column="4" Classes="primary" Content="Scan conflicts" Click="OnRefreshSyncConflictsClick" />
+                            </Grid>
+                        </Border>
+                        <Grid Grid.Row="1" ColumnDefinitions="1.2*,7,0.9*">
+                            <Border Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="Auto,*,Auto">
+                                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,6">
+                                        <StackPanel>
+                                            <TextBlock Text="Unresolved conflict copies" FontWeight="SemiBold" />
+                                            <TextBlock Text="Select a conflict, then keep the current original or replace it with the conflict version." FontSize="9" Classes="muted" />
+                                        </StackPanel>
+                                    </Border>
+                                    <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SyncConflicts}"
+                                              SelectedItem="{Binding SelectedSyncConflict}" AutoGenerateColumns="False"
+                                              IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="File" Binding="{Binding FileName}" Width="1.2*" />
+                                            <DataGridTextColumn Header="Folder" Binding="{Binding Folder}" Width="1.6*" />
+                                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="120" />
+                                            <DataGridTextColumn Header="State" Binding="{Binding Status}" Width="150" />
+                                            <DataGridTextColumn Header="Modified" Binding="{Binding ModifiedAt}" Width="145" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="7" Margin="8,6">
+                                        <TextBlock Text="Both files are copied to CyRevision recovery storage before resolution." Classes="muted" FontSize="9" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Keep original"
+                                                IsEnabled="{Binding CanResolveSelectedSyncConflict}" Click="OnKeepOriginalSyncConflictClick" />
+                                        <Button Grid.Column="2" Classes="primary" Content="Use conflict version"
+                                                IsEnabled="{Binding CanResolveSelectedSyncConflict}" Click="OnUseSyncConflictVersionClick" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                            <GridSplitter Grid.Column="1" Width="7" Background="#45484E"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+                            <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="Auto,*,Auto">
+                                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,6">
+                                        <StackPanel>
+                                            <TextBlock Text="Recoverable resolutions" FontWeight="SemiBold" />
+                                            <TextBlock Text="Restore recreates the original and conflict copy as they were before resolution." FontSize="9" Classes="muted" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                    <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SyncConflictBackups}"
+                                              SelectedItem="{Binding SelectedSyncConflictBackup}" AutoGenerateColumns="False"
+                                              IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="File" Binding="{Binding FileName}" Width="1.2*" />
+                                            <DataGridTextColumn Header="Choice" Binding="{Binding Resolution}" Width="100" />
+                                            <DataGridTextColumn Header="Created" Binding="{Binding CreatedAt}" Width="145" />
+                                            <DataGridTextColumn Header="Retention" Binding="{Binding RetentionStatus}" Width="1*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="7" Margin="8,6">
+                                        <TextBlock Text="Recovery data is stored outside the synchronized folder." Classes="muted" FontSize="9" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Clean expired" Click="OnCleanExpiredSyncConflictsClick" />
+                                        <Button Grid.Column="2" Classes="primary" Content="Restore selected…"
+                                                IsEnabled="{Binding CanRestoreSelectedSyncConflictBackup}" Click="OnRestoreSyncConflictClick" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                        <ProgressBar Grid.Row="2" Classes="inlineLoader" IsIndeterminate="True"
+                                     IsVisible="{Binding IsSyncConflictBusy}" Height="3" />
+                    </Grid>
+                </TabItem>
+
+                <TabItem x:Name="SharedSyncWorkspaceTab" Header="Shared Sync folders">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="7">
+                        <Border Classes="card" Padding="10,7">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Optional shared folders" FontSize="15" FontWeight="SemiBold" Foreground="#78D7B7" />
+                                    <TextBlock Text="Share builds, deliveries, references, or any team folder independently of the project operating mode. The repository itself is not included automatically."
+                                               Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#1E3B34" CornerRadius="4" Padding="7,2" VerticalAlignment="Top">
+                                    <TextBlock Text="OPTIONAL FOR EVERY PROJECT" FontSize="8.5" Foreground="#78D7B7" FontWeight="Bold" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <Grid Grid.Row="1" ColumnDefinitions="1.15*,0.85*" ColumnSpacing="8">
+                            <Border Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="Auto,*">
+                                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,7">
+                                        <StackPanel>
+                                            <TextBlock Text="Independent project shares" FontSize="14" FontWeight="SemiBold" />
+                                            <TextBlock Text="Each mapping has its own source folder, direction, identity, and scan policy."
+                                                       FontSize="9.5" Classes="muted" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                    <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SharedSyncFolders}"
+                                              SelectedItem="{Binding SelectedSharedSyncFolder}" AutoGenerateColumns="False"
+                                              IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="1*" />
+                                            <DataGridTextColumn Header="Local folder" Binding="{Binding Path}" Width="2*" />
+                                            <DataGridTextColumn Header="Mode" Binding="{Binding Mode}" Width="105" />
+                                            <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled}" Width="70" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+                            <Border Grid.Column="1" Classes="card">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Shared-folder settings" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="This uses the isolated CyRevision Syncthing instance even when the project mode is Git only."
+                                               TextWrapping="Wrap" FontSize="9.5" Foreground="#78D7B7" />
+                                    <TextBlock Text="Name" FontSize="9" Classes="muted" />
+                                    <TextBox Text="{Binding SharedSyncFolderName}" PlaceholderText="Build versions" />
+                                    <TextBlock Text="Local folder" FontSize="9" Classes="muted" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                        <TextBox Text="{Binding SharedSyncFolderPath}" PlaceholderText="Choose a folder outside or inside the repository…" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Browse…" Click="OnPickSharedSyncFolderClick" />
+                                    </Grid>
+                                    <TextBlock Text="Direction" FontSize="9" Classes="muted" />
+                                    <ComboBox ItemsSource="{Binding SyncthingFolderModeNames}"
+                                              SelectedItem="{Binding SelectedSharedSyncFolderModeName}" />
+                                    <WrapPanel Orientation="Horizontal">
+                                        <Button Classes="primary" Content="Add / update" Click="OnSaveSharedSyncFolderClick" Margin="0,3,6,3" />
+                                        <Button Classes="secondary" Content="Scan" Click="OnScanSharedSyncFolderClick" Margin="0,3,6,3" />
+                                        <Button Classes="danger" Content="Remove mapping" Click="OnRemoveSharedSyncFolderClick" Margin="0,3,6,3" />
+                                    </WrapPanel>
+                                    <TextBlock Text="Removing a mapping never deletes the local folder or its files."
+                                               TextWrapping="Wrap" Classes="muted" FontSize="9.5" />
+                                    <Border Background="#1B2237" CornerRadius="5" Padding="8,6">
+                                        <TextBlock Text="{Binding SharedSyncFolderStatus}" TextWrapping="Wrap" Foreground="#78D7B7" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                        <Border Grid.Row="2" Classes="card" Padding="0">
+                            <Grid RowDefinitions="Auto,*">
+                                <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,6">
+                                    <Grid ColumnDefinitions="*,1.2*,Auto,Auto" ColumnSpacing="6">
+                                        <StackPanel>
+                                            <TextBlock Text="Shared Sync history" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding SyncHistorySummary}" FontSize="8.5" Classes="muted" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBox Grid.Column="1" Text="{Binding SyncHistorySearch}" Classes="searchBox"
+                                                 PlaceholderText="Search file, folder, action, or direction…" />
+                                        <Button Grid.Column="2" Classes="secondary" Content="Clear file filter" Click="OnClearSyncHistoryFileFilterClick" />
+                                        <Button Grid.Column="3" Classes="primary" Content="Search" Click="OnRefreshSyncHistoryClick" />
+                                    </Grid>
+                                </Border>
+                                <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SyncHistory}"
+                                          AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
+                                          GridLinesVisibility="Horizontal" Background="Transparent">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Time" Binding="{Binding Timestamp}" Width="150" />
+                                        <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="125" />
+                                        <DataGridTextColumn Header="File / folder" Binding="{Binding Path}" Width="2*" />
+                                        <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="130" />
+                                        <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="110" />
+                                        <DataGridTextColumn Header="Details" Binding="{Binding Detail}" Width="1.2*" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </TabItem>
 
                 <TabItem x:Name="VpnWorkspaceTab" Header="VPN WireGuard">
@@ -3628,117 +3958,209 @@
                 </TabItem>
 
                 <TabItem x:Name="TeamChatWorkspaceTab" Header="Team chat">
-                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*,Auto" RowSpacing="8">
-                        <Border Classes="card" Padding="9">
-                            <Grid ColumnDefinitions="140,150,110,170,*,Auto" ColumnSpacing="7">
-                                <StackPanel>
-                                    <TextBlock Text="Transport" Classes="muted" FontSize="9" />
-                                    <ComboBox ItemsSource="{Binding TeamChatTransports}" SelectedItem="{Binding SelectedTeamChatTransport}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Display name" Classes="muted" FontSize="9" />
-                                    <TextBox Text="{Binding TeamChatDisplayName}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="2">
-                                    <TextBlock Text="Listen port" Classes="muted" FontSize="9" />
-                                    <TextBox Text="{Binding TeamChatPort}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="3">
-                                    <TextBlock Text="VPN listen address" Classes="muted" FontSize="9" />
-                                    <TextBox Text="{Binding TeamChatListenAddress}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="4">
-                                    <TextBlock Text="Peer endpoint (VPN IP:port)" Classes="muted" FontSize="9" />
-                                    <TextBox Text="{Binding TeamChatPeerEndpoint}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="5" VerticalAlignment="Bottom">
-                                    <Button Classes="secondary" Content="Save" Click="OnSaveTeamChatClick" />
-                                    <Button Classes="primary" Content="Host" Click="OnStartTeamChatClick" />
-                                    <Button Classes="danger" Content="Stop" IsEnabled="{Binding IsTeamChatHostRunning}"
-                                            Click="OnStopTeamChatClick" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*,Auto" RowSpacing="7">
+                        <Expander Classes="card" Header="Connection settings" Padding="8">
+                            <Grid Margin="0,7,0,0" RowDefinitions="Auto,Auto,Auto" RowSpacing="7">
+                                <Grid ColumnDefinitions="145,170,*,Auto" ColumnSpacing="7">
+                                    <StackPanel>
+                                        <TextBlock Text="Transport" Classes="muted" FontSize="9" />
+                                        <ComboBox ItemsSource="{Binding TeamChatTransports}" SelectedItem="{Binding SelectedTeamChatTransport}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Display name" Classes="muted" FontSize="9" />
+                                        <TextBox Text="{Binding TeamChatDisplayName}" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding TeamChatStatus}" Foreground="#78D7B7"
+                                               TextWrapping="Wrap" VerticalAlignment="Center" Margin="8,0" />
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                        <Button Classes="secondary" Content="Save" Click="OnSaveTeamChatClick" />
+                                        <Button Classes="primary" Content="Host VPN" IsVisible="{Binding TeamChatUsesVpn}"
+                                                Click="OnStartTeamChatClick" />
+                                        <Button Classes="danger" Content="Stop" IsVisible="{Binding TeamChatUsesVpn}"
+                                                IsEnabled="{Binding IsTeamChatHostRunning}" Click="OnStopTeamChatClick" />
+                                        <Button Classes="secondary" Content="Refresh" Click="OnRefreshTeamChatClick" />
+                                    </StackPanel>
+                                </Grid>
 
-                        <Grid Grid.Row="1" ColumnDefinitions="0.82*,7,1.18*">
-                            <Border Classes="card">
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <StackPanel Spacing="7">
-                                        <TextBlock Text="Secure project conversation" FontSize="16" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding TeamChatStatus}" Foreground="#78D7B7" TextWrapping="Wrap" />
-                                        <TextBlock Text="Connected teammates" Classes="muted" FontSize="9" />
-                                        <DataGrid ItemsSource="{Binding TeamChatParticipants}" Classes="historyCompact" Height="112"
-                                                  AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
-                                                  GridLinesVisibility="Horizontal" Background="Transparent">
-                                            <DataGrid.Columns>
-                                                <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="*" />
-                                                <DataGridTextColumn Header="Online" Binding="{Binding IsOnline}" Width="62" />
-                                                <DataGridTextColumn Header="Last seen" Binding="{Binding LastSeen}" Width="125" />
-                                                <DataGridTextColumn Header="Via" Binding="{Binding Transport}" Width="55" />
-                                            </DataGrid.Columns>
-                                        </DataGrid>
-                                        <TextBlock Text="VPN access token" Classes="muted" FontSize="9" />
-                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                            <TextBox Text="{Binding TeamChatAccessToken}" PasswordChar="*" />
+                                <Grid Grid.Row="1" IsVisible="{Binding TeamChatUsesVpn}"
+                                      ColumnDefinitions="150,*,1.25*,Auto" ColumnSpacing="7">
+                                    <StackPanel>
+                                        <TextBlock Text="Listen port" Classes="muted" FontSize="9" />
+                                        <TextBox Text="{Binding TeamChatPort}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="VPN listen address" Classes="muted" FontSize="9" />
+                                        <TextBox Text="{Binding TeamChatListenAddress}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Host endpoint (VPN IP:port)" Classes="muted" FontSize="9" />
+                                        <TextBox Text="{Binding TeamChatPeerEndpoint}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="3" Width="250">
+                                        <TextBlock Text="Project chat token" Classes="muted" FontSize="9" />
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                                            <TextBox Text="{Binding TeamChatAccessToken}" PasswordChar="●" />
                                             <Button Grid.Column="1" Classes="danger" Content="Rotate" Click="OnRotateTeamChatTokenClick" />
                                         </Grid>
-                                        <TextBlock Text="Synchronized conversation folder" Classes="muted" FontSize="9" />
-                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                            <TextBox Text="{Binding TeamChatSyncFolderPath}" />
-                                            <Button Grid.Column="1" Classes="secondary" Content="Browse..." Click="OnPickTeamChatSyncFolderClick" />
-                                        </Grid>
-                                        <WrapPanel Orientation="Horizontal">
-                                            <CheckBox Content="Save conversations" IsChecked="{Binding TeamChatSaveConversations}" Margin="0,2,12,2" />
-                                            <CheckBox Content="Encrypt stored conversations" IsChecked="{Binding TeamChatEncryptStoredConversations}" Margin="0,2,12,2" />
-                                            <TextBlock Text="Retention days" Classes="muted" VerticalAlignment="Center" />
-                                            <TextBox Width="62" Text="{Binding TeamChatRetentionDays}" Margin="5,0,12,0" />
-                                            <TextBlock Text="Max attachment MB" Classes="muted" VerticalAlignment="Center" />
-                                            <TextBox Width="62" Text="{Binding TeamChatMaxAttachmentMb}" Margin="5,0,0,0" />
-                                        </WrapPanel>
-                                        <Border Background="#10241F" CornerRadius="5" Padding="8">
-                                            <TextBlock Text="VPN mode accepts only private, loopback or WireGuard-style addresses and authenticates every request. Sync mode writes one immutable JSON file per message, avoiding shared-log conflicts."
-                                                       Foreground="#78D7B7" FontSize="9.5" TextWrapping="Wrap" />
-                                        </Border>
                                     </StackPanel>
-                                </ScrollViewer>
+                                </Grid>
+
+                                <Grid Grid.Row="1" IsVisible="{Binding TeamChatUsesSyncFolder}" ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                    <StackPanel>
+                                        <TextBlock Text="Synchronized conversation folder" Classes="muted" FontSize="9" />
+                                        <TextBox Text="{Binding TeamChatSyncFolderPath}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="secondary" Content="Browse..." VerticalAlignment="Bottom"
+                                            Click="OnPickTeamChatSyncFolderClick" />
+                                </Grid>
+
+                                <Grid Grid.Row="1" IsVisible="{Binding TeamChatUsesPrivateServer}"
+                                      ColumnDefinitions="1.35*,1*,Auto" ColumnSpacing="7">
+                                    <StackPanel>
+                                        <TextBlock Text="CyRevision private server URL" Classes="muted" FontSize="9" />
+                                        <TextBox Text="{Binding TeamChatServerBaseUrl}" PlaceholderText="https://cyrevision.example.com/" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Server access token" Classes="muted" FontSize="9" />
+                                        <TextBox Text="{Binding TeamChatServerApiToken}" PasswordChar="●" />
+                                    </StackPanel>
+                                    <CheckBox Grid.Column="2" Content="Allow HTTP on trusted LAN/VPN only"
+                                              IsChecked="{Binding TeamChatAllowPrivateServerHttp}" VerticalAlignment="Bottom" Margin="0,0,0,7" />
+                                </Grid>
+
+                                <WrapPanel Grid.Row="2" Orientation="Horizontal">
+                                    <CheckBox Content="Save conversations" IsChecked="{Binding TeamChatSaveConversations}" Margin="0,2,12,2" />
+                                    <CheckBox Content="Encrypt local/sync archive" IsChecked="{Binding TeamChatEncryptStoredConversations}" Margin="0,2,12,2" />
+                                    <TextBlock Text="Retention days" Classes="muted" VerticalAlignment="Center" />
+                                    <TextBox Width="62" Text="{Binding TeamChatRetentionDays}" Margin="5,0,12,0" />
+                                    <TextBlock Text="Max attachment MB" Classes="muted" VerticalAlignment="Center" />
+                                    <TextBox Width="62" Text="{Binding TeamChatMaxAttachmentMb}" Margin="5,0,12,0" />
+                                    <TextBlock Text="HTTPS is mandatory outside a trusted private network."
+                                               Foreground="#E5A94D" VerticalAlignment="Center" />
+                                </WrapPanel>
+                            </Grid>
+                        </Expander>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="190,6,*,6,220">
+                            <Border Classes="card" Padding="0">
+                                <Grid RowDefinitions="Auto,*,Auto">
+                                    <StackPanel Margin="10,9,8,6">
+                                        <TextBlock Text="PROJECT CHANNELS" Classes="muted" FontSize="9" FontWeight="Bold" />
+                                        <TextBlock Text="Text channels" FontSize="15" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <ListBox Grid.Row="1" ItemsSource="{Binding TeamChatChannels}"
+                                             SelectedItem="{Binding SelectedTeamChatChannel}" Background="Transparent"
+                                             BorderThickness="0" Padding="4">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid ColumnDefinitions="20,*" Margin="5,3">
+                                                    <TextBlock Text="#" FontSize="16" Foreground="#7F879C" />
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Topic}" Classes="muted" FontSize="8.5"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <StackPanel Grid.Row="2" Margin="7" Spacing="5" IsVisible="{Binding TeamChatUsesPrivateServer}">
+                                        <TextBox Text="{Binding TeamChatNewChannelName}" PlaceholderText="new-channel" />
+                                        <TextBox Text="{Binding TeamChatNewChannelTopic}" PlaceholderText="Channel topic" />
+                                        <Button Classes="secondary" Content="+ Create channel" HorizontalAlignment="Stretch"
+                                                Click="OnCreateTeamChatChannelClick" />
+                                    </StackPanel>
+                                </Grid>
                             </Border>
-                            <GridSplitter Grid.Column="1" Width="7" Background="#45484E"
+                            <GridSplitter Grid.Column="1" Width="6" Background="#343843"
                                           ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+
                             <Border Grid.Column="2" Classes="card" Padding="0">
                                 <Grid RowDefinitions="Auto,*">
-                                    <Grid Margin="9,7" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                                        <TextBlock Text="Conversation" FontSize="15" FontWeight="SemiBold" />
-                                        <Button Grid.Column="1" Classes="secondary" Content="Refresh" Click="OnRefreshTeamChatClick" />
-                                        <Button Grid.Column="2" Classes="secondary" Content="Open attachment"
+                                    <Grid Margin="11,8" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding SelectedTeamChatChannelTitle}" FontSize="16" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding SelectedTeamChatChannelTopic}" Classes="muted" FontSize="9.5" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="secondary" Content="Open attachment"
                                                 Click="OnOpenTeamChatAttachmentClick" />
                                     </Grid>
-                                    <DataGrid Grid.Row="1" ItemsSource="{Binding TeamChatMessages}"
-                                              SelectedItem="{Binding SelectedTeamChatMessage}" Classes="historyCompact"
-                                              AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0"
-                                              GridLinesVisibility="Horizontal" Background="Transparent">
-                                        <DataGrid.Columns>
-                                            <DataGridTextColumn Header="Time" Binding="{Binding SentAt}" Width="130" />
-                                            <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="105" />
-                                            <DataGridTextColumn Header="Message" Binding="{Binding Text}" Width="*" />
-                                            <DataGridTextColumn Header="Attachment" Binding="{Binding AttachmentName}" Width="145" />
-                                            <DataGridTextColumn Header="Size" Binding="{Binding AttachmentSize}" Width="70" />
-                                            <DataGridTextColumn Header="Delivery" Binding="{Binding DeliveryState}" Width="78" />
-                                        </DataGrid.Columns>
-                                    </DataGrid>
+                                    <ListBox x:Name="TeamChatMessageList" Grid.Row="1" ItemsSource="{Binding TeamChatMessages}"
+                                             SelectedItem="{Binding SelectedTeamChatMessage}" Background="#0D1426"
+                                             BorderThickness="0" Padding="4" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="#24304B" BorderThickness="0,0,0,1" Padding="9,6">
+                                                    <Grid ColumnDefinitions="30,*" ColumnSpacing="8">
+                                                        <Border Width="28" Height="28" CornerRadius="14" Background="#314467"
+                                                                VerticalAlignment="Top">
+                                                            <TextBlock Text="●" Foreground="#58D8B5" HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center" FontSize="11" />
+                                                        </Border>
+                                                        <StackPanel Grid.Column="1" Spacing="2">
+                                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                <TextBlock Text="{Binding Author}" FontWeight="Bold" Foreground="#E7EAF2" />
+                                                                <TextBlock Text="{Binding SentAt}" Classes="muted" FontSize="8.5" />
+                                                                <TextBlock Text="{Binding DeliveryState}" Foreground="#78D7B7" FontSize="8.5" />
+                                                            </StackPanel>
+                                                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="11" />
+                                                            <Border Background="#18243B" CornerRadius="4" Padding="7,4"
+                                                                    IsVisible="{Binding HasAttachment}">
+                                                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                                                    <TextBlock Text="📎" />
+                                                                    <TextBlock Text="{Binding AttachmentName}" Foreground="#61AEFF" />
+                                                                    <TextBlock Text="{Binding AttachmentSize}" Classes="muted" />
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
+                            </Border>
+                            <GridSplitter Grid.Column="3" Width="6" Background="#343843"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+
+                            <Border Grid.Column="4" Classes="card" Padding="0">
+                                <Grid RowDefinitions="Auto,*">
+                                    <StackPanel Margin="10,9,8,6">
+                                        <TextBlock Text="MEMBERS" Classes="muted" FontSize="9" FontWeight="Bold" />
+                                        <TextBlock Text="Connected teammates" FontSize="14" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <ListBox Grid.Row="1" ItemsSource="{Binding TeamChatParticipants}" Background="Transparent"
+                                             BorderThickness="0" Padding="5">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid ColumnDefinitions="16,*,Auto" Margin="4,4">
+                                                    <TextBlock Text="●" Foreground="#58D8B5" FontSize="9" VerticalAlignment="Center" />
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                                        <TextBlock Text="{Binding LastSeen}" Classes="muted" FontSize="8.5" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Transport}" Classes="muted"
+                                                               FontSize="8.5" VerticalAlignment="Center" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
                                 </Grid>
                             </Border>
                         </Grid>
 
-                        <Border Grid.Row="2" Classes="card" Padding="8">
-                            <Grid ColumnDefinitions="*,Auto,300,Auto" ColumnSpacing="7">
-                                <TextBox Text="{Binding TeamChatMessageText}" PlaceholderText="Write a project message..."
-                                         AcceptsReturn="True" MinHeight="36" MaxHeight="90" />
-                                <Button Grid.Column="1" Classes="secondary" Content="Attach..." Click="OnPickTeamChatAttachmentClick" />
-                                <TextBox Grid.Column="2" Text="{Binding TeamChatAttachmentPath}" IsReadOnly="True"
-                                         PlaceholderText="No attachment" />
-                                <Button Grid.Column="3" Classes="primary" Content="Send" Click="OnSendTeamChatClick" />
-                            </Grid>
-                        </Border>
+                        <Grid Grid.Row="2" ColumnDefinitions="190,6,*,6,220">
+                            <Border Grid.Column="2" Classes="card" Padding="7">
+                                <Grid ColumnDefinitions="*,Auto,230,Auto" ColumnSpacing="6">
+                                    <TextBox Text="{Binding TeamChatMessageText}" PlaceholderText="Message the selected channel..."
+                                             AcceptsReturn="True" MinHeight="38" MaxHeight="96" />
+                                    <Button Grid.Column="1" Classes="secondary" Content="Attach..." Click="OnPickTeamChatAttachmentClick" />
+                                    <TextBox Grid.Column="2" Text="{Binding TeamChatAttachmentPath}" IsReadOnly="True"
+                                             PlaceholderText="No attachment" />
+                                    <Button Grid.Column="3" Classes="primary" Content="Send" Click="OnSendTeamChatClick" />
+                                </Grid>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </TabItem>
 
@@ -4526,7 +4948,7 @@
                             <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
                                 <StackPanel Spacing="3">
                                     <TextBlock Text="CyRevision plugins" FontSize="17" FontWeight="SemiBold" />
-                                    <TextBlock Text="Plugins are packaged separately and can be enabled only when needed."
+                                    <TextBlock Text="Plugin activation is saved separately for the selected project."
                                                Classes="muted" FontSize="11" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <DataGrid Grid.Row="1"
@@ -4676,8 +5098,314 @@
                                                    Classes="muted" FontSize="10.5" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
+
+                                <Border Classes="card" IsVisible="{Binding IsSelectedLorePlugin}">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="Lore Project Management" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="Experimental integration for Epic Games Lore 0.x. Lore remains an external CLI and centralized server; this plugin does not replace it or silently initialize a workspace."
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="Open Extensions &amp; Help > Lore to detect the CLI, inspect .lore/config.toml, read status and branches, explicitly scan the workspace, and install the CyRevision Unreal companion."
+                                                   Classes="muted" FontSize="10.5" TextWrapping="Wrap" />
+                                        <Border Background="#2B2520" BorderBrush="#6D5731" BorderThickness="1" CornerRadius="4" Padding="9">
+                                            <TextBlock Text="The bundled Unreal companion is a CyRevision experimental bridge. It is not Epic's future official Unreal Lore source-control provider."
+                                                       Foreground="#F2C66D" FontSize="10" TextWrapping="Wrap" />
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </ScrollViewer>
+                    </Grid>
+                </TabItem>
+
+                <TabItem x:Name="UnityWorkspaceTab" Header="Unity">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="8">
+                        <Border Classes="card" Padding="10">
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Unity Integration" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Optional CyRevision plugin · autonomous Unity Editor package included"
+                                               Classes="muted" FontSize="10" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#203D50" BorderBrush="#3BAA96"
+                                        BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding IsUnityIntegrationEnabled, StringFormat='Plugin enabled: {0}'}"
+                                               Foreground="#7DE2CC" FontSize="10" />
+                                </Border>
+                                <Border Grid.Column="2" Background="#3C3523" BorderBrush="#8A7436"
+                                        BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding IsUnityProjectDetected, StringFormat='Project detected: {0}'}"
+                                               Foreground="#F2C66D" FontSize="10" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <Grid Grid.Row="1" ColumnDefinitions="1.05*,7,0.95*">
+                            <Border Classes="card">
+                                <StackPanel Spacing="9">
+                                    <TextBlock Text="Project companion" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock Text="CyRevision auto-detects Assets and ProjectSettings/ProjectVersion.txt in the selected project."
+                                               Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                        <TextBox Text="{Binding UnityProjectPath}" IsReadOnly="True"
+                                                 PlaceholderText="No Unity project detected" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Choose project…"
+                                                Click="OnPickUnityProjectClick" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,Auto,22,Auto,Auto,22,Auto,Auto" ColumnSpacing="6">
+                                        <TextBlock Text="Engine" Classes="muted" />
+                                        <TextBlock Grid.Column="1" Text="{Binding UnityEngineVersion}" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Column="3" Text="Bundled" Classes="muted" />
+                                        <TextBlock Grid.Column="4" Text="{Binding UnityBundledPluginVersion}" Foreground="#78D7B7" />
+                                        <TextBlock Grid.Column="6" Text="Installed" Classes="muted" />
+                                        <TextBlock Grid.Column="7" Text="{Binding UnityInstalledPluginVersion}" />
+                                    </Grid>
+                                    <Border Background="#111820" BorderBrush="#394655" BorderThickness="1" CornerRadius="4" Padding="9">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="{Binding UnityCompatibilityStatus}" TextWrapping="Wrap" Foreground="#78D7B7" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding UnitySupportedVersions}" Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding UnityPluginSummary}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <Button Classes="primary" Content="Install / update Unity package"
+                                                IsEnabled="{Binding CanInstallUnityEditorPlugin}"
+                                                Click="OnInstallUnityPluginClick" Margin="0,3,7,3" />
+                                        <Button Classes="secondary" Content="Configure direct connection"
+                                                IsEnabled="{Binding CanInstallUnityEditorPlugin}"
+                                                Click="OnConfigureUnityBridgeClick" Margin="0,3,7,3" />
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+                            <GridSplitter Grid.Column="1" Width="7" Background="#45484E"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+                            <Border Grid.Column="2" Classes="card">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Private Editor bridge" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding UnityBridgeSummary}" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                    <Border Height="1" Background="#45484E" />
+                                    <TextBlock Text="• Separate loopback-only port and random per-project token." TextWrapping="Wrap" />
+                                    <TextBlock Text="• The embedded Unity package can open CyRevision and notify project saves." TextWrapping="Wrap" />
+                                    <TextBlock Text="• Existing packages are backed up under Library/CyRevision before updates." TextWrapping="Wrap" />
+                                    <Border Background="#2B2520" BorderBrush="#6D5731" BorderThickness="1" CornerRadius="4" Padding="9">
+                                        <TextBlock Text="Unity asset preview and diff providers are intentionally not included in this first integration. Standard text and image support remains available."
+                                                   Foreground="#F2C66D" FontSize="10" TextWrapping="Wrap" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem x:Name="GodotWorkspaceTab" Header="Godot">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="8">
+                        <Border Classes="card" Padding="10">
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Godot Integration" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Optional CyRevision plugin · autonomous Godot 4 Editor dock included"
+                                               Classes="muted" FontSize="10" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#203D50" BorderBrush="#3BAA96"
+                                        BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding IsGodotIntegrationEnabled, StringFormat='Plugin enabled: {0}'}"
+                                               Foreground="#7DE2CC" FontSize="10" />
+                                </Border>
+                                <Border Grid.Column="2" Background="#3C3523" BorderBrush="#8A7436"
+                                        BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding IsGodotProjectDetected, StringFormat='Project detected: {0}'}"
+                                               Foreground="#F2C66D" FontSize="10" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <Grid Grid.Row="1" ColumnDefinitions="1.05*,7,0.95*">
+                            <Border Classes="card">
+                                <StackPanel Spacing="9">
+                                    <TextBlock Text="Project companion" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock Text="CyRevision auto-detects project.godot in the selected project."
+                                               Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                        <TextBox Text="{Binding GodotProjectPath}" IsReadOnly="True"
+                                                 PlaceholderText="No Godot project detected" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Choose project…"
+                                                Click="OnPickGodotProjectClick" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,Auto,22,Auto,Auto,22,Auto,Auto" ColumnSpacing="6">
+                                        <TextBlock Text="Engine" Classes="muted" />
+                                        <TextBlock Grid.Column="1" Text="{Binding GodotEngineVersion}" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Column="3" Text="Bundled" Classes="muted" />
+                                        <TextBlock Grid.Column="4" Text="{Binding GodotBundledPluginVersion}" Foreground="#78D7B7" />
+                                        <TextBlock Grid.Column="6" Text="Installed" Classes="muted" />
+                                        <TextBlock Grid.Column="7" Text="{Binding GodotInstalledPluginVersion}" />
+                                    </Grid>
+                                    <Border Background="#111820" BorderBrush="#394655" BorderThickness="1" CornerRadius="4" Padding="9">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="{Binding GodotCompatibilityStatus}" TextWrapping="Wrap" Foreground="#78D7B7" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding GodotSupportedVersions}" Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding GodotPluginSummary}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <Button Classes="primary" Content="Install / update Godot addon"
+                                                IsEnabled="{Binding CanInstallGodotEditorPlugin}"
+                                                Click="OnInstallGodotPluginClick" Margin="0,3,7,3" />
+                                        <Button Classes="secondary" Content="Configure direct connection"
+                                                IsEnabled="{Binding CanInstallGodotEditorPlugin}"
+                                                Click="OnConfigureGodotBridgeClick" Margin="0,3,7,3" />
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+                            <GridSplitter Grid.Column="1" Width="7" Background="#45484E"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+                            <Border Grid.Column="2" Classes="card">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Private Editor bridge" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding GodotBridgeSummary}" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                    <Border Height="1" Background="#45484E" />
+                                    <TextBlock Text="• Separate loopback-only port and random per-project token." TextWrapping="Wrap" />
+                                    <TextBlock Text="• The Godot 4 dock can open CyRevision and notify project changes." TextWrapping="Wrap" />
+                                    <TextBlock Text="• Existing addons and project.godot are backed up before an update." TextWrapping="Wrap" />
+                                    <Border Background="#2B2520" BorderBrush="#6D5731" BorderThickness="1" CornerRadius="4" Padding="9">
+                                        <TextBlock Text="Godot asset preview and diff providers are intentionally not included in this first integration. Standard text and image support remains available."
+                                                   Foreground="#F2C66D" FontSize="10" TextWrapping="Wrap" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem x:Name="LoreWorkspaceTab" Header="Lore">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="8">
+                        <Border Classes="card" Padding="10">
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Lore Project Management" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Optional CyRevision plugin · Epic Games Lore CLI/server remains an external dependency"
+                                               Classes="muted" FontSize="10" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#203D50" BorderBrush="#3BAA96"
+                                        BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding IsLoreIntegrationEnabled, StringFormat='Plugin enabled: {0}'}"
+                                               Foreground="#7DE2CC" FontSize="10" />
+                                </Border>
+                                <Border Grid.Column="2" Background="#3C3523" BorderBrush="#8A7436"
+                                        BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                                    <TextBlock Text="EXPERIMENTAL · Lore 0.x" Foreground="#F2C66D" FontSize="10" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="1.05*,7,0.95*">
+                            <Border Classes="card">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Spacing="9">
+                                        <TextBlock Text="CLI and workspace" FontSize="15" FontWeight="SemiBold" />
+                                        <TextBlock Text="CyRevision reads an existing .lore/config.toml. It never creates a Lore repository automatically."
+                                                   Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                            <TextBox Text="{Binding LoreProjectPath}" IsReadOnly="True"
+                                                     PlaceholderText="No project selected" />
+                                            <Button Grid.Column="1" Classes="secondary" Content="Choose project…"
+                                                    Click="OnPickLoreProjectClick" />
+                                        </Grid>
+                                        <Border Background="#111820" BorderBrush="#394655" BorderThickness="1" CornerRadius="4" Padding="9">
+                                            <StackPanel Spacing="4">
+                                                <TextBlock Text="{Binding LoreProjectSummary}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding LoreRepositorySummary}" Foreground="#78D7B7" FontSize="10" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                            <TextBox Text="{Binding LoreCliPath}" PlaceholderText="lore executable or PATH command" />
+                                            <Button Grid.Column="1" Classes="secondary" Content="Detect CLI"
+                                                    IsEnabled="{Binding !IsLoreBusy}" Click="OnDetectLoreCliClick" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding LoreCliSummary}" Classes="muted" FontSize="10" TextWrapping="Wrap" />
+
+                                        <WrapPanel Orientation="Horizontal">
+                                            <Button Classes="primary" Content="Refresh status"
+                                                    IsEnabled="{Binding CanReadLore}" Click="OnReadLoreStatusClick" Margin="0,2,7,2" />
+                                            <Button Classes="secondary" Content="Scan working tree…"
+                                                    IsEnabled="{Binding CanReadLore}" Click="OnScanLoreStatusClick" Margin="0,2,7,2" />
+                                            <Button Classes="secondary" Content="Load branches"
+                                                    IsEnabled="{Binding CanReadLore}" Click="OnListLoreBranchesClick" Margin="0,2,7,2" />
+                                        </WrapPanel>
+                                        <TextBlock Text="Refresh status calls lore status without --scan. Scan working tree is separate because Lore persists refreshed dirty flags."
+                                                   Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
+
+                                        <TextBlock Text="Status output" FontWeight="SemiBold" />
+                                        <Border Background="#081124" BorderBrush="#243757" BorderThickness="1" CornerRadius="4" Padding="8" MinHeight="150">
+                                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                                <TextBlock Text="{Binding LoreStatusOutput}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="10" TextWrapping="NoWrap" />
+                                            </ScrollViewer>
+                                        </Border>
+                                        <Border Height="1" Background="#45484E" />
+                                        <TextBlock Text="Explicit Lore actions" FontSize="15" FontWeight="SemiBold" />
+                                        <TextBlock Text="Nothing below runs automatically. Paths are passed as one CLI argument without a shell."
+                                                   Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                            <TextBox Text="{Binding LoreStagePath}" PlaceholderText="Project-relative file, folder, or Lore glob" />
+                                            <Button Grid.Column="1" Classes="secondary" Content="Stage"
+                                                    IsEnabled="{Binding CanReadLore}" Click="OnStageLorePathClick" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                            <TextBox Text="{Binding LoreCommitMessage}" PlaceholderText="Lore commit message" />
+                                            <Button Grid.Column="1" Classes="primary" Content="Commit"
+                                                    IsEnabled="{Binding CanReadLore}" Click="OnCommitLoreClick" />
+                                        </Grid>
+                                        <WrapPanel Orientation="Horizontal">
+                                            <Button Classes="secondary" Content="Sync"
+                                                    IsEnabled="{Binding CanReadLore}" Click="OnSyncLoreClick" Margin="0,2,7,2" />
+                                            <Button Classes="primary" Content="Push…"
+                                                    IsEnabled="{Binding CanReadLore}" Click="OnPushLoreClick" Margin="0,2,7,2" />
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Border>
+
+                            <GridSplitter Grid.Column="1" Width="7" Background="#45484E"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+
+                            <Border Grid.Column="2" Classes="card">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Spacing="9">
+                                        <TextBlock Text="Branches" FontSize="15" FontWeight="SemiBold" />
+                                        <Border Background="#081124" BorderBrush="#243757" BorderThickness="1" CornerRadius="4" Padding="8" MinHeight="150">
+                                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                                <TextBlock Text="{Binding LoreBranchesOutput}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="10" TextWrapping="NoWrap" />
+                                            </ScrollViewer>
+                                        </Border>
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="7">
+                                            <TextBox Text="{Binding LoreNewBranchName}" PlaceholderText="Branch name" />
+                                            <Button Grid.Column="1" Classes="secondary" Content="Create"
+                                                    IsEnabled="{Binding CanReadLore}" Click="OnCreateLoreBranchClick" />
+                                            <Button Grid.Column="2" Classes="secondary" Content="Switch"
+                                                    IsEnabled="{Binding CanReadLore}" Click="OnSwitchLoreBranchClick" />
+                                        </Grid>
+
+                                        <Border Height="1" Background="#45484E" />
+                                        <TextBlock Text="Unreal companion" FontSize="15" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding IsLoreUnrealProjectDetected, StringFormat='Unreal project detected: {0}'}" />
+                                        <TextBlock Text="{Binding IsLoreUnrealCompanionInstalled, StringFormat='Companion installed: {0}'}" />
+                                        <TextBlock Text="{Binding LoreUnrealCompanionVersion, StringFormat='Installed version: {0}'}" Classes="muted" />
+                                        <Button Classes="primary" Content="Install / update Unreal companion"
+                                                HorizontalAlignment="Left"
+                                                IsEnabled="{Binding CanInstallLoreUnrealCompanion}"
+                                                Click="OnInstallLoreUnrealCompanionClick" />
+                                        <Border Background="#2B2520" BorderBrush="#6D5731" BorderThickness="1" CornerRadius="4" Padding="9">
+                                            <StackPanel Spacing="5">
+                                                <TextBlock Text="Important" Foreground="#F2C66D" FontWeight="SemiBold" />
+                                                <TextBlock Text="This source-only CyRevision companion detects the Lore workspace inside Unreal and links back to CyRevision. It is not Epic's official Lore Source Control provider."
+                                                           Foreground="#F2C66D" FontSize="10" TextWrapping="Wrap" />
+                                                <TextBlock Text="Epic's public roadmap currently targets the native open-source Unreal Editor provider separately."
+                                                           Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Border>
+                                        <TextBlock Text="Lore uses a centralized server of record with offline local operations. It is a distinct project-management backend, not a decentralized Git/Syncthing replacement."
+                                                   Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </TabItem>
 

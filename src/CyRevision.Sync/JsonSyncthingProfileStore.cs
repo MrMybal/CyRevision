@@ -79,7 +79,14 @@ public sealed class JsonSyncthingProfileStore : ISyncthingProfileStore
                 RescanIntervalSeconds = existing?.RescanIntervalSeconds is > 0
                     ? existing.RescanIntervalSeconds
                     : 60,
-                FileWatcherEnabled = existing?.FileWatcherEnabled ?? true
+                FileWatcherEnabled = existing?.FileWatcherEnabled ?? true,
+                ProjectFolderPath = existing?.ProjectFolderPath,
+                VersioningDirectory = existing?.VersioningDirectory,
+                CompressedBackupDirectory = existing?.CompressedBackupDirectory,
+                CompressedBackupEnabled = existing?.CompressedBackupEnabled ?? false,
+                ConflictBackupRetentionDays = existing?.ConflictBackupRetentionDays is > 0
+                    ? existing.ConflictBackupRetentionDays
+                    : 30
             };
             profile.ToIsolationOptions().Validate();
             Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);

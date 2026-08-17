@@ -17,6 +17,8 @@ public sealed record ServerOptions(
 
     public string VpnDirectory => Path.Combine(DataDirectory, "vpn");
 
+    public string TeamChatDirectory => Path.Combine(DataDirectory, "team-chat");
+
     public static ServerOptions Create(IConfiguration configuration, IHostEnvironment environment)
     {
         string defaultData = OperatingSystem.IsWindows()
@@ -67,6 +69,7 @@ public sealed record ServerOptions(
         Directory.CreateDirectory(BackupDirectory);
         Directory.CreateDirectory(SyncthingDirectory);
         Directory.CreateDirectory(VpnDirectory);
+        Directory.CreateDirectory(TeamChatDirectory);
     }
 
     public bool IsAllowedProjectPath(string path)

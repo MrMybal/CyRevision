@@ -1,0 +1,18 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "CyRevision Lore Companion (Experimental)",
+  "Description": "Project-local companion for the optional CyRevision Lore integration. This is not Epic's future official Unreal Lore provider.",
+  "Category": "Revision Control",
+  "CreatedBy": "CyRevision",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Modules": [
+    {
+      "Name": "CyRevisionLoreEditor",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    }
+  ]
+}
