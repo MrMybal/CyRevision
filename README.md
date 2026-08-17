@@ -75,7 +75,7 @@ Publish on Windows:
 Build a self-contained Windows installer and portable release locally:
 
 ```powershell
-./scripts/build-release.cmd 0.1.16
+./scripts/build-release.cmd 0.1.17
 ```
 
 Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).

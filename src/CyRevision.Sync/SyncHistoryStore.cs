@@ -62,6 +62,7 @@ public sealed class JsonLineSyncHistoryStore
             if (!File.Exists(path)) return [];
             string[] lines = await File.ReadAllLinesAsync(path, cancellationToken).ConfigureAwait(false);
             IEnumerable<SyncHistoryEntry> entries = lines
+                .AsEnumerable()
                 .Reverse()
                 .Select(TryDeserialize)
                 .Where(entry => entry is not null)

@@ -9,7 +9,7 @@ on:
       version:
         description: "Release version without the v prefix"
         required: true
-        default: "0.1.16"
+        default: "0.1.17"
       publish_release:
         description: "Create or update the GitHub Release"
         type: boolean
@@ -52,10 +52,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-      - name: Install .NET 8 SDK
+      - name: Install .NET 9 SDK
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "9.0.x"
       - name: Restore, build, and test
         shell: bash
         run: |
@@ -69,10 +69,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-      - name: Install .NET 8 SDK
+      - name: Install .NET 9 SDK
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "9.0.x"
       - name: Install Inno Setup
         shell: powershell
         run: choco install innosetup --no-progress -y
@@ -101,10 +101,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-      - name: Install .NET 8 SDK
+      - name: Install .NET 9 SDK
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "9.0.x"
       - name: Build Linux packages
         shell: bash
         env:
@@ -131,10 +131,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-      - name: Install .NET 8 SDK
+      - name: Install .NET 9 SDK
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "9.0.x"
       - name: Build macOS disk image
         shell: bash
         env:
