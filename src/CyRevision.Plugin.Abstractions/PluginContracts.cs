@@ -21,6 +21,69 @@ public interface ICyRevisionPlugin : IAsyncDisposable
     Task InitializeAsync(CyRevisionPluginContext context, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// UI-neutral feature switches requested by a plugin-owned project mode. The host maps
+/// these values to its current project configuration instead of making plugins reference
+/// CyRevision.Core or Avalonia.
+/// </summary>
+public sealed record PluginProjectModeFeatures(
+    bool GitEnabled,
+    bool LfsEnabled,
+    bool PeerSyncEnabled,
+    bool BackupEnabled,
+    bool StandardGitRemoteEnabled);
+
+public enum PluginProjectModeRetentionKind
+{
+    CurrentStateOnly,
+    Timeline,
+    Permanent
+}
+
+public sealed record PluginProjectModeRetention(
+    PluginProjectModeRetentionKind Kind,
+    int? MaxVersionsPerFile = null,
+    int? MaximumAgeDays = null,
+    long? StorageBudgetBytes = null);
+
+/// <summary>
+/// Describes an operating mode contributed by an optional plugin. WorkspaceTabIds refer
+/// to host surfaces registered by that plugin package (for example LoreWorkspaceTab).
+/// The mode identifier only needs to be unique inside its provider plugin.
+/// </summary>
+public sealed record PluginProjectModeDescriptor(
+    string Id,
+    string Name,
+    string Description,
+    PluginProjectModeFeatures Features,
+    PluginProjectModeRetention Retention,
+    IReadOnlyList<string> WorkspaceTabIds,
+    string CategoryLabel);
+
+public sealed record PluginProjectModeContext(
+    Guid ProjectId,
+    string ProjectName,
+    string ProjectRoot,
+    IReadOnlyCollection<string> EnabledPluginIds);
+
+public sealed record PluginProjectModeAvailability(
+    bool IsAvailable,
+    string Summary);
+
+/// <summary>
+/// Optional plugin capability used to add complete project operating modes. Modes are
+/// project-scoped: the host only exposes them while their provider plugin is enabled for
+/// the selected project, and the provider remains responsible for compatibility checks.
+/// </summary>
+public interface IProjectModeProvider : ICyRevisionPlugin
+{
+    IReadOnlyList<PluginProjectModeDescriptor> ProjectModes { get; }
+
+    PluginProjectModeAvailability EvaluateProjectMode(
+        string modeId,
+        PluginProjectModeContext context);
+}
+
 public enum FilePresentationKind
 {
     Text,
@@ -494,6 +557,139 @@ public interface ILoreIntegrationPlugin : ICyRevisionPlugin
 
     Task<LoreUnrealCompanionInstallationResult> InstallOrUpdateUnrealCompanionAsync(
         string projectPath,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record PerforceProjectSettings(
+    Guid ProjectId,
+    string ProjectRoot,
+    string ExecutablePath,
+    string Server,
+    string User,
+    string Workspace,
+    bool WriteOperationsEnabled);
+
+public sealed record PerforceCliDetection(
+    bool IsAvailable,
+    string ExecutablePath,
+    string Version,
+    string Summary);
+
+public sealed record PerforceConnectionStatus(
+    bool CliAvailable,
+    bool ServerReachable,
+    bool Authenticated,
+    bool WorkspaceValid,
+    string ServerAddress,
+    string UserName,
+    string WorkspaceName,
+    string WorkspaceRoot,
+    string ServerVersion,
+    string Summary);
+
+public sealed record PerforceOpenedFile(
+    string DepotPath,
+    string LocalPath,
+    string Action,
+    string Change,
+    string FileType,
+    string User,
+    string Workspace,
+    bool IsLockedByOther);
+
+public sealed record PerforceChangelist(
+    int Number,
+    string Status,
+    string Description,
+    string User,
+    string Workspace,
+    DateTimeOffset? UpdatedAt);
+
+public sealed record PerforceFileRevision(
+    int Revision,
+    int Changelist,
+    string Action,
+    string FileType,
+    string User,
+    string Workspace,
+    DateTimeOffset? SubmittedAt,
+    string Description);
+
+public sealed record PerforceCommandResult(
+    bool Succeeded,
+    int ExitCode,
+    string StandardOutput,
+    string StandardError,
+    TimeSpan Duration,
+    string Summary);
+
+/// <summary>
+/// Optional Helix Core integration. Authentication remains owned by the official P4 CLI
+/// ticket store; CyRevision persists connection coordinates, never passwords or tickets.
+/// Mutating methods must reject calls until WriteOperationsEnabled is set for the project.
+/// </summary>
+public interface IPerforceIntegrationPlugin : ICyRevisionPlugin
+{
+    PerforceCliDetection DetectCli(string? configuredPath = null);
+
+    Task<PerforceProjectSettings?> LoadSettingsAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default);
+
+    Task SaveSettingsAsync(
+        PerforceProjectSettings settings,
+        CancellationToken cancellationToken = default);
+
+    Task<PerforceConnectionStatus> InspectConnectionAsync(
+        PerforceProjectSettings settings,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PerforceOpenedFile>> GetOpenedFilesAsync(
+        PerforceProjectSettings settings,
+        bool includeOtherWorkspaces,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PerforceChangelist>> GetChangelistsAsync(
+        PerforceProjectSettings settings,
+        string status,
+        int maximumCount = 100,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PerforceFileRevision>> GetFileHistoryAsync(
+        PerforceProjectSettings settings,
+        string projectRelativePath,
+        int maximumCount = 100,
+        CancellationToken cancellationToken = default);
+
+    Task<PerforceCommandResult> PreviewReconcileAsync(
+        PerforceProjectSettings settings,
+        CancellationToken cancellationToken = default);
+
+    Task<PerforceCommandResult> ReconcileAsync(
+        PerforceProjectSettings settings,
+        CancellationToken cancellationToken = default);
+
+    Task<PerforceCommandResult> OpenForEditAsync(
+        PerforceProjectSettings settings,
+        IReadOnlyList<string> projectRelativePaths,
+        int? changelist = null,
+        CancellationToken cancellationToken = default);
+
+    Task<PerforceCommandResult> RevertAsync(
+        PerforceProjectSettings settings,
+        IReadOnlyList<string> projectRelativePaths,
+        bool unchangedOnly,
+        CancellationToken cancellationToken = default);
+
+    Task<PerforceCommandResult> SubmitAsync(
+        PerforceProjectSettings settings,
+        int? changelist,
+        string description,
+        CancellationToken cancellationToken = default);
+
+    Task<PerforceCommandResult> SyncAsync(
+        PerforceProjectSettings settings,
+        bool previewOnly,
         CancellationToken cancellationToken = default);
 }
 

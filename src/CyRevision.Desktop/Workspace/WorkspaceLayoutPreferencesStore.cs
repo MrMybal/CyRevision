@@ -13,6 +13,7 @@ internal enum HistoryLayoutMode
 internal enum ChangesLayoutMode
 {
     Balanced,
+    CommitFocus,
     DiffFocus
 }
 

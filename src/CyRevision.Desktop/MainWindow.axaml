@@ -380,6 +380,10 @@
                                   Click="OnBackupCategoryClick" />
                     <ToggleButton x:Name="SyncCategoryToggle" Classes="workspaceCategory" Content="Sync"
                                   Click="OnSyncCategoryClick" />
+                    <ToggleButton x:Name="PluginModeCategoryToggle" Classes="workspaceCategory"
+                                  Content="{Binding ActivePluginOperatingModeName}"
+                                  IsVisible="{Binding HasActivePluginOperatingMode}"
+                                  Click="OnPluginModeCategoryClick" />
                     <ToggleButton x:Name="NetworkCategoryToggle" Classes="workspaceCategory" Content="Team &amp; Network"
                                   Click="OnNetworkCategoryClick" />
                     <ToggleButton x:Name="ExtensionsCategoryToggle" Classes="workspaceCategory" Content="Extensions &amp; Help"
@@ -402,13 +406,34 @@
                                         <ComboBox.ItemTemplate>
                                             <DataTemplate>
                                                 <StackPanel Margin="4">
-                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                        <Border Background="#183C56" CornerRadius="3" Padding="5,1"
+                                                                IsVisible="{Binding IsPluginMode}">
+                                                            <TextBlock Text="PLUGIN MODE" FontSize="8" Foreground="#78D7B7" />
+                                                        </Border>
+                                                    </StackPanel>
                                                     <TextBlock Text="{Binding Description}" FontSize="11" Classes="muted" />
+                                                    <TextBlock Text="{Binding AvailabilitySummary}" FontSize="10"
+                                                               Foreground="#F2C66D" TextWrapping="Wrap"
+                                                               IsVisible="{Binding IsPluginMode}" />
                                                 </StackPanel>
                                             </DataTemplate>
                                         </ComboBox.ItemTemplate>
                                     </ComboBox>
-                                    <Button Classes="primary" Content="Apply mode" Click="OnApplyPresetClick" HorizontalAlignment="Left" />
+                                    <Button Classes="primary" Content="Apply mode" Click="OnApplyPresetClick"
+                                            IsEnabled="{Binding SelectedPreset.IsAvailable}"
+                                            HorizontalAlignment="Left" />
+                                    <Border Background="#102D2A" BorderBrush="#315E54" BorderThickness="1"
+                                            CornerRadius="5" Padding="9,6"
+                                            IsVisible="{Binding HasActivePluginOperatingMode}">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding ActivePluginOperatingModeName}" FontWeight="SemiBold"
+                                                       Foreground="#78D7B7" />
+                                            <TextBlock Text="{Binding ActivePluginOperatingModeSummary}" FontSize="10"
+                                                       Classes="muted" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
                                     <TextBlock Text="Changing mode never deletes data that is already stored."
                                                TextWrapping="Wrap" FontSize="10.5" Foreground="#78D7B7" />
                                 </StackPanel>
@@ -718,37 +743,44 @@
                           ColumnDefinitions="1.05*,8,1.35*" RowDefinitions="Auto,*,Auto" RowSpacing="8">
                         <Border Grid.ColumnSpan="3" Background="#26282B" BorderBrush="#393B40" BorderThickness="1"
                                 CornerRadius="6" Padding="7,5">
-                            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
                                 <TextBlock Text="LAYOUT" FontSize="9" FontWeight="Bold" Foreground="#7E8189"
                                            VerticalAlignment="Center" Margin="3,0,2,0" />
                                 <ToggleButton x:Name="ChangesBalancedLayoutToggle" Grid.Column="1" Classes="layoutChoice"
                                               Content="Review" Click="OnBalancedChangesLayoutClick"
                                               ToolTip.Tip="Balanced file list and diff" />
                                 <ToggleButton x:Name="ChangesDiffFocusLayoutToggle" Grid.Column="2" Classes="layoutChoice"
-                                              Content="Diff focus" Click="OnDiffFocusChangesLayoutClick"
-                                              ToolTip.Tip="Give more space to the diff viewer" />
-                                <TextBlock Grid.Column="3" Text="Drag the divider to resize panels. Layout sizes are saved locally."
+                                               Content="Diff focus" Click="OnDiffFocusChangesLayoutClick"
+                                               ToolTip.Tip="Give more space to the diff viewer" />
+                                <ToggleButton x:Name="ChangesCommitFocusLayoutToggle" Grid.Column="3" Classes="layoutChoice"
+                                              Content="Commit focus" Click="OnCommitFocusChangesLayoutClick"
+                                              ToolTip.Tip="Give more space to file selection and commit preparation" />
+                                <TextBlock Grid.Column="4" Text="Drag the divider to resize panels. Layout sizes are saved locally."
                                            FontSize="9.5" Classes="muted" VerticalAlignment="Center" Margin="8,0" />
-                                <ToggleButton x:Name="ChangesDiffToggle" Grid.Column="4" Classes="layoutChoice" Content="Diff"
+                                <ToggleButton x:Name="ChangesDiffToggle" Grid.Column="5" Classes="layoutChoice" Content="Diff"
                                               Click="OnChangesDiffToggleClick" ToolTip.Tip="Show or hide the inline diff preview" />
-                                <Button Grid.Column="5" Classes="secondary" Content="Open diff ↗" Click="OnOpenChangesDiffWindowClick" />
-                                <Button Grid.Column="6" Classes="secondary" Content="Save layout" Click="OnSaveWorkspaceLayoutClick" />
-                                <Button Grid.Column="7" Classes="secondary" Content="Reset" Click="OnResetWorkspaceLayoutClick" />
+                                <Button Grid.Column="6" Classes="secondary" Content="Open diff ↗" Click="OnOpenChangesDiffWindowClick" />
+                                <Button Grid.Column="7" Classes="secondary" Content="Save layout" Click="OnSaveWorkspaceLayoutClick" />
+                                <Button Grid.Column="8" Classes="secondary" Content="Reset" Click="OnResetWorkspaceLayoutClick" />
                             </Grid>
                         </Border>
 
                         <Border x:Name="ChangesListPanel" Grid.Row="1" Classes="card" Padding="0" ClipToBounds="True" MinWidth="300">
                             <Grid RowDefinitions="42,28,34,*,32">
                                 <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
-                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="5">
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="5">
                                         <StackPanel VerticalAlignment="Center">
                                             <TextBlock Text="Commit editor" FontSize="13" FontWeight="SemiBold" />
                                             <TextBlock Text="Choose exactly what is committed" Classes="muted" FontSize="8.5" />
                                         </StackPanel>
-                                        <Button Grid.Column="1" Classes="secondary" Content="Scan untracked" Click="OnScanAllUntrackedClick" Padding="8,4"
+                                        <Button Grid.Column="1" Classes="danger" Content="{Binding GitConflictActionText}"
+                                                Click="OnOpenGitConflictResolverClick" Padding="8,4"
+                                                IsVisible="{Binding HasGitConflicts}"
+                                                ToolTip.Tip="Open the three-way Base / Result / Incoming conflict resolver" />
+                                        <Button Grid.Column="2" Classes="secondary" Content="Scan untracked" Click="OnScanAllUntrackedClick" Padding="8,4"
                                                 ToolTip.Tip="Expand every untracked folder. This can take time on very large Unreal projects." />
-                                        <Button Grid.Column="2" Classes="secondary" Content="Include all" Click="OnIncludeAllChangesClick" Padding="8,4" />
-                                        <Button Grid.Column="3" Classes="secondary" Content="Keep all" Click="OnKeepAllChangesClick" Padding="8,4" />
+                                        <Button Grid.Column="3" Classes="secondary" Content="Include all" Click="OnIncludeAllChangesClick" Padding="8,4" />
+                                        <Button Grid.Column="4" Classes="secondary" Content="Keep all" Click="OnKeepAllChangesClick" Padding="8,4" />
                                     </Grid>
                                 </Border>
 
@@ -777,6 +809,7 @@
                                             </Border>
                                             <DataGrid x:Name="VersionedChangesGrid" Grid.Row="1" ItemsSource="{Binding FilteredVersionedChanges}"
                                                       SelectedItem="{Binding SelectedChange, Mode=OneWayToSource}"
+                                                      DoubleTapped="OnVersionedChangeDoubleTapped"
                                                       Classes="historyCompact" AutoGenerateColumns="False" IsReadOnly="True"
                                                       Sorting="OnChangesDataGridSorting"
                                                       CanUserSortColumns="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0"
@@ -2949,6 +2982,19 @@
                                     <TextBlock Text="Archive froide des anciens snapshots" FontSize="15" FontWeight="SemiBold" />
                                     <TextBlock Text="Copie vers un disque, NAS ou stockage monté moins cher. Le stockage actif n'est jamais supprimé automatiquement."
                                                TextWrapping="Wrap" FontSize="10" Classes="muted" />
+                                    <Border Background="#151E2C" BorderBrush="#35445B" BorderThickness="1" CornerRadius="5" Padding="8,6">
+                                        <Grid ColumnDefinitions="1*,1*,1*" ColumnSpacing="9">
+                                            <TextBlock Text="1 · Choose a safety profile" FontSize="9.5" Foreground="#9CC7FF" />
+                                            <TextBlock Grid.Column="1" Text="2 · Choose separate cold storage" FontSize="9.5" Foreground="#9CC7FF" />
+                                            <TextBlock Grid.Column="2" Text="3 · Copy, verify, then optionally reclaim" FontSize="9.5" Foreground="#9CC7FF" />
+                                        </Grid>
+                                    </Border>
+                                    <Grid ColumnDefinitions="190,*" ColumnSpacing="8">
+                                        <ComboBox ItemsSource="{Binding BackupArchiveProfiles}" SelectedItem="{Binding SelectedBackupArchiveProfile}">
+                                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <TextBlock Grid.Column="1" Text="{Binding BackupArchiveProfileDescription}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
+                                    </Grid>
                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                         <TextBox Text="{Binding ColdArchivePath}" IsReadOnly="True" PlaceholderText="Archive froide facultative" />
                                         <Button Grid.Column="1" Classes="secondary" Content="Choisir…" Click="OnPickColdArchiveClick" />
@@ -2962,6 +3008,81 @@
                                                    TextWrapping="Wrap" FontSize="10" Classes="muted" />
                                         <Button Grid.Column="2" Classes="secondary" Content="Archiver maintenant" Click="OnArchiveOldBackupsClick" VerticalAlignment="Bottom" />
                                     </Grid>
+                                    <Border Background="#35281D" BorderBrush="#6C4D28" BorderThickness="1" CornerRadius="4" Padding="8,6">
+                                        <StackPanel Spacing="4">
+                                            <CheckBox Content="After archive verification, remove eligible copies from hot storage"
+                                                      IsChecked="{Binding RemoveArchivedHotCopies}" />
+                                            <TextBlock Text="OFF by default. CyRevision verifies the cold manifest and every object before removing a hot manifest; only then are unreferenced hot objects reclaimed. Remote Git history and active branches are never rewritten by this option."
+                                                       Foreground="#E5C07B" FontSize="9" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Expander IsVisible="{Binding IsGitProject}" Header="Git branches and old history · verified cold bundles"
+                                              Margin="0,5,0,0">
+                                        <StackPanel Spacing="7" Margin="0,7,0,0">
+                                            <TextBlock Text="Remote-backed old branches can be copied to compressed cold bundles. Current and recent branches are always protected; commits and remote history are never rewritten."
+                                                       TextWrapping="Wrap" FontSize="9.5" Classes="muted" />
+                                            <Grid ColumnDefinitions="180,*" ColumnSpacing="8">
+                                                <ComboBox ItemsSource="{Binding GitArchiveProfiles}" SelectedItem="{Binding SelectedGitArchiveProfile}">
+                                                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                                <TextBlock Grid.Column="1" Text="{Binding GitArchiveProfileDescription}" FontSize="9.5"
+                                                           Classes="muted" TextWrapping="Wrap" />
+                                            </Grid>
+                                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
+                                                <Border BorderBrush="#343841" BorderThickness="1" CornerRadius="4" Padding="5">
+                                                    <Grid RowDefinitions="Auto,150,Auto" RowSpacing="5">
+                                                        <Grid ColumnDefinitions="*,Auto">
+                                                            <TextBlock Text="Eligible hot branches" FontWeight="SemiBold" />
+                                                            <Button Grid.Column="1" Classes="secondary" Content="Analyze" Padding="7,3"
+                                                                    Click="OnAnalyzeGitArchiveClick" />
+                                                        </Grid>
+                                                        <DataGrid Grid.Row="1" ItemsSource="{Binding GitArchiveCandidates}"
+                                                                  SelectedItem="{Binding SelectedGitArchiveCandidate}"
+                                                                  AutoGenerateColumns="False" IsReadOnly="True" RowHeight="23"
+                                                                  GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                            <DataGrid.Columns>
+                                                                <DataGridTextColumn Header="Branch" Binding="{Binding Branch}" Width="*" />
+                                                                <DataGridTextColumn Header="Age" Binding="{Binding AgeDays, StringFormat='{}{0} d'}" Width="60" />
+                                                                <DataGridCheckBoxColumn Header="Remote copy" Binding="{Binding HasRemoteCopy}" Width="82" />
+                                                            </DataGrid.Columns>
+                                                        </DataGrid>
+                                                        <Button Grid.Row="2" Classes="secondary" Content="Create verified cold bundle"
+                                                                IsEnabled="{Binding CanArchiveSelectedGitBranch}"
+                                                                Click="OnArchiveGitBranchClick" HorizontalAlignment="Left" Padding="8,4" />
+                                                    </Grid>
+                                                </Border>
+                                                <Border Grid.Column="1" BorderBrush="#343841" BorderThickness="1" CornerRadius="4" Padding="5">
+                                                    <Grid RowDefinitions="Auto,150,Auto" RowSpacing="5">
+                                                        <TextBlock Text="Restorable cold bundles" FontWeight="SemiBold" />
+                                                        <DataGrid Grid.Row="1" ItemsSource="{Binding ArchivedGitBranches}"
+                                                                  SelectedItem="{Binding SelectedArchivedGitBranch}"
+                                                                  AutoGenerateColumns="False" IsReadOnly="True" RowHeight="23"
+                                                                  GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                            <DataGrid.Columns>
+                                                                <DataGridTextColumn Header="Branch" Binding="{Binding Branch}" Width="*" />
+                                                                <DataGridTextColumn Header="Archived" Binding="{Binding ArchivedAt}" Width="120" />
+                                                                <DataGridCheckBoxColumn Header="Hot removed" Binding="{Binding SourceBranchRemoved}" Width="82" />
+                                                            </DataGrid.Columns>
+                                                        </DataGrid>
+                                                        <Button Grid.Row="2" Classes="secondary" Content="Restore as a new local branch"
+                                                                IsEnabled="{Binding CanRestoreSelectedGitArchive}"
+                                                                Click="OnRestoreGitArchiveClick" HorizontalAlignment="Left" Padding="8,4" />
+                                                    </Grid>
+                                                </Border>
+                                            </Grid>
+                                            <Border Background="#35281D" BorderBrush="#6C4D28" BorderThickness="1" CornerRadius="4" Padding="8,6">
+                                                <StackPanel Spacing="4">
+                                                    <CheckBox Content="After bundle verification, remove the eligible local branch reference"
+                                                              IsChecked="{Binding RemoveGitBranchAfterArchive}" />
+                                                    <TextBlock Text="OFF by default. This requires a second confirmation. A matching remote copy is shown above, the verified bundle remains restorable, and CyRevision never runs automatic gc or rewrites remote history."
+                                                               Foreground="#E5C07B" FontSize="9" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                            <TextBlock Text="Git safety note: an ancestor still required by the current branch cannot be removed independently. Cold bundles target history reachable only from eligible branches. Removing a local ref does not run gc, so pack-file disk space is not reclaimed immediately."
+                                                       FontSize="9" Classes="muted" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding GitArchiveStatus}" FontSize="9.5" Foreground="#78D7B7" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Expander>
                                     <Button Classes="primary" Content="Enregistrer la stratégie" Click="OnSaveBackupSettingsClick" HorizontalAlignment="Left" Margin="0,7,0,0" />
                                     <TextBlock Text="La restauration refuse d'écraser des fichiers existants afin de protéger le projet courant." TextWrapping="Wrap" FontSize="11" Classes="muted" />
                                 </StackPanel>
@@ -3205,6 +3326,76 @@
                                 </WrapPanel>
                             </Grid>
                         </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Commits" IsVisible="{Binding IsSyncCommitMode}">
+                    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="7">
+                        <Border Classes="card" Padding="10,7">
+                            <Grid ColumnDefinitions="*,180,2*,Auto" ColumnSpacing="7">
+                                <StackPanel>
+                                    <TextBlock Text="Sync + Commit" FontSize="15" FontWeight="SemiBold" Foreground="#78D7B7" />
+                                    <TextBlock Text="The exchange changes only when a complete compressed commit is published." Classes="muted" FontSize="9.5" />
+                                </StackPanel>
+                                <TextBox Grid.Column="1" Text="{Binding SyncCommitAuthor}" PlaceholderText="Author" />
+                                <TextBox Grid.Column="2" Text="{Binding SyncCommitMessage}" PlaceholderText="Commit message…" />
+                                <Button Grid.Column="3" Classes="primary" Content="Commit &amp; publish"
+                                        IsEnabled="{Binding CanCreateSyncCommit}" Click="OnCreateSyncCommitClick" />
+                            </Grid>
+                        </Border>
+                        <Grid Grid.Row="1" ColumnDefinitions="1.05*,7,1.25*">
+                            <Border Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="Auto,*">
+                                    <Border Background="#2B2D30" Padding="9,6">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel><TextBlock Text="Published commits" FontWeight="SemiBold" /><TextBlock Text="Immutable packages · newest first" Classes="muted" FontSize="9" /></StackPanel>
+                                            <Button Grid.Column="1" Classes="secondary" Content="Refresh" Click="OnRefreshSyncCommitsClick" />
+                                        </Grid>
+                                    </Border>
+                                    <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SyncCommits}"
+                                              SelectedItem="{Binding SelectedSyncCommit}" AutoGenerateColumns="False"
+                                              IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Commit" Binding="{Binding ShortId}" Width="92" />
+                                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="1.5*" />
+                                            <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="110" />
+                                            <DataGridTextColumn Header="Created" Binding="{Binding CreatedAt}" Width="155" />
+                                            <DataGridTextColumn Header="Files" Binding="{Binding SizeText}" Width="90" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+                            <GridSplitter Grid.Column="1" Width="7" Background="#45484E" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+                            <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                                <Grid RowDefinitions="Auto,*,Auto">
+                                    <Border Background="#2B2D30" Padding="9,6">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel><TextBlock Text="Incoming analysis &amp; conflicts" FontWeight="SemiBold" /><TextBlock Text="{Binding SyncCommitConflictSummary}" Classes="muted" FontSize="9" /></StackPanel>
+                                            <Button Grid.Column="1" Classes="secondary" Content="Analyze selected" IsEnabled="{Binding CanAnalyzeSyncCommit}" Click="OnAnalyzeSyncCommitClick" />
+                                        </Grid>
+                                    </Border>
+                                    <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding SyncCommitConflicts}"
+                                              SelectedItem="{Binding SelectedSyncCommitConflict}" AutoGenerateColumns="False"
+                                              IsReadOnly="True" GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="File" Binding="{Binding Path}" Width="2*" />
+                                            <DataGridTextColumn Header="Conflict" Binding="{Binding State}" Width="130" />
+                                            <DataGridTextColumn Header="Resolution" Binding="{Binding ChoiceText}" Width="120" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="7" Margin="8,6">
+                                        <TextBlock Text="Every apply creates a recovery ZIP outside the synchronized folder." Classes="muted" FontSize="9" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Classes="secondary" Content="Keep local" Click="OnKeepLocalSyncCommitConflictClick" />
+                                        <Button Grid.Column="2" Classes="secondary" Content="Use incoming" Click="OnUseIncomingSyncCommitConflictClick" />
+                                        <Button Grid.Column="3" Classes="primary" Content="Apply commit" IsEnabled="{Binding CanApplySyncCommit}" Click="OnApplySyncCommitClick" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBlock Text="{Binding SyncCommitStatus}" Foreground="#E5C07B" TextTrimming="CharacterEllipsis" />
+                            <ProgressBar Grid.Column="1" Classes="inlineLoader" IsVisible="{Binding IsSyncCommitBusy}" IsIndeterminate="True" Width="100" />
+                        </Grid>
                     </Grid>
                 </TabItem>
 
@@ -5112,6 +5303,20 @@
                                         </Border>
                                     </StackPanel>
                                 </Border>
+
+                                <Border Classes="card" IsVisible="{Binding IsSelectedPerforcePlugin}">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="Perforce Helix Core" FontSize="16" FontWeight="SemiBold" />
+                                        <TextBlock Text="Project-scoped integration using the official p4 CLI: connection validation, opened files, changelists, file history, reconcile, sync, revert and submit."
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="Passwords and P4 tickets are never stored by CyRevision. Workspace writes remain disabled until you explicitly enable them after validating P4PORT, P4USER and P4CLIENT."
+                                                   Classes="muted" FontSize="10.5" TextWrapping="Wrap" />
+                                        <Border Background="#2B2520" BorderBrush="#6D5731" BorderThickness="1" CornerRadius="4" Padding="9">
+                                            <TextBlock Text="Perforce is a separate version-control mode. Enabling this plugin does not convert, initialize, or modify the selected project automatically."
+                                                       Foreground="#F2C66D" FontSize="10" TextWrapping="Wrap" />
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </ScrollViewer>
                     </Grid>
@@ -5405,6 +5610,179 @@
                                     </StackPanel>
                                 </ScrollViewer>
                             </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem x:Name="PerforceWorkspaceTab" Header="Perforce">
+                    <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="8">
+                        <Border Classes="card" Padding="10">
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Perforce Helix Core" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Optional project plugin · official p4 CLI · no credentials stored"
+                                               Classes="muted" FontSize="10" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#203D50" BorderBrush="#3BAA96"
+                                        BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding IsPerforceIntegrationEnabled, StringFormat='Plugin enabled: {0}'}"
+                                               Foreground="#7DE2CC" FontSize="10" />
+                                </Border>
+                                <Border Grid.Column="2" Background="#2B2520" BorderBrush="#6D5731"
+                                        BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding IsPerforceConnectionValidated, StringFormat='Validated: {0}'}"
+                                               Foreground="#F2C66D" FontSize="10" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="1" RowDefinitions="Auto,*,7,190" RowSpacing="7">
+                            <Border Classes="card" Padding="10">
+                                <StackPanel Spacing="7">
+                                    <Grid ColumnDefinitions="1.05*,1.1*,0.75*,0.9*,Auto,Auto" ColumnSpacing="7">
+                                        <TextBox Text="{Binding PerforceCliPath}" PlaceholderText="p4 or full path to p4.exe" />
+                                        <TextBox Grid.Column="1" Text="{Binding PerforceServer}" PlaceholderText="P4PORT · ssl:server:1666" />
+                                        <TextBox Grid.Column="2" Text="{Binding PerforceUser}" PlaceholderText="P4USER" />
+                                        <TextBox Grid.Column="3" Text="{Binding PerforceWorkspace}" PlaceholderText="P4CLIENT" />
+                                        <Button Grid.Column="4" Classes="secondary" Content="Detect CLI"
+                                                IsEnabled="{Binding !IsPerforceBusy}" Click="OnDetectPerforceCliClick" />
+                                        <Button Grid.Column="5" Classes="primary" Content="Save"
+                                                IsEnabled="{Binding CanReadPerforce}" Click="OnSavePerforceConfigurationClick" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{Binding PerforceCliSummary}" Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding PerforceConnectionSummary}" Foreground="#78D7B7" FontSize="10" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1" Content="Include other workspaces"
+                                                  IsChecked="{Binding PerforceIncludeOtherWorkspaces}" VerticalAlignment="Center" />
+                                        <CheckBox Grid.Column="2" Content="Enable workspace writes"
+                                                  IsChecked="{Binding PerforceWriteOperationsEnabled}" VerticalAlignment="Center" />
+                                        <Button Grid.Column="3" Classes="primary" Content="Validate &amp; refresh"
+                                                IsEnabled="{Binding CanReadPerforce}" Click="OnRefreshPerforceClick" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Grid Grid.Row="1" ColumnDefinitions="1.15*,7,0.85*">
+                                <Border Classes="card" Padding="9">
+                                    <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="6">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <StackPanel Spacing="1">
+                                                <TextBlock Text="Opened files" FontSize="15" FontWeight="SemiBold" />
+                                                <TextBlock Text="Your workspace and optional team workspaces" Classes="muted" FontSize="9.5" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="{Binding PerforceOpenedFiles.Count, StringFormat='{}{0} file(s)'}"
+                                                       Foreground="#78D7B7" VerticalAlignment="Center" />
+                                        </Grid>
+                                        <TextBox Grid.Row="1" Text="{Binding PerforceOpenedSearch}"
+                                                 PlaceholderText="Search file, action, user, workspace or changelist…" />
+                                        <DataGrid Grid.Row="2" Classes="historyCompact" ItemsSource="{Binding PerforceOpenedFiles}"
+                                                  SelectedItem="{Binding SelectedPerforceOpenedFile}"
+                                                  AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="File" Binding="{Binding LocalPath}" Width="2*" />
+                                                <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="80" />
+                                                <DataGridTextColumn Header="CL" Binding="{Binding Change}" Width="70" />
+                                                <DataGridTextColumn Header="User" Binding="{Binding User}" Width="100" />
+                                                <DataGridTextColumn Header="Workspace" Binding="{Binding Workspace}" Width="120" />
+                                                <DataGridCheckBoxColumn Header="Other" Binding="{Binding IsLockedByOther}" Width="55" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                        <WrapPanel Grid.Row="3" Orientation="Horizontal">
+                                            <Button Classes="secondary" Content="File history" IsEnabled="{Binding SelectedPerforceOpenedFile}"
+                                                    Click="OnLoadPerforceFileHistoryClick" Margin="0,2,7,2" />
+                                            <Button Classes="secondary" Content="Revert unchanged" IsEnabled="{Binding CanWritePerforce}"
+                                                    Click="OnRevertUnchangedPerforceFileClick" Margin="0,2,7,2" />
+                                            <Button Classes="danger" Content="Revert selected…" IsEnabled="{Binding CanWritePerforce}"
+                                                    Click="OnRevertPerforceFileClick" Margin="0,2,7,2" />
+                                        </WrapPanel>
+                                    </Grid>
+                                </Border>
+
+                                <GridSplitter Grid.Column="1" Width="7" Background="#45484E"
+                                              ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+
+                                <Border Grid.Column="2" Classes="card" Padding="9">
+                                    <Grid RowDefinitions="Auto,*,Auto,*,Auto" RowSpacing="6">
+                                        <TextBlock Text="Pending changelists" FontSize="15" FontWeight="SemiBold" />
+                                        <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding PerforcePendingChangelists}"
+                                                  SelectedItem="{Binding SelectedPerforceChangelist}"
+                                                  AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="CL" Binding="{Binding Number}" Width="70" />
+                                                <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*" />
+                                                <DataGridTextColumn Header="User" Binding="{Binding User}" Width="90" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                        <TextBlock Grid.Row="2" Text="Recently submitted" FontWeight="SemiBold" />
+                                        <DataGrid Grid.Row="3" Classes="historyCompact" ItemsSource="{Binding PerforceSubmittedChangelists}"
+                                                  AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="CL" Binding="{Binding Number}" Width="70" />
+                                                <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*" />
+                                                <DataGridTextColumn Header="User" Binding="{Binding User}" Width="90" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7">
+                                            <CheckBox Content="Submit default" IsChecked="{Binding PerforceSubmitDefaultChangelist}" VerticalAlignment="Center" />
+                                            <TextBox Grid.Column="1" Text="{Binding PerforceSubmitDescription}"
+                                                     PlaceholderText="Description required for the default changelist" />
+                                            <Button Grid.Column="2" Classes="primary" Content="Submit…"
+                                                    IsEnabled="{Binding CanSubmitPerforce}" Click="OnSubmitPerforceClick" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+
+                            <GridSplitter Grid.Row="2" Height="7" Background="#45484E"
+                                          ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" />
+
+                            <Grid Grid.Row="3" ColumnDefinitions="1.1*,7,0.9*">
+                                <Border Classes="card" Padding="9">
+                                    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="6">
+                                        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="7">
+                                            <TextBlock Text="Explicit workspace actions" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <Button Grid.Column="1" Classes="secondary" Content="Reconcile preview"
+                                                    IsEnabled="{Binding CanReadPerforce}" Click="OnPreviewPerforceReconcileClick" />
+                                            <Button Grid.Column="2" Classes="primary" Content="Apply reconcile…"
+                                                    IsEnabled="{Binding CanWritePerforce}" Click="OnApplyPerforceReconcileClick" />
+                                            <Button Grid.Column="3" Classes="secondary" Content="Sync preview"
+                                                    IsEnabled="{Binding CanReadPerforce}" Click="OnPreviewPerforceSyncClick" />
+                                            <Button Grid.Column="4" Classes="primary" Content="Sync workspace…"
+                                                    IsEnabled="{Binding CanWritePerforce}" Click="OnApplyPerforceSyncClick" />
+                                        </Grid>
+                                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                            <TextBox Text="{Binding PerforcePath}" PlaceholderText="Project-relative file to open for edit" />
+                                            <Button Grid.Column="1" Classes="secondary" Content="Open for edit"
+                                                    IsEnabled="{Binding CanWritePerforce}" Click="OnOpenPerforcePathForEditClick" />
+                                        </Grid>
+                                        <Border Grid.Row="2" Background="#081124" BorderBrush="#243757" BorderThickness="1" CornerRadius="4" Padding="7">
+                                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                                <TextBlock Text="{Binding PerforceCommandOutput}" FontFamily="Cascadia Mono,Consolas,monospace"
+                                                           FontSize="10" TextWrapping="NoWrap" />
+                                            </ScrollViewer>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                                <GridSplitter Grid.Column="1" Width="7" Background="#45484E"
+                                              ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+                                <Border Grid.Column="2" Classes="card" Padding="9">
+                                    <Grid RowDefinitions="Auto,*" RowSpacing="5">
+                                        <TextBlock Text="Selected file history" FontSize="14" FontWeight="SemiBold" />
+                                        <DataGrid Grid.Row="1" Classes="historyCompact" ItemsSource="{Binding PerforceFileHistory}"
+                                                  AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="Rev" Binding="{Binding Revision}" Width="55" />
+                                                <DataGridTextColumn Header="CL" Binding="{Binding Changelist}" Width="65" />
+                                                <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="70" />
+                                                <DataGridTextColumn Header="User" Binding="{Binding User}" Width="85" />
+                                                <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </Grid>
+                                </Border>
+                            </Grid>
                         </Grid>
                     </Grid>
                 </TabItem>

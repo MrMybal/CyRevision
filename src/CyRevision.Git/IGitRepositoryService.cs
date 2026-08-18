@@ -174,6 +174,25 @@ public interface IGitRepositoryService
         string branchName,
         CancellationToken cancellationToken = default);
 
+    Task<GitConflictState> GetConflictStateAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task ResolveConflictAsync(
+        string repositoryPath,
+        string relativePath,
+        GitConflictResolutionChoice choice,
+        string? manualResult = null,
+        CancellationToken cancellationToken = default);
+
+    Task ContinueConflictOperationAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task AbortConflictOperationAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
     Task<string> GetDiffAsync(
         string repositoryPath,
         string? relativePath = null,

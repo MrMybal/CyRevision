@@ -32,6 +32,7 @@
     <ProjectReference Include="..\CyRevision.Plugin.Unity\CyRevision.Plugin.Unity.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.Plugin.Godot\CyRevision.Plugin.Godot.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.Plugin.Lore\CyRevision.Plugin.Lore.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\CyRevision.Plugin.Perforce\CyRevision.Plugin.Perforce.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.Plugin.AI\CyRevision.Plugin.AI.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.PullRequests\CyRevision.PullRequests.csproj" />
     <ProjectReference Include="..\CyRevision.RemoteBuild\CyRevision.RemoteBuild.csproj" />
@@ -65,6 +66,10 @@
           Link="Plugins\CyRevision.LoreIntegration\cyrevision-plugin.json"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevision.PerforceIntegration\cyrevision-plugin.json"
+          Link="Plugins\CyRevision.PerforceIntegration\cyrevision-plugin.json"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\plugins\CyRevisionUnreal\**\*"
           Exclude="..\..\plugins\CyRevisionUnreal\Binaries\**\*;..\..\plugins\CyRevisionUnreal\Intermediate\**\*;..\..\plugins\CyRevisionUnreal\Saved\**\*"
           Link="PluginPayloads\Unreal\CyRevisionUnreal\%(RecursiveDir)%(Filename)%(Extension)"
@@ -93,6 +98,7 @@
       <GodotPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Godot\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Godot.dll</GodotPluginAssembly>
       <AiPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.AI\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.AI.dll</AiPluginAssembly>
       <LorePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Lore\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Lore.dll</LorePluginAssembly>
+      <PerforcePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Perforce\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Perforce.dll</PerforcePluginAssembly>
     </PropertyGroup>
     <MakeDir Directories="$(OutDir)Plugins\CyRevision.UnrealIntegration" />
     <Copy SourceFiles="$(UnrealPluginAssembly)"
@@ -114,6 +120,10 @@
     <Copy SourceFiles="$(LorePluginAssembly)"
           DestinationFolder="$(OutDir)Plugins\CyRevision.LoreIntegration"
           SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(OutDir)Plugins\CyRevision.PerforceIntegration" />
+    <Copy SourceFiles="$(PerforcePluginAssembly)"
+          DestinationFolder="$(OutDir)Plugins\CyRevision.PerforceIntegration"
+          SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="CopyCyRevisionPluginAssembliesToPublish" AfterTargets="Publish">
@@ -123,6 +133,7 @@
       <GodotPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Godot\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Godot.dll</GodotPluginAssembly>
       <AiPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.AI\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.AI.dll</AiPluginAssembly>
       <LorePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Lore\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Lore.dll</LorePluginAssembly>
+      <PerforcePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Perforce\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Perforce.dll</PerforcePluginAssembly>
     </PropertyGroup>
     <MakeDir Directories="$(PublishDir)Plugins\CyRevision.UnrealIntegration" />
     <Copy SourceFiles="$(UnrealPluginAssembly)"
@@ -143,6 +154,10 @@
     <MakeDir Directories="$(PublishDir)Plugins\CyRevision.LoreIntegration" />
     <Copy SourceFiles="$(LorePluginAssembly)"
           DestinationFolder="$(PublishDir)Plugins\CyRevision.LoreIntegration"
+          SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(PublishDir)Plugins\CyRevision.PerforceIntegration" />
+    <Copy SourceFiles="$(PerforcePluginAssembly)"
+          DestinationFolder="$(PublishDir)Plugins\CyRevision.PerforceIntegration"
           SkipUnchangedFiles="true" />
   </Target>
 </Project>

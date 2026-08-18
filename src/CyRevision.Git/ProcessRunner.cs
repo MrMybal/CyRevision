@@ -190,7 +190,7 @@ internal sealed class ProcessRunner
                 not "status" and not "version";
         }
 
-        return command is "add" or "apply" or "checkout" or "cherry-pick" or "clean" or "commit" or
+        return command is "add" or "apply" or "checkout" or "checkout-index" or "cherry-pick" or "clean" or "commit" or
             "fetch" or "init" or "merge" or "mv" or "pull" or "push" or "rebase" or
             "reset" or "restore" or "revert" or "rm" or "stash" or "switch" or "tag" or
             "update-index" or "worktree";

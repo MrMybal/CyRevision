@@ -56,6 +56,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private readonly SyncthingIgnoreFileService _syncthingIgnoreFileService;
     private readonly JsonLineSyncHistoryStore _syncHistoryStore;
     private readonly SyncConflictService _syncConflictService;
+    private readonly SyncCommitService _syncCommitService = new();
     private readonly IGitPeerExchangeService _gitPeerExchangeService;
     private readonly IAssetDiffService _assetDiffService;
     private readonly FilePresentationService _filePresentationService;
@@ -158,6 +159,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private string _coldArchivePath = string.Empty;
     private string _coldArchiveAfterDays = "180";
     private string _coldArchiveStatus = "Archive froide facultative — aucune suppression automatique.";
+    private BackupArchiveProfile _selectedBackupArchiveProfile = BackupArchiveProfile.BuiltIn[0];
+    private bool _removeArchivedHotCopies;
+    private GitArchiveProfile _selectedGitArchiveProfile = GitArchiveProfile.BuiltIn[0];
+    private GitArchiveCandidate? _selectedGitArchiveCandidate;
+    private GitArchivedBranch? _selectedArchivedGitBranch;
+    private string _gitArchiveStatus = "Analyze stale local branches before archiving. No branch is removed by default.";
+    private bool _removeGitBranchAfterArchive;
     private RetentionMode _selectedRetentionMode = RetentionMode.Timeline;
     private string _retentionVersions = "30";
     private string _retentionDays = "90";
@@ -191,6 +199,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private string _syncConflictSummary = "Scan synchronized folders to detect Syncthing conflict copies.";
     private bool _isSyncConflictBusy;
     private bool _isSyncthingRefreshing;
+    private string _syncCommitMessage = string.Empty;
+    private string _syncCommitAuthor = Environment.UserName;
+    private string _syncCommitStatus = "Create a commit to publish an immutable project snapshot.";
+    private SyncCommitManifest? _selectedSyncCommit;
+    private SyncCommitAnalysis? _selectedSyncCommitAnalysis;
+    private SyncCommitConflictViewModel? _selectedSyncCommitConflict;
+    private bool _isSyncCommitBusy;
     private SyncthingSharedFolder? _selectedSharedSyncFolder;
     private string _sharedSyncFolderName = "Build versions";
     private string _sharedSyncFolderPath = string.Empty;
@@ -832,6 +847,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public ObservableCollection<BackupSnapshotViewModel> Backups { get; } = [];
 
+    public ObservableCollection<GitArchiveCandidate> GitArchiveCandidates { get; } = [];
+
+    public ObservableCollection<GitArchivedBranch> ArchivedGitBranches { get; } = [];
+
     public ObservableCollection<PeerMemberViewModel> PeerMembers { get; } = [];
 
     public ObservableCollection<ProjectParticipantViewModel> SyncthingDevices { get; } = [];
@@ -847,6 +866,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public ObservableCollection<SyncConflictItem> SyncConflicts { get; } = [];
 
     public ObservableCollection<SyncConflictBackup> SyncConflictBackups { get; } = [];
+
+    public ObservableCollection<SyncCommitManifest> SyncCommits { get; } = [];
+
+    public ObservableCollection<SyncCommitConflictViewModel> SyncCommitConflicts { get; } = [];
 
     public ObservableCollection<ProjectParticipantViewModel> SyncProjectMembers { get; } = [];
 
@@ -1808,7 +1831,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public IReadOnlyList<RetentionMode> RetentionModes { get; } = Enum.GetValues<RetentionMode>();
 
-    public IReadOnlyList<ProjectPreset> Presets { get; } = ProjectPresets.All;
+    public ObservableCollection<ProjectPreset> Presets { get; } = [.. ProjectPresets.All];
 
     public IReadOnlyList<PeerRole> PeerRoles { get; } = Enum.GetValues<PeerRole>();
 
@@ -1960,6 +1983,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             OnPropertyChanged(nameof(SelectedProjectAccentColor));
             NotifyProjectOrderStateChanged();
             OnPropertyChanged(nameof(GitConnectionKind));
+            OnPropertyChanged(nameof(IsGitProject));
             OnPropertyChanged(nameof(RuntimeModeSummary));
             NotifySynchronizationModeChanged();
             bool hasCachedSession = value is not null && _projectSessionCache.ContainsKey(value.Id);
@@ -2007,6 +2031,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public string SelectedProjectAccentColor =>
         SelectedProject?.AccentColor ?? ProjectItemViewModel.DefaultAccentColor;
+
+    public bool IsGitProject => SelectedProject?.Definition.Features.GitEnabled == true;
 
     public ProjectLicenseTemplate? SelectedProjectLicenseTemplate
     {
@@ -2350,6 +2376,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             if (SelectedProject is null) return "No project selected";
             List<string> modes = [];
+            if (ActivePluginOperatingMode is { } pluginMode)
+                modes.Add($"{pluginMode.Name} mode");
             if (SelectedProject.Definition.Features.GitEnabled)
                 modes.Add(SelectedProject.Definition.Features.StandardGitRemoteEnabled ? "Git remote" : "Git local");
             if (SelectedProject.Definition.Features.PeerSyncEnabled) modes.Add("Sync enabled");
@@ -2362,17 +2390,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         SelectedProject?.Definition.Features is { GitEnabled: true, PeerSyncEnabled: true };
 
     public bool IsVersionedSyncMode =>
-        SelectedProject?.Definition.Features is { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: true };
+        CurrentOperatingMode == ProjectPresetKind.SyncWithVersions;
+
+    public bool IsSyncCommitMode => CurrentOperatingMode == ProjectPresetKind.SyncWithCommits;
 
     public bool IsPlainProjectSyncMode =>
         SelectedProject?.Definition.Features is { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: false };
 
     public bool IsOptionalSyncMode => SelectedProject?.Definition.Features.PeerSyncEnabled != true;
 
-    public bool ShowProjectFolderSyncSettings => IsPlainProjectSyncMode || IsVersionedSyncMode;
+    public bool ShowProjectFolderSyncSettings => IsPlainProjectSyncMode || IsVersionedSyncMode || IsSyncCommitMode;
 
     public string SynchronizationOverviewTabTitle => IsGitPeerSyncMode
         ? "Git exchange"
+        : IsSyncCommitMode
+            ? "Commit exchange"
         : IsVersionedSyncMode
             ? "Versioned folder"
             : "Project folder";
@@ -2380,7 +2412,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public string SynchronizationProfileTitle => SelectedProject?.Definition.Features switch
     {
         { GitEnabled: true, PeerSyncEnabled: true } => "Git + Sync · signed repository exchange",
-        { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: true } => "Sync + versions · project history",
+        { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: true } when IsSyncCommitMode => "Sync + Commit · immutable snapshots without Git",
+        { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: true } => "Sync + Versions · continuous project history",
         { GitEnabled: false, PeerSyncEnabled: true } => "Sync · current project state",
         _ => "Optional Sync · independent team folders"
     };
@@ -2389,6 +2422,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     {
         { GitEnabled: true, PeerSyncEnabled: true } =>
             "CyRevision exchanges signed Git bundles, verified LFS objects and peer presence through an isolated folder. The active .git directory is never synchronized directly.",
+        { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: true } when IsSyncCommitMode =>
+            "The working folder stays local. Only complete compressed commits are written to the synchronized exchange, so peers never receive half-written project state.",
         { GitEnabled: false, PeerSyncEnabled: true, BackupEnabled: true } =>
             "The project folder is synchronized with Syncthing versioning, configurable retention and restoration support.",
         { GitEnabled: false, PeerSyncEnabled: true } =>
@@ -2405,6 +2440,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             ProjectFeatures features = SelectedProject.Definition.Features;
             if (features.GitEnabled && features.PeerSyncEnabled)
                 return $"Protected exchange root: {ResolveSyncExchangeDirectory(SelectedProject.Definition)}";
+            if (IsSyncCommitMode)
+                return $"Local source: {ResolveConfiguredSyncSourceFolder(SelectedProject.Definition)} · publish only when committing";
             if (features.PeerSyncEnabled && features.BackupEnabled)
                 return $"Versioned source: {ResolveConfiguredSyncSourceFolder(SelectedProject.Definition)} · {SelectedProject.Definition.Retention.Mode}";
             if (features.PeerSyncEnabled)
@@ -2415,8 +2452,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     private void NotifySynchronizationModeChanged()
     {
+        OnPropertyChanged(nameof(IsGitProject));
         OnPropertyChanged(nameof(IsGitPeerSyncMode));
         OnPropertyChanged(nameof(IsVersionedSyncMode));
+        OnPropertyChanged(nameof(IsSyncCommitMode));
         OnPropertyChanged(nameof(IsPlainProjectSyncMode));
         OnPropertyChanged(nameof(IsOptionalSyncMode));
         OnPropertyChanged(nameof(ShowProjectFolderSyncSettings));
@@ -2424,6 +2463,144 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         OnPropertyChanged(nameof(SynchronizationProfileTitle));
         OnPropertyChanged(nameof(SynchronizationProfileDescription));
         OnPropertyChanged(nameof(SynchronizationScopeSummary));
+        OnPropertyChanged(nameof(CanCreateSyncCommit));
+        OnPropertyChanged(nameof(CanAnalyzeSyncCommit));
+        OnPropertyChanged(nameof(CanApplySyncCommit));
+        NotifyPluginOperatingModeChanged();
+    }
+
+    private void NotifyPluginOperatingModeChanged()
+    {
+        OnPropertyChanged(nameof(HasActivePluginOperatingMode));
+        OnPropertyChanged(nameof(ActivePluginOperatingModeName));
+        OnPropertyChanged(nameof(ActivePluginOperatingModeSummary));
+        OnPropertyChanged(nameof(ActivePluginOperatingModeWorkspaceTabs));
+    }
+
+    private void RefreshProjectModeCatalog()
+    {
+        string? selectedPluginId = SelectedPreset?.ProviderPluginId;
+        string? selectedModeId = SelectedPreset?.PluginModeId;
+        ProjectPresetKind? selectedBuiltInKind = SelectedPreset is { IsPluginMode: false }
+            ? SelectedPreset.Kind
+            : null;
+
+        List<ProjectPreset> modes = [.. ProjectPresets.All];
+        if (SelectedProject is { } project)
+        {
+            PluginProjectModeContext context = new(
+                project.Id,
+                project.Name,
+                project.RootPath,
+                project.Definition.EnabledPluginIds ?? []);
+
+            foreach (IProjectModeProvider provider in _pluginManager.GetExtensions<IProjectModeProvider>())
+            {
+                foreach (PluginProjectModeDescriptor pluginMode in provider.ProjectModes)
+                {
+                    PluginProjectModeAvailability availability;
+                    try
+                    {
+                        availability = provider.EvaluateProjectMode(pluginMode.Id, context);
+                    }
+                    catch (Exception exception)
+                    {
+                        availability = new PluginProjectModeAvailability(
+                            false,
+                            $"Compatibility check failed: {exception.Message}");
+                    }
+
+                    modes.Add(ToProjectPreset(provider.Descriptor.Id, pluginMode, availability));
+                }
+            }
+        }
+
+        ReplaceCollection(Presets, modes);
+
+        ProjectDefinition? definition = SelectedProject?.Definition;
+        ProjectPreset? restored = null;
+        if (definition is not null &&
+            !string.IsNullOrWhiteSpace(definition.PluginOperatingModeId) &&
+            !string.IsNullOrWhiteSpace(definition.PluginOperatingModeProviderId))
+        {
+            restored = Presets.FirstOrDefault(preset =>
+                string.Equals(preset.PluginModeId, definition.PluginOperatingModeId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(preset.ProviderPluginId, definition.PluginOperatingModeProviderId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        restored ??= !string.IsNullOrWhiteSpace(selectedModeId) && !string.IsNullOrWhiteSpace(selectedPluginId)
+            ? Presets.FirstOrDefault(preset =>
+                string.Equals(preset.PluginModeId, selectedModeId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(preset.ProviderPluginId, selectedPluginId, StringComparison.OrdinalIgnoreCase))
+            : null;
+        restored ??= definition?.OperatingMode is { } operatingMode
+            ? Presets.FirstOrDefault(preset => !preset.IsPluginMode && preset.Kind == operatingMode)
+            : null;
+        restored ??= selectedBuiltInKind is { } builtInKind
+            ? Presets.FirstOrDefault(preset => !preset.IsPluginMode && preset.Kind == builtInKind)
+            : null;
+        restored ??= definition is not null
+            ? Presets.FirstOrDefault(preset =>
+                !preset.IsPluginMode &&
+                preset.Features == definition.Features &&
+                preset.Retention.Mode == definition.Retention.Mode)
+            : null;
+
+        SelectedPreset = restored ?? Presets.FirstOrDefault();
+        NotifyPluginOperatingModeChanged();
+    }
+
+    private static ProjectPreset ToProjectPreset(
+        string providerPluginId,
+        PluginProjectModeDescriptor mode,
+        PluginProjectModeAvailability availability)
+    {
+        ProjectFeatures features = new(
+            mode.Features.GitEnabled,
+            mode.Features.LfsEnabled,
+            mode.Features.PeerSyncEnabled,
+            mode.Features.BackupEnabled,
+            mode.Features.StandardGitRemoteEnabled);
+        RetentionMode retentionMode = mode.Retention.Kind switch
+        {
+            PluginProjectModeRetentionKind.Timeline => RetentionMode.Timeline,
+            PluginProjectModeRetentionKind.Permanent => RetentionMode.Permanent,
+            _ => RetentionMode.CurrentStateOnly
+        };
+        RetentionPolicy retention = new(
+            retentionMode,
+            mode.Retention.MaxVersionsPerFile,
+            mode.Retention.MaximumAgeDays is { } days ? TimeSpan.FromDays(days) : null,
+            mode.Retention.StorageBudgetBytes);
+
+        return new ProjectPreset(
+            ProjectPresetKind.Custom,
+            mode.Name,
+            mode.Description,
+            features,
+            retention,
+            mode.Id,
+            providerPluginId,
+            mode.WorkspaceTabIds,
+            mode.CategoryLabel,
+            availability.IsAvailable,
+            availability.Summary);
+    }
+
+    private ProjectPresetKind CurrentOperatingMode
+    {
+        get
+        {
+            if (SelectedProject?.Definition.OperatingMode is { } explicitMode) return explicitMode;
+            ProjectFeatures? features = SelectedProject?.Definition.Features;
+            if (features is null) return ProjectPresetKind.Custom;
+            if (features.GitEnabled && features.PeerSyncEnabled) return ProjectPresetKind.GitWithPeerSync;
+            if (features.GitEnabled) return ProjectPresetKind.GitOnly;
+            if (features.PeerSyncEnabled && features.BackupEnabled) return ProjectPresetKind.SyncWithVersions;
+            if (features.PeerSyncEnabled) return ProjectPresetKind.SyncOnly;
+            if (features.BackupEnabled) return ProjectPresetKind.BackupOnly;
+            return ProjectPresetKind.Custom;
+        }
     }
 
     public string StatusMessage
@@ -2565,6 +2742,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         private set => SetProperty(ref _changeSummaryColor, value);
     }
 
+    public int GitConflictCount => Changes.Count(change => change.Change.Kind == GitChangeKind.Conflicted);
+
+    public bool HasGitConflicts => GitConflictCount > 0;
+
+    public string GitConflictActionText => $"Resolve {GitConflictCount:N0} conflict(s)…";
+
     public string CurrentProjectName
     {
         get => _currentProjectName;
@@ -2678,6 +2861,74 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         private set => SetProperty(ref _coldArchiveStatus, value);
     }
 
+    public IReadOnlyList<BackupArchiveProfile> BackupArchiveProfiles { get; } = BackupArchiveProfile.BuiltIn;
+
+    public BackupArchiveProfile SelectedBackupArchiveProfile
+    {
+        get => _selectedBackupArchiveProfile;
+        set
+        {
+            if (!SetProperty(ref _selectedBackupArchiveProfile, value)) return;
+            ColdArchiveAfterDays = value.ArchiveAfterDays.ToString();
+            OnPropertyChanged(nameof(BackupArchiveProfileDescription));
+        }
+    }
+
+    public string BackupArchiveProfileDescription => SelectedBackupArchiveProfile.Description;
+
+    public bool RemoveArchivedHotCopies
+    {
+        get => _removeArchivedHotCopies;
+        set => SetProperty(ref _removeArchivedHotCopies, value);
+    }
+
+    public IReadOnlyList<GitArchiveProfile> GitArchiveProfiles { get; } = GitArchiveProfile.BuiltIn;
+
+    public GitArchiveProfile SelectedGitArchiveProfile
+    {
+        get => _selectedGitArchiveProfile;
+        set
+        {
+            if (!SetProperty(ref _selectedGitArchiveProfile, value)) return;
+            OnPropertyChanged(nameof(GitArchiveProfileDescription));
+        }
+    }
+
+    public string GitArchiveProfileDescription => SelectedGitArchiveProfile.Description;
+
+    public GitArchiveCandidate? SelectedGitArchiveCandidate
+    {
+        get => _selectedGitArchiveCandidate;
+        set
+        {
+            if (SetProperty(ref _selectedGitArchiveCandidate, value)) OnPropertyChanged(nameof(CanArchiveSelectedGitBranch));
+        }
+    }
+
+    public GitArchivedBranch? SelectedArchivedGitBranch
+    {
+        get => _selectedArchivedGitBranch;
+        set
+        {
+            if (SetProperty(ref _selectedArchivedGitBranch, value)) OnPropertyChanged(nameof(CanRestoreSelectedGitArchive));
+        }
+    }
+
+    public bool RemoveGitBranchAfterArchive
+    {
+        get => _removeGitBranchAfterArchive;
+        set => SetProperty(ref _removeGitBranchAfterArchive, value);
+    }
+
+    public string GitArchiveStatus
+    {
+        get => _gitArchiveStatus;
+        private set => SetProperty(ref _gitArchiveStatus, value);
+    }
+
+    public bool CanArchiveSelectedGitBranch => SelectedProject?.Definition.Features.GitEnabled == true && SelectedGitArchiveCandidate is not null;
+    public bool CanRestoreSelectedGitArchive => SelectedProject?.Definition.Features.GitEnabled == true && SelectedArchivedGitBranch is not null;
+
     public RetentionMode SelectedRetentionMode
     {
         get => _selectedRetentionMode;
@@ -2705,8 +2956,49 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public ProjectPreset? SelectedPreset
     {
         get => _selectedPreset;
-        set => SetProperty(ref _selectedPreset, value);
+        set
+        {
+            if (SetProperty(ref _selectedPreset, value))
+            {
+                NotifyPluginOperatingModeChanged();
+            }
+        }
     }
+
+    public bool HasActivePluginOperatingMode => ActivePluginOperatingMode is not null;
+
+    public string ActivePluginOperatingModeName =>
+        ActivePluginOperatingMode?.CategoryLabel ?? ActivePluginOperatingMode?.Name ?? "Plugin mode";
+
+    public string ActivePluginOperatingModeSummary =>
+        ActivePluginOperatingMode is { } mode
+            ? $"{mode.Name} · supplied by {mode.ProviderPluginId}"
+            : "No plugin-owned operating mode is active.";
+
+    public IReadOnlyList<string> ActivePluginOperatingModeWorkspaceTabs =>
+        ActivePluginOperatingMode?.WorkspaceTabIds ?? [];
+
+    private ProjectPreset? ActivePluginOperatingMode
+    {
+        get
+        {
+            ProjectDefinition? definition = SelectedProject?.Definition;
+            if (definition is null ||
+                string.IsNullOrWhiteSpace(definition.PluginOperatingModeId) ||
+                string.IsNullOrWhiteSpace(definition.PluginOperatingModeProviderId))
+            {
+                return null;
+            }
+
+            return Presets.FirstOrDefault(preset =>
+                string.Equals(preset.PluginModeId, definition.PluginOperatingModeId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(preset.ProviderPluginId, definition.PluginOperatingModeProviderId, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public bool IsWorkspaceTabContributedByActivePluginMode(string? workspaceTabId) =>
+        !string.IsNullOrWhiteSpace(workspaceTabId) &&
+        ActivePluginOperatingModeWorkspaceTabs.Contains(workspaceTabId, StringComparer.OrdinalIgnoreCase);
 
     public string SyncthingExecutablePath
     {
@@ -2895,6 +3187,82 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public bool CanResolveSelectedSyncConflict => SelectedSyncConflict is not null && !IsSyncConflictBusy;
 
     public bool CanRestoreSelectedSyncConflictBackup => SelectedSyncConflictBackup is not null && !IsSyncConflictBusy;
+
+    public string SyncCommitMessage
+    {
+        get => _syncCommitMessage;
+        set
+        {
+            if (SetProperty(ref _syncCommitMessage, value)) OnPropertyChanged(nameof(CanCreateSyncCommit));
+        }
+    }
+
+    public string SyncCommitAuthor
+    {
+        get => _syncCommitAuthor;
+        set
+        {
+            if (SetProperty(ref _syncCommitAuthor, value)) OnPropertyChanged(nameof(CanCreateSyncCommit));
+        }
+    }
+
+    public string SyncCommitStatus
+    {
+        get => _syncCommitStatus;
+        private set => SetProperty(ref _syncCommitStatus, value);
+    }
+
+    public SyncCommitManifest? SelectedSyncCommit
+    {
+        get => _selectedSyncCommit;
+        set
+        {
+            if (!SetProperty(ref _selectedSyncCommit, value)) return;
+            SelectedSyncCommitAnalysis = null;
+            OnPropertyChanged(nameof(CanAnalyzeSyncCommit));
+        }
+    }
+
+    public SyncCommitAnalysis? SelectedSyncCommitAnalysis
+    {
+        get => _selectedSyncCommitAnalysis;
+        private set
+        {
+            if (!SetProperty(ref _selectedSyncCommitAnalysis, value)) return;
+            OnPropertyChanged(nameof(CanApplySyncCommit));
+            OnPropertyChanged(nameof(SyncCommitConflictSummary));
+        }
+    }
+
+    public SyncCommitConflictViewModel? SelectedSyncCommitConflict
+    {
+        get => _selectedSyncCommitConflict;
+        set => SetProperty(ref _selectedSyncCommitConflict, value);
+    }
+
+    public bool IsSyncCommitBusy
+    {
+        get => _isSyncCommitBusy;
+        private set
+        {
+            if (!SetProperty(ref _isSyncCommitBusy, value)) return;
+            OnPropertyChanged(nameof(CanCreateSyncCommit));
+            OnPropertyChanged(nameof(CanAnalyzeSyncCommit));
+            OnPropertyChanged(nameof(CanApplySyncCommit));
+        }
+    }
+
+    public bool CanCreateSyncCommit => IsSyncCommitMode && !IsSyncCommitBusy &&
+                                       !string.IsNullOrWhiteSpace(SyncCommitMessage) &&
+                                       !string.IsNullOrWhiteSpace(SyncCommitAuthor);
+    public bool CanAnalyzeSyncCommit => IsSyncCommitMode && !IsSyncCommitBusy && SelectedSyncCommit is not null;
+    public bool CanApplySyncCommit => CanAnalyzeSyncCommit &&
+                                      SyncCommitConflicts.All(item => item.Choice != SyncCommitConflictChoice.Unresolved);
+    public string SyncCommitConflictSummary => SelectedSyncCommitAnalysis is null
+        ? "Select an incoming commit and analyze it before applying."
+        : SelectedSyncCommitAnalysis.Conflicts.Count == 0
+            ? $"Safe to apply · {SelectedSyncCommitAnalysis.ChangedFiles:N0} changed · {SelectedSyncCommitAnalysis.DeletedFiles:N0} deleted"
+            : $"{SelectedSyncCommitAnalysis.Conflicts.Count:N0} conflict(s) require resolution; the project was not modified.";
 
     public SyncthingSharedFolder? SelectedSharedSyncFolder
     {
@@ -3802,6 +4170,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 OnPropertyChanged(nameof(IsSelectedUnityPlugin));
                 OnPropertyChanged(nameof(IsSelectedGodotPlugin));
                 OnPropertyChanged(nameof(IsSelectedLorePlugin));
+                OnPropertyChanged(nameof(IsSelectedPerforcePlugin));
             }
         }
     }
@@ -6378,6 +6747,45 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public void ClearAiCodeSummary() => CodeAiSummary = string.Empty;
 
+    public bool CanUseAiConflictResolver => IsCodexChatConnected && !IsCodexChatBusy;
+
+    public Task<string?> GenerateAiConflictAssistanceAsync(
+        GitConflictFile conflict,
+        bool proposeResolution,
+        CancellationToken cancellationToken = default)
+    {
+        string mode = proposeResolution ? "a complete candidate resolution" : "review advice only";
+        return RunConnectedAiUtilityAsync(
+            $"Analyze Git conflict {conflict.Path} and provide {mode}.",
+            _ => Task.FromResult(BuildAiConflictPrompt(conflict, proposeResolution)),
+            proposeResolution ? "conflict resolution proposal" : "conflict advice");
+    }
+
+    private static string BuildAiConflictPrompt(GitConflictFile conflict, bool proposeResolution)
+    {
+        static string Limit(string value) => value.Length <= 24000 ? value : value[..24000] + "\n[truncated]";
+        string instruction = proposeResolution
+            ? "Return a short explanation followed by exactly one fenced code block containing the complete resolved file. Preserve formatting and do not include conflict markers."
+            : "Explain the intent of both sides, identify risks, and recommend which blocks to combine. Do not claim that you modified the file.";
+        return $"""
+               You are assisting with a local Git three-way conflict. {instruction}
+               File: {conflict.Path}
+               Conflict type: {conflict.ConflictType}
+
+               BASE:
+               {Limit(conflict.Base.Text ?? conflict.Base.DisplayText)}
+
+               OURS:
+               {Limit(conflict.Ours.Text ?? conflict.Ours.DisplayText)}
+
+               INCOMING:
+               {Limit(conflict.Theirs.Text ?? conflict.Theirs.DisplayText)}
+
+               CURRENT RESULT WITH MARKERS:
+               {Limit(conflict.WorkingText ?? string.Empty)}
+               """;
+    }
+
     private async Task<string?> RunConnectedAiUtilityAsync(
         string displayRequest,
         Func<CancellationToken, Task<string>> promptFactory,
@@ -7283,9 +7691,24 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         if (enabled) pluginIds.Add(pluginId);
         else pluginIds.Remove(pluginId);
 
+        bool disablesActiveMode = !enabled &&
+                                  string.Equals(
+                                      project.Definition.PluginOperatingModeProviderId,
+                                      pluginId,
+                                      StringComparison.OrdinalIgnoreCase);
+        ProjectPreset? fallback = disablesActiveMode
+            ? ProjectPresets.All.FirstOrDefault(preset =>
+                preset.Features == project.Definition.Features &&
+                preset.Retention.Mode == project.Definition.Retention.Mode)
+              ?? ProjectPresets.All.FirstOrDefault(preset => preset.Kind == ProjectPresetKind.BackupOnly)
+            : null;
+
         ProjectDefinition definition = project.Definition with
         {
-            EnabledPluginIds = pluginIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray()
+            EnabledPluginIds = pluginIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray(),
+            OperatingMode = disablesActiveMode ? fallback?.Kind ?? ProjectPresetKind.Custom : project.Definition.OperatingMode,
+            PluginOperatingModeId = disablesActiveMode ? null : project.Definition.PluginOperatingModeId,
+            PluginOperatingModeProviderId = disablesActiveMode ? null : project.Definition.PluginOperatingModeProviderId
         };
         await _projectCatalog.UpsertAsync(definition);
         project.Update(definition);
@@ -7293,6 +7716,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         if (SelectedProject?.Id != project.Id) return;
         _pluginManager.SetProjectScope(definition.EnabledPluginIds);
         RefreshPluginCatalog(pluginId);
+        NotifySynchronizationModeChanged();
     }
 
     public async Task InstallUnrealEditorPluginAsync()
@@ -9966,7 +10390,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                     ? null
                     : int.TryParse(ColdArchiveAfterDays, out int archiveDays) && archiveDays > 0
                         ? archiveDays
-                        : 180
+                        : 180,
+                BackupArchiveProfile = SelectedBackupArchiveProfile.Id,
+                RemoveArchivedHotBackups = RemoveArchivedHotCopies,
+                GitArchiveProfile = SelectedGitArchiveProfile.Id,
+                RemoveArchivedGitBranches = RemoveGitBranchAfterArchive
             };
             updated.Validate();
             await _projectCatalog.UpsertAsync(updated);
@@ -9991,13 +10419,96 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             ColdArchiveResult result = await new FileSystemColdArchiveService().ArchiveEligibleAsync(
                 SelectedProject.Id,
                 ResolveBackupStorePath(SelectedProject.Definition),
-                new ColdArchivePolicy(Path.GetFullPath(ColdArchivePath), TimeSpan.FromDays(days)));
+                new ColdArchivePolicy(
+                    Path.GetFullPath(ColdArchivePath),
+                    TimeSpan.FromDays(days),
+                    SelectedBackupArchiveProfile.MinimumRecentSnapshots,
+                    RemoveArchivedHotCopies));
             ColdArchiveStatus = result.EligibleSnapshots == 0
-                ? "Aucun snapshot ancien n'est éligible. Les cinq plus récents restent dans le stockage actif."
-                : $"{result.ArchivedSnapshots} snapshot(s) copié(s) · {result.ExistingSnapshots} déjà présent(s) · " +
-                  $"{result.CopiedObjects} objet(s) ajouté(s) à l'archive";
-        }, "Archivage froid terminé — le stockage actif est conservé");
+                ? $"No old snapshot is eligible. At least {SelectedBackupArchiveProfile.MinimumRecentSnapshots:N0} recent snapshot(s) remain in hot storage."
+                : $"{result.ArchivedSnapshots} snapshot(s) copied · {result.ExistingSnapshots} already cold · " +
+                  $"{result.CopiedObjects} object(s) added" +
+                  (result.RemovedHotSnapshots > 0
+                      ? $" · {result.RemovedHotSnapshots} verified hot snapshot(s) removed · {FormatByteSize(result.ReclaimedHotBytes)} reclaimed"
+                      : " · hot storage retained");
+        }, RemoveArchivedHotCopies
+            ? "Cold migration completed after verification"
+            : "Cold copy completed — hot storage retained");
     }
+
+    public async Task AnalyzeGitArchiveCandidatesAsync()
+    {
+        if (SelectedProject is null || !SelectedProject.Definition.Features.GitEnabled || _gitService is not GitCliRepositoryService git)
+        {
+            GitArchiveStatus = "Select a local Git project to analyze stale branches.";
+            return;
+        }
+        await RunOperationAsync("Analyzing stale Git branches…", async () =>
+        {
+            IReadOnlyList<GitArchiveCandidate> candidates = await git.GetArchiveCandidatesAsync(
+                SelectedProject.RootPath, SelectedGitArchiveProfile);
+            ReplaceCollection(GitArchiveCandidates, candidates);
+            SelectedGitArchiveCandidate = GitArchiveCandidates.FirstOrDefault();
+            await RefreshArchivedGitBranchesCoreAsync(git);
+            GitArchiveStatus = candidates.Count == 0
+                ? "No local branch matches this cold-storage profile. Current and recent branches are protected."
+                : $"{candidates.Count:N0} stale local branch(es) eligible · " +
+                  $"{candidates.Count(item => item.HasRemoteCopy):N0} have an identical origin copy";
+        }, "Git archive analysis completed");
+    }
+
+    public async Task ArchiveSelectedGitBranchAsync()
+    {
+        if (SelectedProject is null || SelectedGitArchiveCandidate is null || _gitService is not GitCliRepositoryService git) return;
+        GitArchiveCandidate candidate = SelectedGitArchiveCandidate;
+        await RunOperationAsync("Creating and verifying Git branch archive…", async () =>
+        {
+            string directory = ResolveGitArchiveDirectory(SelectedProject.Definition);
+            GitArchivedBranch archived = await git.ArchiveBranchAsync(
+                SelectedProject.RootPath,
+                candidate.Branch,
+                directory,
+                SelectedGitArchiveProfile,
+                RemoveGitBranchAfterArchive);
+            await RefreshArchivedGitBranchesCoreAsync(git);
+            IReadOnlyList<GitArchiveCandidate> candidates = await git.GetArchiveCandidatesAsync(
+                SelectedProject.RootPath, SelectedGitArchiveProfile);
+            ReplaceCollection(GitArchiveCandidates, candidates);
+            SelectedGitArchiveCandidate = GitArchiveCandidates.FirstOrDefault();
+            GitArchiveStatus = archived.SourceBranchRemoved
+                ? $"{archived.Branch} archived and verified; its local ref was removed by explicit opt-in. No automatic Git GC was run."
+                : $"{archived.Branch} copied to verified cold storage; the hot local branch was retained.";
+        }, "Verified Git branch archive created");
+    }
+
+    public async Task RestoreSelectedGitArchiveAsync()
+    {
+        if (SelectedProject is null || SelectedArchivedGitBranch is null || _gitService is not GitCliRepositoryService git) return;
+        GitArchivedBranch archive = SelectedArchivedGitBranch;
+        string restoreName = $"restored/{archive.Branch.Replace(' ', '-')}";
+        await RunOperationAsync("Restoring Git branch from cold storage…", async () =>
+        {
+            await git.RestoreArchivedBranchAsync(SelectedProject.RootPath, archive, restoreName);
+            GitArchiveStatus = $"Restored as local branch {restoreName}. The current branch was not switched.";
+            await RefreshCoreAsync();
+        }, "Git branch restored from verified archive");
+    }
+
+    private async Task RefreshArchivedGitBranchesCoreAsync(GitCliRepositoryService git)
+    {
+        if (SelectedProject is null) return;
+        IReadOnlyList<GitArchivedBranch> archives = await git.ListArchivedBranchesAsync(
+            ResolveGitArchiveDirectory(SelectedProject.Definition));
+        ReplaceCollection(ArchivedGitBranches, archives);
+        SelectedArchivedGitBranch = ArchivedGitBranches.FirstOrDefault();
+    }
+
+    private string ResolveGitArchiveDirectory(ProjectDefinition definition) =>
+        Path.Combine(
+            string.IsNullOrWhiteSpace(definition.ColdArchivePath)
+                ? Path.Combine(_applicationPaths.DataDirectory, "cold-archives", definition.Id.ToString("N"))
+                : Path.GetFullPath(definition.ColdArchivePath),
+            "git-branches");
 
     public async Task CreateBackupAsync()
     {
@@ -10249,6 +10760,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }
 
         ProjectPreset preset = SelectedPreset;
+        if (!preset.IsAvailable)
+        {
+            StatusMessage = string.IsNullOrWhiteSpace(preset.AvailabilitySummary)
+                ? $"Mode « {preset.Name} » is not compatible with this project."
+                : preset.AvailabilitySummary;
+            return;
+        }
+
+        if (preset.IsPluginMode &&
+            !_pluginManager.IsActiveForCurrentProject(preset.ProviderPluginId!))
+        {
+            StatusMessage = $"Enable plugin {preset.ProviderPluginId} for this project before applying {preset.Name}.";
+            return;
+        }
+
         await RunOperationAsync("Application du mode projet…", async () =>
         {
             if (preset.Features.GitEnabled && !Directory.Exists(Path.Combine(SelectedProject.RootPath, ".git")))
@@ -10259,7 +10785,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             ProjectDefinition updated = SelectedProject.Definition with
             {
                 Features = preset.Features,
-                Retention = preset.Retention
+                Retention = preset.Retention,
+                OperatingMode = preset.Kind,
+                PluginOperatingModeId = preset.PluginModeId,
+                PluginOperatingModeProviderId = preset.ProviderPluginId
             };
             await _projectCatalog.UpsertAsync(updated);
             SelectedProject.Update(updated);
@@ -10267,6 +10796,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             OnPropertyChanged(nameof(RuntimeModeSummary));
             NotifySynchronizationModeChanged();
             NotifyMemberPanelLayoutChanged();
+            RefreshProjectModeCatalog();
             LoadBackupSettings(updated);
             if (!preset.Features.PeerSyncEnabled &&
                 _currentSyncProfile?.SharedFolders.Any(folder => folder.Enabled) != true)
@@ -10344,7 +10874,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         await RunOperationAsync("Saving Syncthing settings…", async () =>
         {
-            string projectFolder = SelectedProject.Definition.Features.GitEnabled
+            string projectFolder = SelectedProject.Definition.Features.GitEnabled || IsSyncCommitMode
                 ? _currentSyncProfile.ExchangeDirectory
                 : ResolveConfiguredSyncSourceFolder(SelectedProject.Definition);
             Directory.CreateDirectory(projectFolder);
@@ -10360,7 +10890,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 FolderMode = SelectedSyncthingFolderMode,
                 RescanIntervalSeconds = rescanInterval,
                 FileWatcherEnabled = SyncthingFileWatcherEnabled,
-                ProjectFolderPath = SelectedProject.Definition.Features.GitEnabled ? null : projectFolder,
+                ProjectFolderPath = SelectedProject.Definition.Features.GitEnabled
+                    ? null
+                    : ResolveConfiguredSyncSourceFolder(SelectedProject.Definition),
                 VersioningDirectory = IsVersionedSyncMode ? versionStore : null,
                 CompressedBackupDirectory = IsVersionedSyncMode ? compressedStore : null,
                 CompressedBackupEnabled = IsVersionedSyncMode && SyncCompressedBackupEnabled,
@@ -10426,6 +10958,145 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             SyncStorageStatus = $"Compressed backup created: {finalPath}";
             await RecordSyncHistoryAsync("Project Sync", sourceFull, "Compressed backup", "Local archive", finalPath);
         }, "Compressed Sync backup created");
+    }
+
+    public async Task CreateSyncCommitAsync()
+    {
+        if (SelectedProject is null || !CanCreateSyncCommit) return;
+        IsSyncCommitBusy = true;
+        try
+        {
+            await RunOperationAsync("Creating and publishing Sync commit…", async () =>
+            {
+                string exchange = ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition);
+                SyncCommitCreateResult result = await _syncCommitService.CreateCommitAsync(
+                    SelectedProject.Id,
+                    ResolveConfiguredSyncSourceFolder(SelectedProject.Definition),
+                    exchange,
+                    GetSyncCommitStateDirectory(SelectedProject.Id),
+                    SyncCommitMessage,
+                    SyncCommitAuthor);
+                SyncCommitMessage = string.Empty;
+                await RefreshSyncCommitsCoreAsync();
+                SelectedSyncCommit = SyncCommits.FirstOrDefault(item => item.CommitId == result.Manifest.CommitId);
+                SyncCommitStatus = $"Published {result.Manifest.ShortId} · {result.Manifest.Files.Count:N0} file(s). Syncthing can now replicate this immutable package.";
+                await RecordSyncHistoryAsync("Sync + Commit", result.PackagePath, "Commit published", result.Manifest.ShortId, result.Manifest.Message);
+            }, "Sync commit published");
+        }
+        finally
+        {
+            IsSyncCommitBusy = false;
+        }
+    }
+
+    public async Task RefreshSyncCommitsAsync()
+    {
+        IsSyncCommitBusy = true;
+        try { await RefreshSyncCommitsCoreAsync(); }
+        finally { IsSyncCommitBusy = false; }
+    }
+
+    public async Task AnalyzeSelectedSyncCommitAsync()
+    {
+        if (SelectedProject is null || SelectedSyncCommit is null || !IsSyncCommitMode) return;
+        IsSyncCommitBusy = true;
+        try
+        {
+            SelectedSyncCommitAnalysis = await _syncCommitService.AnalyzeAsync(
+                ResolveConfiguredSyncSourceFolder(SelectedProject.Definition),
+                ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition),
+                SelectedSyncCommit);
+            foreach (SyncCommitConflictViewModel old in SyncCommitConflicts) old.Changed -= OnSyncCommitConflictChoiceChanged;
+            SyncCommitConflicts.Clear();
+            foreach (SyncCommitConflict conflict in SelectedSyncCommitAnalysis.Conflicts)
+            {
+                SyncCommitConflictViewModel item = new(conflict);
+                item.Changed += OnSyncCommitConflictChoiceChanged;
+                SyncCommitConflicts.Add(item);
+            }
+            SelectedSyncCommitConflict = SyncCommitConflicts.FirstOrDefault();
+            SyncCommitStatus = SyncCommitConflictSummary;
+            OnPropertyChanged(nameof(CanApplySyncCommit));
+        }
+        finally
+        {
+            IsSyncCommitBusy = false;
+        }
+    }
+
+    public void ResolveSelectedSyncCommitConflict(SyncCommitConflictChoice choice)
+    {
+        if (SelectedSyncCommitConflict is null) return;
+        SelectedSyncCommitConflict.Choice = choice;
+        SyncCommitStatus = SyncCommitConflictSummary;
+    }
+
+    public async Task ApplySelectedSyncCommitAsync()
+    {
+        if (SelectedProject is null || SelectedSyncCommit is null || !CanApplySyncCommit) return;
+        IsSyncCommitBusy = true;
+        try
+        {
+            await RunOperationAsync("Backing up and applying Sync commit…", async () =>
+            {
+                Dictionary<string, SyncCommitConflictChoice> choices = SyncCommitConflicts.ToDictionary(
+                    item => item.Path, item => item.Choice, StringComparer.OrdinalIgnoreCase);
+                string backupRoot = Path.Combine(_applicationPaths.DataDirectory, "sync-commit-recovery", SelectedProject.Id.ToString("N"));
+                await _syncCommitService.ApplyAsync(
+                    ResolveConfiguredSyncSourceFolder(SelectedProject.Definition),
+                    ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition),
+                    GetSyncCommitStateDirectory(SelectedProject.Id),
+                    backupRoot,
+                    SelectedSyncCommit,
+                    choices);
+                PruneSyncCommitRecovery(backupRoot);
+                await RecordSyncHistoryAsync("Sync + Commit", SelectedSyncCommit.ShortId, "Commit applied", "Protected apply", $"recovery={backupRoot}");
+                SyncCommitStatus = $"Applied {SelectedSyncCommit.ShortId}. A pre-apply recovery archive was retained.";
+                SelectedSyncCommitAnalysis = null;
+                SyncCommitConflicts.Clear();
+            }, "Sync commit applied with recovery backup");
+        }
+        finally
+        {
+            IsSyncCommitBusy = false;
+        }
+    }
+
+    private async Task RefreshSyncCommitsCoreAsync()
+    {
+        if (SelectedProject is null || !IsSyncCommitMode)
+        {
+            SyncCommits.Clear();
+            SyncCommitConflicts.Clear();
+            SelectedSyncCommit = null;
+            return;
+        }
+        IReadOnlyList<SyncCommitManifest> commits = await _syncCommitService.ListCommitsAsync(
+            ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition));
+        string? selectedId = SelectedSyncCommit?.CommitId;
+        ReplaceCollection(SyncCommits, commits);
+        SelectedSyncCommit = SyncCommits.FirstOrDefault(item => item.CommitId == selectedId) ?? SyncCommits.FirstOrDefault();
+        SyncCommitStatus = commits.Count == 0
+            ? "No Sync commit published yet. The synchronized exchange remains unchanged until you commit."
+            : $"{commits.Count:N0} immutable commit package(s) available · newest first";
+    }
+
+    private void OnSyncCommitConflictChoiceChanged(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(CanApplySyncCommit));
+        OnPropertyChanged(nameof(SyncCommitConflictSummary));
+    }
+
+    private string GetSyncCommitStateDirectory(Guid projectId) =>
+        Path.Combine(_applicationPaths.DataDirectory, "sync-commit-state", projectId.ToString("N"));
+
+    private void PruneSyncCommitRecovery(string backupRoot)
+    {
+        if (!Directory.Exists(backupRoot)) return;
+        int days = int.TryParse(SyncConflictRetentionDays, out int parsed) ? Math.Clamp(parsed, 1, 3650) : 30;
+        DateTime threshold = DateTime.UtcNow.AddDays(-days);
+        foreach (string file in Directory.EnumerateFiles(backupRoot, "*.zip").Where(path => File.GetLastWriteTimeUtc(path) < threshold))
+            File.Delete(file);
     }
 
     public async Task RefreshSyncHistoryAsync()
@@ -12471,8 +13142,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             ProjectDefinition updated = project.Definition with { LastOpenedAt = DateTimeOffset.UtcNow };
             project.Update(updated);
             LoadBackupSettings(updated);
-            SelectedPreset = ProjectPresets.All.FirstOrDefault(preset =>
-                preset.Features == updated.Features && preset.Retention.Mode == updated.Retention.Mode);
+            RefreshProjectModeCatalog();
             ClearGitGraphView();
 
             SetProjectLoadProgress(project, loadVersion, 8, "Loading project preferences…");
@@ -12779,6 +13449,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             change.PreparationChanged -= OnChangePreparationItemChanged;
         }
         Changes.Clear();
+        NotifyGitConflictStateChanged();
         PreparedChanges.Clear();
         FilteredVersionedChanges.Clear();
         FilteredUnversionedChanges.Clear();
@@ -13702,6 +14373,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             ChangeSummary = $"{project.Name} · file synchronization / backup";
             ChangeSummaryColor = "#78D7B7";
             Changes.Clear();
+            NotifyGitConflictStateChanged();
             PreparedChanges.Clear();
             FilteredVersionedChanges.Clear();
             FilteredUnversionedChanges.Clear();
@@ -13887,6 +14559,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }
 
         ReplaceCollection(Changes, allChanges);
+        NotifyGitConflictStateChanged();
         ReplaceCollection(PreparedChanges, preparedChanges);
         ReplaceCollection(LocalOnlyChanges, localOnlyChanges);
 
@@ -13896,6 +14569,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                          ?? PreparedChanges.FirstOrDefault()
                          ?? LocalOnlyChanges.FirstOrDefault();
         UpdateChangePreparationSummary();
+    }
+
+    private void NotifyGitConflictStateChanged()
+    {
+        OnPropertyChanged(nameof(GitConflictCount));
+        OnPropertyChanged(nameof(HasGitConflicts));
+        OnPropertyChanged(nameof(GitConflictActionText));
     }
 
     private void ApplyChangeFilter()
@@ -14423,6 +15103,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             SelectedSyncConflictBackup = null;
             SyncConflictRetentionDays = "30";
             SyncConflictSummary = "No project selected.";
+            SyncCommits.Clear();
+            SelectedSyncCommit = null;
+            SyncCommitStatus = "No project selected.";
             SelectedSharedSyncFolder = null;
             SharedSyncFolderStatus = "No independent shared folder configured.";
             SyncState = "Sync désactivé";
@@ -14457,6 +15140,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         SyncStorageStatus = IsVersionedSyncMode
             ? $"Source: {SyncSourceFolderPath} · versions: {(string.IsNullOrWhiteSpace(SyncVersionStorePath) ? "inside source" : SyncVersionStorePath)} · compressed backup: {(SyncCompressedBackupEnabled ? SyncCompressedBackupPath : "off")}"
             : $"Synchronized source: {SyncSourceFolderPath}";
+        await RefreshSyncCommitsCoreAsync();
         if (_currentSyncProfile is not null)
         {
             await LoadSyncthingIgnoreRulesAsync();
@@ -15720,10 +16404,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private string ResolveSyncExchangeDirectory(ProjectDefinition definition) =>
         definition.Features.GitEnabled
             ? Path.Combine(_applicationPaths.DataDirectory, "git-exchange", definition.Id.ToString("N"))
+            : definition.OperatingMode == ProjectPresetKind.SyncWithCommits
+                ? Path.Combine(_applicationPaths.DataDirectory, "sync-commit-exchange", definition.Id.ToString("N"))
             : definition.RootPath;
 
     private string ResolveConfiguredSyncExchangeDirectory(ProjectDefinition definition) =>
-        definition.Features.GitEnabled
+        definition.Features.GitEnabled || definition.OperatingMode == ProjectPresetKind.SyncWithCommits
             ? ResolveSyncExchangeDirectory(definition)
             : ResolveConfiguredSyncSourceFolder(definition);
 
@@ -16019,9 +16705,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         BackupStorePath = definition.BackupStorePath ?? string.Empty;
         ColdArchivePath = definition.ColdArchivePath ?? string.Empty;
         ColdArchiveAfterDays = definition.ColdArchiveAfterDays?.ToString() ?? "180";
+        SelectedBackupArchiveProfile = BackupArchiveProfiles.FirstOrDefault(profile =>
+            profile.Id.Equals(definition.BackupArchiveProfile, StringComparison.OrdinalIgnoreCase))
+            ?? BackupArchiveProfiles[0];
+        RemoveArchivedHotCopies = definition.RemoveArchivedHotBackups;
+        SelectedGitArchiveProfile = GitArchiveProfiles.FirstOrDefault(profile =>
+            profile.Id.Equals(definition.GitArchiveProfile, StringComparison.OrdinalIgnoreCase))
+            ?? GitArchiveProfiles[0];
+        RemoveGitBranchAfterArchive = definition.RemoveArchivedGitBranches;
         ColdArchiveStatus = string.IsNullOrWhiteSpace(definition.ColdArchivePath)
             ? "Archive froide facultative — aucune suppression automatique."
-            : "Archive froide configurée — les snapshots actifs ne sont jamais supprimés par l'archivage.";
+            : RemoveArchivedHotCopies
+                ? "Cold migration enabled: only verified archived copies can leave hot storage."
+                : "Cold archive configured: hot copies are retained.";
         SelectedRetentionMode = definition.Retention.Mode;
         RetentionVersions = definition.Retention.MaxVersionsPerFile?.ToString() ?? "30";
         RetentionDays = definition.Retention.MaximumAge is { } age
@@ -16487,6 +17183,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         ChangeSummary = "0 modification";
         ChangeSummaryColor = "#A9ABB2";
         Changes.Clear();
+        NotifyGitConflictStateChanged();
         PreparedChanges.Clear();
         LocalOnlyChanges.Clear();
         ChangeTree.Clear();
@@ -16727,6 +17424,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         RefreshGameEnginePluginCatalog();
         RefreshLorePluginCatalog();
+        RefreshPerforcePluginCatalog();
+        RefreshProjectModeCatalog();
     }
 
     private void RefreshUnrealInspection()

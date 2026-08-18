@@ -7,6 +7,96 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
     private readonly string _temporaryDirectory = Path.Combine(Path.GetTempPath(), $"cyrevision-git-{Guid.NewGuid():N}");
 
     [Fact]
+    public async Task BinaryConflictCanChooseIncomingWholeFileVersion()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        string file = Path.Combine(_temporaryDirectory, "Content", "Asset.uasset");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        await File.WriteAllBytesAsync(file, [1, 2, 3, 4]);
+        await service.CreateRevisionAsync(_temporaryDirectory, "Initial asset", ["Content/Asset.uasset"]);
+
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/asset");
+        byte[] incoming = [1, 8, 8, 4];
+        await File.WriteAllBytesAsync(file, incoming);
+        await service.CreateRevisionAsync(_temporaryDirectory, "Incoming asset", ["Content/Asset.uasset"]);
+        await service.CheckoutBranchAsync(_temporaryDirectory, "main");
+        await File.WriteAllBytesAsync(file, [1, 9, 9, 4]);
+        await service.CreateRevisionAsync(_temporaryDirectory, "Our asset", ["Content/Asset.uasset"]);
+
+        await Assert.ThrowsAsync<GitOperationException>(() =>
+            service.MergeBranchAsync(_temporaryDirectory, "feature/asset"));
+
+        GitConflictFile conflict = Assert.Single((await service.GetConflictStateAsync(_temporaryDirectory)).Files);
+        Assert.True(conflict.IsBinary);
+        Assert.False(conflict.CanEditManually);
+
+        await service.ResolveConflictAsync(
+            _temporaryDirectory,
+            conflict.Path,
+            GitConflictResolutionChoice.Theirs);
+
+        Assert.Equal(incoming, await File.ReadAllBytesAsync(file));
+        Assert.Empty((await service.GetConflictStateAsync(_temporaryDirectory)).Files);
+        await service.AbortConflictOperationAsync(_temporaryDirectory);
+    }
+
+    [Fact]
+    public async Task ThreeWayConflictCanBeInspectedResolvedAndContinued()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        string file = Path.Combine(_temporaryDirectory, "Source", "Conflict.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        await File.WriteAllTextAsync(file, "line one\nshared base\nline three\n");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Initial", ["Source/Conflict.cs"]);
+
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/conflict");
+        await File.WriteAllTextAsync(file, "line one\nincoming change\nline three\n");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Incoming change", ["Source/Conflict.cs"]);
+        await service.CheckoutBranchAsync(_temporaryDirectory, "main");
+        await File.WriteAllTextAsync(file, "line one\nour change\nline three\n");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Our change", ["Source/Conflict.cs"]);
+
+        await Assert.ThrowsAsync<GitOperationException>(() =>
+            service.MergeBranchAsync(_temporaryDirectory, "feature/conflict"));
+
+        GitConflictState conflictState = await service.GetConflictStateAsync(_temporaryDirectory);
+        GitConflictFile conflict = Assert.Single(conflictState.Files);
+        Assert.Equal(GitConflictOperation.Merge, conflictState.Operation);
+        Assert.Equal("Source/Conflict.cs", conflict.Path);
+        Assert.Contains("shared base", conflict.Base.Text);
+        Assert.Contains("our change", conflict.Ours.Text);
+        Assert.Contains("incoming change", conflict.Theirs.Text);
+        Assert.Contains("<<<<<<<", conflict.WorkingText);
+        Assert.True(conflict.CanEditManually);
+
+        await service.ResolveConflictAsync(
+            _temporaryDirectory,
+            conflict.Path,
+            GitConflictResolutionChoice.Manual,
+            "line one\ncombined result\nline three\n");
+
+        GitConflictState resolvedState = await service.GetConflictStateAsync(_temporaryDirectory);
+        Assert.Empty(resolvedState.Files);
+        Assert.Equal(GitConflictOperation.Merge, resolvedState.Operation);
+
+        await service.ContinueConflictOperationAsync(_temporaryDirectory);
+
+        Assert.Equal("line one\ncombined result\nline three\n", await File.ReadAllTextAsync(file));
+        Assert.Empty((await service.GetStatusAsync(_temporaryDirectory)).Changes);
+        Assert.Equal(GitConflictOperation.None, (await service.GetConflictStateAsync(_temporaryDirectory)).Operation);
+    }
+
+    [Fact]
     public async Task RepositoryCanBeInitializedCommittedAndInspected()
     {
         GitCliRepositoryService service = new();
@@ -423,6 +513,69 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
         Assert.False(Directory.Exists(managed.Path));
         Assert.DoesNotContain(await service.GetHistoricalWorktreesAsync(_temporaryDirectory),
             item => string.Equals(item.Path, managed.Path, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GitColdArchiveIsVerifiedRestorableAndNonDestructiveByDefault()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "base.txt"), "base");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Base", ["base.txt"]);
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/cold");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "cold.txt"), "cold history");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Cold history", ["cold.txt"]);
+        await service.CheckoutBranchAsync(_temporaryDirectory, "main");
+        string archiveDirectory = Path.Combine(_temporaryDirectory, ".cyrevision-test-archives");
+        GitArchiveProfile profile = new("test", "Test", "Test profile", 1, 0);
+
+        GitArchivedBranch archive = await service.ArchiveBranchAsync(
+            _temporaryDirectory,
+            "feature/cold",
+            archiveDirectory,
+            profile,
+            removeAfterVerifiedArchive: false);
+
+        Assert.True(File.Exists(archive.ArchivePath));
+        Assert.False(archive.SourceBranchRemoved);
+        Assert.Contains(await service.GetBranchesAsync(_temporaryDirectory), branch => branch.Name == "feature/cold");
+        Assert.Single(await service.ListArchivedBranchesAsync(archiveDirectory));
+
+        await service.RestoreArchivedBranchAsync(_temporaryDirectory, archive, "restored/cold");
+        Assert.Contains(await service.GetBranchesAsync(_temporaryDirectory), branch => branch.Name == "restored/cold");
+        Assert.Equal("main", (await service.GetStatusAsync(_temporaryDirectory)).CurrentBranch);
+    }
+
+    [Fact]
+    public async Task ConflictResolutionBackupContainsEveryVersionAndTheProposedResult()
+    {
+        string root = Path.Combine(_temporaryDirectory, "conflict-recovery");
+        GitConflictVersion Version(string text) => new(true, "0123456789abcdef", text.Length, text, false, false);
+        GitConflictFile conflict = new(
+            "Source/Conflict.cs",
+            Version("base"),
+            Version("ours"),
+            Version("incoming"),
+            "working markers",
+            true);
+        GitConflictResolutionBackupService service = new(root);
+
+        GitConflictResolutionBackup backup = await service.CreateAsync(
+            "Project", _temporaryDirectory, conflict, "reviewed result", "Manual result", 30);
+
+        Assert.True(File.Exists(backup.ArchivePath));
+        using System.IO.Compression.ZipArchive archive = System.IO.Compression.ZipFile.OpenRead(backup.ArchivePath);
+        Assert.NotNull(archive.GetEntry("manifest.json"));
+        Assert.NotNull(archive.GetEntry("base.txt"));
+        Assert.NotNull(archive.GetEntry("ours.txt"));
+        Assert.NotNull(archive.GetEntry("incoming.txt"));
+        Assert.NotNull(archive.GetEntry("working-before.txt"));
+        using StreamReader reader = new(archive.GetEntry("result.txt")!.Open());
+        Assert.Equal("reviewed result", await reader.ReadToEndAsync());
     }
 
     public void Dispose()

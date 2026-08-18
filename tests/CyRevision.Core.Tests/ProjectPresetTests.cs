@@ -33,6 +33,17 @@ public sealed class ProjectPresetTests
     }
 
     [Fact]
+    public void SyncCommitPublishesImmutableVersionsWithoutGit()
+    {
+        ProjectPreset preset = ProjectPresets.All.Single(item => item.Kind == ProjectPresetKind.SyncWithCommits);
+
+        Assert.True(preset.Features.PeerSyncEnabled);
+        Assert.True(preset.Features.BackupEnabled);
+        Assert.False(preset.Features.GitEnabled);
+        Assert.Equal(RetentionMode.Timeline, preset.Retention.Mode);
+    }
+
+    [Fact]
     public void LfsWithoutGitIsRejected()
     {
         ProjectFeatures features = new(
@@ -45,4 +56,3 @@ public sealed class ProjectPresetTests
         Assert.Throws<InvalidOperationException>(features.Validate);
     }
 }
-
