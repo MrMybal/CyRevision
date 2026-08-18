@@ -6,6 +6,32 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-Sha256Hex
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $stream = [IO.File]::OpenRead($Path)
+    try
+    {
+        $algorithm = [Security.Cryptography.SHA256]::Create()
+        try
+        {
+            return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+        }
+        finally
+        {
+            $algorithm.Dispose()
+        }
+    }
+    finally
+    {
+        $stream.Dispose()
+    }
+}
+
 if ($Runtime -ne 'win-x64')
 {
     throw "Unsupported PowerShell Syncthing runtime: $Runtime"
@@ -34,7 +60,7 @@ try
     }
     Invoke-WebRequest -Uri $asset.browser_download_url -Headers $headers -OutFile $archivePath
     $expectedDigest = $asset.digest.Substring('sha256:'.Length)
-    $actualDigest = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualDigest = Get-Sha256Hex -Path $archivePath
     if ($actualDigest -ne $expectedDigest.ToLowerInvariant())
     {
         throw 'The downloaded Syncthing archive does not match the official GitHub SHA-256 digest.'

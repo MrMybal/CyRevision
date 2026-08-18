@@ -16,7 +16,14 @@ public sealed record ProjectDefinition(
     int? ColdArchiveAfterDays = null,
     int? SidebarOrder = null,
     string? AccentColor = null,
-    string[]? EnabledPluginIds = null)
+    string[]? EnabledPluginIds = null,
+    ProjectPresetKind? OperatingMode = null,
+    string? BackupArchiveProfile = null,
+    bool RemoveArchivedGitBranches = false,
+    bool RemoveArchivedHotBackups = false,
+    string? GitArchiveProfile = null,
+    string? PluginOperatingModeId = null,
+    string? PluginOperatingModeProviderId = null)
 {
     public void Validate()
     {
@@ -76,6 +83,19 @@ public sealed record ProjectDefinition(
              EnabledPluginIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != EnabledPluginIds.Length))
         {
             throw new InvalidOperationException("Project plugin IDs must be non-empty and unique.");
+        }
+
+        if (string.IsNullOrWhiteSpace(PluginOperatingModeId) !=
+            string.IsNullOrWhiteSpace(PluginOperatingModeProviderId))
+        {
+            throw new InvalidOperationException("A plugin operating mode requires both a mode ID and a provider plugin ID.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(PluginOperatingModeProviderId) &&
+            EnabledPluginIds is not null &&
+            !EnabledPluginIds.Contains(PluginOperatingModeProviderId, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The provider of a plugin operating mode must be enabled for the project.");
         }
     }
 }
