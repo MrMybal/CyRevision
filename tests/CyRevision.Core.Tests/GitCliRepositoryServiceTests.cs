@@ -7,6 +7,120 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
     private readonly string _temporaryDirectory = Path.Combine(Path.GetTempPath(), $"cyrevision-git-{Guid.NewGuid():N}");
 
     [Fact]
+    public async Task LocalRemoteCanBeClonedIntoChosenDestination()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable || !tools.LfsAvailable) return;
+
+        string source = Path.Combine(_temporaryDirectory, "source");
+        string destination = Path.Combine(_temporaryDirectory, "workspace", "cloned-project");
+        await service.InitializeAsync(source);
+        await service.ConfigureIdentityAsync(source, "CyRevision Tests", "tests@cyrevision.local");
+        await File.WriteAllTextAsync(Path.Combine(source, "README.md"), "clone integration");
+        await service.CreateRevisionAsync(source, "Initial clone source", ["README.md"]);
+
+        await service.CloneAsync(source, destination);
+
+        GitRepositoryStatus status = await service.GetStatusAsync(destination);
+        Assert.Equal("cloned-project", new DirectoryInfo(status.RootPath).Name);
+        Assert.True(Directory.Exists(status.RootPath));
+        Assert.Equal("main", status.CurrentBranch);
+        Assert.Equal("clone integration", await File.ReadAllTextAsync(Path.Combine(destination, "README.md")));
+        Assert.Contains("Initial clone source", (await service.GetHistoryAsync(destination)).Select(item => item.Subject));
+    }
+
+    [Fact]
+    public async Task BinaryConflictCanChooseIncomingWholeFileVersion()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        string file = Path.Combine(_temporaryDirectory, "Content", "Asset.uasset");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        await File.WriteAllBytesAsync(file, [1, 2, 3, 4]);
+        await service.CreateRevisionAsync(_temporaryDirectory, "Initial asset", ["Content/Asset.uasset"]);
+
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/asset");
+        byte[] incoming = [1, 8, 8, 4];
+        await File.WriteAllBytesAsync(file, incoming);
+        await service.CreateRevisionAsync(_temporaryDirectory, "Incoming asset", ["Content/Asset.uasset"]);
+        await service.CheckoutBranchAsync(_temporaryDirectory, "main");
+        await File.WriteAllBytesAsync(file, [1, 9, 9, 4]);
+        await service.CreateRevisionAsync(_temporaryDirectory, "Our asset", ["Content/Asset.uasset"]);
+
+        await Assert.ThrowsAsync<GitOperationException>(() =>
+            service.MergeBranchAsync(_temporaryDirectory, "feature/asset"));
+
+        GitConflictFile conflict = Assert.Single((await service.GetConflictStateAsync(_temporaryDirectory)).Files);
+        Assert.True(conflict.IsBinary);
+        Assert.False(conflict.CanEditManually);
+
+        await service.ResolveConflictAsync(
+            _temporaryDirectory,
+            conflict.Path,
+            GitConflictResolutionChoice.Theirs);
+
+        Assert.Equal(incoming, await File.ReadAllBytesAsync(file));
+        Assert.Empty((await service.GetConflictStateAsync(_temporaryDirectory)).Files);
+        await service.AbortConflictOperationAsync(_temporaryDirectory);
+    }
+
+    [Fact]
+    public async Task ThreeWayConflictCanBeInspectedResolvedAndContinued()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        string file = Path.Combine(_temporaryDirectory, "Source", "Conflict.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        await File.WriteAllTextAsync(file, "line one\nshared base\nline three\n");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Initial", ["Source/Conflict.cs"]);
+
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/conflict");
+        await File.WriteAllTextAsync(file, "line one\nincoming change\nline three\n");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Incoming change", ["Source/Conflict.cs"]);
+        await service.CheckoutBranchAsync(_temporaryDirectory, "main");
+        await File.WriteAllTextAsync(file, "line one\nour change\nline three\n");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Our change", ["Source/Conflict.cs"]);
+
+        await Assert.ThrowsAsync<GitOperationException>(() =>
+            service.MergeBranchAsync(_temporaryDirectory, "feature/conflict"));
+
+        GitConflictState conflictState = await service.GetConflictStateAsync(_temporaryDirectory);
+        GitConflictFile conflict = Assert.Single(conflictState.Files);
+        Assert.Equal(GitConflictOperation.Merge, conflictState.Operation);
+        Assert.Equal("Source/Conflict.cs", conflict.Path);
+        Assert.Contains("shared base", conflict.Base.Text);
+        Assert.Contains("our change", conflict.Ours.Text);
+        Assert.Contains("incoming change", conflict.Theirs.Text);
+        Assert.Contains("<<<<<<<", conflict.WorkingText);
+        Assert.True(conflict.CanEditManually);
+
+        await service.ResolveConflictAsync(
+            _temporaryDirectory,
+            conflict.Path,
+            GitConflictResolutionChoice.Manual,
+            "line one\ncombined result\nline three\n");
+
+        GitConflictState resolvedState = await service.GetConflictStateAsync(_temporaryDirectory);
+        Assert.Empty(resolvedState.Files);
+        Assert.Equal(GitConflictOperation.Merge, resolvedState.Operation);
+
+        await service.ContinueConflictOperationAsync(_temporaryDirectory);
+
+        Assert.Equal("line one\ncombined result\nline three\n", await File.ReadAllTextAsync(file));
+        Assert.Empty((await service.GetStatusAsync(_temporaryDirectory)).Changes);
+        Assert.Equal(GitConflictOperation.None, (await service.GetConflictStateAsync(_temporaryDirectory)).Operation);
+    }
+
+    [Fact]
     public async Task RepositoryCanBeInitializedCommittedAndInspected()
     {
         GitCliRepositoryService service = new();
@@ -95,6 +209,92 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
             "feature/graph-test");
         Assert.Equal("Update code on feature", featureHistory[0].Subject);
         Assert.DoesNotContain(featureHistory, revision => revision.Subject == "Update documentation on main");
+    }
+
+    [Fact]
+    public async Task RevisionCanStageAPathListLargerThanTheWindowsCommandLineLimit()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+
+        List<string> paths = [];
+        string filesDirectory = Path.Combine(_temporaryDirectory, "Generated");
+        Directory.CreateDirectory(filesDirectory);
+        for (int index = 0; index < 600; index++)
+        {
+            string relativePath = $"Generated/{index:D4}-long-selected-file-name-for-command-line-limit-validation.txt";
+            await File.WriteAllTextAsync(
+                Path.Combine(_temporaryDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)),
+                $"file {index}");
+            paths.Add(relativePath);
+        }
+
+        Assert.True(paths.Sum(path => path.Length + 3) > 32767);
+        await service.CreateRevisionAsync(_temporaryDirectory, "Commit a large selected path list", paths);
+
+        GitRepositoryStatus status = await service.GetStatusAsync(_temporaryDirectory);
+        GitCommitDetails details = await service.GetCommitDetailsAsync(_temporaryDirectory, "HEAD");
+        Assert.Empty(status.Changes);
+        Assert.Equal(paths.Count, details.Files.Count);
+    }
+
+    [Fact]
+    public async Task WorkingTreeDeleteKeepsTrackedDeletionVisibleAndRemovesUntrackedFile()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        string tracked = Path.Combine(_temporaryDirectory, "Source", "Tracked.cs");
+        string untracked = Path.Combine(_temporaryDirectory, "Generated", "Temporary.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(tracked)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(untracked)!);
+        await File.WriteAllTextAsync(tracked, "tracked");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Add tracked file", ["Source/Tracked.cs"]);
+        await File.WriteAllTextAsync(untracked, "temporary");
+
+        await service.DeleteWorkingTreePathsAsync(
+            _temporaryDirectory,
+            ["Source/Tracked.cs", "Generated/Temporary.txt"]);
+
+        Assert.False(File.Exists(tracked));
+        Assert.False(File.Exists(untracked));
+        GitRepositoryStatus status = await service.GetDetailedStatusAsync(_temporaryDirectory);
+        Assert.Contains(status.Changes, change =>
+            change.Path == "Source/Tracked.cs" && change.Kind == GitChangeKind.Deleted);
+        Assert.DoesNotContain(status.Changes, change => change.Path == "Generated/Temporary.txt");
+    }
+
+    [Fact]
+    public async Task WorkingTreeDeleteCanRemoveASelectedFolderRecursively()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        string tracked = Path.Combine(_temporaryDirectory, "Feature", "Tracked.cs");
+        string untracked = Path.Combine(_temporaryDirectory, "Feature", "Generated", "Temporary.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(tracked)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(untracked)!);
+        await File.WriteAllTextAsync(tracked, "tracked");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Add feature", ["Feature/Tracked.cs"]);
+        await File.WriteAllTextAsync(untracked, "temporary");
+
+        await service.DeleteWorkingTreePathsAsync(_temporaryDirectory, ["Feature"]);
+
+        Assert.False(Directory.Exists(Path.Combine(_temporaryDirectory, "Feature")));
+        GitRepositoryStatus status = await service.GetDetailedStatusAsync(_temporaryDirectory);
+        Assert.Contains(status.Changes, change =>
+            change.Path == "Feature/Tracked.cs" && change.Kind == GitChangeKind.Deleted);
+        Assert.DoesNotContain(status.Changes, change => change.Path == "Feature/Generated/Temporary.txt");
     }
 
     [Fact]
@@ -415,14 +615,149 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
         Assert.True(created.Succeeded);
         Assert.True(File.Exists(Path.Combine(created.WorktreePath, "snapshot.txt")));
         Assert.Equal("main", (await service.GetStatusAsync(_temporaryDirectory)).CurrentBranch);
-        GitHistoricalWorktree managed = Assert.Single((await service.GetHistoricalWorktreesAsync(_temporaryDirectory))
-            .Where(item => item.IsManagedByCyRevision));
+        IReadOnlyList<GitHistoricalWorktree> worktrees = await service.GetHistoricalWorktreesAsync(_temporaryDirectory);
+        GitHistoricalWorktree[] managedWorktrees = worktrees.Where(item => item.IsManagedByCyRevision).ToArray();
+        Assert.True(managedWorktrees.Length == 1,
+            $"Expected one managed worktree. Entries: {string.Join(" | ", worktrees.Select(item => $"{item.Path} managed={item.IsManagedByCyRevision}"))}");
+        GitHistoricalWorktree managed = managedWorktrees[0];
         Assert.Equal("test/historical-snapshot", managed.Branch);
 
         await service.RemoveHistoricalWorktreeAsync(_temporaryDirectory, managed.Path);
         Assert.False(Directory.Exists(managed.Path));
         Assert.DoesNotContain(await service.GetHistoricalWorktreesAsync(_temporaryDirectory),
             item => string.Equals(item.Path, managed.Path, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GitColdArchiveIsVerifiedRestorableAndNonDestructiveByDefault()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "base.txt"), "base");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Base", ["base.txt"]);
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/cold");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "cold.txt"), "cold history");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Cold history", ["cold.txt"]);
+        await service.CheckoutBranchAsync(_temporaryDirectory, "main");
+        string archiveDirectory = Path.Combine(_temporaryDirectory, ".cyrevision-test-archives");
+        GitArchiveProfile profile = new("test", "Test", "Test profile", 1, 0);
+
+        GitArchivedBranch archive = await service.ArchiveBranchAsync(
+            _temporaryDirectory,
+            "feature/cold",
+            archiveDirectory,
+            profile,
+            removeAfterVerifiedArchive: false);
+
+        Assert.True(File.Exists(archive.ArchivePath));
+        Assert.False(archive.SourceBranchRemoved);
+        Assert.Contains(await service.GetBranchesAsync(_temporaryDirectory), branch => branch.Name == "feature/cold");
+        Assert.Single(await service.ListArchivedBranchesAsync(archiveDirectory));
+
+        await service.RestoreArchivedBranchAsync(_temporaryDirectory, archive, "restored/cold");
+        Assert.Contains(await service.GetBranchesAsync(_temporaryDirectory), branch => branch.Name == "restored/cold");
+        Assert.Equal("main", (await service.GetStatusAsync(_temporaryDirectory)).CurrentBranch);
+    }
+
+    [Fact]
+    public async Task ConflictResolutionBackupContainsEveryVersionAndTheProposedResult()
+    {
+        string root = Path.Combine(_temporaryDirectory, "conflict-recovery");
+        GitConflictVersion Version(string text) => new(true, "0123456789abcdef", text.Length, text, false, false);
+        GitConflictFile conflict = new(
+            "Source/Conflict.cs",
+            Version("base"),
+            Version("ours"),
+            Version("incoming"),
+            "working markers",
+            true);
+        GitConflictResolutionBackupService service = new(root);
+
+        GitConflictResolutionBackup backup = await service.CreateAsync(
+            "Project", _temporaryDirectory, conflict, "reviewed result", "Manual result", 30);
+
+        Assert.True(File.Exists(backup.ArchivePath));
+        using System.IO.Compression.ZipArchive archive = System.IO.Compression.ZipFile.OpenRead(backup.ArchivePath);
+        Assert.NotNull(archive.GetEntry("manifest.json"));
+        Assert.NotNull(archive.GetEntry("base.txt"));
+        Assert.NotNull(archive.GetEntry("ours.txt"));
+        Assert.NotNull(archive.GetEntry("incoming.txt"));
+        Assert.NotNull(archive.GetEntry("working-before.txt"));
+        using StreamReader reader = new(archive.GetEntry("result.txt")!.Open());
+        Assert.Equal("reviewed result", await reader.ReadToEndAsync());
+    }
+
+    [Fact]
+    public async Task MergedLocalBranchCanBeRemovedWithoutChangingCurrentHistory()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "base.txt"), "base");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Base", ["base.txt"]);
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/finished");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "finished.txt"), "finished");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Finished work", ["finished.txt"]);
+        await service.CheckoutBranchAsync(_temporaryDirectory, "main");
+        await service.MergeBranchAsync(_temporaryDirectory, "feature/finished");
+
+        GitLocalBranchRemovalAnalysis analysis = await service.AnalyzeLocalBranchRemovalAsync(
+            _temporaryDirectory,
+            "feature/finished");
+
+        Assert.True(analysis.CanRemoveSafely);
+        Assert.True(analysis.IsMergedIntoCurrent);
+        await service.RemoveLocalBranchAsync(_temporaryDirectory, "feature/finished");
+        Assert.DoesNotContain(
+            await service.GetBranchesAsync(_temporaryDirectory),
+            branch => branch.Name == "feature/finished");
+        Assert.Equal("main", (await service.GetStatusAsync(_temporaryDirectory)).CurrentBranch);
+        Assert.True(File.Exists(Path.Combine(_temporaryDirectory, "finished.txt")));
+    }
+
+    [Fact]
+    public async Task LocalOnlyUnmergedBranchIsProtectedFromRemoval()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "base.txt"), "base");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Base", ["base.txt"]);
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/local-only");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "unique.txt"), "unique");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Unique local work", ["unique.txt"]);
+        await service.CheckoutBranchAsync(_temporaryDirectory, "main");
+
+        GitLocalBranchRemovalAnalysis analysis = await service.AnalyzeLocalBranchRemovalAsync(
+            _temporaryDirectory,
+            "feature/local-only");
+
+        Assert.False(analysis.CanRemoveSafely);
+        Assert.False(analysis.IsMergedIntoCurrent);
+        Assert.False(analysis.IsFullyPublished);
+        await Assert.ThrowsAsync<GitOperationException>(() =>
+            service.RemoveLocalBranchAsync(_temporaryDirectory, "feature/local-only"));
+        Assert.Contains(
+            await service.GetBranchesAsync(_temporaryDirectory),
+            branch => branch.Name == "feature/local-only");
+
+        await service.RemoveLocalBranchAsync(
+            _temporaryDirectory,
+            "feature/local-only",
+            forceUnretained: true);
+        Assert.DoesNotContain(
+            await service.GetBranchesAsync(_temporaryDirectory),
+            branch => branch.Name == "feature/local-only");
     }
 
     public void Dispose()

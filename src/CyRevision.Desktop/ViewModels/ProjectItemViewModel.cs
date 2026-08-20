@@ -12,6 +12,10 @@ public sealed class ProjectItemViewModel : ObservableObject
     private string _statusColor = "#7E8799";
     private bool _isLoading;
     private double _loadProgress;
+    private bool _isSyncRunning;
+    private bool _isSyncPaused;
+    private bool _isVpnRunning;
+    private int _unreadNotificationCount;
 
     public ProjectItemViewModel(ProjectDefinition definition)
     {
@@ -27,6 +31,10 @@ public sealed class ProjectItemViewModel : ObservableObject
     public string RootPath => Definition.RootPath;
 
     public string AccentColor => Definition.AccentColor ?? DefaultAccentColor;
+
+    public string SidebarGroup => string.IsNullOrWhiteSpace(Definition.SidebarGroup)
+        ? "General"
+        : Definition.SidebarGroup.Trim();
 
     public string BranchName
     {
@@ -86,6 +94,63 @@ public sealed class ProjectItemViewModel : ObservableObject
         }
     }
 
+    public string ModeAndServices => Mode +
+        (IsSyncRunning ? IsSyncPaused ? " · Sync paused" : " · Sync" : string.Empty) +
+        (IsVpnRunning ? " · VPN" : string.Empty);
+
+    public int UnreadNotificationCount
+    {
+        get => _unreadNotificationCount;
+        private set
+        {
+            if (SetProperty(ref _unreadNotificationCount, value))
+            {
+                OnPropertyChanged(nameof(HasUnreadNotifications));
+                OnPropertyChanged(nameof(NotificationBadgeText));
+            }
+        }
+    }
+
+    public bool HasUnreadNotifications => UnreadNotificationCount > 0;
+    public string NotificationBadgeText => UnreadNotificationCount > 99 ? "99+" : UnreadNotificationCount.ToString();
+
+    public bool IsSyncRunning
+    {
+        get => _isSyncRunning;
+        private set
+        {
+            if (SetProperty(ref _isSyncRunning, value)) OnPropertyChanged(nameof(ModeAndServices));
+        }
+    }
+
+    public bool IsSyncPaused
+    {
+        get => _isSyncPaused;
+        private set
+        {
+            if (SetProperty(ref _isSyncPaused, value)) OnPropertyChanged(nameof(ModeAndServices));
+        }
+    }
+
+    public bool IsVpnRunning
+    {
+        get => _isVpnRunning;
+        private set
+        {
+            if (SetProperty(ref _isVpnRunning, value)) OnPropertyChanged(nameof(ModeAndServices));
+        }
+    }
+
+    public void SetSyncRuntime(bool running, bool paused)
+    {
+        IsSyncRunning = running;
+        IsSyncPaused = running && paused;
+    }
+
+    public void SetVpnRuntime(bool running) => IsVpnRunning = running;
+
+    public void SetUnreadNotifications(int count) => UnreadNotificationCount = Math.Max(0, count);
+
     public void Update(ProjectDefinition definition)
     {
         _definition = definition;
@@ -93,7 +158,9 @@ public sealed class ProjectItemViewModel : ObservableObject
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(RootPath));
         OnPropertyChanged(nameof(Mode));
+        OnPropertyChanged(nameof(ModeAndServices));
         OnPropertyChanged(nameof(AccentColor));
+        OnPropertyChanged(nameof(SidebarGroup));
     }
 
     public void SetLoading(string detail, double progress)

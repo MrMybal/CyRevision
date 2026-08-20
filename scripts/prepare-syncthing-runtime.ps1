@@ -1,10 +1,37 @@
 param(
     [string]$Runtime = 'win-x64',
-    [string]$SyncthingVersion = '2.1.3'
+    [string]$SyncthingVersion = '2.1.3',
+    [switch]$ForceRefresh
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function Get-Sha256Hex
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $stream = [IO.File]::OpenRead($Path)
+    try
+    {
+        $algorithm = [Security.Cryptography.SHA256]::Create()
+        try
+        {
+            return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+        }
+        finally
+        {
+            $algorithm.Dispose()
+        }
+    }
+    finally
+    {
+        $stream.Dispose()
+    }
+}
 
 if ($Runtime -ne 'win-x64')
 {
@@ -23,6 +50,23 @@ if ($env:GH_TOKEN)
     $headers.Authorization = "Bearer $($env:GH_TOKEN)"
 }
 
+$cachedExecutable = Join-Path $runtimeRoot 'syncthing.exe'
+$cachedLicense = Join-Path $runtimeRoot 'LICENSE-SYNCTHING.txt'
+$cachedSource = Join-Path $runtimeRoot 'SOURCE.txt'
+if (-not $ForceRefresh -and
+    (Test-Path -LiteralPath $cachedExecutable -PathType Leaf) -and
+    (Test-Path -LiteralPath $cachedLicense -PathType Leaf) -and
+    (Test-Path -LiteralPath $cachedSource -PathType Leaf))
+{
+    $cachedMetadata = Get-Content -LiteralPath $cachedSource -ErrorAction Stop
+    if ($cachedMetadata -contains "Syncthing v$SyncthingVersion" -and
+        $cachedMetadata -contains 'The downloaded release archive was verified against the SHA-256 digest in the official GitHub release metadata.')
+    {
+        Write-Host "Reusing the verified Syncthing v$SyncthingVersion runtime for $Runtime." -ForegroundColor Cyan
+        return
+    }
+}
+
 try
 {
     New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
@@ -34,7 +78,7 @@ try
     }
     Invoke-WebRequest -Uri $asset.browser_download_url -Headers $headers -OutFile $archivePath
     $expectedDigest = $asset.digest.Substring('sha256:'.Length)
-    $actualDigest = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualDigest = Get-Sha256Hex -Path $archivePath
     if ($actualDigest -ne $expectedDigest.ToLowerInvariant())
     {
         throw 'The downloaded Syncthing archive does not match the official GitHub SHA-256 digest.'

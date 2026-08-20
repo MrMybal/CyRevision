@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "cyrevision.clickup",
+  "name": "ClickUp Tasks",
+  "version": "0.1.0",
+  "description": "Project-scoped ClickUp Workspace task search and links for commit and pull-request drafts. API tokens are session-only or read from an environment variable.",
+  "category": "Project management",
+  "entryAssembly": "CyRevision.Plugin.ClickUp.dll",
+  "entryType": "CyRevision.Plugin.ClickUp.ClickUpIntegrationPlugin",
+  "enabledByDefault": false
+}

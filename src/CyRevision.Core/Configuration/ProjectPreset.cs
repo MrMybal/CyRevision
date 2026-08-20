@@ -6,6 +6,7 @@ public enum ProjectPresetKind
     GitWithPeerSync,
     SyncOnly,
     SyncWithVersions,
+    SyncWithCommits,
     BackupOnly,
     Custom
 }
@@ -15,12 +16,27 @@ public sealed record ProjectPreset(
     string Name,
     string Description,
     ProjectFeatures Features,
-    RetentionPolicy Retention)
+    RetentionPolicy Retention,
+    string? PluginModeId = null,
+    string? ProviderPluginId = null,
+    IReadOnlyList<string>? WorkspaceTabIds = null,
+    string? CategoryLabel = null,
+    bool IsAvailable = true,
+    string AvailabilitySummary = "")
 {
+    public bool IsPluginMode =>
+        !string.IsNullOrWhiteSpace(PluginModeId) &&
+        !string.IsNullOrWhiteSpace(ProviderPluginId);
+
     public void Validate()
     {
         Features.Validate();
         Retention.Validate();
+
+        if (string.IsNullOrWhiteSpace(PluginModeId) != string.IsNullOrWhiteSpace(ProviderPluginId))
+        {
+            throw new InvalidOperationException("A plugin mode requires both a mode ID and a provider plugin ID.");
+        }
     }
 }
 
@@ -53,6 +69,12 @@ public static class ProjectPresets
             new ProjectFeatures(false, false, true, true, false),
             new RetentionPolicy(RetentionMode.Timeline, 30, TimeSpan.FromDays(90))),
         new(
+            ProjectPresetKind.SyncWithCommits,
+            "Sync + Commit",
+            "Commit-style snapshots without Git. Synchronization only publishes complete, immutable commits.",
+            new ProjectFeatures(false, false, true, true, false),
+            new RetentionPolicy(RetentionMode.Timeline, 60, TimeSpan.FromDays(180))),
+        new(
             ProjectPresetKind.BackupOnly,
             "Backup uniquement",
             "Snapshots locaux ou distants, sans Git et sans synchronisation P2P.",
@@ -60,4 +82,3 @@ public static class ProjectPresets
             RetentionPolicy.KeepForever)
     ];
 }
-

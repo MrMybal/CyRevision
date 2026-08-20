@@ -96,6 +96,10 @@ public:
 private:
     bool RefreshConnection();
     bool RefreshStates(const TArray<FString>& InFiles);
+    bool RefreshHistories(const TArray<FString>& InFiles);
+    bool QueryFileHistory(FCyRevisionSourceControlState& State) const;
+    bool RunGitForFiles(const FString& Prefix, const TArray<FString>& InFiles, const FString& Suffix = FString()) const;
+    bool MakeRepositoryRelative(const FString& Filename, FString& OutRelativeFilename) const;
     TOptional<int> CountLocalChanges() const;
     TSharedRef<FCyRevisionSourceControlState, ESPMode::ThreadSafe> GetStateInternal(const FString& Filename);
     void QueryFileState(FCyRevisionSourceControlState& State) const;

@@ -3,8 +3,10 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -16,6 +18,7 @@ using CyRevision.Desktop.SystemIntegration;
 using CyRevision.Desktop.ViewModels;
 using CyRevision.Desktop.Workspace;
 using CyRevision.Git;
+using CyRevision.Plugin.Abstractions;
 using CyRevision.Sync;
 
 namespace CyRevision.Desktop;
@@ -27,6 +30,7 @@ internal enum WorkspaceCategory
     Code,
     Backup,
     Sync,
+    PluginMode,
     Network,
     Extensions
 }
@@ -98,6 +102,7 @@ public partial class MainWindow : Window
     private FocusedDiffWindow? _changesDiffWindow;
     private FocusedDiffWindow? _pullRequestDiffWindow;
     private CommitExplorerWindow? _commitExplorerWindow;
+    private GitConflictResolverWindow? _gitConflictResolverWindow;
     private readonly List<DetachedWorkspaceWindow> _detachedWorkspaceWindows = [];
     private readonly Dictionary<TabItem, DetachedTabWindow> _detachedTabWindows = [];
     private WorkspaceLayoutPreferencesStore? _workspaceLayoutStore;
@@ -120,6 +125,9 @@ public partial class MainWindow : Window
     private bool _updatingWorkspaceTabVisibility;
     private bool _pullRequestDiffFocused;
     private bool _solutionExplorerTreeLayout = true;
+    private bool _branchRemovalFlowActive;
+    private DataGrid? _lastChangesSelectionGrid;
+    private TreeView? _lastChangesSelectionTree;
     private Action<DesktopBehaviorSetting>? _desktopBehaviorToggle;
 
     public bool StartHidden { get; set; }
@@ -142,6 +150,7 @@ public partial class MainWindow : Window
         _viewModel.AiChatMessages.CollectionChanged += OnAiChatMessagesChanged;
         _viewModel.TeamChatMessages.CollectionChanged += OnTeamChatMessagesChanged;
         _viewModel.SharedSyncFolders.CollectionChanged += OnSharedSyncFoldersChanged;
+        ChangesFlatTree.AddHandler(TreeViewItem.ExpandedEvent, OnChangesTreeItemExpanded);
         ChangesFolderTree.AddHandler(TreeViewItem.ExpandedEvent, OnChangesTreeItemExpanded);
         SolutionTreePanel.AddHandler(TreeViewItem.ExpandedEvent, OnSolutionTreeItemExpanded);
         _localization = localization;
@@ -189,6 +198,11 @@ public partial class MainWindow : Window
             splitter.PointerReleased += OnWorkspaceSplitterPointerReleased;
         }
         _uiLocalizer = new UiLocalizer(this, localization);
+        Dispatcher.UIThread.Post(() =>
+        {
+            ConfigureGlobalDataGridPreferences();
+            ApplyAutomaticButtonTooltips();
+        }, DispatcherPriority.Background);
         KeyDown += OnWindowKeyDown;
         Opened += OnOpened;
         Closed += OnClosed;
@@ -336,11 +350,14 @@ public partial class MainWindow : Window
                  nameof(MainWindowViewModel.IsUnityIntegrationEnabled) or
                  nameof(MainWindowViewModel.IsGodotIntegrationEnabled) or
                  nameof(MainWindowViewModel.IsLoreIntegrationEnabled) or
+                 nameof(MainWindowViewModel.IsPerforceIntegrationEnabled) or
                  nameof(MainWindowViewModel.IsAiIntegrationEnabled) or
                  nameof(MainWindowViewModel.IsUnrealProjectDetected) or
                  nameof(MainWindowViewModel.IsUnityProjectDetected) or
                  nameof(MainWindowViewModel.IsGodotProjectDetected) or
-                 nameof(MainWindowViewModel.IsLoreProjectDetected))
+                 nameof(MainWindowViewModel.IsLoreProjectDetected) or
+                 nameof(MainWindowViewModel.HasActivePluginOperatingMode) or
+                 nameof(MainWindowViewModel.ActivePluginOperatingModeWorkspaceTabs))
         {
             RefreshWorkspaceModeNavigation(selectPrimary: false);
         }
@@ -420,16 +437,29 @@ public partial class MainWindow : Window
             _workspaceTabVisibilityPreset,
             _hiddenWorkspaceTabNames.OrderBy(name => name, StringComparer.Ordinal).ToList(),
             _hiddenChangeColumnNames.OrderBy(name => name, StringComparer.Ordinal).ToList(),
-            _viewModel.ChangeSort));
+            _viewModel.ChangeSort,
+            CaptureDataGridColumnWidths(),
+            CaptureHiddenDataGridColumns()));
     }
 
     private void OnWorkspaceTabSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_restoringProjectWorkspace) return;
         SaveCurrentProjectWorkspaceState();
+        if (ReferenceEquals(WorkspaceTabs.SelectedItem, NotificationsWorkspaceTab))
+            _viewModel.MarkProjectNotificationsRead();
         EnsureCodeWorkspaceForVisibleTab();
         EnsureSelectedWorkspaceData();
     }
+
+    private async void OnProjectNotificationsEnabledClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox)
+            await _viewModel.SetProjectNotificationsEnabledAsync(checkBox.IsChecked == true);
+    }
+
+    private void OnMarkProjectNotificationsReadClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.MarkProjectNotificationsRead();
 
     private void OnConsoleAndLogsTabSelectionChanged(object? sender, SelectionChangedEventArgs e) =>
         SaveCurrentProjectWorkspaceState();
@@ -447,6 +477,158 @@ public partial class MainWindow : Window
             ? state.ChangeSort
             : "Name";
         ApplyChangeColumnVisibility();
+        RestoreDataGridColumnWidths(state.DataGridColumnWidths);
+        RestoreHiddenDataGridColumns(state.HiddenDataGridColumns);
+    }
+
+    private IReadOnlyDictionary<string, DataGrid> PreferenceDataGrids()
+    {
+        Dictionary<string, DataGrid> result = new(StringComparer.Ordinal);
+        Dictionary<string, int> occurrences = new(StringComparer.Ordinal);
+        foreach (DataGrid grid in this.GetLogicalDescendants().OfType<DataGrid>())
+        {
+            string signature = !string.IsNullOrWhiteSpace(grid.Name)
+                ? grid.Name
+                : "columns:" + string.Join("|", grid.Columns.Select((column, index) => ColumnPreferenceKey(column, index)));
+            int occurrence = occurrences.GetValueOrDefault(signature);
+            occurrences[signature] = occurrence + 1;
+            string key = occurrence == 0 ? signature : $"{signature}#{occurrence}";
+            result[key] = grid;
+        }
+        return result;
+    }
+
+    private static string ColumnPreferenceKey(DataGridColumn column, int index) =>
+        column.Tag as string ?? column.Header?.ToString() ?? $"Column {index + 1}";
+
+    private Dictionary<string, double[]> CaptureDataGridColumnWidths()
+    {
+        Dictionary<string, double[]> result = new(StringComparer.Ordinal);
+        foreach ((string name, DataGrid grid) in PreferenceDataGrids())
+        {
+            double[] widths = grid.Columns
+                .Select(column => Math.Round(column.ActualWidth, 1))
+                .ToArray();
+            if (widths.Any(width => width > 0)) result[name] = widths;
+        }
+        return result;
+    }
+
+    private void RestoreDataGridColumnWidths(IReadOnlyDictionary<string, double[]>? preferences)
+    {
+        if (preferences is null) return;
+        foreach ((string name, DataGrid grid) in PreferenceDataGrids())
+        {
+            if (!preferences.TryGetValue(name, out double[]? widths)) continue;
+            for (int index = 0; index < Math.Min(widths.Length, grid.Columns.Count); index++)
+            {
+                double width = widths[index];
+                if (double.IsFinite(width) && width >= 28)
+                    grid.Columns[index].Width = new DataGridLength(width, DataGridLengthUnitType.Pixel);
+            }
+        }
+    }
+
+    private Dictionary<string, string[]> CaptureHiddenDataGridColumns()
+    {
+        Dictionary<string, string[]> result = new(StringComparer.Ordinal);
+        foreach ((string gridName, DataGrid grid) in PreferenceDataGrids())
+        {
+            string[] hidden = grid.Columns
+                .Select((column, index) => (column, key: ColumnPreferenceKey(column, index)))
+                .Where(item => !item.column.IsVisible)
+                .Select(item => item.key)
+                .ToArray();
+            if (hidden.Length > 0) result[gridName] = hidden;
+        }
+        return result;
+    }
+
+    private void RestoreHiddenDataGridColumns(IReadOnlyDictionary<string, string[]>? preferences)
+    {
+        foreach ((string gridName, DataGrid grid) in PreferenceDataGrids())
+        {
+            HashSet<string> hidden = preferences?.GetValueOrDefault(gridName)?
+                                         .ToHashSet(StringComparer.Ordinal) ?? [];
+            for (int index = 0; index < grid.Columns.Count; index++)
+            {
+                DataGridColumn column = grid.Columns[index];
+                string key = ColumnPreferenceKey(column, index);
+                if (key is "Name" || key.Contains("always visible", StringComparison.OrdinalIgnoreCase)) continue;
+                column.IsVisible = !hidden.Contains(key);
+            }
+        }
+    }
+
+    private void ConfigureGlobalDataGridPreferences()
+    {
+        foreach (DataGrid grid in PreferenceDataGrids().Values)
+        {
+            grid.CanUserResizeColumns = true;
+            if (grid.ContextMenu is not null) continue;
+
+            MenuItem root = new() { Header = "Visible columns" };
+            for (int index = 0; index < grid.Columns.Count; index++)
+            {
+                DataGridColumn column = grid.Columns[index];
+                string key = ColumnPreferenceKey(column, index);
+                MenuItem item = new()
+                {
+                    Header = key,
+                    ToggleType = MenuItemToggleType.CheckBox,
+                    IsChecked = column.IsVisible,
+                    Tag = column
+                };
+                item.Click += (_, _) =>
+                {
+                    column.IsVisible = item.IsChecked == true;
+                    SaveCurrentProjectWorkspaceState();
+                };
+                root.Items.Add(item);
+            }
+            grid.ContextMenu = new ContextMenu { ItemsSource = new[] { root } };
+        }
+    }
+
+    private void ApplyAutomaticButtonTooltips()
+    {
+        foreach (Button button in this.GetLogicalDescendants().OfType<Button>())
+        {
+            if (ToolTip.GetTip(button) is not null || button.Content is not string text ||
+                string.IsNullOrWhiteSpace(text)) continue;
+            ToolTip.SetTip(button, DescribeButtonAction(text));
+        }
+    }
+
+    private static string DescribeButtonAction(string rawText)
+    {
+        string text = rawText.Replace("↗", string.Empty, StringComparison.Ordinal).Trim();
+        string lower = text.ToLowerInvariant();
+        if (lower.Contains("refresh") || lower.Contains("reload"))
+            return "Reload this page's data for the selected project.";
+        if (lower.Contains("fetch"))
+            return "Contact the configured remote and refresh its references without changing the working files.";
+        if (lower == "pull")
+            return "Download and integrate the current branch from its configured remote.";
+        if (lower == "push")
+            return "Publish the current branch commits to its configured remote.";
+        if (lower.Contains("save") || lower.Contains("apply"))
+            return "Save and apply these settings to the selected project.";
+        if (lower.Contains("cancel") || lower.Contains("stop"))
+            return "Cancel or stop the current operation safely.";
+        if (lower.Contains("browse") || lower.Contains("choose") || lower.Contains("open folder"))
+            return "Choose or open the related folder without modifying its contents.";
+        if (lower.Contains("analy") || lower.Contains("scan"))
+            return "Run a read-only analysis and show its progress and results.";
+        if (lower.Contains("remove") || lower.Contains("delete") || lower.Contains("clean") || lower.Contains("rollback"))
+            return "Review and confirm this potentially destructive action before it changes project data.";
+        if (lower.Contains("enable") || lower.Contains("start") || lower.Contains("resume"))
+            return "Enable or start this feature for the selected project.";
+        if (lower.Contains("disable") || lower.Contains("pause"))
+            return "Disable or pause this feature for the selected project.";
+        if (lower.Contains("doc") || lower.Contains("help"))
+            return "Open the documentation for this page.";
+        return $"{text}: run this action for the selected project.";
     }
 
     private void ApplyChangeColumnVisibility()
@@ -533,18 +715,32 @@ public partial class MainWindow : Window
     private void OnDiffFocusChangesLayoutClick(object? sender, RoutedEventArgs e) =>
         ApplyChangesLayout(ChangesLayoutMode.DiffFocus);
 
+    private void OnCommitFocusChangesLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyChangesLayout(ChangesLayoutMode.CommitFocus);
+
     private void ApplyChangesLayout(ChangesLayoutMode layout, bool persist = true, bool restoreSavedSize = false)
     {
         _changesLayout = layout;
         ChangesBalancedLayoutToggle.IsChecked = layout == ChangesLayoutMode.Balanced;
+        ChangesCommitFocusLayoutToggle.IsChecked = layout == ChangesLayoutMode.CommitFocus;
         ChangesDiffFocusLayoutToggle.IsChecked = layout == ChangesLayoutMode.DiffFocus;
         bool restore = restoreSavedSize && _layoutPreferences.ChangesLayout == layout;
         double listWeight = restore
             ? _layoutPreferences.ChangesListWeight
-            : layout == ChangesLayoutMode.DiffFocus ? 0.68 : 1.05;
+            : layout switch
+            {
+                ChangesLayoutMode.DiffFocus => 0.68,
+                ChangesLayoutMode.CommitFocus => 1.65,
+                _ => 1.05
+            };
         double diffWeight = restore
             ? _layoutPreferences.ChangesDiffWeight
-            : layout == ChangesLayoutMode.DiffFocus ? 1.72 : 1.35;
+            : layout switch
+            {
+                ChangesLayoutMode.DiffFocus => 1.72,
+                ChangesLayoutMode.CommitFocus => 0.95,
+                _ => 1.35
+            };
         bool showDiff = ChangesDiffToggle.IsChecked == true;
         ChangesDiffPanel.IsVisible = showDiff;
         ChangesWorkspaceSplitter.IsVisible = showDiff;
@@ -1007,6 +1203,48 @@ public partial class MainWindow : Window
         window.Show();
     }
 
+    private void OnOpenGitConflictResolverClick(object? sender, RoutedEventArgs e) =>
+        OpenGitConflictResolver();
+
+    private void OnVersionedChangeDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (_viewModel.SelectedChange?.Change.Kind == GitChangeKind.Conflicted)
+            OpenGitConflictResolver();
+    }
+
+    private void OpenGitConflictResolver()
+    {
+        if (_viewModel.SelectedProject is not { } project ||
+            !project.Definition.Features.GitEnabled) return;
+        if (_gitConflictResolverWindow is not null)
+        {
+            if (_gitConflictResolverWindow.WindowState == WindowState.Minimized)
+                _gitConflictResolverWindow.WindowState = WindowState.Normal;
+            _gitConflictResolverWindow.Activate();
+            return;
+        }
+
+        GitConflictResolverViewModel resolver = new(
+            new GitCliRepositoryService(),
+            project.RootPath,
+            project.Name,
+            new GitConflictResolutionBackupService(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CyRevision",
+                "conflict-resolutions")),
+            _viewModel.CanUseAiConflictResolver
+                ? _viewModel.GenerateAiConflictAssistanceAsync
+                : null);
+        GitConflictResolverWindow window = new(resolver, _localization);
+        window.Closed += async (_, _) =>
+        {
+            _gitConflictResolverWindow = null;
+            if (_viewModel.SelectedProject?.Id == project.Id) await _viewModel.RefreshAsync();
+        };
+        _gitConflictResolverWindow = window;
+        window.Show();
+    }
+
     private void OnOpenPullRequestDiffWindowClick(object? sender, RoutedEventArgs e)
     {
         if (_localization is null || _viewModel.SelectedPullRequestFile is not { } file) return;
@@ -1075,7 +1313,18 @@ public partial class MainWindow : Window
 
     private void OnChangeTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (sender is not TreeView tree || tree.SelectedItem is not GitChangeTreeNode node) return;
+        if (sender is not TreeView tree) return;
+        _lastChangesSelectionGrid = null;
+        _lastChangesSelectionTree = tree;
+        if (tree.SelectedItems.Count == 0)
+        {
+            _viewModel.SelectedChangeTreeNode = null;
+            return;
+        }
+        GitChangeTreeNode? node = e.AddedItems.OfType<GitChangeTreeNode>().LastOrDefault()
+                                  ?? tree.SelectedItem as GitChangeTreeNode;
+        if (node is null) return;
+        _viewModel.SelectedChangeTreeNode = node;
         if (node.IsPlaceholder)
         {
             GitChangeTreeNode? parent = FindChangeTreeParent(_viewModel.ChangeTree, node);
@@ -1089,9 +1338,62 @@ public partial class MainWindow : Window
         }
         if (node.Change is { } change)
         {
-            _viewModel.SelectedChangeTreeNode = node;
             _viewModel.SelectedChange = change;
         }
+    }
+
+    private void OnChangesGridSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not DataGrid grid) return;
+        _lastChangesSelectionGrid = grid;
+        _lastChangesSelectionTree = null;
+        if (grid.SelectedItem is GitChangeViewModel change)
+        {
+            _viewModel.SelectedChangeTreeNode = null;
+            _viewModel.SelectedChange = change;
+        }
+    }
+
+    private void OnChangesGridPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not DataGrid grid ||
+            !e.GetCurrentPoint(grid).Properties.IsRightButtonPressed ||
+            e.Source is not Control source ||
+            source.FindAncestorOfType<DataGridRow>() is not { DataContext: GitChangeViewModel change })
+        {
+            return;
+        }
+
+        _lastChangesSelectionGrid = grid;
+        _lastChangesSelectionTree = null;
+        _viewModel.SelectedChangeTreeNode = null;
+        if (!grid.SelectedItems.Contains(change))
+        {
+            grid.SelectedItems.Clear();
+            grid.SelectedItem = change;
+        }
+        _viewModel.SelectedChange = change;
+    }
+
+    private void OnChangesTreePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not TreeView tree ||
+            !e.GetCurrentPoint(tree).Properties.IsRightButtonPressed ||
+            e.Source is not Control source ||
+            source.FindAncestorOfType<TreeViewItem>() is not { DataContext: GitChangeTreeNode node } item)
+        {
+            return;
+        }
+
+        _lastChangesSelectionGrid = null;
+        _lastChangesSelectionTree = tree;
+        if (!tree.SelectedItems.Contains(node))
+        {
+            tree.UnselectAll();
+            item.IsSelected = true;
+        }
+        _viewModel.SelectedChangeTreeNode = node;
+        if (node.Change is { } change) _viewModel.SelectedChange = change;
     }
 
     private void OnChangesTreeItemExpanded(object? sender, RoutedEventArgs e)
@@ -1214,7 +1516,7 @@ public partial class MainWindow : Window
                     "GitGraphsWorkspaceTab", "LfsLocksWorkspaceTab", "GitIgnoreWorkspaceTab", "GitLfsWorkspaceTab",
                     "BackupsWorkspaceTab", "SolutionExplorerWorkspaceTab", "CodeWorkspaceTab", "ConsoleWorkspaceTab",
                     "AssetDiffWorkspaceTab", "AiWorkspaceTab", "McpWorkspaceTab", "PluginsWorkspaceTab",
-                    "UnrealWorkspaceTab", "UnityWorkspaceTab", "GodotWorkspaceTab", "LoreWorkspaceTab", "UnrealBuildWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
+                    "UnrealWorkspaceTab", "UnityWorkspaceTab", "GodotWorkspaceTab", "LoreWorkspaceTab", "PerforceWorkspaceTab", "UnrealBuildWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
             new WorkspaceTabVisibilityPreset(
                 "Unreal production",
                 "Revision, asset, build, and Unreal integration tools in one focused workspace.",
@@ -1225,7 +1527,7 @@ public partial class MainWindow : Window
                     "HistoryWorkspaceTab", "CompositionWorkspaceTab", "BranchesWorkspaceTab", "PullRequestsWorkspaceTab",
                     "CiWorkspaceTab", "GitGraphsWorkspaceTab", "LfsLocksWorkspaceTab", "GitIgnoreWorkspaceTab",
                     "GitLfsWorkspaceTab", "BackupsWorkspaceTab", "SolutionExplorerWorkspaceTab", "CodeWorkspaceTab",
-                    "ConsoleWorkspaceTab", "AssetDiffWorkspaceTab", "PluginsWorkspaceTab", "UnrealWorkspaceTab", "LoreWorkspaceTab",
+                    "ConsoleWorkspaceTab", "AssetDiffWorkspaceTab", "PluginsWorkspaceTab", "UnrealWorkspaceTab", "LoreWorkspaceTab", "PerforceWorkspaceTab",
                     "UnrealBuildWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
             new WorkspaceTabVisibilityPreset(
                 "Game engines",
@@ -1237,7 +1539,7 @@ public partial class MainWindow : Window
                     "HistoryWorkspaceTab", "BranchesWorkspaceTab", "PullRequestsWorkspaceTab", "CiWorkspaceTab",
                     "LfsLocksWorkspaceTab", "GitIgnoreWorkspaceTab", "GitLfsWorkspaceTab", "BackupsWorkspaceTab",
                     "SolutionExplorerWorkspaceTab", "CodeWorkspaceTab", "ConsoleWorkspaceTab", "AssetDiffWorkspaceTab",
-                    "PluginsWorkspaceTab", "UnrealWorkspaceTab", "UnityWorkspaceTab", "GodotWorkspaceTab", "LoreWorkspaceTab",
+                    "PluginsWorkspaceTab", "UnrealWorkspaceTab", "UnityWorkspaceTab", "GodotWorkspaceTab", "LoreWorkspaceTab", "PerforceWorkspaceTab",
                     "UnrealBuildWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
             new WorkspaceTabVisibilityPreset(
                 "Team & network",
@@ -1375,6 +1677,8 @@ public partial class MainWindow : Window
         CodeCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Code).Length > 0;
         BackupCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Backup).Length > 0;
         SyncCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Sync).Length > 0;
+        PluginModeCategoryToggle.IsVisible = _viewModel?.HasActivePluginOperatingMode == true &&
+                                             EnabledTabsFor(WorkspaceCategory.PluginMode).Length > 0;
         NetworkCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Network).Length > 0;
         ExtensionsCategoryToggle.IsVisible = EnabledTabsFor(WorkspaceCategory.Extensions).Length > 0;
     }
@@ -1412,6 +1716,7 @@ public partial class MainWindow : Window
         WorkspaceCategory.Code => CodeCategoryToggle,
         WorkspaceCategory.Backup => BackupCategoryToggle,
         WorkspaceCategory.Sync => SyncCategoryToggle,
+        WorkspaceCategory.PluginMode => PluginModeCategoryToggle,
         WorkspaceCategory.Network => NetworkCategoryToggle,
         _ => ExtensionsCategoryToggle
     };
@@ -1423,6 +1728,7 @@ public partial class MainWindow : Window
         WorkspaceCategory.Code => "Code & Assets",
         WorkspaceCategory.Backup => "Backup",
         WorkspaceCategory.Sync => "Sync",
+        WorkspaceCategory.PluginMode => "Plugin mode",
         WorkspaceCategory.Network => "Team & Network",
         _ => "Extensions & Help"
     };
@@ -1430,12 +1736,14 @@ public partial class MainWindow : Window
     private static string WorkspaceTabDisplayName(TabItem tab) => tab.Name switch
     {
         "MembersWorkspaceTab" => "Members",
+        "NotificationsWorkspaceTab" => "Notifications",
         "VisibleTabsWorkspaceTab" => "Visible tabs",
         "LicenseWorkspaceTab" => "License",
         "ChangesWorkspaceTab" => "Changes",
         "HistoryWorkspaceTab" => "History",
         "CompositionWorkspaceTab" => "Compose",
         "BranchesWorkspaceTab" => "Branches",
+        "GitAnnotationsWorkspaceTab" => "Annotations",
         "PullRequestsWorkspaceTab" => "Pull Requests",
         "CiWorkspaceTab" => "CI / Actions",
         "GitGraphsWorkspaceTab" => "Git graphs",
@@ -1464,6 +1772,7 @@ public partial class MainWindow : Window
         "UnityWorkspaceTab" => "Unity",
         "GodotWorkspaceTab" => "Godot",
         "LoreWorkspaceTab" => "Lore",
+        "PerforceWorkspaceTab" => "Perforce",
         "UnrealBuildWorkspaceTab" => "Unreal builds",
         "DiagnosticsWorkspaceTab" => "Diagnostics",
         "HelpWorkspaceTab" => "Help",
@@ -1507,6 +1816,9 @@ public partial class MainWindow : Window
     private void OnSyncCategoryClick(object? sender, RoutedEventArgs e) =>
         ApplyWorkspaceCategory(WorkspaceCategory.Sync, selectDefault: true);
 
+    private void OnPluginModeCategoryClick(object? sender, RoutedEventArgs e) =>
+        ApplyWorkspaceCategory(WorkspaceCategory.PluginMode, selectDefault: true);
+
     private void OnNetworkCategoryClick(object? sender, RoutedEventArgs e) =>
         ApplyWorkspaceCategory(WorkspaceCategory.Network, selectDefault: true);
 
@@ -1529,6 +1841,7 @@ public partial class MainWindow : Window
         CodeCategoryToggle.IsChecked = category == WorkspaceCategory.Code;
         BackupCategoryToggle.IsChecked = category == WorkspaceCategory.Backup;
         SyncCategoryToggle.IsChecked = category == WorkspaceCategory.Sync;
+        PluginModeCategoryToggle.IsChecked = category == WorkspaceCategory.PluginMode;
         NetworkCategoryToggle.IsChecked = category == WorkspaceCategory.Network;
         ExtensionsCategoryToggle.IsChecked = category == WorkspaceCategory.Extensions;
 
@@ -1580,6 +1893,8 @@ public partial class MainWindow : Window
             return _viewModel is { IsGodotIntegrationEnabled: true, IsGodotProjectDetected: true };
         if (ReferenceEquals(tab, LoreWorkspaceTab))
             return _viewModel is { IsLoreIntegrationEnabled: true, IsLoreProjectDetected: true };
+        if (ReferenceEquals(tab, PerforceWorkspaceTab))
+            return _viewModel?.IsPerforceIntegrationEnabled == true;
         if (ReferenceEquals(tab, AiWorkspaceTab)) return _viewModel?.IsAiIntegrationEnabled == true;
         return !IsGitWorkspaceTab(tab) || features.GitEnabled;
     }
@@ -1589,6 +1904,7 @@ public partial class MainWindow : Window
         ReferenceEquals(tab, HistoryWorkspaceTab) ||
         ReferenceEquals(tab, CompositionWorkspaceTab) ||
         ReferenceEquals(tab, BranchesWorkspaceTab) ||
+        ReferenceEquals(tab, GitAnnotationsWorkspaceTab) ||
         ReferenceEquals(tab, PullRequestsWorkspaceTab) ||
         ReferenceEquals(tab, CiWorkspaceTab) ||
         ReferenceEquals(tab, GitGraphsWorkspaceTab) ||
@@ -1599,6 +1915,8 @@ public partial class MainWindow : Window
     private TabItem PreferredWorkspaceTabForMode()
     {
         CyRevision.Core.Configuration.ProjectFeatures? features = _viewModel?.SelectedProject?.Definition.Features;
+        TabItem? pluginModeTab = EnabledTabsFor(WorkspaceCategory.PluginMode).FirstOrDefault();
+        if (pluginModeTab is not null) return pluginModeTab;
         if (features?.GitEnabled == true && IsWorkspaceTabEnabled(ChangesWorkspaceTab)) return ChangesWorkspaceTab;
         if (features?.PeerSyncEnabled == true && IsWorkspaceTabEnabled(SynchronizationWorkspaceTab)) return SynchronizationWorkspaceTab;
         if (features?.BackupEnabled == true && IsWorkspaceTabEnabled(BackupsWorkspaceTab)) return BackupsWorkspaceTab;
@@ -1614,13 +1932,15 @@ public partial class MainWindow : Window
         }
 
         CyRevision.Core.Configuration.ProjectFeatures? features = _viewModel?.SelectedProject?.Definition.Features;
-        SyncCategoryToggle.Content = features switch
-        {
-            { GitEnabled: true, PeerSyncEnabled: true } => "Git + Sync",
-            { PeerSyncEnabled: true, BackupEnabled: true } => "Sync + Versions",
-            { PeerSyncEnabled: true } => "Sync",
-            _ => "Sync"
-        };
+        SyncCategoryToggle.Content = _viewModel?.IsSyncCommitMode == true
+            ? "Sync + Commit"
+            : features switch
+            {
+                { GitEnabled: true, PeerSyncEnabled: true } => "Git + Sync",
+                { PeerSyncEnabled: true, BackupEnabled: true } => "Sync + Versions",
+                { PeerSyncEnabled: true } => "Sync",
+                _ => "Sync"
+            };
         FetchRemotesButton.IsVisible = features?.GitEnabled == true;
         PullButton.IsVisible = features?.GitEnabled == true;
         PushButton.IsVisible = features?.GitEnabled == true;
@@ -1652,33 +1972,39 @@ public partial class MainWindow : Window
 
     private TabItem[] TabsFor(WorkspaceCategory category) => category switch
     {
-        WorkspaceCategory.Overview => [ProjectWorkspaceTab, MembersWorkspaceTab, VisibleTabsWorkspaceTab, LicenseWorkspaceTab],
+        WorkspaceCategory.Overview => [ProjectWorkspaceTab, MembersWorkspaceTab, NotificationsWorkspaceTab, VisibleTabsWorkspaceTab, LicenseWorkspaceTab],
         WorkspaceCategory.Git =>
         [
             ChangesWorkspaceTab, HistoryWorkspaceTab, CompositionWorkspaceTab, BranchesWorkspaceTab,
-            PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab, LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab
+            GitAnnotationsWorkspaceTab, PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab, LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab
         ],
         WorkspaceCategory.Code => [SolutionExplorerWorkspaceTab, CodeWorkspaceTab, ConsoleWorkspaceTab, AssetDiffWorkspaceTab, AiWorkspaceTab, McpWorkspaceTab],
         WorkspaceCategory.Backup => [BackupsWorkspaceTab],
         WorkspaceCategory.Sync => [SynchronizationWorkspaceTab, SyncConflictsWorkspaceTab],
+        WorkspaceCategory.PluginMode => (_viewModel?.ActivePluginOperatingModeWorkspaceTabs ?? [])
+            .Select(tabId => AllWorkspaceTabs().FirstOrDefault(tab =>
+                string.Equals(tab.Name, tabId, StringComparison.OrdinalIgnoreCase)))
+            .Where(tab => tab is not null)
+            .Cast<TabItem>()
+            .ToArray(),
         WorkspaceCategory.Network =>
         [
             SharedSyncWorkspaceTab, VpnWorkspaceTab, SwarmWorkspaceTab, VpnFilesWorkspaceTab, TeamChatWorkspaceTab,
             RemoteBuildsWorkspaceTab, DiscordWorkspaceTab, WorkInProgressWorkspaceTab
         ],
-        _ => [PluginsWorkspaceTab, UnrealWorkspaceTab, UnityWorkspaceTab, GodotWorkspaceTab, LoreWorkspaceTab, UnrealBuildWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab]
+        _ => [PluginsWorkspaceTab, UnrealWorkspaceTab, UnityWorkspaceTab, GodotWorkspaceTab, LoreWorkspaceTab, PerforceWorkspaceTab, UnrealBuildWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab]
     };
 
     private TabItem[] AllWorkspaceTabs() =>
     [
-        ProjectWorkspaceTab, MembersWorkspaceTab, VisibleTabsWorkspaceTab, LicenseWorkspaceTab,
+        ProjectWorkspaceTab, MembersWorkspaceTab, NotificationsWorkspaceTab, VisibleTabsWorkspaceTab, LicenseWorkspaceTab,
         ChangesWorkspaceTab, SolutionExplorerWorkspaceTab, CodeWorkspaceTab,
         ConsoleWorkspaceTab, HistoryWorkspaceTab,
-        CompositionWorkspaceTab, BranchesWorkspaceTab, PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab,
+        CompositionWorkspaceTab, BranchesWorkspaceTab, GitAnnotationsWorkspaceTab, PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab,
         LfsLocksWorkspaceTab, GitIgnoreWorkspaceTab, GitLfsWorkspaceTab, BackupsWorkspaceTab, SynchronizationWorkspaceTab, SyncConflictsWorkspaceTab, SharedSyncWorkspaceTab, VpnWorkspaceTab,
         SwarmWorkspaceTab, VpnFilesWorkspaceTab, TeamChatWorkspaceTab, RemoteBuildsWorkspaceTab, DiscordWorkspaceTab,
         WorkInProgressWorkspaceTab, AssetDiffWorkspaceTab, AiWorkspaceTab, McpWorkspaceTab,
-        PluginsWorkspaceTab, UnrealWorkspaceTab, UnityWorkspaceTab, GodotWorkspaceTab, LoreWorkspaceTab, UnrealBuildWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab
+        PluginsWorkspaceTab, UnrealWorkspaceTab, UnityWorkspaceTab, GodotWorkspaceTab, LoreWorkspaceTab, PerforceWorkspaceTab, UnrealBuildWorkspaceTab, DiagnosticsWorkspaceTab, HelpWorkspaceTab
     ];
 
     private void OnShowProjectWorkspaceClick(object? sender, RoutedEventArgs e) =>
@@ -1950,6 +2276,15 @@ public partial class MainWindow : Window
     private void OnShowHelpWorkspaceClick(object? sender, RoutedEventArgs e) =>
         NavigateToWorkspace(HelpWorkspaceTab);
 
+    private void OnOpenCurrentPageDocumentationClick(object? sender, RoutedEventArgs e)
+    {
+        string pageName = WorkspaceTabs.SelectedItem is TabItem tab
+            ? WorkspaceTabDisplayName(tab)
+            : string.Empty;
+        _viewModel.DocumentationSearch = pageName;
+        NavigateToWorkspace(HelpWorkspaceTab);
+    }
+
     private void OnOpenGlobalSearchClick(object? sender, RoutedEventArgs e)
     {
         NavigateToWorkspace(CodeWorkspaceTab, GlobalCodeSearch);
@@ -2084,6 +2419,9 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnCloneGitClick(object? sender, RoutedEventArgs e) =>
+        await ShowCloneRepositoryDialogAsync();
+
     private async void OnAddFolderClick(object? sender, RoutedEventArgs e)
     {
         string? path = await PickFolderAsync("Sélectionner un dossier à synchroniser ou sauvegarder");
@@ -2116,6 +2454,33 @@ public partial class MainWindow : Window
         {
             await _viewModel.SetSelectedProjectAccentColorAsync(accentColor);
         }
+    }
+
+    private async void OnSaveProjectGroupClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SetSelectedProjectSidebarGroupAsync();
+
+    private void OnProjectGroupExpansionClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: ProjectSidebarGroupViewModel group })
+            _viewModel.RememberProjectGroupExpansion(group);
+    }
+
+    private void OnGroupedProjectSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListBox { SelectedItem: ProjectItemViewModel project })
+            _viewModel.SelectedProject = project;
+    }
+
+    private async void OnProjectAutoStartSyncClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox)
+            await _viewModel.SetProjectServiceAutoStartAsync(sync: checkBox.IsChecked == true);
+    }
+
+    private async void OnProjectAutoStartVpnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox)
+            await _viewModel.SetProjectServiceAutoStartAsync(vpn: checkBox.IsChecked == true);
     }
 
     private async void OnRefreshProjectLicenseClick(object? sender, RoutedEventArgs e) =>
@@ -2195,33 +2560,158 @@ public partial class MainWindow : Window
     private void OnKeepAllChangesClick(object? sender, RoutedEventArgs e) =>
         _viewModel.KeepAllPreparedChanges();
 
+    private void OnDeselectVersionedChangesClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.DeselectVersionedChanges();
+
+    private void OnDeselectUnversionedChangesClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.DeselectUnversionedChanges();
+
     private async void OnSetSelectedChangeLocalClick(object? sender, RoutedEventArgs e) =>
-        await _viewModel.SetSelectedChangeLocalOnlyAsync(true);
+        await SetChangesLocalOnlyAsync(true);
 
     private async void OnRestoreSelectedLocalChangeClick(object? sender, RoutedEventArgs e) =>
-        await _viewModel.SetSelectedChangeLocalOnlyAsync(false);
+        await SetChangesLocalOnlyAsync(false);
+
+    private async void OnSetContextChangesLocalClick(object? sender, RoutedEventArgs e) =>
+        await SetChangesLocalOnlyAsync(true, fallBackToChecked: false);
+
+    private async void OnRestoreContextChangesClick(object? sender, RoutedEventArgs e) =>
+        await SetChangesLocalOnlyAsync(false, fallBackToChecked: false);
+
+    private async Task SetChangesLocalOnlyAsync(bool isLocalOnly, bool fallBackToChecked = true)
+    {
+        if (_viewModel.IsBusy) return;
+        await _viewModel.SetChangesLocalOnlyAsync(GetChangeActionTargets(fallBackToChecked), isLocalOnly);
+    }
 
     private async void OnRollbackSelectedChangeClick(object? sender, RoutedEventArgs e)
     {
-        if (_viewModel.SelectedChange is not { } change)
+        await ConfirmRollbackChangesAsync(GetChangeActionTargets());
+    }
+
+    private async void OnRollbackContextChangesClick(object? sender, RoutedEventArgs e) =>
+        await ConfirmRollbackChangesAsync(GetChangeActionTargets(fallBackToChecked: false));
+
+    private async Task ConfirmRollbackChangesAsync(IReadOnlyCollection<GitChangeViewModel> changes)
+    {
+        if (_viewModel.IsBusy || changes.Count == 0) return;
+        int untracked = changes.Count(change => change.IsUntracked);
+        string deletionWarning = untracked > 0
+            ? $" {untracked:N0} untracked file(s) will be deleted from disk and cannot be recovered from Git."
+            : string.Empty;
+        if (await ShowConfirmationAsync(
+                "Rollback selected changes",
+                $"Discard changes in {changes.Count:N0} file(s)? Tracked files return to HEAD.{deletionWarning}",
+                "Rollback selected"))
         {
-            return;
+            await _viewModel.RollbackChangesAsync(changes);
+        }
+    }
+
+    private async void OnDeleteSelectedChangesClick(object? sender, RoutedEventArgs e) =>
+        await ConfirmDeleteChangesAsync(fallBackToChecked: true);
+
+    private async void OnDeleteContextChangesClick(object? sender, RoutedEventArgs e) =>
+        await ConfirmDeleteChangesAsync(fallBackToChecked: false);
+
+    private async Task ConfirmDeleteChangesAsync(bool fallBackToChecked)
+    {
+        if (_viewModel.IsBusy) return;
+        GitChangeViewModel[] changes = GetChangeActionTargets(fallBackToChecked);
+        GitChangeTreeNode[] treeNodes = GetSelectedChangeTreeNodes();
+        GitChangeTreeNode[] directories = treeNodes
+            .Where(node => node.IsDirectory && !string.IsNullOrWhiteSpace(node.RelativePath))
+            .ToArray();
+        string[] paths = treeNodes.Length > 0
+            ? treeNodes.SelectMany(node =>
+                    node.IsDirectory && !string.IsNullOrWhiteSpace(node.RelativePath)
+                        ? [node.RelativePath]
+                        : node.ContainedChanges.Select(change => change.Path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : changes.Select(change => change.Path)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        if (paths.Length == 0) return;
+
+        int untracked = changes.Count(change => change.IsUntracked);
+        bool deleteDirectories = directories.Length > 0;
+        string directoryNames = string.Join(", ", directories.Take(3).Select(node => $"'{node.RelativePath}'"));
+        string effect = deleteDirectories
+            ? $"Delete {directories.Length:N0} selected folder(s) recursively from disk ({directoryNames})? Every file in them will be removed, including files that are not currently shown as changed."
+            : $"Delete {paths.Length:N0} selected file(s) from disk?";
+        string recovery = untracked > 0
+            ? $" {untracked:N0} listed untracked file(s) cannot be recovered from Git."
+            : string.Empty;
+        if (await ShowConfirmationAsync(
+                deleteDirectories ? "Delete folders from disk" : "Delete files from disk",
+                $"{effect} Tracked files remain visible as Git deletions and can be restored from HEAD.{recovery}",
+                deleteDirectories ? "Delete folders" : "Delete files"))
+        {
+            await _viewModel.DeleteWorkingTreePathsAsync(paths);
+        }
+    }
+
+    private GitChangeTreeNode[] GetSelectedChangeTreeNodes()
+    {
+        if (_lastChangesSelectionTree?.SelectedItems is { Count: > 0 } selectedItems)
+        {
+            return selectedItems.Cast<object>()
+                .OfType<GitChangeTreeNode>()
+                .Where(node => !node.IsPlaceholder)
+                .Distinct()
+                .ToArray();
         }
 
-        string effect = change.IsUntracked
-            ? "The untracked file will be deleted from disk. This cannot be restored from Git."
-            : "The file will be restored to HEAD and its staged and working-tree changes will be discarded.";
-        if (await ShowConfirmationAsync(
-                "Rollback file change",
-                $"Rollback '{change.Path}'? {effect}",
-                "Rollback file"))
+        return _lastChangesSelectionGrid is null &&
+               _viewModel.SelectedChangeTreeNode is { IsPlaceholder: false } node
+            ? [node]
+            : [];
+    }
+
+    private GitChangeViewModel[] GetChangeActionTargets(bool fallBackToChecked = true)
+    {
+        IEnumerable<GitChangeViewModel> candidates;
+        if (_lastChangesSelectionGrid is not null)
         {
-            await _viewModel.RollbackSelectedChangeAsync();
+            candidates = _lastChangesSelectionGrid.SelectedItems.Cast<object>().OfType<GitChangeViewModel>();
         }
+        else if (_lastChangesSelectionTree is not null)
+        {
+            candidates = _lastChangesSelectionTree.SelectedItems.Cast<object>()
+                .OfType<GitChangeTreeNode>()
+                .Where(node => !node.IsPlaceholder)
+                .SelectMany(node => node.ContainedChanges);
+        }
+        else if (_viewModel.SelectedChangeTreeNode is { } node && !node.IsPlaceholder)
+        {
+            candidates = node.ContainedChanges;
+        }
+        else if (_viewModel.SelectedChange is { } selectedChange)
+        {
+            candidates = [selectedChange];
+        }
+        else
+        {
+            candidates = [];
+        }
+
+        GitChangeViewModel[] result = candidates
+            .DistinctBy(change => change.Path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (result.Length == 0 && fallBackToChecked)
+        {
+            result = _viewModel.Changes
+                .Where(change => change.IsIncluded && !change.IsLocalOnly)
+                .DistinctBy(change => change.Path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        return result;
     }
 
     private async void OnRollbackIncludedChangesClick(object? sender, RoutedEventArgs e)
     {
+        if (_viewModel.IsBusy) return;
         GitChangeViewModel[] changes = _viewModel.Changes
             .Where(change => change.IsIncluded && !change.IsLocalOnly)
             .ToArray();
@@ -2300,8 +2790,114 @@ public partial class MainWindow : Window
     private async void OnCheckoutBranchClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CheckoutSelectedBranchAsync();
 
+    private void OnBranchSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ListBox listBox) return;
+        _viewModel.SetSelectedBranches(listBox.SelectedItems is { } items ? items.OfType<GitBranch>() : []);
+    }
+
     private async void OnMergeBranchClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.MergeSelectedBranchAsync();
+
+    private async void OnMergeCurrentBranchIntoSelectedClick(object? sender, RoutedEventArgs e)
+    {
+        GitBranch? target = _viewModel.SelectedBranch;
+        if (target is null || target.IsCurrent || target.IsRemote) return;
+        if (await ShowConfirmationAsync(
+                Translate("Merge current branch into selected branch"),
+                $"{Translate("CyRevision will switch to the target branch and merge the branch that is currently checked out into it.")}\n\n{target.Name}\n\n" +
+                Translate("The working tree must be clean. If conflicts occur, the three-way resolver and its safety backup will be available."),
+                Translate("Merge to selected branch")))
+        {
+            await _viewModel.MergeCurrentBranchIntoSelectedAsync();
+        }
+    }
+
+    private async void OnRemoveLocalBranchClick(object? sender, RoutedEventArgs e)
+    {
+        if (_branchRemovalFlowActive)
+            return;
+        _branchRemovalFlowActive = true;
+        Button? actionButton = sender as Button;
+        if (actionButton is not null)
+            actionButton.IsEnabled = false;
+        try
+        {
+            await RunRemoveLocalBranchFlowAsync();
+        }
+        finally
+        {
+            _branchRemovalFlowActive = false;
+            if (actionButton is not null)
+                actionButton.IsEnabled = _viewModel.CanRemoveSelectedLocalBranch;
+        }
+    }
+
+    private async Task RunRemoveLocalBranchFlowAsync()
+    {
+        IReadOnlyList<GitLocalBranchRemovalAnalysis> analyses = await _viewModel.AnalyzeSelectedLocalBranchRemovalsAsync();
+        if (analyses.Count == 0)
+            return;
+
+        GitLocalBranchRemovalAnalysis[] blocked = analyses
+            .Where(analysis => !analysis.CanRemoveSafely && !analysis.CanForceRemove)
+            .ToArray();
+        if (blocked.Length > 0)
+        {
+            string details = string.Join("\n", blocked.Select(item => $"• {item.BranchName}: {Translate(item.SafetyMessage)}"));
+            await ShowMessageAsync(Translate("Some local branches are protected"), details);
+            return;
+        }
+
+        GitLocalBranchRemovalAnalysis[] risky = analyses.Where(analysis => !analysis.CanRemoveSafely).ToArray();
+        bool forceUnretained = risky.Length > 0;
+        string branchList = string.Join("\n", analyses.Select(analysis =>
+            $"• {analysis.BranchName} — {Translate(analysis.SafetyMessage)}"));
+        if (forceUnretained)
+        {
+            bool understandsRisk = await ShowConfirmationAsync(
+                Translate("Force-remove unretained local branches"),
+                $"{risky.Length:N0} {Translate("selected branch(es) contain commits that are not retained by a verified remote or the current branch.")}\n\n{branchList}\n\n" +
+                Translate("This mode is intended for disposable test branches. CyRevision cannot restore an unretained branch unless another reference or backup contains it."),
+                Translate("I understand the risk"));
+            if (!understandsRisk || !await ShowConfirmationAsync(
+                    Translate("Final force-removal confirmation"),
+                    Translate("Remove the selected local branch references now? The working project and every remote branch remain untouched."),
+                    Translate("Force-remove selected branches")))
+                return;
+        }
+        else if (!await ShowConfirmationAsync(
+                     Translate("Remove selected local branches"),
+                     $"{branchList}\n\n" +
+                     Translate("Only local branch references are removed. Remote branches remain untouched. CyRevision refreshes the branch index once after the batch."),
+                     Translate("Remove selected branches")))
+        {
+            return;
+        }
+
+        int removed = await _viewModel.RemoveLocalBranchesAsync(analyses, forceUnretained);
+        if (removed == 0)
+            return;
+
+        bool previewPrune = await ShowConfirmationAsync(
+            Translate("Local branches removed"),
+            $"{removed:N0} {Translate("local branch(es) removed. Remote references were left untouched and the branch index was refreshed once.")}\n\n" +
+            Translate("Preview the native Git LFS cleanup now? The preview is read-only and normally much faster than the advanced retention analysis."),
+            Translate("Preview Git LFS cleanup"),
+            Translate("Later"));
+        if (!previewPrune)
+            return;
+
+        await _viewModel.RunNativeLfsPruneAsync(dryRun: true);
+
+        if (await ShowConfirmationAsync(
+                Translate("Run native Git LFS prune"),
+                Translate("The preview is complete. Run the verified native prune now? Objects removed from the local cache can be downloaded again from the remote when needed."),
+                Translate("Run verified prune")))
+        {
+            await _viewModel.RunNativeLfsPruneAsync(dryRun: false);
+        }
+    }
 
     private async void OnFetchClick(object? sender, RoutedEventArgs e) => await _viewModel.FetchAsync();
 
@@ -2310,6 +2906,28 @@ public partial class MainWindow : Window
     private async void OnPushClick(object? sender, RoutedEventArgs e) => await _viewModel.PushAsync();
 
     private async void OnSaveRemoteClick(object? sender, RoutedEventArgs e) => await _viewModel.SaveRemoteAsync();
+
+    private void OnNewGitAnnotationClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.NewGitAnnotation();
+
+    private void OnUseSelectedCommitAnnotationClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.UseSelectedCommitForAnnotation();
+
+    private void OnUseSelectedBranchAnnotationClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.UseSelectedBranchForAnnotation();
+
+    private async void OnSaveGitAnnotationClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SaveGitAnnotationAsync();
+
+    private async void OnDeleteGitAnnotationClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedGitAnnotation is null) return;
+        if (await ShowConfirmationAsync(
+                "Delete local annotation",
+                "Remove this annotation from CyRevision local storage? Git history and project files are not modified.",
+                "Delete annotation"))
+            await _viewModel.DeleteSelectedGitAnnotationAsync();
+    }
 
     private async void OnResolvePullRequestRepositoryClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.ResolvePullRequestRepositoryAsync();
@@ -2347,6 +2965,33 @@ public partial class MainWindow : Window
 
     private async void OnCreatePullRequestClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CreatePullRequestAsync();
+
+    private async void OnAddCommitTaskLinksClick(object? sender, RoutedEventArgs e) =>
+        await ShowWorkItemPickerAsync(forPullRequest: false);
+
+    private async void OnAddPullRequestTaskLinksClick(object? sender, RoutedEventArgs e) =>
+        await ShowWorkItemPickerAsync(forPullRequest: true);
+
+    private async Task ShowWorkItemPickerAsync(bool forPullRequest)
+    {
+        ProjectItemViewModel? project = _viewModel.SelectedProject;
+        IReadOnlyList<IWorkItemIntegrationPlugin> plugins = _viewModel.GetActiveWorkItemPlugins();
+        if (project is null || plugins.Count == 0)
+        {
+            await ShowMessageAsync(
+                Translate("Task integration unavailable"),
+                Translate("Enable the Jira Tasks or ClickUp Tasks plugin for this project first."));
+            return;
+        }
+
+        WorkItemPickerDialog dialog = new(project.Id, plugins, forPullRequest, Translate);
+        WorkItemPickerResult? result = await dialog.ShowDialog<WorkItemPickerResult?>(this);
+        if (result is null || result.WorkItems.Count == 0) return;
+        if (forPullRequest)
+            _viewModel.AddWorkItemReferencesToPullRequest(result.WorkItems, result.PrefixPullRequestTitle);
+        else
+            _viewModel.AddWorkItemReferencesToCommit(result.WorkItems);
+    }
 
     private async void OnAddPullRequestCommentClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.AddPullRequestCommentAsync();
@@ -2574,8 +3219,31 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnArchiveOldBackupsClick(object? sender, RoutedEventArgs e) =>
+    private async void OnArchiveOldBackupsClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.RemoveArchivedHotCopies && !await ShowConfirmationAsync(
+                Translate("Remove verified hot backup copies?"),
+                Translate("CyRevision will first copy and verify every eligible manifest and object in cold storage. It will then remove only verified hot manifests and objects that are no longer referenced by any project. This is optional and cannot be inferred from the selected profile."),
+                Translate("Archive and reclaim")))
+            return;
         await _viewModel.ArchiveOldBackupsAsync();
+    }
+
+    private async void OnAnalyzeGitArchiveClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.AnalyzeGitArchiveCandidatesAsync();
+
+    private async void OnArchiveGitBranchClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.RemoveGitBranchAfterArchive && !await ShowConfirmationAsync(
+                Translate("Remove the local branch after verification?"),
+                Translate("CyRevision will create and verify a compressed Git bundle first. It will then remove only the selected local branch reference. The remote is not changed, the current branch is protected, and automatic Git garbage collection is never run."),
+                Translate("Archive and remove local ref")))
+            return;
+        await _viewModel.ArchiveSelectedGitBranchAsync();
+    }
+
+    private async void OnRestoreGitArchiveClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RestoreSelectedGitArchiveAsync();
 
     private async void OnCreateBackupClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CreateBackupAsync();
@@ -2709,6 +3377,24 @@ public partial class MainWindow : Window
 
     private async void OnCleanExpiredSyncConflictsClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CleanExpiredSyncConflictBackupsAsync();
+
+    private async void OnCreateSyncCommitClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.CreateSyncCommitAsync();
+
+    private async void OnRefreshSyncCommitsClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshSyncCommitsAsync();
+
+    private async void OnAnalyzeSyncCommitClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.AnalyzeSelectedSyncCommitAsync();
+
+    private void OnKeepLocalSyncCommitConflictClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.ResolveSelectedSyncCommitConflict(SyncCommitConflictChoice.KeepLocal);
+
+    private void OnUseIncomingSyncCommitConflictClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.ResolveSelectedSyncCommitConflict(SyncCommitConflictChoice.UseIncoming);
+
+    private async void OnApplySyncCommitClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.ApplySelectedSyncCommitAsync();
 
     private async void OnShowSelectedFileSyncHistoryClick(object? sender, RoutedEventArgs e)
     {
@@ -2957,6 +3643,26 @@ public partial class MainWindow : Window
     private async void OnAnalyzeLfsStorageClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.AnalyzeLfsStorageAsync();
 
+    private async void OnPreviewNativeLfsPruneClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RunNativeLfsPruneAsync(dryRun: true);
+
+    private async void OnRunNativeLfsPruneClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Run native Git LFS prune"),
+                Translate("Git LFS will verify objects against the configured remote and remove only local cache objects considered old and unreferenced by Git LFS. Current branch files remain available. Run the preview first; this cleanup cannot be undone locally without downloading the objects again."),
+                Translate("Run verified prune")))
+        {
+            await _viewModel.RunNativeLfsPruneAsync(dryRun: false);
+        }
+    }
+
+    private void OnCancelLfsStorageAnalysisClick(object? sender, RoutedEventArgs e) =>
+        _viewModel.CancelLfsStorageAnalysis();
+
+    private async void OnAnalyzeRepositoryStorageClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.AnalyzeRepositoryStorageAsync();
+
     private async void OnArchiveLfsCandidatesClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.ArchiveLfsCandidatesAsync();
 
@@ -2964,7 +3670,7 @@ public partial class MainWindow : Window
     {
         if (await ShowConfirmationAsync(
                 Translate("Clean verified LFS objects"),
-                Translate("CyRevision will delete only objects from the current LFS cache that are no longer referenced locally and have the required fresh remote, peer, or archive evidence. Re-analyze after any branch change."),
+                Translate("CyRevision deletes only objects listed as eligible in the current preview. Current checkouts and worktrees stay protected. Old managed asset versions require the configured remote, peer, or archive evidence, and an audit is written before completion. Re-analyze after any branch change."),
                 Translate("Clean verified objects")))
         {
             await _viewModel.ExecuteLfsCleanupAsync();
@@ -3050,6 +3756,9 @@ public partial class MainWindow : Window
 
     private async void OnRevokePeerClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RevokeSelectedPeerAsync();
+
+    private async void OnUpdatePeerRoleClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.UpdateSelectedPeerRoleAsync();
 
     private async void OnRefreshAdvisoryReservationsClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RefreshAdvisoryReservationsAsync();
@@ -3208,6 +3917,74 @@ public partial class MainWindow : Window
 
     private async void OnInstallLoreUnrealCompanionClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.InstallLoreUnrealCompanionAsync();
+
+    private async void OnDetectPerforceCliClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.DetectPerforceCliAsync();
+
+    private async void OnSavePerforceConfigurationClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.SavePerforceConfigurationAsync();
+
+    private async void OnRefreshPerforceClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshPerforceAsync();
+
+    private async void OnPreviewPerforceReconcileClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.PreviewPerforceReconcileAsync();
+
+    private async void OnApplyPerforceReconcileClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Apply Perforce reconcile"),
+                Translate("Open matching added, edited and deleted project files in the selected Perforce workspace? Review the preview first. File contents are not rewritten, but Perforce workspace state will change."),
+                Translate("Apply reconcile")))
+        {
+            await _viewModel.ApplyPerforceReconcileAsync();
+        }
+    }
+
+    private async void OnPreviewPerforceSyncClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.PreviewPerforceSyncAsync();
+
+    private async void OnApplyPerforceSyncClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Sync Perforce workspace"),
+                Translate("Update the selected project workspace from the Perforce server? Open or locally modified files may require manual resolution. Review the sync preview first."),
+                Translate("Sync workspace")))
+        {
+            await _viewModel.ApplyPerforceSyncAsync();
+        }
+    }
+
+    private async void OnOpenPerforcePathForEditClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.OpenPerforcePathForEditAsync();
+
+    private async void OnLoadPerforceFileHistoryClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.LoadPerforceFileHistoryAsync();
+
+    private async void OnRevertUnchangedPerforceFileClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RevertSelectedPerforceFileAsync(unchangedOnly: true);
+
+    private async void OnRevertPerforceFileClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Revert Perforce file"),
+                Translate("Discard the selected file's opened state and local changes? This operation can destroy unsubmitted work."),
+                Translate("Revert file")))
+        {
+            await _viewModel.RevertSelectedPerforceFileAsync(unchangedOnly: false);
+        }
+    }
+
+    private async void OnSubmitPerforceClick(object? sender, RoutedEventArgs e)
+    {
+        if (await ShowConfirmationAsync(
+                Translate("Submit Perforce changelist"),
+                Translate("Submit the selected/default changelist to the configured Perforce server?"),
+                Translate("Submit")))
+        {
+            await _viewModel.SubmitPerforceAsync();
+        }
+    }
 
     private async void OnSaveUnrealAssetInspectionClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.SaveUnrealAssetInspectionOptionsAsync();
@@ -3413,6 +4190,219 @@ public partial class MainWindow : Window
         return folders.Count == 0 ? null : folders[0].TryGetLocalPath();
     }
 
+    private async Task ShowCloneRepositoryDialogAsync()
+    {
+        string defaultParent = _viewModel.SelectedProject is null
+            ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+            : Path.GetDirectoryName(_viewModel.SelectedProject.RootPath)
+              ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        TextBox remoteUrl = new()
+        {
+            PlaceholderText = "https://server/team/repository.git",
+            MinWidth = 510
+        };
+        TextBox parentFolder = new() { Text = defaultParent, MinWidth = 430 };
+        TextBox repositoryName = new() { PlaceholderText = "repository", MinWidth = 250 };
+        CheckBox submodules = new()
+        {
+            Content = Translate("Clone Git submodules recursively"),
+            IsChecked = false
+        };
+        TextBlock destination = new()
+        {
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            FontSize = 10,
+            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#9B9DA3"))
+        };
+        TextBlock status = new()
+        {
+            Text = Translate("Enter a remote repository URL and choose where its local copy will be created."),
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#B8C1D8"))
+        };
+        ProgressBar progress = new()
+        {
+            IsIndeterminate = true,
+            IsVisible = false,
+            Height = 3
+        };
+        Button browse = new()
+        {
+            Content = Translate("Browse…"),
+            Padding = new Avalonia.Thickness(12, 7)
+        };
+        Button cancel = new()
+        {
+            Content = Translate("Cancel"),
+            Padding = new Avalonia.Thickness(16, 8),
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#393B40"))
+        };
+        Button clone = new()
+        {
+            Content = Translate("Clone repository"),
+            Padding = new Avalonia.Thickness(16, 8),
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#3574F0")),
+            Foreground = Avalonia.Media.Brushes.White,
+            IsDefault = true
+        };
+        ToolTip.SetTip(browse, Translate("Choose the parent folder that will contain the cloned repository"));
+        ToolTip.SetTip(clone, Translate("Clone the remote repository, configure local Git LFS, and add it to CyRevision"));
+
+        bool repositoryNameEdited = false;
+        void UpdateDestination()
+        {
+            string name = repositoryName.Text?.Trim() ?? string.Empty;
+            destination.Text = string.IsNullOrWhiteSpace(name)
+                ? Translate("Destination: choose a repository name")
+                : $"{Translate("Destination")}: {Path.Combine(parentFolder.Text?.Trim() ?? string.Empty, name)}";
+        }
+        remoteUrl.TextChanged += (_, _) =>
+        {
+            if (!repositoryNameEdited)
+            {
+                repositoryName.Text = SuggestCloneFolderName(remoteUrl.Text);
+            }
+            UpdateDestination();
+        };
+        repositoryName.TextChanged += (_, _) =>
+        {
+            if (repositoryName.IsFocused)
+            {
+                repositoryNameEdited = true;
+            }
+            UpdateDestination();
+        };
+        parentFolder.TextChanged += (_, _) => UpdateDestination();
+
+        Window dialog = new()
+        {
+            Title = Translate("Clone a remote repository"),
+            Width = 650,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#1E1F22"))
+        };
+        Grid folderRow = new() { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
+        folderRow.Children.Add(parentFolder);
+        Grid.SetColumn(browse, 1);
+        folderRow.Children.Add(browse);
+        StackPanel buttons = new()
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Spacing = 8,
+            Children = { cancel, clone }
+        };
+        dialog.Content = new StackPanel
+        {
+            Margin = new Avalonia.Thickness(22),
+            Spacing = 9,
+            Children =
+            {
+                new TextBlock { Text = Translate("Remote repository"), FontWeight = Avalonia.Media.FontWeight.SemiBold },
+                remoteUrl,
+                new TextBlock { Text = Translate("Local parent folder"), FontWeight = Avalonia.Media.FontWeight.SemiBold },
+                folderRow,
+                new TextBlock { Text = Translate("Local repository name"), FontWeight = Avalonia.Media.FontWeight.SemiBold },
+                repositoryName,
+                submodules,
+                destination,
+                status,
+                progress,
+                buttons
+            }
+        };
+
+        CancellationTokenSource? cloneCancellation = null;
+        browse.Click += async (_, _) =>
+        {
+            string? selected = await PickFolderAsync(Translate("Choose the local parent folder"));
+            if (selected is not null)
+            {
+                parentFolder.Text = selected;
+            }
+        };
+        cancel.Click += (_, _) =>
+        {
+            if (cloneCancellation is not null)
+            {
+                cloneCancellation.Cancel();
+                status.Text = Translate("Cancelling clone…");
+                cancel.IsEnabled = false;
+            }
+            else
+            {
+                dialog.Close();
+            }
+        };
+        clone.Click += async (_, _) =>
+        {
+            string url = remoteUrl.Text?.Trim() ?? string.Empty;
+            string parent = parentFolder.Text?.Trim() ?? string.Empty;
+            string name = repositoryName.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(parent) || string.IsNullOrWhiteSpace(name))
+            {
+                status.Text = Translate("Remote URL, parent folder, and repository name are required.");
+                return;
+            }
+            if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name is "." or "..")
+            {
+                status.Text = Translate("The local repository name contains invalid characters.");
+                return;
+            }
+
+            string target = Path.Combine(parent, name);
+            cloneCancellation = new CancellationTokenSource();
+            remoteUrl.IsEnabled = parentFolder.IsEnabled = repositoryName.IsEnabled = false;
+            browse.IsEnabled = clone.IsEnabled = submodules.IsEnabled = false;
+            cancel.Content = Translate("Cancel clone");
+            progress.IsVisible = true;
+            status.Text = Translate("Cloning and configuring local Git LFS…");
+            bool succeeded = await _viewModel.CloneGitRepositoryAsync(
+                url,
+                target,
+                submodules.IsChecked == true,
+                cloneCancellation.Token);
+            cloneCancellation.Dispose();
+            cloneCancellation = null;
+            if (succeeded)
+            {
+                dialog.Close();
+                return;
+            }
+
+            progress.IsVisible = false;
+            status.Text = _viewModel.StatusMessage;
+            remoteUrl.IsEnabled = parentFolder.IsEnabled = repositoryName.IsEnabled = true;
+            browse.IsEnabled = clone.IsEnabled = submodules.IsEnabled = true;
+            cancel.IsEnabled = true;
+            cancel.Content = Translate("Cancel");
+        };
+        UpdateDestination();
+        await dialog.ShowDialog(this);
+    }
+
+    private static string SuggestCloneFolderName(string? remoteUrl)
+    {
+        string value = remoteUrl?.Trim().TrimEnd('/', '\\') ?? string.Empty;
+        if (value.Length == 0)
+        {
+            return string.Empty;
+        }
+        int separator = Math.Max(value.LastIndexOf('/'), value.LastIndexOf(':'));
+        string name = separator >= 0 ? value[(separator + 1)..] : value;
+        if (name.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            name = name[..^4];
+        }
+        foreach (char invalid in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(invalid, '_');
+        }
+        return name;
+    }
+
     private async Task<string?> PickFileAsync(string title)
     {
         IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -3526,7 +4516,8 @@ public partial class MainWindow : Window
     private async Task<bool> ShowConfirmationAsync(
         string title,
         string message,
-        string? confirmLabel = null)
+        string? confirmLabel = null,
+        string? cancelLabel = null)
     {
         TextBlock description = new()
         {
@@ -3537,7 +4528,7 @@ public partial class MainWindow : Window
         };
         Button cancel = new()
         {
-            Content = Translate("Annuler"),
+            Content = cancelLabel ?? Translate("Annuler"),
             Padding = new Avalonia.Thickness(16, 9),
             Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#202941"))
         };

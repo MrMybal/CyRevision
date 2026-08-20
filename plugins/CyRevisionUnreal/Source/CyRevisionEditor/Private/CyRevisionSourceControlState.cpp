@@ -1,4 +1,5 @@
 #include "CyRevisionSourceControlState.h"
+#include "ISourceControlRevision.h"
 
 #if SOURCE_CONTROL_WITH_SLATE
 #include "RevisionControlStyle/RevisionControlStyle.h"
@@ -19,15 +20,57 @@ void FCyRevisionSourceControlState::SetWorkingCopyState(ECyRevisionWorkingCopySt
     TimeStamp = FDateTime::UtcNow();
 }
 
-int32 FCyRevisionSourceControlState::GetHistorySize() const { return 0; }
-TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FCyRevisionSourceControlState::GetHistoryItem(int32) const { return nullptr; }
-TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FCyRevisionSourceControlState::FindHistoryRevision(int32) const { return nullptr; }
-TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FCyRevisionSourceControlState::FindHistoryRevision(const FString&) const { return nullptr; }
+void FCyRevisionSourceControlState::SetHistory(TArray<TSharedRef<ISourceControlRevision, ESPMode::ThreadSafe>> InHistory)
+{
+    History = MoveTemp(InHistory);
+    TimeStamp = FDateTime::UtcNow();
+}
+
+int32 FCyRevisionSourceControlState::GetHistorySize() const { return History.Num(); }
+TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FCyRevisionSourceControlState::GetHistoryItem(int32 Index) const
+{
+    if (History.IsValidIndex(Index))
+    {
+        return History[Index];
+    }
+    return nullptr;
+}
+TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FCyRevisionSourceControlState::FindHistoryRevision(int32 Number) const
+{
+    for (const TSharedRef<ISourceControlRevision, ESPMode::ThreadSafe>& Item : History)
+    {
+        if (Item->GetRevisionNumber() == Number || Item->GetCheckInIdentifier() == Number) return Item;
+    }
+    return nullptr;
+}
+TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FCyRevisionSourceControlState::FindHistoryRevision(const FString& Revision) const
+{
+    for (const TSharedRef<ISourceControlRevision, ESPMode::ThreadSafe>& Item : History)
+    {
+        if (Item->GetRevision().Equals(Revision, ESearchCase::IgnoreCase) ||
+            Item->GetRevision().StartsWith(Revision, ESearchCase::IgnoreCase)) return Item;
+    }
+    return nullptr;
+}
 #if CYREVISION_UE4 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION <= 2)
-TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FCyRevisionSourceControlState::GetBaseRevForMerge() const { return nullptr; }
+TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FCyRevisionSourceControlState::GetBaseRevForMerge() const
+{
+    if (History.Num() > 1)
+    {
+        return History[1];
+    }
+    return nullptr;
+}
 #endif
 #if CYREVISION_UE5
-TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FCyRevisionSourceControlState::GetCurrentRevision() const { return nullptr; }
+TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FCyRevisionSourceControlState::GetCurrentRevision() const
+{
+    if (History.Num() > 0)
+    {
+        return History[0];
+    }
+    return nullptr;
+}
 
 #if SOURCE_CONTROL_WITH_SLATE
 FSlateIcon FCyRevisionSourceControlState::GetIcon() const

@@ -4,7 +4,7 @@ using CyRevision.Plugin.Abstractions;
 
 namespace CyRevision.Plugin.Lore;
 
-public sealed class LoreIntegrationPlugin : ILoreIntegrationPlugin
+public sealed class LoreIntegrationPlugin : ILoreIntegrationPlugin, IProjectModeProvider
 {
     private static readonly HashSet<string> AllowedProjectCommands = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -26,6 +26,39 @@ public sealed class LoreIntegrationPlugin : ILoreIntegrationPlugin
         "0.1.0",
         "Experimental Epic Games Lore CLI workspace management, status, branches, and installable Unreal companion.",
         "Project management");
+
+    public IReadOnlyList<PluginProjectModeDescriptor> ProjectModes { get; } =
+    [
+        new(
+            "lore",
+            "Lore",
+            "Epic Games Lore workspace management with its dedicated status, branch, commit, lock and sync tools. Git is not required; recoverable CyRevision backups remain available.",
+            new PluginProjectModeFeatures(false, false, false, true, false),
+            new PluginProjectModeRetention(PluginProjectModeRetentionKind.Timeline, 60, 180),
+            ["LoreWorkspaceTab", "BackupsWorkspaceTab", "SolutionExplorerWorkspaceTab", "ConsoleWorkspaceTab"],
+            "Lore")
+    ];
+
+    public PluginProjectModeAvailability EvaluateProjectMode(
+        string modeId,
+        PluginProjectModeContext context)
+    {
+        if (!string.Equals(modeId, "lore", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PluginProjectModeAvailability(false, $"Unknown Lore mode '{modeId}'.");
+        }
+
+        LoreProjectInspection inspection = InspectProject(context.ProjectRoot);
+        return inspection.IsProject
+            ? new PluginProjectModeAvailability(
+                true,
+                string.IsNullOrWhiteSpace(inspection.CurrentBranch)
+                    ? "Existing .lore workspace detected."
+                    : $"Existing .lore workspace detected on branch {inspection.CurrentBranch}.")
+            : new PluginProjectModeAvailability(
+                false,
+                "Lore mode requires an existing .lore/config.toml. CyRevision never initializes Lore implicitly.");
+    }
 
     public Task InitializeAsync(CyRevisionPluginContext context, CancellationToken cancellationToken = default)
     {

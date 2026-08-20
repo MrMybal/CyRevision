@@ -13,6 +13,8 @@ public sealed class CyRevisionPluginManager : IAsyncDisposable
     private readonly List<PluginCatalogEntry> _entries = [];
     private HashSet<string> _enabledPluginIds = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _activeProjectPluginIds = new(StringComparer.OrdinalIgnoreCase);
+    private Guid? _activeProjectId;
+    private string _activeProjectRoot = string.Empty;
 
     public CyRevisionPluginManager(
         string applicationDirectory,
@@ -40,6 +42,41 @@ public sealed class CyRevisionPluginManager : IAsyncDisposable
     public void SetProjectScope(IEnumerable<string>? pluginIds)
     {
         _activeProjectPluginIds = new HashSet<string>(pluginIds ?? [], StringComparer.OrdinalIgnoreCase);
+    }
+
+    public void SetProjectScope(Guid projectId, string projectRoot, IEnumerable<string>? pluginIds)
+    {
+        _activeProjectId = projectId;
+        _activeProjectRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectRoot));
+        SetProjectScope(pluginIds);
+    }
+
+    public void ClearProjectScope()
+    {
+        _activeProjectId = null;
+        _activeProjectRoot = string.Empty;
+        SetProjectScope([]);
+    }
+
+    public IPluginProjectFileSandbox CreateProjectFileSandbox(
+        string pluginId,
+        PluginProjectPermission permissions,
+        IReadOnlyList<string>? allowedRelativeRoots = null,
+        long maximumReadBytes = 64L * 1024 * 1024,
+        long maximumWriteBytes = 64L * 1024 * 1024)
+    {
+        if (!_activeProjectPluginIds.Contains(pluginId))
+            throw new UnauthorizedAccessException($"Plugin '{pluginId}' is not enabled for the selected project.");
+        if (_activeProjectId is not Guid projectId || string.IsNullOrWhiteSpace(_activeProjectRoot))
+            throw new InvalidOperationException("No project sandbox is currently available.");
+        return new ProjectPluginFileSandbox(new PluginProjectSandboxPolicy(
+            projectId,
+            pluginId,
+            _activeProjectRoot,
+            permissions,
+            allowedRelativeRoots ?? [],
+            maximumReadBytes,
+            maximumWriteBytes));
     }
 
     public bool IsActiveForCurrentProject(string pluginId) => _activeProjectPluginIds.Contains(pluginId);

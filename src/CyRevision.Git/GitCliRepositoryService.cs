@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -59,6 +61,40 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         Directory.CreateDirectory(fullPath);
         await RunGitAsync(fullPath, ["init", "-b", "main"], cancellationToken).ConfigureAwait(false);
         await RunGitAsync(fullPath, ["lfs", "install", "--local"], cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task CloneAsync(
+        string remoteUrl,
+        string destinationPath,
+        bool recurseSubmodules = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(remoteUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+
+        string fullDestination = Path.GetFullPath(destinationPath);
+        string? parentPath = Path.GetDirectoryName(fullDestination);
+        if (string.IsNullOrWhiteSpace(parentPath))
+        {
+            throw new ArgumentException("The clone destination must have a parent folder.", nameof(destinationPath));
+        }
+
+        Directory.CreateDirectory(parentPath);
+        if (Directory.Exists(fullDestination) && Directory.EnumerateFileSystemEntries(fullDestination).Any())
+        {
+            throw new IOException("The clone destination already exists and is not empty.");
+        }
+
+        List<string> arguments = ["clone", "--progress"];
+        if (recurseSubmodules)
+        {
+            arguments.Add("--recurse-submodules");
+        }
+        arguments.Add(remoteUrl.Trim());
+        arguments.Add(fullDestination);
+
+        await RunGitAsync(parentPath, arguments, cancellationToken).ConfigureAwait(false);
+        await RunGitAsync(fullDestination, ["lfs", "install", "--local"], cancellationToken).ConfigureAwait(false);
     }
 
     public Task<GitRepositoryStatus> GetStatusAsync(
@@ -141,13 +177,18 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         await RunGitAsync(repositoryPath, ["config", "user.email", userEmail], cancellationToken).ConfigureAwait(false);
     }
 
-    public Task StageAsync(
+    public async Task StageAsync(
         string repositoryPath,
         IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default)
     {
         EnsurePaths(paths);
-        return RunGitWithoutOutputAsync(repositoryPath, ["add", "--", .. paths], cancellationToken);
+        await RunGitPathspecCommandAsync(
+                repositoryPath,
+                ["add"],
+                paths,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task UnstageAsync(
@@ -156,15 +197,20 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         CancellationToken cancellationToken = default)
     {
         EnsurePaths(paths);
-        ProcessResult result = await RunGitResultAsync(
+        ProcessResult result = await RunGitPathspecResultAsync(
                 repositoryPath,
-                ["restore", "--staged", "--", .. paths],
+                ["restore", "--staged"],
+                paths,
                 cancellationToken)
             .ConfigureAwait(false);
 
         if (!result.Succeeded)
         {
-            await RunGitAsync(repositoryPath, ["rm", "--cached", "--", .. paths], cancellationToken)
+            await RunGitPathspecCommandAsync(
+                    repositoryPath,
+                    ["rm", "--cached"],
+                    paths,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -208,6 +254,26 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
                     cancellationToken)
                 .ConfigureAwait(false);
         }
+    }
+
+    public Task DeleteWorkingTreePathsAsync(
+        string repositoryPath,
+        IReadOnlyCollection<string> paths,
+        CancellationToken cancellationToken = default)
+    {
+        EnsurePaths(paths);
+        string root = Path.GetFullPath(repositoryPath);
+        string[] uniquePaths = paths
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return Task.Run(() =>
+        {
+            foreach (string path in uniquePaths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                DeleteWorkingTreeFile(root, path);
+            }
+        }, cancellationToken);
     }
 
     public async Task CreateRevisionAsync(
@@ -1134,6 +1200,14 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         arguments.Add(commitHash);
         ProcessResult result = await RunGitResultAsync(repository, arguments, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(result, "Unable to create the historical worktree.");
+        string commonGitDirectory = (await RunGitAsync(
+            repository,
+            ["rev-parse", "--absolute-git-dir"],
+            cancellationToken).ConfigureAwait(false)).Trim();
+        await File.WriteAllTextAsync(
+            GetManagedWorktreeMarkerPath(worktree),
+            JsonSerializer.Serialize(new ManagedWorktreeMarker(commonGitDirectory, DateTimeOffset.UtcNow)),
+            cancellationToken).ConfigureAwait(false);
         return new GitHistoricalWorktreeResult(
             true,
             repository,
@@ -1154,6 +1228,10 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             .ConfigureAwait(false);
         EnsureSuccess(result, "Unable to list Git worktrees.");
         string managedRoot = GetManagedWorktreeRoot(repository);
+        string commonGitDirectory = (await RunGitAsync(
+            repository,
+            ["rev-parse", "--absolute-git-dir"],
+            cancellationToken).ConfigureAwait(false)).Trim();
         List<GitHistoricalWorktree> worktrees = [];
         foreach (string block in result.StandardOutput.Replace("\r\n", "\n").Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
         {
@@ -1174,7 +1252,8 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             }
             if (string.IsNullOrWhiteSpace(path)) continue;
             string full = Path.GetFullPath(path);
-            bool managed = IsWithinDirectory(full, managedRoot);
+            bool managed = IsWithinDirectory(full, managedRoot) ||
+                           IsManagedWorktreeMarkerValid(full, commonGitDirectory);
             DateTimeOffset? created = Directory.Exists(full) ? new DateTimeOffset(Directory.GetCreationTimeUtc(full), TimeSpan.Zero) : null;
             worktrees.Add(new GitHistoricalWorktree(full, head, branch, detached, locked, prunable, managed, created));
         }
@@ -1190,13 +1269,21 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         string repository = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryPath));
         string worktree = Path.TrimEndingDirectorySeparator(Path.GetFullPath(worktreePath));
         string managedRoot = GetManagedWorktreeRoot(repository);
-        if (!IsWithinDirectory(worktree, managedRoot) || string.Equals(worktree, managedRoot, PathComparison))
+        string commonGitDirectory = (await RunGitAsync(
+            repository,
+            ["rev-parse", "--absolute-git-dir"],
+            cancellationToken).ConfigureAwait(false)).Trim();
+        bool markedAsManaged = IsManagedWorktreeMarkerValid(worktree, commonGitDirectory);
+        if ((!IsWithinDirectory(worktree, managedRoot) && !markedAsManaged) ||
+            string.Equals(worktree, managedRoot, PathComparison))
             throw new GitOperationException("CyRevision only removes historical worktrees created inside its managed worktree directory.");
         List<string> arguments = ["worktree", "remove"];
         if (force) arguments.Add("--force");
         arguments.Add(worktree);
         ProcessResult result = await RunGitResultAsync(repository, arguments, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(result, "Unable to remove the historical worktree.");
+        string markerPath = GetManagedWorktreeMarkerPath(worktree);
+        if (File.Exists(markerPath)) File.Delete(markerPath);
         await RunGitWithoutOutputAsync(repository, ["worktree", "prune"], cancellationToken).ConfigureAwait(false);
     }
 
@@ -1889,6 +1976,37 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             standardInput,
             cancellationToken);
 
+    private async Task RunGitPathspecCommandAsync(
+        string workingDirectory,
+        IReadOnlyCollection<string> arguments,
+        IReadOnlyCollection<string> paths,
+        CancellationToken cancellationToken)
+    {
+        ProcessResult result = await RunGitPathspecResultAsync(
+                workingDirectory,
+                arguments,
+                paths,
+                cancellationToken)
+            .ConfigureAwait(false);
+        EnsureSuccess(result, "Git operation failed.");
+    }
+
+    private Task<ProcessResult> RunGitPathspecResultAsync(
+        string workingDirectory,
+        IReadOnlyCollection<string> arguments,
+        IReadOnlyCollection<string> paths,
+        CancellationToken cancellationToken)
+    {
+        EnsurePaths(paths);
+        List<string> pathspecArguments = [.. arguments, "--pathspec-from-file=-", "--pathspec-file-nul"];
+        string standardInput = string.Join('\0', paths) + '\0';
+        return RunGitResultWithInputAsync(
+            workingDirectory,
+            pathspecArguments,
+            standardInput,
+            cancellationToken);
+    }
+
     private static void EnsureSuccess(ProcessResult result, string message)
     {
         if (result.Succeeded)
@@ -2085,7 +2203,7 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         }
     }
 
-    private static void DeleteUntrackedPath(string repositoryRoot, string relativePath)
+    private static void DeleteWorkingTreeFile(string repositoryRoot, string relativePath)
     {
         string root = Path.GetFullPath(repositoryRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         string candidate = Path.GetFullPath(Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
@@ -2098,13 +2216,56 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             throw new GitOperationException($"Refusing to remove a path outside the repository: {relativePath}");
         }
 
+        string repositoryRelativePath = Path.GetRelativePath(root, candidate);
+        string firstSegment = repositoryRelativePath.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+        if (string.Equals(firstSegment, ".git", comparison))
+        {
+            throw new GitOperationException("Refusing to remove Git repository metadata.");
+        }
+
         if (File.Exists(candidate))
         {
             File.Delete(candidate);
+            RemoveEmptyParentDirectories(root, Path.GetDirectoryName(candidate));
         }
         else if (Directory.Exists(candidate))
         {
-            Directory.Delete(candidate, recursive: true);
+            bool isLink = File.GetAttributes(candidate).HasFlag(FileAttributes.ReparsePoint);
+            Directory.Delete(candidate, recursive: !isLink);
+            RemoveEmptyParentDirectories(root, Path.GetDirectoryName(candidate));
+        }
+    }
+
+    private static void DeleteUntrackedPath(string repositoryRoot, string relativePath)
+    {
+        string root = Path.GetFullPath(repositoryRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string candidate = Path.GetFullPath(Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (!candidate.StartsWith(root + Path.DirectorySeparatorChar, comparison))
+        {
+            throw new GitOperationException($"Refusing to remove a path outside the repository: {relativePath}");
+        }
+
+        if (File.Exists(candidate)) File.Delete(candidate);
+        else if (Directory.Exists(candidate)) Directory.Delete(candidate, recursive: true);
+    }
+
+    private static void RemoveEmptyParentDirectories(string repositoryRoot, string? directory)
+    {
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        while (!string.IsNullOrWhiteSpace(directory) &&
+               !string.Equals(directory, repositoryRoot, comparison) &&
+               Directory.Exists(directory) &&
+               !Directory.EnumerateFileSystemEntries(directory).Any())
+        {
+            Directory.Delete(directory);
+            directory = Path.GetDirectoryName(directory);
         }
     }
 
@@ -2125,6 +2286,26 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         return Path.Combine(parent, ".cyrevision-worktrees", SanitizeWorktreeName(Path.GetFileName(repository)));
     }
 
+    private static string GetManagedWorktreeMarkerPath(string worktreePath) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(worktreePath)) + ".cyrevision-worktree.json";
+
+    private static bool IsManagedWorktreeMarkerValid(string worktreePath, string commonGitDirectory)
+    {
+        try
+        {
+            string markerPath = GetManagedWorktreeMarkerPath(worktreePath);
+            if (!File.Exists(markerPath)) return false;
+            ManagedWorktreeMarker? marker = JsonSerializer.Deserialize<ManagedWorktreeMarker>(File.ReadAllText(markerPath));
+            return marker is not null && string.Equals(
+                NormalizeComparablePath(marker.CommonGitDirectory),
+                NormalizeComparablePath(commonGitDirectory),
+                PathComparison);
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+        catch (JsonException) { return false; }
+    }
+
     private static string SanitizeWorktreeName(string value)
     {
         string normalized = value.Replace('/', '-').Replace('\\', '-');
@@ -2134,14 +2315,34 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
 
     private static bool IsWithinDirectory(string candidate, string directory)
     {
-        string fullCandidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
-        string fullDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+        string fullCandidate = NormalizeComparablePath(candidate);
+        string fullDirectory = NormalizeComparablePath(directory);
         return fullCandidate.StartsWith(fullDirectory + Path.DirectorySeparatorChar, PathComparison);
     }
+
+    private static string NormalizeComparablePath(string path)
+    {
+        string full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        if (!OperatingSystem.IsWindows()) return full;
+
+        // Git for Windows emits canonical long paths even when TEMP or the repository was
+        // supplied through an 8.3 path (for example CYBERA~1). Expand both operands before
+        // checking the managed worktree boundary so valid worktrees remain recognizable.
+        StringBuilder expanded = new(32_768);
+        uint length = GetLongPathName(full, expanded, (uint)expanded.Capacity);
+        return length is > 0 and < 32_768
+            ? Path.TrimEndingDirectorySeparator(expanded.ToString())
+            : full;
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "GetLongPathNameW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetLongPathName(string shortPath, StringBuilder longPath, uint bufferLength);
 
     private static StringComparison PathComparison => OperatingSystem.IsWindows()
         ? StringComparison.OrdinalIgnoreCase
         : StringComparison.Ordinal;
+
+    private sealed record ManagedWorktreeMarker(string CommonGitDirectory, DateTimeOffset CreatedAt);
 
     [GeneratedRegex(@"(?:ahead (?<ahead>\d+))|(?:behind (?<behind>\d+))", RegexOptions.CultureInvariant)]
     private static partial Regex AheadBehindRegex();

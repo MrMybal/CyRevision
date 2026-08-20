@@ -31,6 +31,8 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 - Optional runtime-loaded CyRevision plugins with per-user enable/disable state; Unreal integration is shipped separately and disabled by default.
 - Autonomous Unreal Editor plugin with a revision dashboard, Git actions, advisory asset reservations, and an authenticated loopback bridge to CyRevision.
 - Unreal plugin installation and safe updates from the CyRevision Plugins page, with recoverable backups of the previous project plugin.
+- Optional, project-scoped Perforce Helix Core plugin using the official `p4` CLI for validated workspaces, opened files, changelists, history, reconcile, sync, revert, and submit; writes are disabled by default and credentials are never stored.
+- Optional, project-scoped Jira Cloud and ClickUp integrations for searching work items and adding stable task links to commit messages and pull-request drafts; session tokens are never persisted.
 - Optional WireGuard integration with a selectable system or bundled runtime, guided Windows/macOS/Linux firewall setup, router/NAT checklists, signed Sync-assisted onboarding, isolated tunnels, VPN-only peers, and Unreal Swarm/CI/service profiles.
 - Unreal Swarm over VPN workspace with Agent/Coordinator roles, safe Agent XML backups, reversible local DNS aliases, VPN-only firewall rules, process controls, and actionable end-to-end diagnostics; matching autonomous tools are included in CyRevisionUnreal.
 - Secure VPN file inbox and explicit folder sharing with VPN-address binding, subnet filtering, project token authentication, SHA-256 verification, no overwrites, and traversal/symlink protection.
@@ -75,7 +77,7 @@ Publish on Windows:
 Build a self-contained Windows installer and portable release locally:
 
 ```powershell
-./scripts/build-release.cmd 0.1.17
+./scripts/build-release.cmd 0.1.18
 ```
 
 Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).

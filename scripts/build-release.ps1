@@ -29,6 +29,32 @@ function Invoke-NativeCommand
     }
 }
 
+function Get-Sha256Hex
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $stream = [IO.File]::OpenRead($Path)
+    try
+    {
+        $algorithm = [Security.Cryptography.SHA256]::Create()
+        try
+        {
+            return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+        }
+        finally
+        {
+            $algorithm.Dispose()
+        }
+    }
+    finally
+    {
+        $stream.Dispose()
+    }
+}
+
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $desktopProject = Join-Path $repositoryRoot 'src\CyRevision.Desktop\CyRevision.Desktop.csproj'
 $agentProject = Join-Path $repositoryRoot 'src\CyRevision.Discord.Agent\CyRevision.Discord.Agent.csproj'
@@ -140,7 +166,7 @@ $releaseFiles = Get-ChildItem -LiteralPath $releaseRoot -File |
 $checksumPath = Join-Path $releaseRoot 'SHA256SUMS-win-x64.txt'
 $checksumLines = foreach ($file in $releaseFiles)
 {
-    $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    $hash = Get-Sha256Hex -Path $file.FullName
     "$hash  $($file.Name)"
 }
 Set-Content -LiteralPath $checksumPath -Value $checksumLines -Encoding ascii

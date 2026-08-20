@@ -71,6 +71,12 @@ public interface IPeerAdmissionService
 
     Task RevokeDeviceAsync(Guid projectId, Guid deviceId, CancellationToken cancellationToken = default);
 
+    Task<MembershipCertificate> UpdateDeviceRoleAsync(
+        Guid projectId,
+        Guid deviceId,
+        PeerRole role,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<MembershipCertificate>> GetMembersAsync(
         Guid projectId,
         CancellationToken cancellationToken = default);

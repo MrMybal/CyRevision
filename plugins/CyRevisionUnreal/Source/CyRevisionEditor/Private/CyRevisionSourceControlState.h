@@ -23,6 +23,7 @@ public:
     explicit FCyRevisionSourceControlState(FString InFilename);
 
     void SetWorkingCopyState(ECyRevisionWorkingCopyState InState);
+    void SetHistory(TArray<TSharedRef<ISourceControlRevision, ESPMode::ThreadSafe>> InHistory);
 
     virtual int32 GetHistorySize() const override;
     virtual TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> GetHistoryItem(int32 HistoryIndex) const override;
@@ -71,4 +72,5 @@ private:
     FString Filename;
     FDateTime TimeStamp;
     ECyRevisionWorkingCopyState WorkingCopyState = ECyRevisionWorkingCopyState::Unknown;
+    TArray<TSharedRef<ISourceControlRevision, ESPMode::ThreadSafe>> History;
 };

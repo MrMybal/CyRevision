@@ -11,7 +11,9 @@ internal sealed record ProjectWorkspaceState(
     string TabVisibilityPreset = "Full workspace",
     List<string>? HiddenTabs = null,
     List<string>? HiddenChangeColumns = null,
-    string ChangeSort = "Name");
+    string ChangeSort = "Name",
+    Dictionary<string, double[]>? DataGridColumnWidths = null,
+    Dictionary<string, string[]>? HiddenDataGridColumns = null);
 
 internal sealed class ProjectWorkspaceStateStore
 {
