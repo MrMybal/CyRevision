@@ -8,6 +8,7 @@ public sealed class GitChangeTreeNode : ObservableObject
     private IReadOnlyList<GitChangeViewModel>? _lazyChanges;
     private readonly IReadOnlyList<GitChangeViewModel> _containedChanges;
     private readonly bool _isFilePage;
+    private int _loadedFileCount;
     private bool _isExpanded;
 
     public GitChangeTreeNode(
@@ -124,17 +125,23 @@ public sealed class GitChangeTreeNode : ObservableObject
     public void EnsureChildrenLoaded()
     {
         if (_lazyChanges is not { Count: > 0 } changes) return;
-        _lazyChanges = null;
-        Children.Clear();
         if (_isFilePage)
         {
-            foreach (GitChangeViewModel change in changes)
+            if (_loadedFileCount == 0) Children.Clear();
+            else if (Children.LastOrDefault()?.IsPlaceholder == true) Children.RemoveAt(Children.Count - 1);
+            int end = Math.Min(_loadedFileCount + FilePageSize, changes.Count);
+            for (int index = _loadedFileCount; index < end; index++)
             {
-                Children.Add(CreateFile(change));
+                Children.Add(CreateFile(changes[index]));
             }
+            _loadedFileCount = end;
+            if (_loadedFileCount < changes.Count) Children.Add(CreatePlaceholder("Load more files…"));
+            else _lazyChanges = null;
             return;
         }
 
+        _lazyChanges = null;
+        Children.Clear();
         string prefix = string.IsNullOrWhiteSpace(RelativePath)
             ? string.Empty
             : RelativePath.Trim('/');
@@ -198,13 +205,27 @@ public sealed class GitChangeTreeNode : ObservableObject
     public static GitChangeTreeNode CreateLazyGroup(
         string name,
         string groupKind,
-        IReadOnlyList<GitChangeViewModel> changes) => new(
+        IReadOnlyList<GitChangeViewModel> changes,
+        bool isExpanded = true) => new(
         name,
         string.Empty,
         true,
         groupKind: groupKind,
         lazyChanges: changes,
-        isExpanded: true);
+        isExpanded: isExpanded);
+
+    public static GitChangeTreeNode CreateFlatGroup(
+        string name,
+        string groupKind,
+        IReadOnlyList<GitChangeViewModel> changes,
+        bool isExpanded = true) => new(
+        name,
+        string.Empty,
+        true,
+        groupKind: groupKind,
+        lazyChanges: changes,
+        isFilePage: true,
+        isExpanded: isExpanded);
 
     private GitChangeTreeNode CreateFile(GitChangeViewModel change) => new(
         change.FileName,
@@ -213,8 +234,8 @@ public sealed class GitChangeTreeNode : ObservableObject
         change,
         groupKind: GroupKind);
 
-    private static GitChangeTreeNode CreatePlaceholder() => new(
-        "Open to load…",
+    private static GitChangeTreeNode CreatePlaceholder(string name = "Open to load…") => new(
+        name,
         string.Empty,
         false,
         isPlaceholder: true);

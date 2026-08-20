@@ -1,6 +1,8 @@
 #include "CyRevisionSourceControlProvider.h"
 
+#include "CyRevisionSourceControlRevision.h"
 #include "CyRevisionSourceControlState.h"
+#include "HAL/FileManager.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
@@ -170,15 +172,63 @@ ECommandResult::Type FCyRevisionSourceControlProvider::Execute(
 #endif
 {
     ECommandResult::Type Result = ECommandResult::Failed;
-    if (InOperation->GetName() == FName(TEXT("Connect")))
+    const FName OperationName = InOperation->GetName();
+    const TArray<FString> AbsoluteFiles = SourceControlHelpers::AbsoluteFilenames(InFiles);
+    if (OperationName == FName(TEXT("Connect")))
     {
         Result = RefreshConnection() ? ECommandResult::Succeeded : ECommandResult::Failed;
     }
-    else if (InOperation->GetName() == FName(TEXT("UpdateStatus")) && bRepositoryFound)
+    else if (OperationName == FName(TEXT("UpdateStatus")) && bRepositoryFound)
     {
-        Result = RefreshStates(SourceControlHelpers::AbsoluteFilenames(InFiles))
-            ? ECommandResult::Succeeded
-            : ECommandResult::Failed;
+        const bool bStatesUpdated = RefreshStates(AbsoluteFiles);
+        const TSharedRef<FUpdateStatus, ESPMode::ThreadSafe> Update = StaticCastSharedRef<FUpdateStatus>(InOperation);
+        const bool bHistoryUpdated = !Update->ShouldUpdateHistory() || RefreshHistories(AbsoluteFiles);
+        Result = bStatesUpdated && bHistoryUpdated ? ECommandResult::Succeeded : ECommandResult::Failed;
+    }
+    else if (OperationName == FName(TEXT("CheckOut")) && bRepositoryFound)
+    {
+        // CyRevision is intentionally checkout-less. Returning success lets Unreal save the
+        // selected assets without creating a mandatory lock or prompting on every save.
+        Result = ECommandResult::Succeeded;
+    }
+    else if (OperationName == FName(TEXT("MarkForAdd")) && bRepositoryFound)
+    {
+        Result = RunGitForFiles(TEXT("add --"), AbsoluteFiles)
+            ? ECommandResult::Succeeded : ECommandResult::Failed;
+    }
+    else if (OperationName == FName(TEXT("Delete")) && bRepositoryFound)
+    {
+        Result = RunGitForFiles(TEXT("add -A --"), AbsoluteFiles)
+            ? ECommandResult::Succeeded : ECommandResult::Failed;
+    }
+    else if (OperationName == FName(TEXT("Revert")) && bRepositoryFound)
+    {
+        Result = RunGitForFiles(TEXT("restore --source=HEAD --staged --worktree --"), AbsoluteFiles)
+            ? ECommandResult::Succeeded : ECommandResult::Failed;
+    }
+    else if (OperationName == FName(TEXT("Sync")) && bRepositoryFound)
+    {
+        const TSharedRef<FSync, ESPMode::ThreadSafe> Sync = StaticCastSharedRef<FSync>(InOperation);
+        const FString Revision = Sync->GetRevision().IsEmpty() ? TEXT("HEAD") : Sync->GetRevision();
+        Result = RunGitForFiles(TEXT("restore --source=") + QuoteArgument(Revision) + TEXT(" --worktree --"), AbsoluteFiles)
+            ? ECommandResult::Succeeded : ECommandResult::Failed;
+    }
+    else if (OperationName == FName(TEXT("CheckIn")) && bRepositoryFound)
+    {
+        const TSharedRef<FCheckIn, ESPMode::ThreadSafe> CheckIn = StaticCastSharedRef<FCheckIn>(InOperation);
+        FString Output;
+        const FString Message = CheckIn->GetDescription().ToString().TrimStartAndEnd();
+        const bool bStaged = !Message.IsEmpty() && RunGitForFiles(TEXT("add -A --"), AbsoluteFiles);
+        const bool bCommitted = bStaged && RunGit(
+            RepositoryRoot,
+            TEXT("commit -m ") + QuoteArgument(Message),
+            Output);
+        if (bCommitted)
+        {
+            CheckIn->SetSuccessMessage(LOCTEXT("CommitSucceeded", "Git commit created locally."));
+            RefreshStates(AbsoluteFiles);
+        }
+        Result = bCommitted ? ECommandResult::Succeeded : ECommandResult::Failed;
     }
 
     InOperationCompleteDelegate.ExecuteIfBound(InOperation, Result);
@@ -188,8 +238,15 @@ ECommandResult::Type FCyRevisionSourceControlProvider::Execute(
 #if CYREVISION_UE5_3_OR_LATER
 bool FCyRevisionSourceControlProvider::CanExecuteOperation(const FSourceControlOperationRef& InOperation) const
 {
-    return InOperation->GetName() == FName(TEXT("Connect")) ||
-        InOperation->GetName() == FName(TEXT("UpdateStatus"));
+    const FName Name = InOperation->GetName();
+    return Name == FName(TEXT("Connect")) ||
+        Name == FName(TEXT("UpdateStatus")) ||
+        Name == FName(TEXT("CheckOut")) ||
+        Name == FName(TEXT("MarkForAdd")) ||
+        Name == FName(TEXT("Delete")) ||
+        Name == FName(TEXT("Revert")) ||
+        Name == FName(TEXT("Sync")) ||
+        Name == FName(TEXT("CheckIn"));
 }
 #endif
 
@@ -209,12 +266,12 @@ bool FCyRevisionSourceControlProvider::UsesUncontrolledChangelists() const { ret
 #endif
 bool FCyRevisionSourceControlProvider::UsesCheckout() const { return false; }
 #if CYREVISION_UE5
-bool FCyRevisionSourceControlProvider::UsesFileRevisions() const { return false; }
+bool FCyRevisionSourceControlProvider::UsesFileRevisions() const { return true; }
 bool FCyRevisionSourceControlProvider::UsesSnapshots() const { return false; }
 #if CYREVISION_UE5_8_OR_LATER
 bool FCyRevisionSourceControlProvider::UsesSoftRevertOnDelete() const { return false; }
 #endif
-bool FCyRevisionSourceControlProvider::AllowsDiffAgainstDepot() const { return false; }
+bool FCyRevisionSourceControlProvider::AllowsDiffAgainstDepot() const { return true; }
 #if CYREVISION_UE5_8_OR_LATER
 TOptional<bool> FCyRevisionSourceControlProvider::HasChangesToSync() const { return {}; }
 
@@ -345,6 +402,115 @@ bool FCyRevisionSourceControlProvider::RefreshStates(const TArray<FString>& InFi
     return true;
 }
 
+bool FCyRevisionSourceControlProvider::RefreshHistories(const TArray<FString>& InFiles)
+{
+    if (!bRepositoryFound)
+    {
+        return false;
+    }
+    bool bSucceeded = true;
+    for (const FString& File : InFiles)
+    {
+        if (IFileManager::Get().DirectoryExists(*File))
+        {
+            continue;
+        }
+        bSucceeded = QueryFileHistory(GetStateInternal(File).Get()) && bSucceeded;
+    }
+    OnSourceControlStateChanged.Broadcast();
+    return bSucceeded;
+}
+
+bool FCyRevisionSourceControlProvider::QueryFileHistory(FCyRevisionSourceControlState& State) const
+{
+    FString RelativeFilename;
+    if (!MakeRepositoryRelative(State.GetFilename(), RelativeFilename))
+    {
+        State.SetHistory({});
+        return false;
+    }
+
+    FString Output;
+    const FString Arguments = FString::Printf(
+        TEXT("log -100 --follow --date=iso-strict --format=%%H%%x1f%%an%%x1f%%aI%%x1f%%s%%x1e -- %s"),
+        *QuoteArgument(RelativeFilename));
+    if (!RunGit(RepositoryRoot, Arguments, Output))
+    {
+        State.SetHistory({});
+        return false;
+    }
+
+    FString RecordSeparator;
+    RecordSeparator.AppendChar(0x1e);
+    FString FieldSeparator;
+    FieldSeparator.AppendChar(0x1f);
+    TArray<FString> Records;
+    Output.ParseIntoArray(Records, *RecordSeparator, true);
+    TArray<TSharedRef<ISourceControlRevision, ESPMode::ThreadSafe>> History;
+    int32 Number = Records.Num();
+    const int64 CurrentSize = IFileManager::Get().FileSize(*State.GetFilename());
+    for (FString Record : Records)
+    {
+        Record.TrimStartAndEndInline();
+        TArray<FString> Fields;
+        Record.ParseIntoArray(Fields, *FieldSeparator, false);
+        if (Fields.Num() < 4 || Fields[0].IsEmpty())
+        {
+            continue;
+        }
+        FDateTime Date = FDateTime::MinValue();
+        FDateTime::ParseIso8601(*Fields[2], Date);
+        History.Add(MakeShared<FCyRevisionSourceControlRevision, ESPMode::ThreadSafe>(
+            State.GetFilename(),
+            RepositoryRoot,
+            RelativeFilename,
+            Fields[0],
+            Fields[3],
+            Fields[1],
+            TEXT("edit"),
+            Date,
+            Number--,
+            CurrentSize > 0 ? static_cast<int32>(FMath::Min<int64>(CurrentSize, MAX_int32)) : 0));
+    }
+    State.SetHistory(MoveTemp(History));
+    return true;
+}
+
+bool FCyRevisionSourceControlProvider::RunGitForFiles(
+    const FString& Prefix,
+    const TArray<FString>& InFiles,
+    const FString& Suffix) const
+{
+    bool bSucceeded = true;
+    for (const FString& File : InFiles)
+    {
+        FString RelativeFilename;
+        if (!MakeRepositoryRelative(File, RelativeFilename))
+        {
+            bSucceeded = false;
+            continue;
+        }
+        FString Output;
+        const FString Arguments = Prefix + TEXT(" ") + QuoteArgument(RelativeFilename) + Suffix;
+        bSucceeded = RunGit(RepositoryRoot, Arguments, Output) && bSucceeded;
+    }
+    return bSucceeded;
+}
+
+bool FCyRevisionSourceControlProvider::MakeRepositoryRelative(
+    const FString& Filename,
+    FString& OutRelativeFilename) const
+{
+    OutRelativeFilename = FPaths::ConvertRelativePathToFull(Filename);
+    FPaths::NormalizeFilename(OutRelativeFilename);
+    if (!FPaths::MakePathRelativeTo(OutRelativeFilename, *RepositoryRoot) || OutRelativeFilename.StartsWith(TEXT("..")))
+    {
+        return false;
+    }
+    FPaths::NormalizeFilename(OutRelativeFilename);
+    return !OutRelativeFilename.IsEmpty();
+}
+
 TSharedRef<FCyRevisionSourceControlState, ESPMode::ThreadSafe>
 FCyRevisionSourceControlProvider::GetStateInternal(const FString& Filename)
 {
@@ -362,13 +528,12 @@ FCyRevisionSourceControlProvider::GetStateInternal(const FString& Filename)
 
 void FCyRevisionSourceControlProvider::QueryFileState(FCyRevisionSourceControlState& State) const
 {
-    FString RelativeFilename = State.GetFilename();
-    if (!FPaths::MakePathRelativeTo(RelativeFilename, *RepositoryRoot) || RelativeFilename.StartsWith(TEXT("..")))
+    FString RelativeFilename;
+    if (!MakeRepositoryRelative(State.GetFilename(), RelativeFilename))
     {
         State.SetWorkingCopyState(ECyRevisionWorkingCopyState::Unknown);
         return;
     }
-    FPaths::NormalizeFilename(RelativeFilename);
 
     FString StatusOutput;
     const FString StatusArguments = FString::Printf(

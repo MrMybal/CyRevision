@@ -19,6 +19,9 @@
 | `CyRevision.Discord.Agent` | Processus autonome multi-projet exécutable à côté du client desktop |
 | `CyRevision.Plugin.Abstractions` | Contrats stables et sans interface pour les extensions chargeables |
 | `CyRevision.Plugin.Unreal` | Extension Unreal optionnelle : inspection, installateur et pont loopback authentifié |
+| `CyRevision.Plugin.Perforce` | Extension Perforce optionnelle et isolée par projet : orchestration sûre du CLI officiel `p4` sans stockage d'identifiants |
+| `CyRevision.Plugin.Jira` | Extension Jira Cloud optionnelle et isolée par projet : recherche de tâches en lecture seule et références dans les brouillons Git |
+| `CyRevision.Plugin.ClickUp` | Extension ClickUp optionnelle et isolée par projet : recherche de tâches Workspace et références dans les brouillons Git |
 | `CyRevision.Server` | Pair Linux, API, ordonnanceurs et dashboard web |
 | `CyRevisionUnreal` | Plugin Editor autonome : révisions Git, présence et connexion facultative au client |
 

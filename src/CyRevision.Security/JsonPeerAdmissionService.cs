@@ -134,6 +134,43 @@ public sealed class JsonPeerAdmissionService : IPeerAdmissionService
         }
     }
 
+    public async Task<MembershipCertificate> UpdateDeviceRoleAsync(
+        Guid projectId,
+        Guid deviceId,
+        PeerRole role,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId == Guid.Empty || deviceId == Guid.Empty)
+            throw new ArgumentException("A project and device are required to update a member role.");
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            List<MembershipCertificate> members = await ReadMembersAsync(projectId, cancellationToken);
+            int index = members.FindIndex(member => member.Device.DeviceId == deviceId);
+            if (index < 0) throw new InvalidOperationException("The selected device is not a project member.");
+
+            MembershipCertificate previous = members[index];
+            long nextEpoch = members.Count == 0 ? 1 : members.Max(member => member.MembershipEpoch) + 1;
+            DateTimeOffset issuedAt = DateTimeOffset.UtcNow;
+            byte[] payload = BuildCertificatePayload(projectId, previous.Device, role, nextEpoch, issuedAt);
+            MembershipCertificate updated = new(
+                projectId,
+                previous.Device,
+                role,
+                nextEpoch,
+                issuedAt,
+                _administratorIdentity.Sign(payload));
+            members[index] = updated;
+            await WriteJsonAtomicallyAsync(GetMembersPath(projectId), members, cancellationToken);
+            return updated;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<IReadOnlyList<MembershipCertificate>> GetMembersAsync(
         Guid projectId,
         CancellationToken cancellationToken = default)

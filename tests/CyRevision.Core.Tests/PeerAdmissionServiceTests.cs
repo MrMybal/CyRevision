@@ -46,6 +46,15 @@ public sealed class PeerAdmissionServiceTests : IDisposable
             administrator.Identity)));
         Assert.Single(await service.GetMembersAsync(projectId));
 
+        MembershipCertificate updated = await service.UpdateDeviceRoleAsync(
+            projectId,
+            peer.Identity.DeviceId,
+            PeerRole.ReadOnly);
+        Assert.Equal(PeerRole.ReadOnly, updated.Role);
+        Assert.True(updated.MembershipEpoch > certificate.MembershipEpoch);
+        Assert.True(service.VerifyCertificate(updated));
+        Assert.Equal(PeerRole.ReadOnly, Assert.Single(await service.GetMembersAsync(projectId)).Role);
+
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApproveDeviceAsync(
             package.Invitation,
             package.OneTimeToken,

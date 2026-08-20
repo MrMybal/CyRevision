@@ -1,6 +1,9 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Text;
 
 namespace CyRevision.Git;
 
@@ -8,6 +11,9 @@ public sealed class LfsStorageManager
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private static readonly Regex ShaRegex = new("(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])", RegexOptions.Compiled);
+    private static readonly Regex LfsHistoryLineRegex = new(
+        "^(?<oid>[0-9a-fA-F]{64})\\s+[*-]\\s+(?<path>.+?)(?:\\s+\\([^)]*\\))?$",
+        RegexOptions.Compiled);
     private readonly ProcessRunner _runner = new();
     private readonly string _gitExecutable;
 
@@ -17,20 +23,35 @@ public sealed class LfsStorageManager
         string repositoryPath,
         LfsManagementProfile profile,
         PeerLfsAvailabilityCache? peerAvailability = null,
+        IProgress<LfsAnalysisProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(profile);
         profile.Validate();
         string repository = Path.GetFullPath(repositoryPath);
+        progress?.Report(new LfsAnalysisProgress("Preparing", 2, "Resolving Git and LFS storage paths…"));
         LfsStoragePaths paths = await LfsStoragePathResolver.ResolveAsync(
             _runner, _gitExecutable, repository, cancellationToken);
-        IReadOnlyList<LocalObject> localObjects = EnumerateLocalObjects(paths.ObjectsDirectory);
-        HashSet<string> referenced = await ReadProtectedOidsAsync(repository, cancellationToken);
+        progress?.Report(new LfsAnalysisProgress("Local objects", 5, "Reading the local LFS object index…"));
+        IReadOnlyList<LocalObject> localObjects = EnumerateLocalObjects(
+            paths.ObjectsDirectory, cancellationToken, progress);
+        progress?.Report(new LfsAnalysisProgress(
+            "LFS history", 24, $"{localObjects.Count:N0} local object(s) indexed; reading Git LFS history…"));
+        IReadOnlyList<LfsHistoryEntry> history = await ReadLfsHistoryAsync(repository, cancellationToken);
+        Dictionary<string, LocalObject> localByOid = localObjects.ToDictionary(
+            item => item.Oid, StringComparer.OrdinalIgnoreCase);
+        HashSet<string> recentVersions = BuildRecentVersionSet(history, localByOid, profile);
+        progress?.Report(new LfsAnalysisProgress(
+            "Protected branches", 36, $"Protecting current files and every retained local branch ({history.Count:N0} history entries)…"));
+        HashSet<string> referenced = await ReadProtectedOidsAsync(
+            repository, profile, history, recentVersions, progress, cancellationToken);
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         (HashSet<string> remoteOids, string remoteOutput) = profile.VerifyRemote
-            ? await VerifyRemoteCandidatesAsync(repository, profile.RemoteName, cancellationToken)
+            ? await VerifyRemoteCandidatesAsync(repository, profile, progress, cancellationToken)
             : (new HashSet<string>(StringComparer.OrdinalIgnoreCase), "Remote verification disabled.");
+        progress?.Report(new LfsAnalysisProgress(
+            "Retention evidence", 90, "Reading verified peer and archive evidence…"));
         Dictionary<string, List<LfsRetentionEvidence>> evidence = new(StringComparer.OrdinalIgnoreCase);
         foreach (string oid in remoteOids)
             AddEvidence(evidence, oid, new LfsRetentionEvidence(
@@ -62,25 +83,137 @@ public sealed class LfsStorageManager
         }
 
         DateTimeOffset graceCutoff = now.AddDays(-profile.GracePeriodDays);
+        Dictionary<string, string[]> pathsByOid = history
+            .GroupBy(item => item.Oid, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(item => item.Path).Distinct(StringComparer.OrdinalIgnoreCase).Order().ToArray(),
+                StringComparer.OrdinalIgnoreCase);
         LfsCleanupItem[] items = localObjects
-            .Select(item => new LfsCleanupItem(
-                item.Oid,
-                item.Size,
-                item.LastModifiedAt,
-                item.Path,
-                referenced.Contains(item.Oid),
-                item.LastModifiedAt > graceCutoff,
-                evidence.TryGetValue(item.Oid, out List<LfsRetentionEvidence>? copies)
-                    ? copies.DistinctBy(copy => (copy.Kind, copy.LocationId)).ToArray()
-                    : [],
-                profile.RequiredVerifiedCopies))
+            .Select(item =>
+            {
+                string[] repositoryPaths = pathsByOid.GetValueOrDefault(item.Oid) ?? [];
+                string extension = repositoryPaths
+                    .Select(Path.GetExtension)
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "Unknown";
+                return new LfsCleanupItem(
+                    item.Oid,
+                    item.Size,
+                    item.LastModifiedAt,
+                    item.Path,
+                    referenced.Contains(item.Oid),
+                    item.LastModifiedAt > graceCutoff,
+                    evidence.TryGetValue(item.Oid, out List<LfsRetentionEvidence>? copies)
+                        ? copies.DistinctBy(copy => (copy.Kind, copy.LocationId)).ToArray()
+                        : [],
+                    profile.RequiredVerifiedCopies,
+                    repositoryPaths,
+                    extension,
+                    recentVersions.Contains(item.Oid));
+            })
             .OrderBy(item => item.CanDelete ? 0 : 1)
             .ThenByDescending(item => item.Size)
             .ToArray();
 
-        return new LfsCleanupPlan(
+        LfsCleanupPlan plan = new(
             Guid.NewGuid(), repository, paths.StorageDirectory, now,
-            profile.RequiredVerifiedCopies, items, remoteOutput);
+            profile.RequiredVerifiedCopies, items, remoteOutput, profile);
+        progress?.Report(new LfsAnalysisProgress(
+            "Complete", 100,
+            $"{plan.Objects.Count:N0} object(s) classified; {plan.ReclaimableCount:N0} safely reclaimable."));
+        return plan;
+    }
+
+    public async Task<RepositoryStorageReport> AnalyzeRepositoryStorageAsync(
+        string repositoryPath,
+        int largestFileLimit = 150,
+        CancellationToken cancellationToken = default)
+    {
+        string repository = Path.GetFullPath(repositoryPath);
+        LfsStoragePaths paths = await LfsStoragePathResolver.ResolveAsync(
+            _runner, _gitExecutable, repository, cancellationToken);
+        string cyRevisionCache = Path.Combine(repository, ".cyrevision");
+        DirectorySize working = MeasureDirectory(
+            repository,
+            [paths.GitCommonDirectory, cyRevisionCache],
+            cancellationToken);
+        DirectorySize git = MeasureDirectory(
+            paths.GitCommonDirectory,
+            [paths.StorageDirectory],
+            cancellationToken);
+        DirectorySize lfs = MeasureDirectory(paths.StorageDirectory, [], cancellationToken);
+        DirectorySize cache = MeasureDirectory(cyRevisionCache, [], cancellationToken);
+        RepositoryStorageArea[] areas =
+        [
+            new("Working tree", repository, working.Bytes, working.Files),
+            new("Git metadata", paths.GitCommonDirectory, git.Bytes, git.Files),
+            new("Git LFS cache", paths.StorageDirectory, lfs.Bytes, lfs.Files),
+            new("CyRevision cache", cyRevisionCache, cache.Bytes, cache.Files)
+        ];
+        RepositoryLargeFile[] largest = EnumerateMeasuredFiles(repository, [paths.GitCommonDirectory, cyRevisionCache], cancellationToken)
+            .Select(file => new RepositoryLargeFile(
+                Path.GetRelativePath(repository, file.Path),
+                "Working tree",
+                string.IsNullOrWhiteSpace(Path.GetExtension(file.Path)) ? "No extension" : Path.GetExtension(file.Path),
+                file.Size))
+            .OrderByDescending(file => file.Size)
+            .Take(Math.Clamp(largestFileLimit, 10, 1000))
+            .ToArray();
+        return new RepositoryStorageReport(repository, DateTimeOffset.UtcNow, areas, largest);
+    }
+
+    public async Task<LfsPruneResult> RunNativePruneAsync(
+        string repositoryPath,
+        bool dryRun,
+        bool verifyRemote = true,
+        int timeoutSeconds = 300,
+        IProgress<LfsAnalysisProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (timeoutSeconds is < 10 or > 3600)
+            throw new ArgumentOutOfRangeException(nameof(timeoutSeconds), "The Git LFS prune timeout must be between 10 and 3600 seconds.");
+
+        string repository = Path.GetFullPath(repositoryPath);
+        List<string> arguments = ["lfs", "prune", "--verbose"];
+        if (dryRun) arguments.Add("--dry-run");
+        if (verifyRemote) arguments.Add("--verify-remote");
+
+        progress?.Report(new LfsAnalysisProgress(
+            "Git LFS prune",
+            5,
+            dryRun
+                ? "Starting the native non-destructive prune preview…"
+                : "Verifying the remote before removing eligible local LFS objects…"));
+
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        ProcessResult result;
+        try
+        {
+            result = await RunGitAsync(repository, arguments, timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new GitOperationException(
+                $"Git LFS prune exceeded the {timeoutSeconds}-second safety limit and was stopped.",
+                exception);
+        }
+
+        string output = string.Join(
+            Environment.NewLine,
+            new[] { result.StandardOutput.Trim(), result.StandardError.Trim() }
+                .Where(value => !string.IsNullOrWhiteSpace(value)));
+        if (!result.Succeeded)
+            throw new GitOperationException(string.IsNullOrWhiteSpace(output)
+                ? "Git LFS prune failed without returning details."
+                : output);
+
+        progress?.Report(new LfsAnalysisProgress(
+            "Git LFS prune",
+            100,
+            dryRun ? "Preview complete; no object was deleted." : "Native prune completed successfully."));
+        return new LfsPruneResult(dryRun, verifyRemote, stopwatch.Elapsed, output);
     }
 
     public async Task<LfsArchiveResult> ArchiveUnreferencedAsync(
@@ -131,7 +264,20 @@ public sealed class LfsStorageManager
         CancellationToken cancellationToken = default)
     {
         ValidateFreshPlan(plan);
-        HashSet<string> protectedNow = await ReadProtectedOidsAsync(plan.RepositoryPath, cancellationToken);
+        LfsManagementProfile policy = plan.Policy
+            ?? LfsManagementProfile.CreateDefault(Guid.NewGuid()) with
+            {
+                RequiredVerifiedCopies = plan.RequiredCopies,
+                VerifyRemote = false
+            };
+        IReadOnlyList<LfsHistoryEntry> history = await ReadLfsHistoryAsync(plan.RepositoryPath, cancellationToken);
+        Dictionary<string, LocalObject> localByOid = plan.Objects.ToDictionary(
+            item => item.OidSha256,
+            item => new LocalObject(item.OidSha256, item.LocalPath, item.Size, item.LastModifiedAt),
+            StringComparer.OrdinalIgnoreCase);
+        HashSet<string> recentVersions = BuildRecentVersionSet(history, localByOid, policy);
+        HashSet<string> protectedNow = await ReadProtectedOidsAsync(
+            plan.RepositoryPath, policy, history, recentVersions, progress: null, cancellationToken);
         int deleted = 0;
         int skipped = 0;
         long bytes = 0;
@@ -260,50 +406,268 @@ public sealed class LfsStorageManager
         return new LfsRelocationResult(current.StorageDirectory, destination, objectCount, copiedBytes, removed);
     }
 
-    private async Task<HashSet<string>> ReadProtectedOidsAsync(string repository, CancellationToken cancellationToken)
+    private async Task<HashSet<string>> ReadProtectedOidsAsync(
+        string repository,
+        LfsManagementProfile profile,
+        IReadOnlyList<LfsHistoryEntry> history,
+        IReadOnlySet<string> recentVersions,
+        IProgress<LfsAnalysisProgress>? progress,
+        CancellationToken cancellationToken)
     {
         HashSet<string> result = new(StringComparer.OrdinalIgnoreCase);
-        foreach (string[] arguments in new[]
-                 {
-                     new[] { "lfs", "ls-files", "--all", "--long" },
-                     new[] { "lfs", "ls-files", "--long" }
-                 })
+        ProcessResult currentIndex = await RunGitAsync(
+            repository,
+            ["lfs", "ls-files", "--long"],
+            cancellationToken);
+        if (currentIndex.Succeeded)
+            AddOids(currentIndex.StandardOutput, result);
+
+        // Every LFS object present at the tip of a retained local branch stays hot. The cached
+        // inventory is keyed by branch commit, so unchanged branches are not rescanned.
+        result.UnionWith(await ReadLocalBranchTipOidsAsync(repository, progress, cancellationToken));
+
+        // Tags, stashes and notes remain explicit hot-storage protections.
+        string[] protectedNamespaces = ["refs/tags", "refs/stash", "refs/notes"];
+        ProcessResult refs = await RunGitAsync(
+            repository,
+            ["for-each-ref", "--format=%(refname)", .. protectedNamespaces],
+            cancellationToken);
+        if (refs.Succeeded)
         {
-            ProcessResult command = await RunGitAsync(repository, arguments, cancellationToken);
-            if (command.Succeeded)
-                AddOids(command.StandardOutput, result);
+            string[] references = refs.StandardOutput.Split(
+                ['\r', '\n'],
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            progress?.Report(new LfsAnalysisProgress(
+                "Protected tags and refs", 63, $"Scanning {references.Length:N0} tag, stash, or note ref(s)…"));
+            ConcurrentDictionary<string, byte> protectedRefOids = new(StringComparer.OrdinalIgnoreCase);
+            int completedRefs = 0;
+            await Parallel.ForEachAsync(
+                references,
+                new ParallelOptions { CancellationToken = cancellationToken, MaxDegreeOfParallelism = 4 },
+                async (reference, token) =>
+                {
+                ProcessResult referenced = await RunGitAsync(
+                    repository,
+                    ["lfs", "ls-files", "--long", reference],
+                        token);
+                if (referenced.Succeeded)
+                    {
+                        foreach (Match match in ShaRegex.Matches(referenced.StandardOutput))
+                            protectedRefOids.TryAdd(match.Value.ToLowerInvariant(), 0);
+                    }
+                    int currentRef = Interlocked.Increment(ref completedRefs);
+                    int percent = references.Length == 0
+                        ? 66
+                        : 63 + (int)Math.Round(3d * currentRef / references.Length);
+                    progress?.Report(new LfsAnalysisProgress(
+                        "Protected tags and refs",
+                        Math.Clamp(percent, 63, 66),
+                        $"Scanned {currentRef:N0}/{references.Length:N0} protected ref(s)."));
+                });
+            result.UnionWith(protectedRefOids.Keys);
+        }
+
+        if (profile.TrimRemoteBackedHistory)
+        {
+            IReadOnlySet<string> managedExtensions = profile.ParseManagedExtensions();
+            foreach (IGrouping<string, LfsHistoryEntry> objectHistory in history.GroupBy(
+                         item => item.Oid, StringComparer.OrdinalIgnoreCase))
+            {
+                bool hasUnmanagedPath = objectHistory.Any(item =>
+                    !managedExtensions.Contains(Path.GetExtension(item.Path)));
+                if (hasUnmanagedPath || recentVersions.Contains(objectHistory.Key))
+                    result.Add(objectHistory.Key);
+            }
         }
 
         ProcessResult worktrees = await RunGitAsync(repository, ["worktree", "list", "--porcelain"], cancellationToken);
         if (worktrees.Succeeded)
         {
-            foreach (string line in worktrees.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-                         .Where(line => line.StartsWith("worktree ", StringComparison.Ordinal)))
+            string[] worktreePaths = worktrees.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+                .Where(line => line.StartsWith("worktree ", StringComparison.Ordinal))
+                .Select(line => line["worktree ".Length..])
+                .ToArray();
+            for (int index = 0; index < worktreePaths.Length; index++)
             {
-                string path = line["worktree ".Length..];
+                string path = worktreePaths[index];
+                progress?.Report(new LfsAnalysisProgress(
+                    "Protected worktrees",
+                    worktreePaths.Length == 0 ? 69 : 67 + (int)Math.Round(2d * index / worktreePaths.Length),
+                    $"Checking worktree {index + 1:N0}/{worktreePaths.Length:N0}: {Path.GetFileName(path)}"));
                 ProcessResult current = await RunGitAsync(path, ["lfs", "ls-files", "--long"], cancellationToken);
                 if (current.Succeeded)
                     AddOids(current.StandardOutput, result);
             }
         }
 
+        progress?.Report(new LfsAnalysisProgress(
+            "Local protection complete", 69, $"{result.Count:N0} local LFS object(s) are protected before remote checks."));
+
         return result;
+    }
+
+    private async Task<HashSet<string>> ReadLocalBranchTipOidsAsync(
+        string repository,
+        IProgress<LfsAnalysisProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        ProcessResult refs = await RunGitAsync(
+            repository,
+            ["for-each-ref", "--format=%(refname)%09%(objectname)", "refs/heads"],
+            cancellationToken);
+        if (!refs.Succeeded)
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> branches = refs.StandardOutput
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => line.Split('\t', 2))
+            .Where(parts => parts.Length == 2)
+            .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.Ordinal);
+        LfsStoragePaths storagePaths = await LfsStoragePathResolver.ResolveAsync(
+            _runner, _gitExecutable, repository, cancellationToken);
+        string cacheDirectory = Path.Combine(storagePaths.GitCommonDirectory, ".cyrevision", "cache");
+        string cachePath = Path.Combine(cacheDirectory, "lfs-branch-tips.json");
+        string branchFingerprintSource = string.Join('\n', branches
+            .OrderBy(item => item.Key, StringComparer.Ordinal)
+            .Select(item => $"{item.Key}\t{item.Value}"));
+        string branchFingerprint = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(branchFingerprintSource))).ToLowerInvariant();
+        LfsBranchTipCache cached = await ReadBranchTipCacheAsync(cachePath, cancellationToken);
+        if (cached.Version == 2 &&
+            string.Equals(cached.BranchFingerprint, branchFingerprint, StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report(new LfsAnalysisProgress(
+                "Protected branches",
+                62,
+                $"Protected {branches.Count:N0} retained local branch tip(s) from the deduplicated cache ({cached.Oids.Count:N0} object(s))."));
+            return cached.Oids.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
+        string[] uniqueTips = branches.Values.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        progress?.Report(new LfsAnalysisProgress(
+            "Protected branches",
+            42,
+            $"Scanning {uniqueTips.Length:N0} unique tip(s) for {branches.Count:N0} retained local branch(es)…"));
+        ConcurrentDictionary<string, byte> protectedOids = new(StringComparer.OrdinalIgnoreCase);
+        int completed = 0;
+
+        await Parallel.ForEachAsync(
+            uniqueTips,
+            new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 2, 4)
+            },
+            async (commit, token) =>
+            {
+                ProcessResult listed = await RunGitAsync(repository, ["lfs", "ls-files", "--long", commit], token);
+                if (listed.Succeeded)
+                {
+                    foreach (Match match in ShaRegex.Matches(listed.StandardOutput))
+                        protectedOids.TryAdd(match.Value.ToLowerInvariant(), 0);
+                }
+                int current = Interlocked.Increment(ref completed);
+                int percent = uniqueTips.Length == 0
+                    ? 62
+                    : 42 + (int)Math.Round(20d * current / uniqueTips.Length);
+                progress?.Report(new LfsAnalysisProgress(
+                    "Protected branches",
+                    Math.Clamp(percent, 42, 62),
+                    $"Scanned {current:N0}/{uniqueTips.Length:N0} unique tip(s); {protectedOids.Count:N0} LFS object(s) protected."));
+            });
+        string[] protectedOidArray = protectedOids.Keys.Order(StringComparer.Ordinal).ToArray();
+        progress?.Report(new LfsAnalysisProgress(
+            "Finalizing branch protection",
+            63,
+            $"Writing one deduplicated inventory for {branches.Count:N0} branches ({protectedOidArray.Length:N0} unique object(s))…"));
+
+        LfsBranchTipCache updated = new(
+            2,
+            DateTimeOffset.UtcNow,
+            branchFingerprint,
+            protectedOidArray);
+        Directory.CreateDirectory(cacheDirectory);
+        string temporary = cachePath + ".tmp-" + Guid.NewGuid().ToString("N");
+        await File.WriteAllBytesAsync(temporary, JsonSerializer.SerializeToUtf8Bytes(updated, JsonOptions), cancellationToken);
+        File.Move(temporary, cachePath, true);
+        return protectedOids.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static async Task<LfsBranchTipCache> ReadBranchTipCacheAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path) || new FileInfo(path).Length > 32L * 1024 * 1024)
+            return LfsBranchTipCache.Empty;
+        try
+        {
+            return JsonSerializer.Deserialize<LfsBranchTipCache>(
+                       await File.ReadAllBytesAsync(path, cancellationToken), JsonOptions)
+                   ?? LfsBranchTipCache.Empty;
+        }
+        catch (Exception exception) when (exception is IOException or JsonException)
+        {
+            return LfsBranchTipCache.Empty;
+        }
     }
 
     private async Task<(HashSet<string> Oids, string Output)> VerifyRemoteCandidatesAsync(
         string repository,
-        string remoteName,
+        LfsManagementProfile profile,
+        IProgress<LfsAnalysisProgress>? progress,
         CancellationToken cancellationToken)
     {
+        string remoteName = profile.RemoteName;
         ProcessResult remote = await RunGitAsync(repository, ["remote", "get-url", remoteName], cancellationToken);
         if (!remote.Succeeded)
             return (new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                 $"Remote '{remoteName}' is unavailable; no remote retention proof was accepted.");
 
-        ProcessResult prune = await RunGitAsync(repository,
+        int timeoutSeconds = profile.RemoteVerificationTimeoutSeconds;
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        progress?.Report(new LfsAnalysisProgress(
+            "Remote verification", 70,
+            $"Checking '{remoteName}' with a {timeoutSeconds:N0} second safety budget…"));
+        Task<ProcessResult> verification = RunGitAsync(repository,
             ["-c", $"lfs.pruneremotetocheck={remoteName}", "lfs", "prune", "--dry-run", "--recent",
                 "--verify-remote", "--verify-unreachable", "--when-unverified=continue", "--verbose"],
-            cancellationToken);
+            timeout.Token);
+        try
+        {
+            while (!verification.IsCompleted)
+            {
+                Task pulse = Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                if (await Task.WhenAny(verification, pulse) == verification)
+                    break;
+                int elapsed = Math.Min(timeoutSeconds, (int)stopwatch.Elapsed.TotalSeconds);
+                int percent = 70 + (int)Math.Round(17d * elapsed / timeoutSeconds);
+                progress?.Report(new LfsAnalysisProgress(
+                    "Remote verification",
+                    Math.Clamp(percent, 70, 87),
+                    $"Remote proof scan: {elapsed:N0}/{timeoutSeconds:N0} s. Cancel is always safe; no files are changed."));
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
+        {
+            return (new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                $"Remote verification stopped after the {timeoutSeconds:N0} second safety budget. " +
+                "No remote retention proof was accepted and no object is eligible on remote evidence alone. " +
+                "Increase the budget explicitly or use a verified archive for very large LFS stores.");
+        }
+
+        ProcessResult prune;
+        try
+        {
+            prune = await verification;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
+        {
+            return (new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                $"Remote verification stopped after the {timeoutSeconds:N0} second safety budget. " +
+                "No remote retention proof was accepted and no object is eligible on remote evidence alone. " +
+                "Increase the budget explicitly or use a verified archive for very large LFS stores.");
+        }
         HashSet<string> verified = new(StringComparer.OrdinalIgnoreCase);
         if (prune.Succeeded)
             AddOids(prune.StandardOutput, verified);
@@ -312,18 +676,160 @@ public sealed class LfsStorageManager
         return (verified, string.IsNullOrWhiteSpace(output) ? "Remote verification completed." : output);
     }
 
-    private static IReadOnlyList<LocalObject> EnumerateLocalObjects(string objectsDirectory)
+    private static IReadOnlyList<LocalObject> EnumerateLocalObjects(
+        string objectsDirectory,
+        CancellationToken cancellationToken,
+        IProgress<LfsAnalysisProgress>? progress)
     {
         if (!Directory.Exists(objectsDirectory))
             return [];
-        return Directory.EnumerateFiles(objectsDirectory, "*", SafeRecursiveEnumeration())
-            .Where(path => IsSha256(Path.GetFileName(path)))
-            .Select(path => new FileInfo(path))
-            .Select(file => new LocalObject(
-                file.Name.ToLowerInvariant(), file.FullName, file.Length, new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero)))
-            .GroupBy(item => item.Oid, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
+        Dictionary<string, LocalObject> objects = new(StringComparer.OrdinalIgnoreCase);
+        int inspected = 0;
+        foreach (string path in Directory.EnumerateFiles(objectsDirectory, "*", SafeRecursiveEnumeration()))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            inspected++;
+            string name = Path.GetFileName(path);
+            if (IsSha256(name) && !objects.ContainsKey(name))
+            {
+                FileInfo file = new(path);
+                objects[name] = new LocalObject(
+                    name.ToLowerInvariant(),
+                    file.FullName,
+                    file.Length,
+                    new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero));
+            }
+
+            if (inspected % 1_000 == 0)
+            {
+                progress?.Report(new LfsAnalysisProgress(
+                    "Local objects", 12,
+                    $"{objects.Count:N0} LFS object(s) indexed; {inspected:N0} cache files inspected…"));
+            }
+        }
+        return objects.Values.ToArray();
+    }
+
+    private async Task<IReadOnlyList<LfsHistoryEntry>> ReadLfsHistoryAsync(
+        string repository,
+        CancellationToken cancellationToken)
+    {
+        ProcessResult history = await RunGitAsync(
+            repository,
+            ["-c", "core.quotePath=false", "lfs", "ls-files", "--all", "--deleted", "--long", "--size"],
+            cancellationToken);
+        if (!history.Succeeded)
+            return [];
+
+        return history.StandardOutput
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(ParseLfsHistoryLine)
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .DistinctBy(item => (item.Oid, item.Path), LfsHistoryEntryComparer.Instance)
             .ToArray();
+    }
+
+    private static LfsHistoryEntry? ParseLfsHistoryLine(string line)
+    {
+        Match match = LfsHistoryLineRegex.Match(line);
+        if (!match.Success)
+            return null;
+        string path = match.Groups["path"].Value.Trim();
+        if (path.Length >= 2 && path[0] == '"' && path[^1] == '"')
+            path = path[1..^1];
+        return new LfsHistoryEntry(match.Groups["oid"].Value.ToLowerInvariant(), path.Replace('\\', '/'));
+    }
+
+    private static HashSet<string> BuildRecentVersionSet(
+        IReadOnlyList<LfsHistoryEntry> history,
+        IReadOnlyDictionary<string, LocalObject> localByOid,
+        LfsManagementProfile profile)
+    {
+        HashSet<string> recent = new(StringComparer.OrdinalIgnoreCase);
+        if (!profile.TrimRemoteBackedHistory)
+            return recent;
+        IReadOnlySet<string> extensions = profile.ParseManagedExtensions();
+        foreach (IGrouping<string, LfsHistoryEntry> pathHistory in history
+                     .Where(item => extensions.Contains(Path.GetExtension(item.Path)))
+                     .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (LfsHistoryEntry item in pathHistory
+                         .DistinctBy(entry => entry.Oid, StringComparer.OrdinalIgnoreCase)
+                         .OrderByDescending(entry => localByOid.TryGetValue(entry.Oid, out LocalObject? local)
+                             ? local.LastModifiedAt
+                             : DateTimeOffset.MinValue)
+                         .ThenBy(entry => entry.Oid, StringComparer.OrdinalIgnoreCase)
+                         .Take(profile.RecentVersionsPerFile))
+            {
+                recent.Add(item.Oid);
+            }
+        }
+        return recent;
+    }
+
+    private static DirectorySize MeasureDirectory(
+        string directory,
+        IReadOnlyCollection<string> excludedRoots,
+        CancellationToken cancellationToken)
+    {
+        long bytes = 0;
+        int files = 0;
+        foreach (MeasuredFile file in EnumerateMeasuredFiles(directory, excludedRoots, cancellationToken))
+        {
+            bytes = checked(bytes + file.Size);
+            files++;
+        }
+        return new DirectorySize(bytes, files);
+    }
+
+    private static IEnumerable<MeasuredFile> EnumerateMeasuredFiles(
+        string directory,
+        IReadOnlyCollection<string> excludedRoots,
+        CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(directory))
+            yield break;
+        string[] exclusions = excludedRoots
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(Path.GetFullPath)
+            .ToArray();
+        Stack<string> pending = new();
+        pending.Push(Path.GetFullPath(directory));
+        while (pending.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string current = pending.Pop();
+            if (exclusions.Any(root => PathsEqual(current, root) || IsInside(current, root)))
+                continue;
+            IEnumerable<string> files;
+            IEnumerable<string> directories;
+            try
+            {
+                files = Directory.EnumerateFiles(current).ToArray();
+                directories = Directory.EnumerateDirectories(current).ToArray();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+            foreach (string path in files)
+            {
+                FileInfo file;
+                try { file = new FileInfo(path); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { continue; }
+                yield return new MeasuredFile(file.FullName, file.Length);
+            }
+            foreach (string child in directories)
+            {
+                try
+                {
+                    if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) == 0)
+                        pending.Push(child);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+            }
+        }
     }
 
     private static void AddOids(string output, HashSet<string> target)
@@ -465,4 +971,28 @@ public sealed class LfsStorageManager
     private sealed record LfsStorageOwner(string RepositoryPath, DateTimeOffset CreatedAt);
     private sealed record LfsArchiveEntry(string OidSha256, long Size, DateTimeOffset VerifiedAt);
     private sealed record LfsArchiveManifest(IReadOnlyList<LfsArchiveEntry> Objects);
+    private sealed record LfsHistoryEntry(string Oid, string Path);
+    private sealed record DirectorySize(long Bytes, int Files);
+    private sealed record MeasuredFile(string Path, long Size);
+    private sealed record LfsBranchTipCache(
+        int Version,
+        DateTimeOffset UpdatedAt,
+        string BranchFingerprint,
+        IReadOnlyList<string> Oids)
+    {
+        public static LfsBranchTipCache Empty { get; } = new(2, DateTimeOffset.MinValue, string.Empty, []);
+    }
+
+    private sealed class LfsHistoryEntryComparer : IEqualityComparer<(string Oid, string Path)>
+    {
+        public static LfsHistoryEntryComparer Instance { get; } = new();
+
+        public bool Equals((string Oid, string Path) x, (string Oid, string Path) y) =>
+            string.Equals(x.Oid, y.Oid, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(x.Path, y.Path, StringComparison.OrdinalIgnoreCase);
+
+        public int GetHashCode((string Oid, string Path) value) => HashCode.Combine(
+            StringComparer.OrdinalIgnoreCase.GetHashCode(value.Oid),
+            StringComparer.OrdinalIgnoreCase.GetHashCode(value.Path));
+    }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace CyRevision.Desktop.Workspace;
@@ -117,8 +118,12 @@ public sealed class RepositoryConsoleService
             info.ArgumentList.Add("-NoLogo");
             info.ArgumentList.Add("-NoProfile");
             info.ArgumentList.Add("-NonInteractive");
-            info.ArgumentList.Add("-Command");
-            info.ArgumentList.Add(command);
+            // Windows PowerShell can reinterpret quoting when a complete command is passed
+            // through ProcessStartInfo.ArgumentList. EncodedCommand preserves the exact text,
+            // including quotes and paths with spaces, and avoids intermittent exit-code 1
+            // failures in both the embedded console and its test runner.
+            info.ArgumentList.Add("-EncodedCommand");
+            info.ArgumentList.Add(Convert.ToBase64String(Encoding.Unicode.GetBytes(command)));
         }
         else
         {

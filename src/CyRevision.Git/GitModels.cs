@@ -10,6 +10,108 @@ public enum GitChangeKind
     Conflicted
 }
 
+public enum GitConflictOperation
+{
+    None,
+    Merge,
+    CherryPick,
+    Rebase,
+    Revert,
+    Unknown
+}
+
+public enum GitConflictResolutionChoice
+{
+    Manual,
+    Base,
+    Ours,
+    Theirs
+}
+
+public sealed record GitConflictVersion(
+    bool Exists,
+    string? ObjectId,
+    long Size,
+    string? Text,
+    bool IsBinary,
+    bool IsTooLarge)
+{
+    public string SizeText => FormatSize(Size);
+
+    public string DisplayText => !Exists
+        ? "[File does not exist in this version]"
+        : IsBinary
+            ? $"[Binary version · {SizeText} · object {ShortObjectId}]"
+            : IsTooLarge
+                ? $"[Text version is too large for the inline resolver · {SizeText} · object {ShortObjectId}]"
+                : Text ?? string.Empty;
+
+    public string ShortObjectId => string.IsNullOrWhiteSpace(ObjectId)
+        ? "none"
+        : ObjectId.Length <= 12 ? ObjectId : ObjectId[..12];
+
+    private static string FormatSize(long size)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double value = size;
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.#} {units[unit]}";
+    }
+}
+
+public sealed record GitConflictFile(
+    string Path,
+    GitConflictVersion Base,
+    GitConflictVersion Ours,
+    GitConflictVersion Theirs,
+    string? WorkingText,
+    bool WorkingTreeExists)
+{
+    public string FileName => System.IO.Path.GetFileName(Path);
+
+    public string DirectoryPath => System.IO.Path.GetDirectoryName(Path)?.Replace('\\', '/') is { Length: > 0 } directory
+        ? directory
+        : "/";
+
+    public bool CanEditManually =>
+        !Base.IsBinary && !Ours.IsBinary && !Theirs.IsBinary &&
+        !Base.IsTooLarge && !Ours.IsTooLarge && !Theirs.IsTooLarge;
+
+    public bool IsBinary => Base.IsBinary || Ours.IsBinary || Theirs.IsBinary;
+
+    public string ConflictType => (Base.Exists, Ours.Exists, Theirs.Exists) switch
+    {
+        (false, true, true) => "Added by both sides",
+        (true, false, true) => "Deleted by us · modified by them",
+        (true, true, false) => "Modified by us · deleted by them",
+        (true, true, true) => "Modified by both sides",
+        _ => "Unmerged file"
+    };
+}
+
+public sealed record GitConflictState(
+    GitConflictOperation Operation,
+    IReadOnlyList<GitConflictFile> Files)
+{
+    public bool HasConflicts => Files.Count > 0;
+
+    public string OperationText => Operation switch
+    {
+        GitConflictOperation.Merge => "Merge",
+        GitConflictOperation.CherryPick => "Cherry-pick",
+        GitConflictOperation.Rebase => "Rebase",
+        GitConflictOperation.Revert => "Revert",
+        GitConflictOperation.None => "No operation",
+        _ => "Git operation"
+    };
+}
+
 public sealed record GitChange(
     string Path,
     GitChangeKind Kind,
@@ -102,6 +204,36 @@ public sealed record GitBranchDetails(
         : $"{InferredCreatorName} · inferred";
     public string CreatedText => InferredCreatedAt?.ToLocalTime().ToString("g") ?? "Unknown";
     public string UpdatedText => LastUpdatedAt?.ToLocalTime().ToString("g") ?? "Unknown";
+}
+
+public sealed record GitLocalBranchRemovalAnalysis(
+    string BranchName,
+    string? RemoteName,
+    bool IsCurrent,
+    bool IsRemote,
+    bool IsCheckedOutInWorktree,
+    bool IsMergedIntoCurrent,
+    bool IsFullyPublished,
+    int CommitsMissingFromRemote,
+    int UniqueCommitCount,
+    string SafetyMessage)
+{
+    public bool CanRemoveSafely =>
+        !IsCurrent &&
+        !IsRemote &&
+        !IsCheckedOutInWorktree &&
+        (IsMergedIntoCurrent || IsFullyPublished);
+
+    public bool CanForceRemove =>
+        !IsCurrent &&
+        !IsRemote &&
+        !IsCheckedOutInWorktree;
+
+    public string RetainedBy => IsFullyPublished && !string.IsNullOrWhiteSpace(RemoteName)
+        ? $"Remote branch {RemoteName}"
+        : IsMergedIntoCurrent
+            ? "Current branch history"
+            : "No verified Git reference";
 }
 
 public sealed record GitToolAvailability(

@@ -89,6 +89,41 @@ public sealed class FileSystemBackupServiceTests : IDisposable
         Assert.Equal("first", await File.ReadAllTextAsync(Path.Combine(restore, "asset.bin")));
     }
 
+    [Fact]
+    public async Task ExplicitColdReclaimNeverDeletesObjectsReferencedByAnotherProject()
+    {
+        string sourceOne = Path.Combine(_root, "shared-source-one");
+        string sourceTwo = Path.Combine(_root, "shared-source-two");
+        string store = Path.Combine(_root, "shared-active-store");
+        string archive = Path.Combine(_root, "shared-cold-store");
+        Directory.CreateDirectory(sourceOne);
+        Directory.CreateDirectory(sourceTwo);
+        await File.WriteAllTextAsync(Path.Combine(sourceOne, "shared.bin"), "shared content");
+        await File.WriteAllTextAsync(Path.Combine(sourceTwo, "shared.bin"), "shared content");
+        Guid projectOne = Guid.NewGuid();
+        Guid projectTwo = Guid.NewGuid();
+        FileSystemBackupService service = new(new BackupStoreOptions(store));
+        await service.CreateSnapshotAsync(projectOne, sourceOne, RetentionPolicy.KeepForever);
+        BackupSnapshot secondProjectSnapshot = await service.CreateSnapshotAsync(projectTwo, sourceTwo, RetentionPolicy.KeepForever);
+        await Task.Delay(20);
+
+        ColdArchiveResult result = await new FileSystemColdArchiveService().ArchiveEligibleAsync(
+            projectOne,
+            store,
+            new ColdArchivePolicy(
+                archive,
+                TimeSpan.FromMilliseconds(1),
+                MinimumRecentSnapshots: 0,
+                RemoveFromHotStoreAfterVerification: true));
+
+        Assert.Equal(1, result.RemovedHotSnapshots);
+        Assert.Empty(await service.GetSnapshotsAsync(projectOne));
+        Assert.Single(await service.GetSnapshotsAsync(projectTwo));
+        string restore = Path.Combine(_root, "shared-restore");
+        await service.RestoreSnapshotAsync(secondProjectSnapshot.SnapshotId, restore);
+        Assert.Equal("shared content", await File.ReadAllTextAsync(Path.Combine(restore, "shared.bin")));
+    }
+
     public void Dispose()
     {
         if (!Directory.Exists(_root))

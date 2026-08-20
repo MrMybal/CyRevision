@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Collections.Concurrent;
+using System.ComponentModel;
 
 namespace CyRevision.Git;
 
@@ -101,6 +102,13 @@ internal sealed class ProcessRunner
                 throw new GitOperationException($"Unable to start {executable}.");
             }
         }
+        catch (Win32Exception exception) when (exception.NativeErrorCode == 206)
+        {
+            throw new GitOperationException(
+                $"Unable to start {executable}: the generated command line is too long for Windows. " +
+                "Use a streamed path list or split the operation into smaller batches.",
+                exception);
+        }
         catch (Exception exception) when (exception is not GitOperationException)
         {
             throw new GitOperationException($"Unable to start {executable}.", exception);
@@ -190,7 +198,7 @@ internal sealed class ProcessRunner
                 not "status" and not "version";
         }
 
-        return command is "add" or "apply" or "checkout" or "cherry-pick" or "clean" or "commit" or
+        return command is "add" or "apply" or "checkout" or "checkout-index" or "cherry-pick" or "clean" or "commit" or
             "fetch" or "init" or "merge" or "mv" or "pull" or "push" or "rebase" or
             "reset" or "restore" or "revert" or "rm" or "stash" or "switch" or "tag" or
             "update-index" or "worktree";

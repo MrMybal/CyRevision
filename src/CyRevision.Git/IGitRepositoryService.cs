@@ -6,6 +6,12 @@ public interface IGitRepositoryService
 
     Task InitializeAsync(string repositoryPath, CancellationToken cancellationToken = default);
 
+    Task CloneAsync(
+        string remoteUrl,
+        string destinationPath,
+        bool recurseSubmodules = false,
+        CancellationToken cancellationToken = default);
+
     Task<GitRepositoryStatus> GetStatusAsync(string repositoryPath, CancellationToken cancellationToken = default);
 
     Task<GitRepositoryStatus> GetQuickStatusAsync(
@@ -35,6 +41,11 @@ public interface IGitRepositoryService
     Task DiscardChangesAsync(
         string repositoryPath,
         IReadOnlyCollection<GitChange> changes,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteWorkingTreePathsAsync(
+        string repositoryPath,
+        IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default);
 
     Task CreateRevisionAsync(
@@ -137,6 +148,17 @@ public interface IGitRepositoryService
         string branchName,
         CancellationToken cancellationToken = default);
 
+    Task<GitLocalBranchRemovalAnalysis> AnalyzeLocalBranchRemovalAsync(
+        string repositoryPath,
+        string branchName,
+        CancellationToken cancellationToken = default);
+
+    Task RemoveLocalBranchAsync(
+        string repositoryPath,
+        string branchName,
+        bool forceUnretained = false,
+        CancellationToken cancellationToken = default);
+
     Task CreateBranchAsync(
         string repositoryPath,
         string branchName,
@@ -172,6 +194,25 @@ public interface IGitRepositoryService
     Task MergeBranchAsync(
         string repositoryPath,
         string branchName,
+        CancellationToken cancellationToken = default);
+
+    Task<GitConflictState> GetConflictStateAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task ResolveConflictAsync(
+        string repositoryPath,
+        string relativePath,
+        GitConflictResolutionChoice choice,
+        string? manualResult = null,
+        CancellationToken cancellationToken = default);
+
+    Task ContinueConflictOperationAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task AbortConflictOperationAsync(
+        string repositoryPath,
         CancellationToken cancellationToken = default);
 
     Task<string> GetDiffAsync(

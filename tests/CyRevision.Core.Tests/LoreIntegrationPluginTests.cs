@@ -27,6 +27,47 @@ public sealed class LoreIntegrationPluginTests
     }
 
     [Fact]
+    public async Task PluginContributesLoreModeAndChecksTheSelectedProject()
+    {
+        using TemporaryDirectory temporary = new();
+        Directory.CreateDirectory(Path.Combine(temporary.Path, ".lore"));
+        await File.WriteAllTextAsync(
+            Path.Combine(temporary.Path, ".lore", "config.toml"),
+            "repository = \"sample-game\"\nbranch = \"dev\"\n");
+        await using LoreIntegrationPlugin plugin = new();
+
+        PluginProjectModeDescriptor mode = Assert.Single(plugin.ProjectModes);
+        PluginProjectModeAvailability availability = plugin.EvaluateProjectMode(
+            mode.Id,
+            new PluginProjectModeContext(
+                Guid.NewGuid(),
+                "Sample",
+                temporary.Path,
+                [plugin.Descriptor.Id]));
+
+        Assert.Equal("lore", mode.Id);
+        Assert.False(mode.Features.GitEnabled);
+        Assert.True(mode.Features.BackupEnabled);
+        Assert.Contains("LoreWorkspaceTab", mode.WorkspaceTabIds);
+        Assert.True(availability.IsAvailable, availability.Summary);
+        Assert.Contains("dev", availability.Summary);
+    }
+
+    [Fact]
+    public async Task LoreModeExplainsWhyARegularFolderIsUnavailable()
+    {
+        using TemporaryDirectory temporary = new();
+        await using LoreIntegrationPlugin plugin = new();
+
+        PluginProjectModeAvailability availability = plugin.EvaluateProjectMode(
+            "lore",
+            new PluginProjectModeContext(Guid.NewGuid(), "Regular", temporary.Path, [plugin.Descriptor.Id]));
+
+        Assert.False(availability.IsAvailable);
+        Assert.Contains(".lore/config.toml", availability.Summary);
+    }
+
+    [Fact]
     public async Task UnrealCompanionInstallerCopiesPayloadAndKeepsPreviousCopy()
     {
         using TemporaryDirectory temporary = new();

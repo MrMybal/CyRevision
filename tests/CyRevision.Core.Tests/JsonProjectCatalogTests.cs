@@ -21,7 +21,12 @@ public sealed class JsonProjectCatalogTests : IDisposable
             CreatedAt: DateTimeOffset.UtcNow,
             SidebarOrder: 3,
             AccentColor: "#4C9BE8",
-            EnabledPluginIds: ["cyrevision.ai", "cyrevision.unreal"]);
+            EnabledPluginIds: ["cyrevision.ai", "cyrevision.unreal"],
+            OperatingMode: ProjectPresetKind.GitWithPeerSync,
+            BackupArchiveProfile: "safe",
+            RemoveArchivedGitBranches: false,
+            RemoveArchivedHotBackups: false,
+            GitArchiveProfile: "balanced");
 
         await catalog.UpsertAsync(project);
         ProjectDefinition? restored = await catalog.FindByIdAsync(project.Id);
@@ -33,6 +38,11 @@ public sealed class JsonProjectCatalogTests : IDisposable
         Assert.Equal(3, restored.SidebarOrder);
         Assert.Equal("#4C9BE8", restored.AccentColor);
         Assert.Equal(["cyrevision.ai", "cyrevision.unreal"], restored.EnabledPluginIds);
+        Assert.Equal(ProjectPresetKind.GitWithPeerSync, restored.OperatingMode);
+        Assert.Equal("safe", restored.BackupArchiveProfile);
+        Assert.False(restored.RemoveArchivedGitBranches);
+        Assert.False(restored.RemoveArchivedHotBackups);
+        Assert.Equal("balanced", restored.GitArchiveProfile);
     }
 
     [Theory]
@@ -48,6 +58,48 @@ public sealed class JsonProjectCatalogTests : IDisposable
             new ProjectFeatures(true, false, false, false, false),
             RetentionPolicy.CurrentStateOnly,
             AccentColor: color);
+
+        Assert.Throws<InvalidOperationException>(project.Validate);
+    }
+
+    [Fact]
+    public async Task CatalogRoundTripsAPluginOwnedOperatingMode()
+    {
+        string catalogPath = Path.Combine(_temporaryDirectory, "plugin-mode-projects.json");
+        using JsonProjectCatalog catalog = new(catalogPath);
+        ProjectDefinition project = new(
+            Guid.NewGuid(),
+            "Lore Example",
+            Path.Combine(_temporaryDirectory, "LoreExample"),
+            new ProjectFeatures(false, false, false, true, false),
+            new RetentionPolicy(RetentionMode.Timeline, 60, TimeSpan.FromDays(180)),
+            EnabledPluginIds: ["cyrevision.lore"],
+            OperatingMode: ProjectPresetKind.Custom,
+            PluginOperatingModeId: "lore",
+            PluginOperatingModeProviderId: "cyrevision.lore");
+
+        await catalog.UpsertAsync(project);
+        ProjectDefinition? restored = await catalog.FindByIdAsync(project.Id);
+
+        Assert.NotNull(restored);
+        Assert.Equal("lore", restored.PluginOperatingModeId);
+        Assert.Equal("cyrevision.lore", restored.PluginOperatingModeProviderId);
+        Assert.Contains("cyrevision.lore", restored.EnabledPluginIds!);
+    }
+
+    [Fact]
+    public void ProjectRejectsAPluginModeWhoseProviderIsNotEnabled()
+    {
+        ProjectDefinition project = new(
+            Guid.NewGuid(),
+            "Invalid plugin mode",
+            Path.Combine(_temporaryDirectory, "InvalidPluginMode"),
+            new ProjectFeatures(false, false, false, true, false),
+            RetentionPolicy.KeepForever,
+            EnabledPluginIds: ["cyrevision.ai"],
+            OperatingMode: ProjectPresetKind.Custom,
+            PluginOperatingModeId: "lore",
+            PluginOperatingModeProviderId: "cyrevision.lore");
 
         Assert.Throws<InvalidOperationException>(project.Validate);
     }

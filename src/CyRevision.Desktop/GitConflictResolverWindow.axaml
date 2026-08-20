@@ -1,0 +1,185 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:CyRevision.Desktop.Controls"
+        x:Class="CyRevision.Desktop.GitConflictResolverWindow"
+        x:CompileBindings="False"
+        Title="Git three-way conflict resolver"
+        Icon="/Assets/Branding/cyrevision.ico"
+        Width="1500" Height="880" MinWidth="980" MinHeight="620"
+        Background="#1E1F22" WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="54,Auto,*,42">
+        <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="12,0">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                <StackPanel VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="{Binding OperationTitle}" FontSize="17" FontWeight="SemiBold" />
+                        <Border Background="#472C30" BorderBrush="#784047" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                            <TextBlock Text="THREE-WAY" Foreground="#FF9B9B" FontSize="8.5" FontWeight="Bold" />
+                        </Border>
+                    </StackPanel>
+                    <TextBlock Text="{Binding ProjectName}" Foreground="#78D7B7" FontSize="10.5" />
+                </StackPanel>
+                <CheckBox x:Name="AlwaysOnTopToggle" Grid.Column="1" Content="Always on top"
+                          Click="OnAlwaysOnTopClick" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Classes="secondary" Content="Close" Click="OnCloseClick" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Background="#202633" BorderBrush="#35445B" BorderThickness="0,0,0,1" Padding="10,6">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="7">
+                <StackPanel>
+                    <TextBlock Text="{Binding OperationSummary}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding RepositoryPath}" Classes="muted" FontSize="9" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="secondary" Content="Refresh" Click="OnRefreshClick" />
+                <Button Grid.Column="2" Classes="primary" Content="Continue operation" Click="OnContinueClick"
+                        IsEnabled="{Binding CanContinue}" />
+                <Button Grid.Column="3" Classes="danger" Content="Abort operation…" Click="OnAbortClick"
+                        IsEnabled="{Binding CanAbort}" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" ColumnDefinitions="310,8,*">
+            <Border Classes="card" Padding="0" Margin="8,8,0,8" ClipToBounds="True">
+                <Grid RowDefinitions="42,*">
+                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Conflicted files" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding SelectedConflictSummary}" Classes="muted" FontSize="8.5"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Border>
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding Conflicts}" SelectedItem="{Binding SelectedConflict}"
+                              AutoGenerateColumns="False" IsReadOnly="True" Classes="historyCompact"
+                              GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="File" Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid RowDefinitions="Auto,Auto" Margin="2,1">
+                                            <TextBlock Text="{Binding FileName}" Foreground="#FF9B9B" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Row="1" Text="{Binding DirectoryPath}" Classes="muted" FontSize="8"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Type" Binding="{Binding ConflictType}" Width="118" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                          Background="#4B4D52" Cursor="SizeWestEast" />
+
+            <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto" Margin="0,8,8,8" RowSpacing="7">
+                <Border Classes="card" Padding="8,6">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,1,Auto,Auto,Auto,*,Auto" ColumnSpacing="7">
+                        <Button Classes="secondary" Content="Use base" Click="OnUseBaseClick" />
+                        <Button Grid.Column="1" Classes="secondary" Content="Use ours" Click="OnUseOursClick" />
+                        <Button Grid.Column="2" Classes="secondary" Content="Use theirs" Click="OnUseTheirsClick" />
+                        <Border Grid.Column="3" Width="1" Background="#4B4D52" Margin="3,0" />
+                        <Button Grid.Column="4" Classes="secondary" Content="← Our block" Click="OnAcceptBlockOursClick"
+                                IsEnabled="{Binding HasConflictBlocks}" />
+                        <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
+                            <Button Classes="secondary" Content="‹" Padding="5,1" MinHeight="22"
+                                    ToolTip.Tip="Previous conflict block" Click="OnPreviousConflictBlockClick" />
+                            <TextBlock Text="{Binding ConflictBlockPosition}" Classes="muted" FontSize="9"
+                                       VerticalAlignment="Center" MinWidth="30" TextAlignment="Center" />
+                            <Button Classes="secondary" Content="›" Padding="5,1" MinHeight="22"
+                                    ToolTip.Tip="Next conflict block" Click="OnNextConflictBlockClick" />
+                        </StackPanel>
+                        <Button Grid.Column="6" Classes="secondary" Content="Incoming block →" Click="OnAcceptBlockIncomingClick"
+                                IsEnabled="{Binding HasConflictBlocks}" />
+                        <StackPanel Grid.Column="7" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ResolutionHint}" Classes="muted" FontSize="9.5"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <Button Grid.Column="8" Classes="primary" Content="Mark file resolved" Click="OnResolveClick"
+                                IsEnabled="{Binding CanResolveSelected}" />
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="1" ColumnDefinitions="*,6,*,6,*">
+                    <Border Classes="card" Padding="0" ClipToBounds="True">
+                        <Grid RowDefinitions="40,*">
+                            <Border Background="#292B2F" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="BASE" Foreground="#A9ABB2" FontWeight="Bold" FontSize="10" />
+                                    <TextBlock Text="{Binding BaseSummary}" Classes="muted" FontSize="8" />
+                                </StackPanel>
+                            </Border>
+                            <controls:SyntaxHighlightedCodeView Grid.Row="1" Text="{Binding BaseText}"
+                                                                FilePath="{Binding SelectedConflict.Path}" />
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter Grid.Column="1" Width="6" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                  Background="#4B4D52" Cursor="SizeWestEast" />
+
+                    <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True" BorderBrush="#3E756A">
+                        <Grid RowDefinitions="40,*">
+                            <Border Background="#23332F" BorderBrush="#3E756A" BorderThickness="0,0,0,1" Padding="9,0">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="RESULT" Foreground="#78D7B7" FontWeight="Bold" FontSize="10" />
+                                        <TextBlock Text="{Binding OursSummary}" Classes="muted" FontSize="8" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding ResolutionSource}" Foreground="{Binding ResolutionColor}"
+                                               FontSize="8.5" FontWeight="Bold" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                            <TextBox Grid.Row="1" Text="{Binding ResultText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     IsReadOnly="{Binding ResultIsReadOnly}" AcceptsReturn="True" TextWrapping="NoWrap"
+                                     FontFamily="Cascadia Mono,Consolas,monospace" FontSize="11" LineHeight="16"
+                                     Background="#0B1224" Foreground="#DFE1E5" BorderThickness="0" Padding="8"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter Grid.Column="3" Width="6" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                  Background="#4B4D52" Cursor="SizeWestEast" />
+
+                    <Border Grid.Column="4" Classes="card" Padding="0" ClipToBounds="True">
+                        <Grid RowDefinitions="40,*">
+                            <Border Background="#292B2F" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="INCOMING" Foreground="#61AFEF" FontWeight="Bold" FontSize="10" />
+                                    <TextBlock Text="{Binding TheirsSummary}" Classes="muted" FontSize="8" />
+                                </StackPanel>
+                            </Border>
+                            <controls:SyntaxHighlightedCodeView Grid.Row="1" Text="{Binding TheirsText}"
+                                                                FilePath="{Binding SelectedConflict.Path}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <Border Grid.Row="2" Background="#282317" BorderBrush="#5C4B25" BorderThickness="1" CornerRadius="4" Padding="9,6">
+                    <Grid ColumnDefinitions="Auto,70,1,Auto,Auto,*,Auto" ColumnSpacing="7">
+                        <CheckBox Content="Backup before resolve" IsChecked="{Binding BackupBeforeResolve}" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="1" Text="{Binding BackupRetentionDays}" ToolTip.Tip="Retention in days" HorizontalContentAlignment="Right" />
+                        <Border Grid.Column="2" Width="1" Background="#5C4B25" Margin="2,0" />
+                        <Button Grid.Column="3" Classes="secondary" Content="Ask AI" Click="OnAskAiClick" IsEnabled="{Binding CanUseAi}" />
+                        <Button Grid.Column="4" Classes="secondary" Content="Propose result" Click="OnProposeAiClick" IsEnabled="{Binding CanUseAi}" />
+                        <TextBlock Grid.Column="5" Text="{Binding AiAdvice}" Foreground="#E5C07B" FontSize="9"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip.Tip="{Binding AiAdvice}" />
+                        <Button Grid.Column="6" Classes="primary" Content="Preview AI in Result" Click="OnPreviewAiClick"
+                                IsEnabled="{Binding CanPreviewAiProposal}" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="3" Background="#202633" BorderBrush="#35445B" BorderThickness="0,1,0,0" Padding="10,0">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
+                <ProgressBar Width="90" IsIndeterminate="True" IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="2" Text="Nothing is pushed automatically" Classes="muted" FontSize="9"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

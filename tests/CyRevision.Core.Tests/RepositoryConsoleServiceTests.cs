@@ -23,7 +23,8 @@ public sealed class RepositoryConsoleServiceTests
             RepositoryCommandResult result = await service.ExecuteAsync(
                 root, command, shell, (line, _) => output.Add(line));
 
-            Assert.Equal(0, result.ExitCode);
+            Assert.True(result.ExitCode == 0,
+                $"Console exited with {result.ExitCode}: {string.Join(Environment.NewLine, output)}");
             Assert.Contains(Path.GetFileName(root), string.Join(Environment.NewLine, output));
             Assert.Single(service.GetHistory(root));
             Assert.Empty(service.GetHistory(other));
@@ -67,7 +68,10 @@ public sealed class RepositoryConsoleServiceTests
 
     private static string CreateTemporaryDirectory()
     {
-        string path = Path.Combine(Path.GetTempPath(), "cyrevision-console-tests", Guid.NewGuid().ToString("N"));
+        // Keep subprocess-based console tests under the test output directory. Some managed
+        // sandboxes intentionally deny a child shell access to the user TEMP directory even
+        // though the test host itself can create files there.
+        string path = Path.Combine(AppContext.BaseDirectory, "cyrevision-console-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(path);
         return path;
     }

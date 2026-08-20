@@ -24,6 +24,9 @@ public sealed class OperationTaskViewModel : ObservableObject
     public bool IsRunning => string.Equals(State, "Running", StringComparison.Ordinal);
     public DateTimeOffset? CompletedAt { get; private set; }
     public bool IsAttention => State is "Failed" or "Cancelled";
+    public bool IsNotification { get; private set; }
+    public bool IsRead { get; private set; }
+    public string NotificationState => IsRead ? "Read" : "New";
     public string DurationText => ((CompletedAt ?? DateTimeOffset.Now) - StartedAt).TotalSeconds < 1
         ? "<1 s"
         : ((CompletedAt ?? DateTimeOffset.Now) - StartedAt).TotalMinutes < 1
@@ -64,5 +67,22 @@ public sealed class OperationTaskViewModel : ObservableObject
         CompletedAt = DateTimeOffset.Now;
         OnPropertyChanged(nameof(CompletedAt));
         OnPropertyChanged(nameof(DurationText));
+    }
+
+    public void PromoteToNotification(bool isRead = false)
+    {
+        IsNotification = true;
+        IsRead = isRead;
+        OnPropertyChanged(nameof(IsNotification));
+        OnPropertyChanged(nameof(IsRead));
+        OnPropertyChanged(nameof(NotificationState));
+    }
+
+    public void MarkRead()
+    {
+        if (IsRead) return;
+        IsRead = true;
+        OnPropertyChanged(nameof(IsRead));
+        OnPropertyChanged(nameof(NotificationState));
     }
 }

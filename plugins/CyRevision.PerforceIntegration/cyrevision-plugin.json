@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "cyrevision.perforce",
+  "name": "Perforce Helix Core",
+  "version": "0.1.0",
+  "description": "Project-scoped Helix Core workspace, opened files, changelists, history, reconcile, sync and submit management through the official p4 CLI.",
+  "category": "Version control",
+  "entryAssembly": "CyRevision.Plugin.Perforce.dll",
+  "entryType": "CyRevision.Plugin.Perforce.PerforceIntegrationPlugin",
+  "enabledByDefault": false
+}
