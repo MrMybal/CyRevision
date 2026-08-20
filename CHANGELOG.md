@@ -2,7 +2,16 @@
 
 ## Unreleased
 
-## 0.1.18 Alpha — 2026-08-20
+## 0.1.19 Alpha — 2026-08-20
+
+- added safe local-branch removal, protected-reference analysis, external LFS storage and verified cleanup plans that preserve retained branches and never delete an unverified last copy;
+- added Git annotations, guarded large selections and temporary pathspec files so large commits no longer exceed Windows process limits;
+- completed remote repository cloning with destination selection and project registration from the desktop interface;
+- expanded the autonomous Unreal revision provider with revision history, file history, diffs, restores and safer writable-file behavior;
+- added project-scoped Jira and ClickUp plugins with API-backed task search, multi-selection and stable task links for commit messages and pull-request drafts without persisting API tokens;
+- made Windows packaging reuse an already verified Syncthing runtime while clean builders still download and validate the official SHA-256 digest.
+
+## 0.1.18 Alpha — 2026-08-18
 
 - added a project-scoped Perforce integration plugin with connection discovery, workspace status, changelists, opened files, reconcile, sync and guarded submit workflows;
 - added a complete three-panel Git conflict resolver with editable results, block-level choices, syntax-aware previews, optional AI guidance and retained recovery backups;
@@ -10,11 +19,6 @@
 - expanded Backup with guided hot-to-cold archive profiles for old Git commits, branches and synchronized versions, keeping every destructive cleanup opt-in and restorable on demand;
 - enabled plugins to contribute project operating modes and dedicated workspaces, including the optional Lore project-management mode;
 - refined the Changes workspace with an additional compact review layout and clearer mode-aware navigation;
-- added safe local-branch removal, protected-reference analysis, external LFS storage and verified cleanup plans that preserve retained branches and never delete an unverified last copy;
-- added Git annotations, guarded large selections and temporary pathspec files so large commits no longer exceed Windows process limits;
-- completed remote repository cloning with destination selection and project registration from the desktop interface;
-- expanded the autonomous Unreal revision provider with revision history, file history, diffs, restores and safer writable-file behavior;
-- added project-scoped Jira and ClickUp plugins with API-backed task search, multi-selection and stable task links for commit messages and pull-request drafts without persisting API tokens;
 - hardened Windows release packaging with a PowerShell-independent SHA-256 implementation for runtime and artifact verification.
 
 ## 0.1.17 Alpha — 2026-08-17
