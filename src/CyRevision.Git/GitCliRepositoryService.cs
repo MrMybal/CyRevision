@@ -1140,6 +1140,28 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         return inspectionReference;
     }
 
+    public Task DeleteInspectionReferenceAsync(
+        string repositoryPath,
+        string inspectionReference,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(inspectionReference);
+        const string prefix = "refs/cyrevision/inspect/";
+        if (!inspectionReference.StartsWith(prefix, StringComparison.Ordinal) ||
+            inspectionReference.Length <= prefix.Length)
+        {
+            throw new ArgumentException(
+                "Only private CyRevision inspection references can be removed.",
+                nameof(inspectionReference));
+        }
+
+        ValidateReferenceName(inspectionReference);
+        return RunGitWithoutOutputAsync(
+            repositoryPath,
+            ["update-ref", "-d", inspectionReference],
+            cancellationToken);
+    }
+
     private static string? SelectBranchComparisonBase(
         string branchName,
         GitBranch? selected,

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.20 Alpha — 2026-08-25
+
+- added the optional, project-scoped **Git + CyStore — ALPHA** mode: standard Git and Git LFS remain authoritative while hydrated LFS files can be captured into a verified, content-defined, deduplicated local chunk store and reconstructed non-destructively on demand;
+- added a read-only branch file explorer with fast path search, multi-selection, cancellable targeted retrieval, temporary-ref cleanup and a persistent audit of exports and safe restores;
+- added side-by-side image and heatmap comparisons plus plugin-provided semantic previews and Unreal asset inspection across the shared file-presentation pipeline;
+- split branch-file, CyStore and file-presentation operations out of the main desktop view model to reduce UI coupling and keep long repository work cancellable;
+- added a safe missing-`.gitignore` recommendation flow with editable Unreal, Unity, Godot, .NET and Node.js presets;
+- added the five-step **Initialize Git** wizard for tool checks, `.gitignore`, `.gitattributes`/Git LFS recommendations, repository-local identity, optional origin and an optional reviewed initial commit;
+- added a reusable Git LFS setup assistant that merges recommended patterns into `.gitattributes` without overwriting existing rules or staging files implicitly.
+
 ## 0.1.19 Alpha — 2026-08-20
 
 - added safe local-branch removal, protected-reference analysis, external LFS storage and verified cleanup plans that preserve retained branches and never delete an unverified last copy;

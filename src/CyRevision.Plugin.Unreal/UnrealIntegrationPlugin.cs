@@ -351,7 +351,9 @@ public sealed class UnrealIntegrationPlugin : IUnrealIntegrationPlugin, IFilePre
                 equivalent ? "Unreal packages appear equivalent · rendered candidate" : "Unreal package changed · rendered candidate",
                 text + Environment.NewLine + Environment.NewLine + renderedCandidate.TextContent,
                 renderedCandidate.ImagePath,
-                renderedCandidate.Metadata);
+                renderedCandidate.Metadata,
+                renderedCandidate.BaselineImagePath,
+                renderedCandidate.ImagePath);
         }
         return new FilePresentationResult(
             ProviderId,

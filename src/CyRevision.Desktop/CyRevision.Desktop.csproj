@@ -28,6 +28,7 @@
     <ProjectReference Include="..\CyRevision.Diff\CyRevision.Diff.csproj" />
     <ProjectReference Include="..\CyRevision.Git\CyRevision.Git.csproj" />
     <ProjectReference Include="..\CyRevision.Plugin.Abstractions\CyRevision.Plugin.Abstractions.csproj" />
+    <ProjectReference Include="..\CyRevision.Plugin.CyStore\CyRevision.Plugin.CyStore.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.Plugin.Unreal\CyRevision.Plugin.Unreal.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.Plugin.Unity\CyRevision.Plugin.Unity.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.Plugin.Godot\CyRevision.Plugin.Godot.csproj" ReferenceOutputAssembly="false" />
@@ -80,6 +81,10 @@
           Link="Plugins\CyRevision.ClickUpIntegration\cyrevision-plugin.json"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevision.CyStoreIntegration\cyrevision-plugin.json"
+          Link="Plugins\CyRevision.CyStoreIntegration\cyrevision-plugin.json"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\plugins\CyRevisionUnreal\**\*"
           Exclude="..\..\plugins\CyRevisionUnreal\Binaries\**\*;..\..\plugins\CyRevisionUnreal\Intermediate\**\*;..\..\plugins\CyRevisionUnreal\Saved\**\*"
           Link="PluginPayloads\Unreal\CyRevisionUnreal\%(RecursiveDir)%(Filename)%(Extension)"
@@ -111,6 +116,7 @@
       <PerforcePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Perforce\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Perforce.dll</PerforcePluginAssembly>
       <JiraPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Jira\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Jira.dll</JiraPluginAssembly>
       <ClickUpPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.ClickUp\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.ClickUp.dll</ClickUpPluginAssembly>
+      <CyStorePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.CyStore\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.CyStore.dll</CyStorePluginAssembly>
     </PropertyGroup>
     <MakeDir Directories="$(OutDir)Plugins\CyRevision.UnrealIntegration" />
     <Copy SourceFiles="$(UnrealPluginAssembly)"
@@ -144,6 +150,10 @@
     <Copy SourceFiles="$(ClickUpPluginAssembly)"
           DestinationFolder="$(OutDir)Plugins\CyRevision.ClickUpIntegration"
           SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(OutDir)Plugins\CyRevision.CyStoreIntegration" />
+    <Copy SourceFiles="$(CyStorePluginAssembly)"
+          DestinationFolder="$(OutDir)Plugins\CyRevision.CyStoreIntegration"
+          SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="CopyCyRevisionPluginAssembliesToPublish" AfterTargets="Publish">
@@ -156,6 +166,7 @@
       <PerforcePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Perforce\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Perforce.dll</PerforcePluginAssembly>
       <JiraPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Jira\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Jira.dll</JiraPluginAssembly>
       <ClickUpPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.ClickUp\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.ClickUp.dll</ClickUpPluginAssembly>
+      <CyStorePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.CyStore\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.CyStore.dll</CyStorePluginAssembly>
     </PropertyGroup>
     <MakeDir Directories="$(PublishDir)Plugins\CyRevision.UnrealIntegration" />
     <Copy SourceFiles="$(UnrealPluginAssembly)"
@@ -188,6 +199,10 @@
     <MakeDir Directories="$(PublishDir)Plugins\CyRevision.ClickUpIntegration" />
     <Copy SourceFiles="$(ClickUpPluginAssembly)"
           DestinationFolder="$(PublishDir)Plugins\CyRevision.ClickUpIntegration"
+          SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(PublishDir)Plugins\CyRevision.CyStoreIntegration" />
+    <Copy SourceFiles="$(CyStorePluginAssembly)"
+          DestinationFolder="$(PublishDir)Plugins\CyRevision.CyStoreIntegration"
           SkipUnchangedFiles="true" />
   </Target>
 </Project>

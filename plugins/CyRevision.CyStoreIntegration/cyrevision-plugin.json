@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "cyrevision.cystore",
+  "name": "CyStore Alpha",
+  "version": "0.1.0",
+  "description": "Alpha content-defined chunk storage for hydrated Git LFS files. Git remains the revision authority.",
+  "category": "Storage",
+  "entryAssembly": "CyRevision.Plugin.CyStore.dll",
+  "entryType": "CyRevision.Plugin.CyStore.CyStorePlugin",
+  "enabledByDefault": false
+}

@@ -2,6 +2,7 @@ using CyRevision.Desktop.Plugins;
 using CyRevision.Diff;
 using CyRevision.Plugin.Abstractions;
 using CyRevision.Plugin.Unreal;
+using SkiaSharp;
 
 namespace CyRevision.Core.Tests;
 
@@ -30,6 +31,27 @@ public sealed class FilePresentationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task BuiltInImageDiffExposesBothSidesAndHeatmap()
+    {
+        string baseline = Path.Combine(_root, "baseline.png");
+        string candidate = Path.Combine(_root, "candidate.png");
+        WriteTexture(baseline, SKColors.Black);
+        WriteTexture(candidate, SKColors.Red);
+        await using CyRevisionPluginManager manager = CreateManager();
+        FilePresentationService service = new(manager, new AssetDiffService());
+
+        FilePresentationResult? result = await service.CreateDiffAsync(
+            new FileDiffRequest(_root, "preview.png", baseline, candidate),
+            Path.Combine(_root, "artifacts"));
+
+        Assert.NotNull(result);
+        Assert.Equal(FilePresentationKind.Image, result!.Kind);
+        Assert.Equal(baseline, result.BaselineImagePath);
+        Assert.Equal(candidate, result.CandidateImagePath);
+        Assert.NotNull(result.DifferenceImagePath);
+        Assert.True(File.Exists(result.DifferenceImagePath));
+    }
+    [Fact]
     public async Task UnrealPluginAddsOfflinePackagePreview()
     {
         string path = Path.Combine(_root, "Example.uasset");
@@ -47,6 +69,15 @@ public sealed class FilePresentationServiceTests : IDisposable
         await plugin.DisposeAsync();
     }
 
+    private static void WriteTexture(string path, SKColor color)
+    {
+        using SKBitmap bitmap = new(2, 2);
+        bitmap.Erase(color);
+        using SKImage image = SKImage.FromBitmap(bitmap);
+        using SKData encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        using FileStream stream = File.Create(path);
+        encoded.SaveTo(stream);
+    }
     private CyRevisionPluginManager CreateManager() => new(
         _root,
         Path.Combine(_root, "config"),

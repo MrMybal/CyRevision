@@ -225,6 +225,119 @@ public interface IProjectModeProvider : ICyRevisionPlugin
         PluginProjectModeContext context);
 }
 
+/// <summary>
+/// Progress reported by the experimental CyStore content-addressed store. The store is
+/// independent from Git's object database and never rewrites commits or LFS pointers.
+/// </summary>
+public sealed record CyStoreProgress(
+    string Stage,
+    string Path,
+    long ProcessedBytes,
+    long TotalBytes,
+    int CompletedItems = 0,
+    int TotalItems = 0)
+{
+    public double Percentage => TotalBytes > 0
+        ? Math.Clamp(ProcessedBytes * 100d / TotalBytes, 0d, 100d)
+        : TotalItems > 0
+            ? Math.Clamp(CompletedItems * 100d / TotalItems, 0d, 100d)
+            : 0d;
+}
+
+public sealed record CyStoreStatus(
+    bool IsInitialized,
+    string StoreRoot,
+    string Algorithm,
+    int VersionCount,
+    int UniqueChunkCount,
+    long LogicalBytes,
+    long StoredBytes,
+    DateTimeOffset? LastUpdated,
+    string Summary);
+
+public sealed record CyStoreVersion(
+    string Id,
+    string RelativePath,
+    string FileSha256,
+    long Size,
+    int ChunkCount,
+    DateTimeOffset CapturedAt,
+    bool IsGitLfsTracked,
+    string State)
+{
+    public string ShortId => Id.Length <= 12 ? Id : Id[..12];
+}
+
+public sealed record CyStoreCaptureResult(
+    CyStoreVersion Version,
+    int NewChunks,
+    int ReusedChunks,
+    long WrittenBytes,
+    long ReusedBytes,
+    string Summary);
+
+public sealed record CyStoreBatchCaptureResult(
+    int CapturedFiles,
+    int SkippedFiles,
+    int NewChunks,
+    long WrittenBytes,
+    IReadOnlyList<string> Warnings,
+    string Summary);
+
+public sealed record CyStoreVerificationResult(
+    bool Succeeded,
+    int VerifiedChunks,
+    long VerifiedBytes,
+    string Summary);
+
+public sealed record CyStoreReconstructionResult(
+    bool Succeeded,
+    string DestinationPath,
+    int ReusedChunks,
+    long ReconstructedBytes,
+    string Summary);
+
+/// <summary>
+/// Experimental chunk-store capability contributed by the optional CyStore plugin.
+/// Git remains the revision authority and ordinary Git LFS pointers remain compatible.
+/// </summary>
+public interface ICyStorePlugin : ICyRevisionPlugin
+{
+    CyStoreStatus InspectStore(string projectRoot);
+
+    Task<CyStoreStatus> InitializeStoreAsync(
+        string projectRoot,
+        CancellationToken cancellationToken = default);
+
+    Task<CyStoreCaptureResult> CaptureFileAsync(
+        string projectRoot,
+        string filePath,
+        bool isGitLfsTracked,
+        IProgress<CyStoreProgress>? progress = null,
+        CancellationToken cancellationToken = default);
+
+    Task<CyStoreBatchCaptureResult> CaptureTrackedGitLfsFilesAsync(
+        string projectRoot,
+        IProgress<CyStoreProgress>? progress = null,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<CyStoreVersion>> ListVersionsAsync(
+        string projectRoot,
+        CancellationToken cancellationToken = default);
+
+    Task<CyStoreVerificationResult> VerifyVersionAsync(
+        string projectRoot,
+        string versionId,
+        IProgress<CyStoreProgress>? progress = null,
+        CancellationToken cancellationToken = default);
+
+    Task<CyStoreReconstructionResult> ReconstructVersionAsync(
+        string projectRoot,
+        string versionId,
+        IProgress<CyStoreProgress>? progress = null,
+        CancellationToken cancellationToken = default);
+}
+
 public enum FilePresentationKind
 {
     Text,
@@ -250,7 +363,10 @@ public sealed record FilePresentationResult(
     string Summary,
     string TextContent = "",
     string? ImagePath = null,
-    IReadOnlyDictionary<string, string>? Metadata = null);
+    IReadOnlyDictionary<string, string>? Metadata = null,
+    string? BaselineImagePath = null,
+    string? CandidateImagePath = null,
+    string? DifferenceImagePath = null);
 
 /// <summary>
 /// Optional capability implemented by a CyRevision plugin. The desktop asks these providers

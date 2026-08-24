@@ -4,124 +4,24 @@ using System.Text;
 using Avalonia.Media.Imaging;
 using CyRevision.Code;
 using CyRevision.Desktop.Plugins;
+using CyRevision.Desktop.Services;
 using CyRevision.Git;
-using CyRevision.Plugin.Abstractions;
 
 namespace CyRevision.Desktop.ViewModels;
 
-public sealed class GitRevisionTreeNode
-{
-    private readonly List<GitRevisionTreeNode> _mutableChildren = [];
-    private int _fileCount;
-
-    private GitRevisionTreeNode(string name, string path, bool isDirectory, GitRevisionFile? file)
-    {
-        Name = name;
-        Path = path;
-        IsDirectory = isDirectory;
-        File = file;
-        _fileCount = isDirectory ? 0 : 1;
-    }
-
-    public string Name { get; }
-    public string Path { get; }
-    public bool IsDirectory { get; }
-    public GitRevisionFile? File { get; }
-    public IReadOnlyList<GitRevisionTreeNode> Children => _mutableChildren;
-    public string Icon => IsDirectory ? "▸" : File?.IsSubmodule == true ? "SUB" : FileIcon(Name);
-    public string AccentColor => IsDirectory ? "#D7BA7D" : FileColor(Name);
-    public string Detail => IsDirectory ? $"{_fileCount:N0} file(s)" : File?.SizeText ?? string.Empty;
-
-    public static IReadOnlyList<GitRevisionTreeNode> Build(IReadOnlyList<GitRevisionFile> files)
-    {
-        GitRevisionTreeNode root = new(string.Empty, string.Empty, true, null);
-        Dictionary<string, GitRevisionTreeNode> directories = new(StringComparer.Ordinal)
-        {
-            [string.Empty] = root
-        };
-
-        foreach (GitRevisionFile file in files)
-        {
-            string[] segments = file.Path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-            if (segments.Length == 0) continue;
-            string parentPath = string.Empty;
-            GitRevisionTreeNode parent = root;
-            for (int index = 0; index < segments.Length - 1; index++)
-            {
-                string path = parentPath.Length == 0 ? segments[index] : parentPath + "/" + segments[index];
-                if (!directories.TryGetValue(path, out GitRevisionTreeNode? directory))
-                {
-                    directory = new GitRevisionTreeNode(segments[index], path, true, null);
-                    directories[path] = directory;
-                    parent._mutableChildren.Add(directory);
-                }
-
-                parent = directory;
-                parentPath = path;
-            }
-
-            parent._mutableChildren.Add(new GitRevisionTreeNode(segments[^1], file.Path, false, file));
-        }
-
-        SortRecursively(root);
-        ComputeFileCounts(root);
-        return root._mutableChildren;
-    }
-
-    private static int ComputeFileCounts(GitRevisionTreeNode node)
-    {
-        if (!node.IsDirectory) return node._fileCount;
-        node._fileCount = node._mutableChildren.Sum(ComputeFileCounts);
-        return node._fileCount;
-    }
-
-    private static void SortRecursively(GitRevisionTreeNode node)
-    {
-        node._mutableChildren.Sort((left, right) =>
-        {
-            int directoriesFirst = right.IsDirectory.CompareTo(left.IsDirectory);
-            return directoriesFirst != 0
-                ? directoriesFirst
-                : StringComparer.OrdinalIgnoreCase.Compare(left.Name, right.Name);
-        });
-        foreach (GitRevisionTreeNode child in node._mutableChildren.Where(child => child.IsDirectory))
-            SortRecursively(child);
-    }
-
-    private static string FileIcon(string path) => System.IO.Path.GetExtension(path).ToLowerInvariant() switch
-    {
-        ".cs" => "C#",
-        ".cpp" or ".h" or ".hpp" => "C+",
-        ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".webp" => "IMG",
-        ".uasset" or ".umap" => "UE",
-        ".json" => "{}",
-        ".md" => "M↓",
-        _ => "·"
-    };
-
-    private static string FileColor(string path) => System.IO.Path.GetExtension(path).ToLowerInvariant() switch
-    {
-        ".cs" => "#B77FDB",
-        ".cpp" or ".h" or ".hpp" => "#5DADE2",
-        ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".webp" => "#E06C75",
-        ".uasset" or ".umap" => "#C678DD",
-        ".json" => "#9CDC8C",
-        ".md" => "#61AFEF",
-        _ => "#A9B7C6"
-    };
-}
-
-public sealed class BranchFileExplorerViewModel : ObservableObject, IDisposable
+public sealed partial class BranchFileExplorerViewModel : ObservableObject, IDisposable, IAsyncDisposable
 {
     private readonly IGitRepositoryService _gitService;
     private readonly CodeWorkspaceService _codeWorkspaceService;
     private readonly FilePresentationService _filePresentationService;
+    private readonly BranchFileWorkspaceStore _workspaceStore = new();
     private readonly GitBranch _branch;
-    private CancellationTokenSource? _loadCancellation;
+    private CancellationTokenSource? _operationCancellation;
     private CancellationTokenSource? _previewCancellation;
     private IReadOnlyList<GitRevisionFile> _allFiles = [];
     private IReadOnlyList<GitRevisionTreeNode> _treeRoots = [];
     private IReadOnlyList<GitRevisionFile> _filteredFiles = [];
+    private IReadOnlyList<GitRevisionFile> _selectedFiles = [];
     private GitRevisionTreeNode? _selectedTreeNode;
     private GitRevisionFile? _selectedListFile;
     private string _search = string.Empty;
@@ -132,11 +32,18 @@ public sealed class BranchFileExplorerViewModel : ObservableObject, IDisposable
     private string _previewText = string.Empty;
     private string _previewPath = string.Empty;
     private Bitmap? _previewImage;
+    private string _diffSummary = "Select a file, then load its difference against HEAD.";
     private string _diffText = "Select a file, then load its difference against HEAD.";
-    private bool _isLoading;
+    private Bitmap? _diffBaselineImage;
+    private Bitmap? _diffCandidateImage;
+    private Bitmap? _diffHeatmapImage;
+    private BranchFileOperationProgress _operationProgress = new("Ready", string.Empty, 0, 0);
+    private bool _isOperationActive;
     private bool _isPreviewLoading;
     private bool _isDiffLoading;
     private bool _treeView = true;
+    private bool _historyLoaded;
+    private bool _disposed;
 
     public BranchFileExplorerViewModel(
         IGitRepositoryService gitService,
@@ -148,7 +55,7 @@ public sealed class BranchFileExplorerViewModel : ObservableObject, IDisposable
     {
         _gitService = gitService;
         _codeWorkspaceService = codeWorkspaceService;
-        _filePresentationService = filePresentationService;
+        _filePresentationService = filePresentationService.CreateProjectSnapshot();
         ProjectName = projectName;
         RepositoryPath = Path.GetFullPath(repositoryPath);
         _branch = branch;
@@ -165,6 +72,7 @@ public sealed class BranchFileExplorerViewModel : ObservableObject, IDisposable
     public string WindowTitle => $"{ProjectName} — Branch Files — {BranchName}";
     public IReadOnlyList<GitRevisionTreeNode> TreeRoots { get => _treeRoots; private set => SetProperty(ref _treeRoots, value); }
     public IReadOnlyList<GitRevisionFile> FilteredFiles { get => _filteredFiles; private set => SetProperty(ref _filteredFiles, value); }
+    public ObservableCollection<BranchFileOperationHistoryItem> OperationHistory { get; } = [];
 
     public GitRevisionTreeNode? SelectedTreeNode
     {
@@ -172,6 +80,7 @@ public sealed class BranchFileExplorerViewModel : ObservableObject, IDisposable
         set
         {
             if (!SetProperty(ref _selectedTreeNode, value) || value?.File is null) return;
+            SetSelectedFiles([value.File]);
             SelectedListFile = value.File;
         }
     }
@@ -183,11 +92,36 @@ public sealed class BranchFileExplorerViewModel : ObservableObject, IDisposable
         {
             if (!SetProperty(ref _selectedListFile, value)) return;
             OnPropertyChanged(nameof(HasSelectedFile));
+            OnPropertyChanged(nameof(CanUseSelectedFile));
+            OnPropertyChanged(nameof(CanLoadPreviewObject));
             if (value is not null) _ = LoadPreviewAsync(value, fetchMissingLfsObject: false);
         }
     }
 
     public bool HasSelectedFile => SelectedListFile is not null;
+    public bool HasSelectedFiles => _selectedFiles.Count > 0 || HasSelectedFile;
+    public bool CanRetrieveSelected => CanStartOperation && HasSelectedFiles;
+    public bool CanUseSelectedFile => CanStartOperation && HasSelectedFile;
+    public bool CanLoadPreviewObject => CanUseSelectedFile && !IsPreviewLoading;
+    public bool HasCancelableOperation => IsOperationActive || IsPreviewLoading || IsDiffLoading;
+    public int SelectedFileCount => _selectedFiles.Count > 0 ? _selectedFiles.Count : HasSelectedFile ? 1 : 0;
+    public string SelectedFileSummary => SelectedFileCount == 1 ? "1 file selected" : $"{SelectedFileCount:N0} files selected";
+
+    public void SetSelectedFiles(IEnumerable<GitRevisionFile> files)
+    {
+        _selectedFiles = files
+            .GroupBy(file => file.Path, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToArray();
+        if (_selectedFiles.Count > 0 &&
+            (_selectedListFile is null || !_selectedFiles.Any(file => file.Path == _selectedListFile.Path)))
+            SelectedListFile = _selectedFiles[0];
+        OnPropertyChanged(nameof(HasSelectedFiles));
+        OnPropertyChanged(nameof(CanRetrieveSelected));
+        OnPropertyChanged(nameof(SelectedFileCount));
+        OnPropertyChanged(nameof(SelectedFileSummary));
+    }
+
     public string Search
     {
         get => _search;
@@ -221,261 +155,39 @@ public sealed class BranchFileExplorerViewModel : ObservableObject, IDisposable
     public string PreviewSummary { get => _previewSummary; private set => SetProperty(ref _previewSummary, value); }
     public string PreviewText { get => _previewText; private set => SetProperty(ref _previewText, value); }
     public string PreviewPath { get => _previewPath; private set => SetProperty(ref _previewPath, value); }
+    public bool IsPreviewLoading { get => _isPreviewLoading; private set { if (!SetProperty(ref _isPreviewLoading, value)) return; OnPropertyChanged(nameof(CanLoadPreviewObject)); OnPropertyChanged(nameof(HasCancelableOperation)); } }
+    public bool IsDiffLoading { get => _isDiffLoading; private set { if (!SetProperty(ref _isDiffLoading, value)) return; OnPropertyChanged(nameof(HasCancelableOperation)); } }
 
     public Bitmap? PreviewImage
     {
         get => _previewImage;
-        private set
-        {
-            Bitmap? previous = _previewImage;
-            if (!SetProperty(ref _previewImage, value)) return;
-            previous?.Dispose();
-            OnPropertyChanged(nameof(PreviewIsImage));
-            OnPropertyChanged(nameof(PreviewIsText));
-        }
+        private set => ReplaceBitmap(ref _previewImage, value, nameof(PreviewImage), nameof(PreviewIsImage), nameof(PreviewIsText));
     }
 
     public bool PreviewIsImage => PreviewImage is not null;
     public bool PreviewIsText => PreviewImage is null;
+    public string DiffSummary { get => _diffSummary; private set => SetProperty(ref _diffSummary, value); }
     public string DiffText { get => _diffText; private set => SetProperty(ref _diffText, value); }
-    public bool IsLoading { get => _isLoading; private set => SetProperty(ref _isLoading, value); }
-    public bool IsPreviewLoading { get => _isPreviewLoading; private set => SetProperty(ref _isPreviewLoading, value); }
-    public bool IsDiffLoading { get => _isDiffLoading; private set => SetProperty(ref _isDiffLoading, value); }
+    public Bitmap? DiffBaselineImage { get => _diffBaselineImage; private set => ReplaceBitmap(ref _diffBaselineImage, value, nameof(DiffBaselineImage), nameof(HasSideBySideImages), nameof(HasVisualDiff)); }
+    public Bitmap? DiffCandidateImage { get => _diffCandidateImage; private set => ReplaceBitmap(ref _diffCandidateImage, value, nameof(DiffCandidateImage), nameof(HasSideBySideImages), nameof(HasVisualDiff)); }
+    public Bitmap? DiffHeatmapImage { get => _diffHeatmapImage; private set => ReplaceBitmap(ref _diffHeatmapImage, value, nameof(DiffHeatmapImage), nameof(HasHeatmapImage), nameof(HasVisualDiff)); }
+    public bool HasSideBySideImages => DiffBaselineImage is not null && DiffCandidateImage is not null;
+    public bool HasHeatmapImage => DiffHeatmapImage is not null;
+    public bool HasVisualDiff => HasSideBySideImages || HasHeatmapImage;
 
-    public async Task LoadAsync(CancellationToken cancellationToken = default)
+    public BranchFileOperationProgress OperationProgress { get => _operationProgress; private set { if (!SetProperty(ref _operationProgress, value)) return; OnPropertyChanged(nameof(OperationSummary)); OnPropertyChanged(nameof(OperationDetail)); OnPropertyChanged(nameof(OperationPercent)); OnPropertyChanged(nameof(OperationIsIndeterminate)); } }
+    public string OperationSummary => OperationProgress.Summary;
+    public string OperationDetail => OperationProgress.Detail;
+    public double OperationPercent => OperationProgress.Percent;
+    public bool OperationIsIndeterminate => OperationProgress.IsIndeterminate;
+    public bool IsOperationActive { get => _isOperationActive; private set { if (!SetProperty(ref _isOperationActive, value)) return; OnPropertyChanged(nameof(CanStartOperation)); OnPropertyChanged(nameof(CanRetrieveSelected)); OnPropertyChanged(nameof(CanUseSelectedFile)); OnPropertyChanged(nameof(CanLoadPreviewObject)); OnPropertyChanged(nameof(HasCancelableOperation)); } }
+    public bool CanStartOperation => !IsOperationActive;
+
+    public void CancelOperation()
     {
-        _loadCancellation?.Cancel();
-        _loadCancellation?.Dispose();
-        _loadCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        CancellationToken token = _loadCancellation.Token;
-        IsLoading = true;
-        Status = $"Reading the tree at {RevisionReference}…";
-        try
-        {
-            IReadOnlyList<GitRevisionFile> files = await _gitService.GetRevisionFilesAsync(
-                RepositoryPath, RevisionReference, token);
-            IReadOnlyList<GitRevisionTreeNode> tree = await Task.Run(() => GitRevisionTreeNode.Build(files), token);
-            token.ThrowIfCancellationRequested();
-            _allFiles = files;
-            TreeRoots = tree;
-            ApplyFilter();
-            Summary = $"{files.Count:N0} file(s) at {RevisionReference}";
-            Status = "Ready · read-only branch inspection · no checkout, merge, index, or working file changed.";
-        }
-        catch (OperationCanceledException)
-        {
-            Status = "Branch inspection cancelled.";
-        }
-        catch (Exception exception)
-        {
-            Summary = "Unable to read branch files.";
-            Status = exception.Message;
-        }
-        finally
-        {
-            IsLoading = false;
-        }
-    }
-
-    public async Task RefreshRemoteAsync()
-    {
-        if (RemoteName is null || RemoteBranchName is null) return;
-        IsLoading = true;
-        Status = $"Refreshing only {RemoteName}/{RemoteBranchName} into a private inspection reference…";
-        try
-        {
-            RevisionReference = await _gitService.FetchRemoteBranchForInspectionAsync(
-                RepositoryPath, RemoteName, RemoteBranchName);
-            await LoadAsync();
-            Status = $"Remote branch refreshed at {RevisionReference}. The checked-out branch was not changed.";
-        }
-        catch (Exception exception)
-        {
-            Status = exception.Message;
-            IsLoading = false;
-        }
-    }
-
-    public Task RetrieveSelectedForPreviewAsync() => SelectedListFile is null
-        ? Task.CompletedTask
-        : LoadPreviewAsync(SelectedListFile, fetchMissingLfsObject: true);
-
-    public async Task LoadDiffAsync()
-    {
-        GitRevisionFile? file = SelectedListFile;
-        if (file is null) return;
-        IsDiffLoading = true;
-        DiffText = $"Loading {BranchName} ↔ HEAD for {file.Path}…";
-        try
-        {
-            DiffText = await _gitService.GetComparisonDiffAsync(
-                RepositoryPath, RevisionReference, "HEAD", file.Path);
-            if (string.IsNullOrWhiteSpace(DiffText))
-                DiffText = "The selected file is identical in this branch and HEAD.";
-        }
-        catch (Exception exception)
-        {
-            DiffText = exception.Message;
-        }
-        finally
-        {
-            IsDiffLoading = false;
-        }
-    }
-
-    public async Task<GitRevisionFileExportResult?> ExportSelectedAsync(string destinationPath)
-    {
-        GitRevisionFile? file = SelectedListFile;
-        if (file is null) return null;
-        IsPreviewLoading = true;
-        Status = $"Exporting {file.Path}…";
-        try
-        {
-            GitRevisionFileExportResult result = await _gitService.MaterializeFileFromRevisionAsync(
-                RepositoryPath,
-                file.Path,
-                RevisionReference,
-                destinationPath,
-                RemoteName,
-                fetchMissingLfsObject: true);
-            Status = result.IsLfsObject
-                ? $"LFS file exported{(result.DownloadedLfsObject ? " after targeted retrieval" : string.Empty)}: {destinationPath}"
-                : $"File exported: {destinationPath}";
-            return result;
-        }
-        finally
-        {
-            IsPreviewLoading = false;
-        }
-    }
-
-    public async Task<string?> RestoreSelectedToWorkingTreeAsync()
-    {
-        GitRevisionFile? file = SelectedListFile;
-        if (file is null) return null;
-        string destination = ResolveInsideRepository(file.Path);
-        string stagingRoot = ResolveInsideRepository(
-            $".cyrevision/cache/branch-file-restore-stage/{Guid.NewGuid():N}");
-        string stagedFile = Path.GetFullPath(Path.Combine(
-            stagingRoot,
-            file.Path.Replace('/', Path.DirectorySeparatorChar)));
-        if (!stagedFile.StartsWith(stagingRoot + Path.DirectorySeparatorChar, PathComparison))
-            throw new InvalidOperationException("The selected path is outside the restore staging directory.");
-
-        string? backupPath = null;
-        Status = $"Preparing {file.Path} from {BranchName}…";
-        try
-        {
-            await _gitService.MaterializeFileFromRevisionAsync(
-                RepositoryPath,
-                file.Path,
-                RevisionReference,
-                stagedFile,
-                RemoteName,
-                fetchMissingLfsObject: true);
-
-            if (File.Exists(destination))
-            {
-                string stamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss");
-                backupPath = ResolveInsideRepository(
-                    $".cyrevision/backups/branch-file-restore/{stamp}/{file.Path}");
-                Directory.CreateDirectory(Path.GetDirectoryName(backupPath)!);
-                File.Copy(destination, backupPath, overwrite: false);
-            }
-
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Move(stagedFile, destination, overwrite: true);
-            Status = backupPath is null
-                ? $"{file.Path} restored as a working-tree file. It was not staged."
-                : $"{file.Path} restored and not staged. Previous file backed up to {Path.GetRelativePath(RepositoryPath, backupPath)}.";
-            return backupPath;
-        }
-        finally
-        {
-            if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, recursive: true);
-        }
-    }
-
-    private async Task LoadPreviewAsync(GitRevisionFile file, bool fetchMissingLfsObject)
-    {
+        _operationCancellation?.Cancel();
         _previewCancellation?.Cancel();
-        _previewCancellation?.Dispose();
-        CancellationTokenSource cancellation = new();
-        _previewCancellation = cancellation;
-        CancellationToken token = cancellation.Token;
-        IsPreviewLoading = true;
-        PreviewPath = file.Path;
-        PreviewSummary = $"Loading {file.Path}…";
-        PreviewText = string.Empty;
-        PreviewImage = null;
-        try
-        {
-            string cacheRoot = GetCacheRoot();
-            string cachePath = Path.GetFullPath(Path.Combine(cacheRoot, file.Path.Replace('/', Path.DirectorySeparatorChar)));
-            if (!cachePath.StartsWith(cacheRoot + Path.DirectorySeparatorChar, PathComparison))
-                throw new InvalidOperationException("The branch path is outside the preview cache.");
-            GitRevisionFileExportResult export = await _gitService.MaterializeFileFromRevisionAsync(
-                RepositoryPath,
-                file.Path,
-                RevisionReference,
-                cachePath,
-                RemoteName,
-                fetchMissingLfsObject,
-                token);
-            token.ThrowIfCancellationRequested();
-            if (!ReferenceEquals(_previewCancellation, cancellation) || SelectedListFile?.Path != file.Path) return;
-
-            FilePresentationResult? presentation = await _filePresentationService.CreatePreviewAsync(
-                new FilePreviewRequest(RepositoryPath, file.Path, cachePath, export.Size), token);
-            token.ThrowIfCancellationRequested();
-            if (!ReferenceEquals(_previewCancellation, cancellation) || SelectedListFile?.Path != file.Path) return;
-            if (presentation is not null)
-            {
-                PreviewSummary = $"{file.Path} · {presentation.Summary} · {presentation.ProviderId}";
-                if (presentation.Kind == FilePresentationKind.Image && presentation.ImagePath is not null && File.Exists(presentation.ImagePath))
-                {
-                    PreviewImage = new Bitmap(presentation.ImagePath);
-                    PreviewText = string.Empty;
-                }
-                else
-                {
-                    PreviewText = string.IsNullOrWhiteSpace(presentation.TextContent)
-                        ? presentation.Summary
-                        : presentation.TextContent;
-                }
-                return;
-            }
-
-            CodeFilePreview preview = await _codeWorkspaceService.ReadPreviewAsync(cacheRoot, file.Path, token);
-            token.ThrowIfCancellationRequested();
-            if (!ReferenceEquals(_previewCancellation, cancellation) || SelectedListFile?.Path != file.Path) return;
-            PreviewSummary = $"{file.Path} · {preview.Summary}";
-            PreviewText = preview.IsBinary
-                ? $"No active project plugin provides a preview for {Path.GetExtension(file.Path)} files."
-                : preview.Text;
-        }
-        catch (OperationCanceledException)
-        {
-            // A newer file selection superseded this preview.
-        }
-        catch (Exception exception)
-        {
-            if (!token.IsCancellationRequested && SelectedListFile?.Path == file.Path)
-            {
-                PreviewSummary = file.Path;
-                PreviewText = exception.Message + Environment.NewLine + Environment.NewLine +
-                              "Use ‘Retrieve selected’ to download only this missing LFS object when available on the remote.";
-            }
-        }
-        finally
-        {
-            if (ReferenceEquals(_previewCancellation, cancellation))
-            {
-                _previewCancellation = null;
-                cancellation.Dispose();
-                IsPreviewLoading = false;
-            }
-        }
+        Status = "Cancelling the active branch operation…";
     }
 
     private void ApplyFilter()
@@ -490,18 +202,17 @@ public sealed class BranchFileExplorerViewModel : ObservableObject, IDisposable
                 : $"{FilteredFiles.Count:N0} match(es) · {_allFiles.Count:N0} file(s) at {RevisionReference}";
     }
 
-    private static bool MatchesFilter(string path, string filter)
-    {
-        if (!filter.Contains('*') && !filter.Contains('?'))
-            return path.Contains(filter, StringComparison.OrdinalIgnoreCase);
-        return CodeFilePatternMatcher.IsMatch(path, filter);
-    }
+    private static bool MatchesFilter(string path, string filter) =>
+        !filter.Contains('*') && !filter.Contains('?')
+            ? path.Contains(filter, StringComparison.OrdinalIgnoreCase)
+            : CodeFilePatternMatcher.IsMatch(path, filter);
 
-    private string GetCacheRoot()
+    private string GetCacheRoot(string? category = null)
     {
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(RevisionReference));
         string referenceKey = Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
         string root = Path.Combine(RepositoryPath, ".cyrevision", "cache", "branch-files", referenceKey);
+        if (!string.IsNullOrWhiteSpace(category)) root = Path.Combine(root, category);
         Directory.CreateDirectory(root);
         return Path.GetFullPath(root);
     }
@@ -528,12 +239,54 @@ public sealed class BranchFileExplorerViewModel : ObservableObject, IDisposable
         ? StringComparison.OrdinalIgnoreCase
         : StringComparison.Ordinal;
 
+    private void ReplaceBitmap(ref Bitmap? field, Bitmap? value, string propertyName, params string[] dependentProperties)
+    {
+        if (ReferenceEquals(field, value)) return;
+        Bitmap? previous = field;
+        field = value;
+        previous?.Dispose();
+        OnPropertyChanged(propertyName);
+        foreach (string dependent in dependentProperties) OnPropertyChanged(dependent);
+    }
+
     public void Dispose()
     {
-        _loadCancellation?.Cancel();
-        _loadCancellation?.Dispose();
+        if (_disposed) return;
+        _disposed = true;
+        _operationCancellation?.Cancel();
+        _operationCancellation?.Dispose();
         _previewCancellation?.Cancel();
         _previewCancellation?.Dispose();
         PreviewImage = null;
+        DiffBaselineImage = null;
+        DiffCandidateImage = null;
+        DiffHeatmapImage = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        string inspectionReference = RevisionReference;
+        Dispose();
+        using CancellationTokenSource cleanupTimeout = new(TimeSpan.FromSeconds(10));
+        if (inspectionReference.StartsWith("refs/cyrevision/inspect/", StringComparison.Ordinal))
+        {
+            try
+            {
+                await _gitService.DeleteInspectionReferenceAsync(RepositoryPath, inspectionReference, cleanupTimeout.Token).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                _ = exception;
+            }
+        }
+        try
+        {
+            await _workspaceStore.CleanupCacheAsync(RepositoryPath, null, cleanupTimeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            _ = exception;
+        }
     }
 }

@@ -12,12 +12,30 @@ public sealed class FilePresentationService
 
     private readonly CyRevisionPluginManager _pluginManager;
     private readonly IAssetDiffService _assetDiffService;
+    private readonly IReadOnlyList<IFilePresentationProvider>? _scopedProviders;
 
     public FilePresentationService(CyRevisionPluginManager pluginManager, IAssetDiffService assetDiffService)
     {
         _pluginManager = pluginManager;
         _assetDiffService = assetDiffService;
     }
+
+    private FilePresentationService(
+        CyRevisionPluginManager pluginManager,
+        IAssetDiffService assetDiffService,
+        IReadOnlyList<IFilePresentationProvider> scopedProviders)
+    {
+        _pluginManager = pluginManager;
+        _assetDiffService = assetDiffService;
+        _scopedProviders = scopedProviders;
+    }
+
+    /// <summary>
+    /// Captures the providers enabled for the current project. Detached windows keep using
+    /// the project that opened them even when the main window later selects another project.
+    /// </summary>
+    public FilePresentationService CreateProjectSnapshot() =>
+        new(_pluginManager, _assetDiffService, Providers().ToArray());
 
     public bool IsBuiltInImage(string path) => BuiltInImageExtensions.Contains(Path.GetExtension(path));
 
@@ -80,11 +98,14 @@ public sealed class FilePresentationService
             result.Summary,
             report,
             result.PreviewImagePath,
-            result.Metrics);
+            result.Metrics,
+            IsBuiltInImage(request.BaselinePath) ? request.BaselinePath : null,
+            IsBuiltInImage(request.CandidatePath) ? request.CandidatePath : null,
+            result.PreviewImagePath);
     }
 
     private IEnumerable<IFilePresentationProvider> Providers() =>
-        _pluginManager.GetExtensions<IFilePresentationProvider>()
+        (_scopedProviders ?? _pluginManager.GetExtensions<IFilePresentationProvider>())
             .OrderByDescending(provider => provider.Priority);
 
     private static bool SafeCanPreview(IFilePresentationProvider provider, FilePreviewRequest request)

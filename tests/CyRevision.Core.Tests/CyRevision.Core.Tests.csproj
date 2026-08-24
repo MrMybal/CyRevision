@@ -31,6 +31,7 @@
     <ProjectReference Include="..\..\src\CyRevision.Diff\CyRevision.Diff.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Git\CyRevision.Git.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Plugin.Abstractions\CyRevision.Plugin.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Plugin.CyStore\CyRevision.Plugin.CyStore.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Plugin.Unreal\CyRevision.Plugin.Unreal.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Plugin.Unity\CyRevision.Plugin.Unity.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Plugin.Godot\CyRevision.Plugin.Godot.csproj" />
