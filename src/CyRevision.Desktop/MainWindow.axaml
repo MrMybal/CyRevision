@@ -3121,7 +3121,12 @@
                     <Grid Margin="0,8,0,0" ColumnDefinitions="285,*,350" ColumnSpacing="8">
                         <Border Classes="card" Padding="12">
                             <Grid RowDefinitions="Auto,150,Auto,*">
-                                <TextBlock Text="Motifs suivis par Git LFS" FontSize="16" FontWeight="SemiBold" Margin="5" />
+                                <Grid ColumnDefinitions="*,Auto" Margin="5">
+                                    <TextBlock Text="Motifs suivis par Git LFS" FontSize="16" FontWeight="SemiBold" />
+                                    <Button Grid.Column="1" Classes="secondary" Content="Setup assistant…"
+                                            Click="OnOpenGitLfsSetupAssistantClick" Padding="8,4"
+                                            ToolTip.Tip="Review recommended .gitattributes and Git LFS patterns without overwriting existing rules" />
+                                </Grid>
                                 <ListBox Grid.Row="1" Margin="0,7" ItemsSource="{Binding LfsPatterns}">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
@@ -3374,6 +3379,129 @@
                             </ScrollViewer>
                         </TabItem>
                     </TabControl>
+                </TabItem>
+
+                <TabItem x:Name="CyStoreWorkspaceTab" Header="CyStore ALPHA">
+                    <ScrollViewer Margin="0,8,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <Grid RowDefinitions="Auto,Auto,360,Auto" RowSpacing="8">
+                            <Border Classes="card" Padding="14">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,34" ColumnSpacing="12" RowSpacing="8">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="CyStore" FontSize="20" FontWeight="SemiBold" />
+                                            <Border Background="#6B4A12" CornerRadius="4" Padding="7,2" VerticalAlignment="Center">
+                                                <TextBlock Text="ALPHA" Foreground="#FFD166" FontSize="9" FontWeight="Bold" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="Git-compatible segmented storage for hydrated Git LFS files"
+                                                   Foreground="#78D7B7" FontSize="11" />
+                                        <TextBlock Text="Git remains authoritative: commits, branches, remotes and standard LFS pointers are never rewritten. CyStore only adds a project-local, content-addressed chunk cache when you explicitly initialize and capture it."
+                                                   Classes="muted" FontSize="10" TextWrapping="Wrap" MaxWidth="920" />
+                                    </StackPanel>
+                                    <WrapPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top">
+                                        <Button Classes="primary" Content="Initialize store" Click="OnInitializeCyStoreClick"
+                                                IsEnabled="{Binding CanInitializeCyStore}" Margin="0,0,6,4"
+                                                ToolTip.Tip="Create .cyrevision/cystore and add only that cache path to the repository's local Git exclude file." />
+                                        <Button Classes="secondary" Content="Refresh" Click="OnRefreshCyStoreClick"
+                                                IsEnabled="{Binding !IsCyStoreBusy}" Margin="0,0,6,4" />
+                                        <Button Classes="primary" Content="Capture hydrated Git LFS" Click="OnCaptureCyStoreLfsClick"
+                                                IsEnabled="{Binding CanCaptureCyStoreLfs}" Margin="0,0,6,4"
+                                                ToolTip.Tip="Capture working-tree LFS files as verified chunks. Pointer-only or missing files are skipped." />
+                                        <Button Classes="secondary" Content="Cancel" Click="OnCancelCyStoreClick"
+                                                IsVisible="{Binding IsCyStoreBusy}" />
+                                    </WrapPanel>
+                                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding CyStoreStatusSummary}"
+                                               TextWrapping="Wrap" />
+                                    <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="180,*" ColumnSpacing="9">
+                                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding CyStoreProgress}"
+                                                     Height="7" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding CyStoreProgressText}"
+                                                   Classes="muted" FontSize="10" TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+
+                            <Grid Grid.Row="1" ColumnDefinitions="1.25*,1*,1*,1.4*" ColumnSpacing="8">
+                                <Border Classes="card" Padding="10">
+                                    <StackPanel>
+                                        <TextBlock Text="Store" Classes="muted" FontSize="9" />
+                                        <TextBlock Text="{Binding CyStoreStorePath}" FontFamily="Cascadia Mono,Consolas"
+                                                   FontSize="10" TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding CyStoreStorePath}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="1" Classes="card" Padding="10">
+                                    <StackPanel>
+                                        <TextBlock Text="Logical versions" Classes="muted" FontSize="9" />
+                                        <TextBlock Text="{Binding CyStoreLogicalSize}" FontSize="17" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="2" Classes="card" Padding="10">
+                                    <StackPanel>
+                                        <TextBlock Text="Unique chunks" Classes="muted" FontSize="9" />
+                                        <TextBlock Text="{Binding CyStoreStoredSize}" FontSize="17" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="3" Classes="card" Padding="10">
+                                    <StackPanel>
+                                        <TextBlock Text="Deduplication" Classes="muted" FontSize="9" />
+                                        <TextBlock Text="{Binding CyStoreDeduplicationSummary}" FontSize="10"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <Border Grid.Row="2" Classes="card" Padding="10">
+                                <Grid RowDefinitions="Auto,*">
+                                    <Grid ColumnDefinitions="*,Auto" Margin="2,0,2,7">
+                                        <StackPanel>
+                                            <TextBlock Text="Captured versions" FontSize="15" FontWeight="SemiBold" />
+                                            <TextBlock Text="Each row references a verified file manifest; identical chunks are stored once."
+                                                       Classes="muted" FontSize="9" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button Classes="secondary" Content="Verify" Click="OnVerifyCyStoreVersionClick"
+                                                    IsEnabled="{Binding CanOperateOnSelectedCyStoreVersion}" />
+                                            <Button Classes="secondary" Content="Reconstruct safely…" Click="OnReconstructCyStoreVersionClick"
+                                                    IsEnabled="{Binding CanOperateOnSelectedCyStoreVersion}"
+                                                    ToolTip.Tip="Reconstruct into .cyrevision/cystore/restored. The working tree is never overwritten." />
+                                        </StackPanel>
+                                    </Grid>
+                                    <DataGrid Grid.Row="1" ItemsSource="{Binding CyStoreVersions}"
+                                              SelectedItem="{Binding SelectedCyStoreVersion}"
+                                              AutoGenerateColumns="False" IsReadOnly="True"
+                                              Classes="historyCompact" GridLinesVisibility="Horizontal"
+                                              Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="File" Binding="{Binding RelativePath}" Width="2*" />
+                                            <DataGridTextColumn Header="Version" Binding="{Binding ShortId}" Width="105" />
+                                            <DataGridTextColumn Header="SHA-256" Binding="{Binding FileSha256}" Width="150" />
+                                            <DataGridTextColumn Header="Bytes" Binding="{Binding Size}" Width="90" />
+                                            <DataGridTextColumn Header="Chunks" Binding="{Binding ChunkCount}" Width="70" />
+                                            <DataGridCheckBoxColumn Header="LFS" Binding="{Binding IsGitLfsTracked}" Width="48" />
+                                            <DataGridTextColumn Header="Captured" Binding="{Binding CapturedAt}" Width="155" />
+                                            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="85" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+
+                            <Border Grid.Row="3" Classes="card" Padding="11">
+                                <Grid ColumnDefinitions="1.2*,1*" ColumnSpacing="14">
+                                    <StackPanel>
+                                        <TextBlock Text="Last result" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding CyStoreLastResult}" TextWrapping="Wrap" FontSize="10" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Skipped files / warnings" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding CyStoreWarnings}" TextWrapping="Wrap" Classes="muted" FontSize="9"
+                                                   MaxHeight="80" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </ScrollViewer>
                 </TabItem>
 
                 <TabItem x:Name="BackupsWorkspaceTab" Header="Backups">

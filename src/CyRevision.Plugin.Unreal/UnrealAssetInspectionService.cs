@@ -200,7 +200,9 @@ internal sealed class UnrealAssetInspectionService : IDisposable
                 summary,
                 text,
                 candidate.ImagePath,
-                metadata)
+                metadata,
+                File.Exists(baseline.ImagePath) ? baseline.ImagePath : null,
+                candidate.ImagePath)
             : new FilePresentationResult(
                 "cyrevision.unreal.files",
                 FilePresentationKind.Metadata,

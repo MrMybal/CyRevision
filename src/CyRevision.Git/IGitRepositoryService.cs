@@ -159,6 +159,11 @@ public interface IGitRepositoryService
         string branchName,
         CancellationToken cancellationToken = default);
 
+    Task DeleteInspectionReferenceAsync(
+        string repositoryPath,
+        string inspectionReference,
+        CancellationToken cancellationToken = default);
+
     Task<GitLocalBranchRemovalAnalysis> AnalyzeLocalBranchRemovalAsync(
         string repositoryPath,
         string branchName,

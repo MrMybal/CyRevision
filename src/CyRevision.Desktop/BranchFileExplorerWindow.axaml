@@ -28,7 +28,7 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="46,42,*,28">
+    <Grid RowDefinitions="46,42,*,46">
         <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="12,0">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
                 <StackPanel VerticalAlignment="Center">
@@ -45,21 +45,27 @@
         </Border>
 
         <Border Grid.Row="1" Background="#24262A" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="9,5">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="7">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="7">
                 <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
                          PlaceholderText="Search path, file name, *.cpp, Content/*.uasset…" />
                 <ToggleButton Grid.Column="1" Content="Tree" IsChecked="{Binding TreeView}" />
                 <ToggleButton Grid.Column="2" Content="List" IsChecked="{Binding ListView}" />
                 <Button Grid.Column="3" Classes="secondary" Content="Refresh remote"
-                        IsVisible="{Binding CanRefreshRemote}" IsEnabled="{Binding !IsLoading}"
+                        IsVisible="{Binding CanRefreshRemote}" IsEnabled="{Binding CanStartOperation}"
                         Click="OnRefreshRemoteClick"
                         ToolTip.Tip="Fetch only this remote branch into a private CyRevision inspection ref. No checkout or merge." />
-                <Button Grid.Column="4" Classes="secondary" Content="Export copy…"
-                        IsEnabled="{Binding HasSelectedFile}" Click="OnExportClick"
+                <Button Grid.Column="4" Classes="secondary" Content="Retrieve selected…"
+                        IsEnabled="{Binding CanRetrieveSelected}" Click="OnRetrieveFilesClick"
+                        ToolTip.Tip="Copy every selected branch file to a folder. Paths are preserved and only required LFS objects are retrieved." />
+                <Button Grid.Column="5" Classes="secondary" Content="Export one…"
+                        IsEnabled="{Binding CanUseSelectedFile}" Click="OnExportClick"
                         ToolTip.Tip="Save the selected branch version elsewhere without changing the project." />
-                <Button Grid.Column="5" Classes="primary" Content="Restore to working tree…"
-                        IsEnabled="{Binding HasSelectedFile}" Click="OnRestoreClick"
+                <Button Grid.Column="6" Classes="primary" Content="Restore one…"
+                        IsEnabled="{Binding CanUseSelectedFile}" Click="OnRestoreClick"
                         ToolTip.Tip="Replace only this working file after confirmation. The previous file is backed up and nothing is staged." />
+                <Button Grid.Column="7" Classes="secondary" Content="Cancel"
+                        IsVisible="{Binding HasCancelableOperation}" Click="OnCancelOperationClick"
+                        ToolTip.Tip="Cancel the active Git/LFS operation. Already completed file copies are kept." />
             </Grid>
         </Border>
 
@@ -97,7 +103,9 @@
                         </TreeView.ItemTemplate>
                     </TreeView>
 
-                    <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredFiles}" SelectedItem="{Binding SelectedListFile}"
+                    <DataGrid x:Name="BranchFileList" Grid.Row="1" ItemsSource="{Binding FilteredFiles}"
+                              SelectedItem="{Binding SelectedListFile}" SelectionMode="Extended"
+                              SelectionChanged="OnBranchFileSelectionChanged"
                               IsVisible="{Binding ShowList}" AutoGenerateColumns="False" IsReadOnly="True"
                               GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
                         <DataGrid.Columns>
@@ -108,11 +116,12 @@
                         </DataGrid.Columns>
                     </DataGrid>
 
-                    <Border Grid.Row="1" ZIndex="10" IsVisible="{Binding IsLoading}" VerticalAlignment="Bottom"
+                    <Border Grid.Row="1" ZIndex="10" IsVisible="{Binding IsOperationActive}" VerticalAlignment="Bottom"
                             Background="#F0202633" BorderBrush="#4A5D7A" BorderThickness="0,1,0,0" Padding="8,5">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                            <TextBlock Text="Loading branch tree…" Classes="muted" FontSize="9" />
-                            <ProgressBar Grid.Column="1" IsIndeterminate="True" Height="4" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding OperationSummary}" Classes="muted" FontSize="9" />
+                            <ProgressBar Grid.Column="1" IsIndeterminate="{Binding OperationIsIndeterminate}"
+                                         Value="{Binding OperationPercent}" Maximum="100" Height="4" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
                 </Grid>
@@ -132,8 +141,8 @@
                                         <TextBlock Text="{Binding PreviewSummary}" Classes="muted" FontSize="8.5"
                                                    TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
-                                    <Button Grid.Column="1" Classes="secondary" Content="Retrieve selected"
-                                            IsEnabled="{Binding HasSelectedFile}" Click="OnRetrieveClick"
+                                    <Button Grid.Column="1" Classes="secondary" Content="Retrieve preview object"
+                                            IsEnabled="{Binding CanLoadPreviewObject}" Click="OnRetrieveClick"
                                             ToolTip.Tip="If this is a missing LFS object, download only this selected path." />
                                 </Grid>
                             </Border>
@@ -159,14 +168,39 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock Text="Branch ↔ current HEAD" FontWeight="SemiBold" FontSize="12" />
-                                        <TextBlock Text="The working tree and index remain unchanged" Classes="muted" FontSize="8.5" />
+                                        <TextBlock Text="{Binding DiffSummary}" Classes="muted" FontSize="8.5"
+                                                   TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                     <Button Grid.Column="1" Classes="secondary" Content="Load diff"
-                                            IsEnabled="{Binding HasSelectedFile}" Click="OnLoadDiffClick" />
+                                            IsEnabled="{Binding CanUseSelectedFile}" Click="OnLoadDiffClick" />
                                 </Grid>
                             </Border>
                             <Grid Grid.Row="1">
-                                <controls:CodeDiffView DiffText="{Binding DiffText}" FilePath="{Binding SelectedListFile.Path}" />
+                                <TabControl>
+                                    <TabItem Header="Semantic / text">
+                                        <controls:CodeDiffView DiffText="{Binding DiffText}" FilePath="{Binding SelectedListFile.Path}" />
+                                    </TabItem>
+                                    <TabItem Header="Side by side" IsVisible="{Binding HasSideBySideImages}">
+                                        <Grid ColumnDefinitions="*,8,*" Margin="8">
+                                            <Border Background="#101827" BorderBrush="#3B4557" BorderThickness="1">
+                                                <Grid RowDefinitions="26,*">
+                                                    <TextBlock Text="Current HEAD" Margin="8,4" Classes="muted" />
+                                                    <Image Grid.Row="1" Source="{Binding DiffBaselineImage}" Stretch="Uniform" Margin="8" />
+                                                </Grid>
+                                            </Border>
+                                            <GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns" />
+                                            <Border Grid.Column="2" Background="#101827" BorderBrush="#3B4557" BorderThickness="1">
+                                                <Grid RowDefinitions="26,*">
+                                                    <TextBlock Text="Selected branch" Margin="8,4" Classes="muted" />
+                                                    <Image Grid.Row="1" Source="{Binding DiffCandidateImage}" Stretch="Uniform" Margin="8" />
+                                                </Grid>
+                                            </Border>
+                                        </Grid>
+                                    </TabItem>
+                                    <TabItem Header="Heatmap" IsVisible="{Binding HasHeatmapImage}">
+                                        <Image Source="{Binding DiffHeatmapImage}" Stretch="Uniform" Margin="12" />
+                                    </TabItem>
+                                </TabControl>
                                 <Border ZIndex="10" IsVisible="{Binding IsDiffLoading}" VerticalAlignment="Bottom"
                                         Background="#F0202633" BorderBrush="#4A5D7A" BorderThickness="0,1,0,0" Padding="8,5">
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
@@ -177,16 +211,45 @@
                             </Grid>
                         </Grid>
                     </TabItem>
+                    <TabItem Header="Retrieval history">
+                        <Grid RowDefinitions="38,*">
+                            <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="9,0">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Branch file activity" FontWeight="SemiBold" FontSize="12" />
+                                    <TextBlock Text="Persistent retrieval, export, and safe-restore audit for this project"
+                                               Classes="muted" FontSize="8.5" />
+                                </StackPanel>
+                            </Border>
+                            <DataGrid Grid.Row="1" ItemsSource="{Binding OperationHistory}" AutoGenerateColumns="False"
+                                      IsReadOnly="True" GridLinesVisibility="Horizontal" BorderThickness="0">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Time" Binding="{Binding TimestampText}" Width="130" />
+                                    <DataGridTextColumn Header="Operation" Binding="{Binding Operation}" Width="95" />
+                                    <DataGridTextColumn Header="State" Binding="{Binding State}" Width="90" />
+                                    <DataGridTextColumn Header="File(s)" Binding="{Binding PathSummary}" Width="220" />
+                                    <DataGridTextColumn Header="Result" Binding="{Binding Result}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </TabItem>
                 </TabControl>
             </Border>
         </Grid>
 
         <Border Grid.Row="3" Background="#24262A" BorderBrush="#393B40" BorderThickness="0,1,0,0" Padding="9,0">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                <TextBlock Text="{Binding Status}" Classes="muted" FontSize="8.5" VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis" />
-                <TextBlock Grid.Column="1" Text="{Binding RevisionReference}" Foreground="#78D7B7" FontSize="8.5"
+            <Grid RowDefinitions="*,5" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Status}" Classes="muted" FontSize="8.5" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding OperationDetail}" Classes="muted" FontSize="8" TextTrimming="CharacterEllipsis"
+                               IsVisible="{Binding IsOperationActive}" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding SelectedFileSummary}" Classes="muted" FontSize="8.5"
+                           VerticalAlignment="Center" IsVisible="{Binding HasSelectedFiles}" />
+                <TextBlock Grid.Column="2" Text="{Binding RevisionReference}" Foreground="#78D7B7" FontSize="8.5"
                            VerticalAlignment="Center" />
+                <ProgressBar Grid.Row="1" Grid.ColumnSpan="3" IsVisible="{Binding IsOperationActive}"
+                             IsIndeterminate="{Binding OperationIsIndeterminate}" Value="{Binding OperationPercent}"
+                             Maximum="100" Height="4" />
             </Grid>
         </Border>
     </Grid>

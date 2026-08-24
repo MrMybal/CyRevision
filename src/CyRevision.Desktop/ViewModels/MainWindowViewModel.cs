@@ -92,6 +92,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private readonly RepositoryConsoleService _repositoryConsoleService;
     private readonly ProjectGitCacheStore _projectGitCacheStore = new();
     private readonly GitIgnoreService _gitIgnoreService = new();
+    private readonly GitAttributesService _gitAttributesService = new();
     private readonly ProjectLicenseService _projectLicenseService = new();
     private readonly GitAnnotationStore _gitAnnotationStore;
     private readonly Dictionary<string, string> _gitIgnoreDrafts = new(StringComparer.Ordinal);
@@ -4408,6 +4409,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 OnPropertyChanged(nameof(IsSelectedGodotPlugin));
                 OnPropertyChanged(nameof(IsSelectedLorePlugin));
                 OnPropertyChanged(nameof(IsSelectedPerforcePlugin));
+                OnPropertyChanged(nameof(IsSelectedCyStorePlugin));
             }
         }
     }
@@ -5496,6 +5498,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                     break;
                 case "GitLfsWorkspaceTab":
                     await LoadLfsManagementCoreAsync();
+                    break;
+                case "CyStoreWorkspaceTab":
+                    await RefreshCyStoreAsync();
                     break;
                 case "BackupsWorkspaceTab":
                     await LoadBackupsCoreAsync();
@@ -8437,15 +8442,115 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }, "Dépôt ajouté à CyRevision");
     }
 
-    public async Task CreateGitRepositoryAsync(string path)
+    public Task<GitToolAvailability> GetGitToolAvailabilityAsync(
+        CancellationToken cancellationToken = default) =>
+        _gitService.GetToolAvailabilityAsync(cancellationToken);
+
+    public Task<IReadOnlyList<string>> GetGitAttributeLfsPatternsAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default) =>
+        _gitAttributesService.GetLfsPatternsAsync(repositoryPath, cancellationToken);
+
+    public async Task CreateGitRepositoryAsync(
+        string path,
+        GitInitializationOptions options,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(options);
         string fullPath = Path.GetFullPath(path);
         await RunOperationAsync("Création du dépôt Git…", async () =>
         {
-            await _gitService.InitializeAsync(fullPath);
+            await _gitService.InitializeAsync(fullPath, cancellationToken);
+            await CreateRecommendedGitIgnoreIfMissingAsync(
+                fullPath,
+                options.CreateGitIgnore ? options.GitIgnoreContent : null,
+                cancellationToken);
+            await _gitAttributesService.MergeLfsPatternsAsync(
+                fullPath,
+                options.LfsPatterns,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(options.UserName) || !string.IsNullOrWhiteSpace(options.UserEmail))
+            {
+                if (string.IsNullOrWhiteSpace(options.UserName) || string.IsNullOrWhiteSpace(options.UserEmail))
+                    throw new InvalidOperationException("Both the Git author name and email are required when configuring a local identity.");
+                await _gitService.ConfigureIdentityAsync(
+                    fullPath,
+                    options.UserName.Trim(),
+                    options.UserEmail.Trim(),
+                    cancellationToken);
+            }
+            if (!string.IsNullOrWhiteSpace(options.RemoteUrl))
+                await _gitService.AddOrUpdateRemoteAsync(fullPath, "origin", options.RemoteUrl.Trim(), cancellationToken);
+            if (options.CreateInitialCommit)
+            {
+                if (string.IsNullOrWhiteSpace(options.InitialCommitMessage))
+                    throw new InvalidOperationException("An initial commit message is required.");
+                GitRepositoryStatus status = await _gitService.GetDetailedStatusAsync(fullPath, cancellationToken);
+                string[] paths = status.Changes
+                    .Select(change => change.Path)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                if (paths.Length == 0)
+                    throw new InvalidOperationException("There are no eligible files to include in the initial commit.");
+                await _gitService.CreateRevisionAsync(
+                    fullPath,
+                    options.InitialCommitMessage.Trim(),
+                    paths,
+                    cancellationToken);
+            }
             ProjectDefinition definition = CreateGitProject(fullPath);
             await SaveAndSelectProjectAsync(definition);
         }, "Dépôt Git créé avec Git LFS local");
+    }
+
+    private async Task CreateRecommendedGitIgnoreIfMissingAsync(
+        string repositoryRoot,
+        string? recommendedGitIgnore,
+        CancellationToken cancellationToken = default)
+    {
+        string gitIgnorePath = Path.Combine(repositoryRoot, ".gitignore");
+        if (recommendedGitIgnore is null || File.Exists(gitIgnorePath))
+        {
+            return;
+        }
+
+        await _gitIgnoreService.SaveAsync(
+            repositoryRoot,
+            CyRevision.Git.GitIgnoreSource.Repository,
+            recommendedGitIgnore,
+            cancellationToken);
+        _applicationLogService.Information(
+            "gitignore",
+            "created recommended repository .gitignore",
+            repositoryRoot);
+    }
+
+    public async Task ApplyGitLfsRecommendationsAsync(
+        string repositoryPath,
+        IReadOnlyCollection<string> patterns,
+        CancellationToken cancellationToken = default)
+    {
+        string fullPath = Path.GetFullPath(repositoryPath);
+        await RunOperationAsync("Updating Git LFS attributes…", async () =>
+        {
+            GitAttributesMergeResult result = await _gitAttributesService.MergeLfsPatternsAsync(
+                fullPath,
+                patterns,
+                cancellationToken);
+            _applicationLogService.Information(
+                "git-lfs",
+                result.Changed
+                    ? $"added {result.AddedPatterns.Count} .gitattributes LFS pattern(s)"
+                    : "Git LFS attributes already up to date",
+                fullPath);
+            if (SelectedProject is not null && ProjectPathsEqual(SelectedProject.RootPath, fullPath))
+            {
+                IReadOnlyList<string> activePatterns = await _gitAttributesService.GetLfsPatternsAsync(
+                    fullPath,
+                    cancellationToken);
+                ReplaceCollection(LfsPatterns, activePatterns.Select(pattern => new LfsTrackedPattern(pattern, ".gitattributes")));
+            }
+        }, "Git LFS attributes updated; review .gitattributes before committing");
     }
 
     public async Task<bool> CloneGitRepositoryAsync(
@@ -11465,7 +11570,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }, "Comparaison avec HEAD terminée");
     }
 
-    public async Task ApplySelectedPresetAsync()
+    public async Task ApplySelectedPresetAsync(string? recommendedGitIgnore = null)
     {
         if (SelectedProject is null || SelectedPreset is null)
         {
@@ -11490,10 +11595,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         await RunOperationAsync("Application du mode projet…", async () =>
         {
-            if (preset.Features.GitEnabled && !Directory.Exists(Path.Combine(SelectedProject.RootPath, ".git")))
+            if (preset.Features.GitEnabled &&
+                !Directory.Exists(Path.Combine(SelectedProject.RootPath, ".git")) &&
+                !File.Exists(Path.Combine(SelectedProject.RootPath, ".git")))
             {
                 await _gitService.InitializeAsync(SelectedProject.RootPath);
             }
+            await CreateRecommendedGitIgnoreIfMissingAsync(SelectedProject.RootPath, recommendedGitIgnore);
 
             ProjectDefinition updated = SelectedProject.Definition with
             {
@@ -14519,212 +14627,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }
     }
 
-    private string BuildWorkingTreeDiffCacheKey(ProjectItemViewModel project, GitChangeViewModel change)
-    {
-        string stamp = "missing";
-        try
-        {
-            string fullPath = Path.Combine(project.RootPath, change.Path.Replace('/', Path.DirectorySeparatorChar));
-            FileInfo info = new(fullPath);
-            if (info.Exists) stamp = $"{info.LastWriteTimeUtc.Ticks}:{info.Length}";
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
-        return $"working:{project.Id}:{_workingTreeDiffGeneration}:{change.Change.IsStaged}:{change.Path}:{stamp}";
-    }
-
-    private async Task<FilePresentationResult?> TryCreateWorkingTreePresentationAsync(
-        ProjectItemViewModel project,
-        GitChangeViewModel change,
-        CancellationToken cancellationToken)
-    {
-        string candidatePath = Path.Combine(
-            project.RootPath,
-            change.Path.Replace('/', Path.DirectorySeparatorChar));
-        if (!_filePresentationService.HasProviderFor(candidatePath)) return null;
-
-        try
-        {
-            FileInfo candidate = new(candidatePath);
-            if (change.Change.Kind is GitChangeKind.Added or GitChangeKind.Untracked || !candidate.Exists)
-            {
-                if (!candidate.Exists) return null;
-                return await _filePresentationService.CreatePreviewAsync(
-                    new FilePreviewRequest(project.RootPath, change.Path, candidatePath, candidate.Length),
-                    cancellationToken);
-            }
-
-            string artifactDirectory = GetDiffArtifactDirectory();
-            Directory.CreateDirectory(artifactDirectory);
-            string baselinePath = Path.Combine(
-                artifactDirectory,
-                $"working-head-{Guid.NewGuid():N}{Path.GetExtension(change.Path)}");
-            await _gitService.ExportFileFromRevisionAsync(
-                project.RootPath,
-                change.Path,
-                "HEAD",
-                baselinePath,
-                cancellationToken);
-            return await _filePresentationService.CreateDiffAsync(
-                new FileDiffRequest(project.RootPath, change.Path, baselinePath, candidatePath),
-                artifactDirectory,
-                cancellationToken);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            _applicationLogService.Warning(
-                "file.presentation",
-                $"working-tree presentation unavailable path=\"{change.Path}\": {exception.Message}",
-                project.RootPath);
-            return null;
-        }
-    }
-
-    private async Task<FilePresentationResult?> TryCreateRevisionPresentationAsync(
-        ProjectItemViewModel project,
-        string revision,
-        string relativePath,
-        CancellationToken cancellationToken)
-    {
-        string probePath = Path.Combine(project.RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
-        if (!_filePresentationService.HasProviderFor(probePath)) return null;
-
-        string artifactDirectory = GetDiffArtifactDirectory();
-        Directory.CreateDirectory(artifactDirectory);
-        string extension = Path.GetExtension(relativePath);
-        string candidateRevision = _comparisonToHash ?? revision;
-        string baselineRevision = _comparisonFromHash ?? $"{revision}^1";
-        string candidatePath = Path.Combine(artifactDirectory, $"revision-{Guid.NewGuid():N}{extension}");
-        string baselinePath = Path.Combine(artifactDirectory, $"baseline-{Guid.NewGuid():N}{extension}");
-        try
-        {
-            await _gitService.ExportFileFromRevisionAsync(
-                project.RootPath, relativePath, candidateRevision, candidatePath, cancellationToken);
-            try
-            {
-                await _gitService.ExportFileFromRevisionAsync(
-                    project.RootPath, relativePath, baselineRevision, baselinePath, cancellationToken);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                FileInfo candidate = new(candidatePath);
-                return await _filePresentationService.CreatePreviewAsync(
-                    new FilePreviewRequest(project.RootPath, relativePath, candidatePath, candidate.Length),
-                    cancellationToken);
-            }
-
-            return await _filePresentationService.CreateDiffAsync(
-                new FileDiffRequest(project.RootPath, relativePath, baselinePath, candidatePath),
-                artifactDirectory,
-                cancellationToken);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            _applicationLogService.Warning(
-                "file.presentation",
-                $"revision presentation unavailable path=\"{relativePath}\": {exception.Message}",
-                project.RootPath);
-            return null;
-        }
-    }
-
-    private void ApplyDiffPresentation(FilePresentationResult? presentation, bool workingTree)
-    {
-        Bitmap? image = null;
-        if (presentation?.ImagePath is not null && File.Exists(presentation.ImagePath))
-        {
-            try { image = new Bitmap(presentation.ImagePath); }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
-            {
-                _applicationLogService.Warning(
-                    "file.presentation",
-                    $"preview image could not be decoded path=\"{presentation.ImagePath}\": {exception.Message}",
-                    SelectedProject?.RootPath);
-            }
-        }
-
-        if (workingTree)
-        {
-            DiffPreviewImage = image;
-            DiffPresentationSummary = presentation?.Summary ?? string.Empty;
-            if (image is null && !string.IsNullOrWhiteSpace(presentation?.TextContent))
-                DiffText = presentation.TextContent;
-        }
-        else
-        {
-            ExplorerDiffPreviewImage = image;
-            ExplorerDiffPresentationSummary = presentation?.Summary ?? string.Empty;
-            if (image is null && !string.IsNullOrWhiteSpace(presentation?.TextContent))
-                ExplorerDiff = presentation.TextContent;
-        }
-    }
-
-    private async Task<FilePresentationResult?> TryCreateRevisionPairPresentationAsync(
-        ProjectItemViewModel project,
-        string baselineRevision,
-        string candidateRevision,
-        string relativePath,
-        CancellationToken cancellationToken)
-    {
-        string probePath = Path.Combine(project.RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
-        if (!_filePresentationService.HasProviderFor(probePath)) return null;
-        string artifactDirectory = GetDiffArtifactDirectory();
-        Directory.CreateDirectory(artifactDirectory);
-        string extension = Path.GetExtension(relativePath);
-        string candidatePath = Path.Combine(artifactDirectory, $"revision-{Guid.NewGuid():N}{extension}");
-        string baselinePath = Path.Combine(artifactDirectory, $"baseline-{Guid.NewGuid():N}{extension}");
-        try
-        {
-            await _gitService.ExportFileFromRevisionAsync(
-                project.RootPath, relativePath, candidateRevision, candidatePath, cancellationToken);
-            try
-            {
-                await _gitService.ExportFileFromRevisionAsync(
-                    project.RootPath, relativePath, baselineRevision, baselinePath, cancellationToken);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                FileInfo candidate = new(candidatePath);
-                return await _filePresentationService.CreatePreviewAsync(
-                    new FilePreviewRequest(project.RootPath, relativePath, candidatePath, candidate.Length),
-                    cancellationToken);
-            }
-            return await _filePresentationService.CreateDiffAsync(
-                new FileDiffRequest(project.RootPath, relativePath, baselinePath, candidatePath),
-                artifactDirectory,
-                cancellationToken);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            _applicationLogService.Warning(
-                "file.presentation",
-                $"revision-pair presentation unavailable path=\"{relativePath}\": {exception.Message}",
-                project.RootPath);
-            return null;
-        }
-    }
-
-    private void ApplyMultiRestorePresentation(FilePresentationResult? presentation)
-    {
-        MultiRestoreDiffPresentationSummary = presentation?.Summary ?? string.Empty;
-        if (presentation?.ImagePath is not null && File.Exists(presentation.ImagePath))
-        {
-            try
-            {
-                MultiRestoreDiffPreviewImage = new Bitmap(presentation.ImagePath);
-                return;
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
-            {
-                _applicationLogService.Warning(
-                    "file.presentation",
-                    $"multi-restore preview image could not be decoded: {exception.Message}",
-                    SelectedProject?.RootPath);
-            }
-        }
-        MultiRestoreDiffPreviewImage = null;
-        if (!string.IsNullOrWhiteSpace(presentation?.TextContent))
-            MultiRestoreDiff = presentation.TextContent;
-    }
 
     private void StoreDiffCache(string key, string value)
     {
@@ -18277,6 +18179,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         RefreshGameEnginePluginCatalog();
         RefreshLorePluginCatalog();
         RefreshPerforcePluginCatalog();
+        RefreshCyStorePluginCatalog();
         RefreshProjectModeCatalog();
         OnPropertyChanged(nameof(HasWorkItemPlugins));
     }

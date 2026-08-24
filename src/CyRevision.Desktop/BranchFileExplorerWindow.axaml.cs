@@ -3,6 +3,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Platform.Storage;
 using CyRevision.Desktop.ViewModels;
+using CyRevision.Git;
 
 namespace CyRevision.Desktop;
 
@@ -20,7 +21,7 @@ public partial class BranchFileExplorerWindow : Window
         _viewModel = viewModel;
         DataContext = viewModel;
         Opened += async (_, _) => await viewModel.LoadAsync();
-        Closed += (_, _) => viewModel.Dispose();
+        Closed += async (_, _) => await viewModel.DisposeAsync();
     }
 
     private void OnAlwaysOnTopClick(object? sender, RoutedEventArgs e) =>
@@ -36,6 +37,33 @@ public partial class BranchFileExplorerWindow : Window
     private async void OnRetrieveClick(object? sender, RoutedEventArgs e)
     {
         if (_viewModel is not null) await _viewModel.RetrieveSelectedForPreviewAsync();
+    }
+
+    private async void OnRetrieveFilesClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = $"Retrieve files from {_viewModel.BranchName}",
+            AllowMultiple = false
+        });
+        if (folders.Count == 0) return;
+        try
+        {
+            await _viewModel.RetrieveSelectedFilesAsync(folders[0].Path.LocalPath);
+        }
+        catch (Exception exception)
+        {
+            await ShowMessageAsync("Retrieval failed", exception.Message);
+        }
+    }
+
+    private void OnCancelOperationClick(object? sender, RoutedEventArgs e) => _viewModel?.CancelOperation();
+
+    private void OnBranchFileSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_viewModel is null || sender is not DataGrid grid) return;
+        _viewModel.SetSelectedFiles(grid.SelectedItems.OfType<GitRevisionFile>());
     }
 
     private async void OnLoadDiffClick(object? sender, RoutedEventArgs e)

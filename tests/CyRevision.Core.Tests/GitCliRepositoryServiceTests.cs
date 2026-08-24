@@ -85,6 +85,13 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
         Assert.Equal("selected branch only", await File.ReadAllTextAsync(exported));
         Assert.Equal("main", await File.ReadAllTextAsync(Path.Combine(clone, "shared.txt")));
         Assert.Equal("main", (await service.GetStatusAsync(clone)).CurrentBranch);
+
+        await service.DeleteInspectionReferenceAsync(clone, inspectionReference);
+        await Assert.ThrowsAsync<GitOperationException>(() =>
+            service.GetRevisionFilesAsync(clone, inspectionReference));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.DeleteInspectionReferenceAsync(clone, "refs/heads/main"));
     }
 
     [Fact]
