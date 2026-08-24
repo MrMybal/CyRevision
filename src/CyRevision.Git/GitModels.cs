@@ -206,6 +206,40 @@ public sealed record GitBranchDetails(
     public string UpdatedText => LastUpdatedAt?.ToLocalTime().ToString("g") ?? "Unknown";
 }
 
+public sealed record GitRevisionFile(
+    string Path,
+    string ObjectId,
+    string ObjectType,
+    long? Size,
+    string Mode)
+{
+    public string Name => System.IO.Path.GetFileName(Path);
+    public string DirectoryPath => System.IO.Path.GetDirectoryName(Path)?.Replace('\\', '/') ?? string.Empty;
+    public string Extension => System.IO.Path.GetExtension(Path);
+    public string SizeText => Size is null ? "—" : FormatSize(Size.Value);
+    public bool IsSubmodule => string.Equals(ObjectType, "commit", StringComparison.Ordinal);
+
+    private static string FormatSize(long size)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double value = size;
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.#} {units[unit]}";
+    }
+}
+
+public sealed record GitRevisionFileExportResult(
+    string DestinationPath,
+    bool IsLfsObject,
+    bool DownloadedLfsObject,
+    long Size);
+
 public sealed record GitLocalBranchRemovalAnalysis(
     string BranchName,
     string? RemoteName,

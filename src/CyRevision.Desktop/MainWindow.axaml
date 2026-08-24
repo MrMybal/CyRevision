@@ -2070,9 +2070,15 @@
                                         <TextBlock Text="Selected branch commits" FontSize="15" FontWeight="SemiBold" />
                                         <TextBlock Text="{Binding SelectedBranchSummary}" Classes="muted" FontSize="9" TextWrapping="Wrap" />
                                     </StackPanel>
-                                    <Button Grid.Column="1" Classes="secondary" Content="Open selected commit ↗"
-                                            Click="OnOpenSelectedBranchCommitClick"
-                                            ToolTip.Tip="Open the selected commit, its files and diffs in the external Commit Explorer" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                        <Button Classes="secondary" Content="Browse branch files ↗"
+                                                IsEnabled="{Binding SelectedBranch, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                Click="OnOpenSelectedBranchFilesClick"
+                                                ToolTip.Tip="Explore and retrieve individual files without switching branches" />
+                                        <Button Classes="secondary" Content="Open selected commit ↗"
+                                                Click="OnOpenSelectedBranchCommitClick"
+                                                ToolTip.Tip="Open the selected commit, its files and diffs in the external Commit Explorer" />
+                                    </StackPanel>
                                 </Grid>
                                 <Border Grid.Row="1" Background="#24262A" CornerRadius="5" Padding="8">
                                     <Grid ColumnDefinitions="1*,1*,1*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="8">

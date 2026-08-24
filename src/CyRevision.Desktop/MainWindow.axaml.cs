@@ -102,6 +102,7 @@ public partial class MainWindow : Window
     private FocusedDiffWindow? _changesDiffWindow;
     private FocusedDiffWindow? _pullRequestDiffWindow;
     private CommitExplorerWindow? _commitExplorerWindow;
+    private BranchFileExplorerWindow? _branchFileExplorerWindow;
     private GitConflictResolverWindow? _gitConflictResolverWindow;
     private readonly List<DetachedWorkspaceWindow> _detachedWorkspaceWindows = [];
     private readonly Dictionary<TabItem, DetachedTabWindow> _detachedTabWindows = [];
@@ -1279,6 +1280,21 @@ public partial class MainWindow : Window
 
     private void OnOpenSelectedBranchCommitClick(object? sender, RoutedEventArgs e) =>
         OpenSelectedBranchCommitExplorer();
+
+    private void OnOpenSelectedBranchFilesClick(object? sender, RoutedEventArgs e)
+    {
+        if (_branchFileExplorerWindow is not null)
+        {
+            _branchFileExplorerWindow.Activate();
+            return;
+        }
+
+        BranchFileExplorerViewModel? explorer = _viewModel.CreateBranchFileExplorer();
+        if (explorer is null) return;
+        _branchFileExplorerWindow = new BranchFileExplorerWindow(explorer);
+        _branchFileExplorerWindow.Closed += (_, _) => _branchFileExplorerWindow = null;
+        _branchFileExplorerWindow.Show();
+    }
 
     private void OnSelectedBranchCommitDoubleTapped(object? sender, TappedEventArgs e) =>
         OpenSelectedBranchCommitExplorer();
