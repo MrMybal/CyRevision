@@ -946,7 +946,8 @@
 
                                 <Grid Grid.Row="2" ColumnDefinitions="*,112" ColumnSpacing="6" Margin="6,4">
                                     <TextBox Text="{Binding ChangeSearch, UpdateSourceTrigger=PropertyChanged}" Classes="searchBox"
-                                             PlaceholderText="Search files, folders, state, lock owner or area…" />
+                                             PlaceholderText="Search name, path, *.cpp, *.cpp;*.h, state, lock owner or area…"
+                                             ToolTip.Tip="Use * and ? for file patterns. Separate alternative patterns with ; and additional filters with spaces." />
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding ChangeSortOptions}"
                                               SelectedItem="{Binding ChangeSort}" ToolTip.Tip="Sort change list" />
                                 </Grid>

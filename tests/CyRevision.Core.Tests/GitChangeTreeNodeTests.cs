@@ -61,6 +61,38 @@ public sealed class GitChangeTreeNodeTests
         Assert.Equal(1, group.LeafCount);
     }
 
+    [Fact]
+    public void RefreshIncludedStateNotifiesLoadedFlatGroupAndFiles()
+    {
+        GitChangeViewModel[] changes =
+        [
+            Change("Generated/First.txt"),
+            Change("Generated/Second.txt")
+        ];
+        GitChangeTreeNode group = GitChangeTreeNode.CreateFlatGroup("Unversioned files", "untracked", changes);
+        group.EnsureChildrenLoaded();
+        List<GitChangeTreeNode> notified = [];
+        group.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(GitChangeTreeNode.IsIncluded)) notified.Add(group);
+        };
+        foreach (GitChangeTreeNode child in group.Children)
+        {
+            child.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName == nameof(GitChangeTreeNode.IsIncluded)) notified.Add(child);
+            };
+        }
+
+        foreach (GitChangeViewModel change in changes) change.IsIncluded = true;
+        group.RefreshIncludedState();
+
+        Assert.True(group.IsIncluded);
+        Assert.All(group.Children, child => Assert.True(child.IsIncluded));
+        Assert.Contains(group, notified);
+        Assert.All(group.Children, child => Assert.Contains(child, notified));
+    }
+
     private static GitChangeViewModel Change(string path) => new(
         new GitChange(path, GitChangeKind.Untracked, false, false));
 }
