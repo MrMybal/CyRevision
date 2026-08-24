@@ -7,6 +7,7 @@ public sealed class CodeWorkspaceServiceTests
     [Theory]
     [InlineData("Tools/Build/Compile.bat", "*.bat", true)]
     [InlineData("Source/Reality/Actor.cpp", ".cpp", true)]
+    [InlineData("Source/Reality/Actor.CPP", "*.cpp", true)]
     [InlineData("Plugins/Reality/Private/Actor.cpp.generated", "Reality\\*.cpp*", true)]
     [InlineData("Plugins/Other/Private/Actor.cpp", "Reality\\*.cpp*", false)]
     [InlineData("Source/Reality/Actor.h", "*.cpp;*.h", true)]

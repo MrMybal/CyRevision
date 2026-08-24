@@ -15347,11 +15347,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         string[] terms = ChangeSearch.Split(
             ' ',
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        bool Matches(GitChangeViewModel change) => terms.Length == 0 || terms.All(term =>
-            change.Path.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-            change.State.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-            change.Area.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-            change.LockOwner.Contains(term, StringComparison.OrdinalIgnoreCase));
+        bool MatchesTerm(GitChangeViewModel change, string term)
+        {
+            if (term.IndexOfAny(['*', '?']) >= 0 || term.Contains(';'))
+                return CodeFilePatternMatcher.IsMatch(change.Path, term);
+
+            return change.Path.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                   change.State.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                   change.Area.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                   change.LockOwner.Contains(term, StringComparison.OrdinalIgnoreCase);
+        }
+
+        bool Matches(GitChangeViewModel change) =>
+            terms.Length == 0 || terms.All(term => MatchesTerm(change, term));
 
         IOrderedEnumerable<GitChangeViewModel> Sort(IEnumerable<GitChangeViewModel> source) => ChangeSort switch
         {
@@ -15457,6 +15465,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     private void RefreshChangeTreeIncludedState()
     {
+        foreach (GitChangeTreeNode root in FlatChangeTree) root.RefreshIncludedState();
         foreach (GitChangeTreeNode root in ChangeTree) root.RefreshIncludedState();
     }
 
