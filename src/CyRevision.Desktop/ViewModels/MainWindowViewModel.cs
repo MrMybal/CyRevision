@@ -806,6 +806,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public ObservableCollection<GitRevision> SelectedBranchHistory { get; } = new BatchObservableCollection<GitRevision>();
 
+    public BranchFileExplorerViewModel? CreateBranchFileExplorer()
+    {
+        if (SelectedProject is null || SelectedBranch is null) return null;
+        return new BranchFileExplorerViewModel(
+            _gitService,
+            _codeWorkspaceService,
+            _filePresentationService,
+            SelectedProject.Name,
+            SelectedProject.RootPath,
+            SelectedBranch);
+    }
+
     public ObservableCollection<LfsTrackedPattern> LfsPatterns { get; } = [];
 
     public ObservableCollection<LfsFileLock> LfsLocks { get; } = new BatchObservableCollection<LfsFileLock>();

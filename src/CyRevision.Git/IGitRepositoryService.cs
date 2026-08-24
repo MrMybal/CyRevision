@@ -148,6 +148,17 @@ public interface IGitRepositoryService
         string branchName,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<GitRevisionFile>> GetRevisionFilesAsync(
+        string repositoryPath,
+        string revision,
+        CancellationToken cancellationToken = default);
+
+    Task<string> FetchRemoteBranchForInspectionAsync(
+        string repositoryPath,
+        string remoteName,
+        string branchName,
+        CancellationToken cancellationToken = default);
+
     Task<GitLocalBranchRemovalAnalysis> AnalyzeLocalBranchRemovalAsync(
         string repositoryPath,
         string branchName,
@@ -244,6 +255,15 @@ public interface IGitRepositoryService
         string relativePath,
         string revision,
         string destinationPath,
+        CancellationToken cancellationToken = default);
+
+    Task<GitRevisionFileExportResult> MaterializeFileFromRevisionAsync(
+        string repositoryPath,
+        string relativePath,
+        string revision,
+        string destinationPath,
+        string? lfsRemoteName = null,
+        bool fetchMissingLfsObject = false,
         CancellationToken cancellationToken = default);
 
     Task AddOrUpdateRemoteAsync(

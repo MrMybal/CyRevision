@@ -1088,6 +1088,58 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             lastSubject);
     }
 
+    public async Task<IReadOnlyList<GitRevisionFile>> GetRevisionFilesAsync(
+        string repositoryPath,
+        string revision,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(revision);
+        string output = await RunGitAsync(
+                repositoryPath,
+                ["ls-tree", "-r", "-z", "-l", "--full-tree", revision],
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        List<GitRevisionFile> files = [];
+        foreach (string item in output.Split('\0', StringSplitOptions.RemoveEmptyEntries))
+        {
+            int tab = item.IndexOf('\t');
+            if (tab <= 0 || tab >= item.Length - 1) continue;
+            string metadata = item[..tab];
+            string path = item[(tab + 1)..];
+            string[] fields = metadata.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length < 4) continue;
+            long? size = long.TryParse(fields[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsedSize)
+                ? parsedSize
+                : null;
+            files.Add(new GitRevisionFile(path, fields[2], fields[1], size, fields[0]));
+        }
+
+        return files.OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    public async Task<string> FetchRemoteBranchForInspectionAsync(
+        string repositoryPath,
+        string remoteName,
+        string branchName,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(remoteName);
+        ValidateReferenceName(branchName);
+        string normalizedBranch = branchName.StartsWith(remoteName + "/", StringComparison.Ordinal)
+            ? branchName[(remoteName.Length + 1)..]
+            : branchName;
+        ValidateReferenceName(normalizedBranch);
+        string inspectionReference = $"refs/cyrevision/inspect/{remoteName}/{normalizedBranch}";
+        await RunGitWithoutOutputAsync(
+                repositoryPath,
+                ["fetch", "--no-tags", remoteName,
+                    $"+refs/heads/{normalizedBranch}:{inspectionReference}"],
+                cancellationToken)
+            .ConfigureAwait(false);
+        return inspectionReference;
+    }
+
     private static string? SelectBranchComparisonBase(
         string branchName,
         GitBranch? selected,
@@ -1360,6 +1412,87 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         {
             File.Delete(destinationPath);
             throw new GitOperationException(result.StandardError.Trim());
+        }
+    }
+
+    public async Task<GitRevisionFileExportResult> MaterializeFileFromRevisionAsync(
+        string repositoryPath,
+        string relativePath,
+        string revision,
+        string destinationPath,
+        string? lfsRemoteName = null,
+        bool fetchMissingLfsObject = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+        ValidateReferenceName(revision);
+        string fullDestination = Path.GetFullPath(destinationPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullDestination)!);
+
+        string pointerPath = fullDestination + ".cyrevision-pointer-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            await ExportFileFromRevisionAsync(
+                    repositoryPath,
+                    relativePath,
+                    revision,
+                    pointerPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            LfsPointerInfo? pointer = await TryReadLfsPointerAtRevisionAsync(
+                    repositoryPath,
+                    revision,
+                    relativePath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (pointer is null)
+            {
+                File.Move(pointerPath, fullDestination, overwrite: true);
+                return new GitRevisionFileExportResult(
+                    fullDestination,
+                    false,
+                    false,
+                    new FileInfo(fullDestination).Length);
+            }
+
+            LfsStoragePaths storage = await LfsStoragePathResolver.ResolveAsync(
+                    _processRunner,
+                    _gitExecutable,
+                    repositoryPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            string objectPath = storage.GetObjectPath(pointer.OidSha256);
+            bool downloaded = false;
+            if (!File.Exists(objectPath) && fetchMissingLfsObject)
+            {
+                string remote = string.IsNullOrWhiteSpace(lfsRemoteName) ? "origin" : lfsRemoteName.Trim();
+                ValidateReferenceName(remote);
+                ProcessResult fetch = await RunGitResultAsync(
+                        repositoryPath,
+                        ["lfs", "fetch", $"--include={relativePath.Replace('\\', '/')}", "--exclude=", remote, revision],
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                EnsureSuccess(fetch, $"Unable to retrieve the selected LFS object from {remote}.");
+                downloaded = true;
+            }
+
+            if (!File.Exists(objectPath))
+            {
+                throw new GitOperationException(
+                    "The selected revision contains a Git LFS pointer, but its object is not stored locally. " +
+                    "Enable targeted remote retrieval or obtain the object from an authorized peer/archive.");
+            }
+
+            await using FileStream source = new(objectPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
+            await using FileStream destination = new(fullDestination, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+            await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+            return new GitRevisionFileExportResult(fullDestination, true, downloaded, pointer.Size);
+        }
+        finally
+        {
+            if (File.Exists(pointerPath)) File.Delete(pointerPath);
         }
     }
 

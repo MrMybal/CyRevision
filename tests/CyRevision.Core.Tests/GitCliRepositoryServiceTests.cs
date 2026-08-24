@@ -7,6 +7,87 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
     private readonly string _temporaryDirectory = Path.Combine(Path.GetTempPath(), $"cyrevision-git-{Guid.NewGuid():N}");
 
     [Fact]
+    public async Task RevisionFilesCanBeListedAndMaterializedWithoutSwitchingBranches()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        string sourcePath = Path.Combine(_temporaryDirectory, "Source", "Player Controller.cpp");
+        Directory.CreateDirectory(Path.GetDirectoryName(sourcePath)!);
+        await File.WriteAllTextAsync(sourcePath, "// main\n");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Initial source", ["Source/Player Controller.cpp"]);
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/branch-files");
+        await File.WriteAllTextAsync(sourcePath, "// feature\nvoid Move();\n");
+        await File.WriteAllTextAsync(Path.Combine(_temporaryDirectory, "README.md"), "feature documentation");
+        await service.CreateRevisionAsync(
+            _temporaryDirectory,
+            "Feature files",
+            ["Source/Player Controller.cpp", "README.md"]);
+        await service.CheckoutBranchAsync(_temporaryDirectory, "main");
+
+        IReadOnlyList<GitRevisionFile> files = await service.GetRevisionFilesAsync(
+            _temporaryDirectory,
+            "feature/branch-files");
+        Assert.Contains(files, file => file.Path == "Source/Player Controller.cpp" && file.Size > 0);
+        Assert.Contains(files, file => file.Path == "README.md");
+
+        string exported = Path.Combine(_temporaryDirectory, ".cyrevision", "test-export", "Player Controller.cpp");
+        GitRevisionFileExportResult result = await service.MaterializeFileFromRevisionAsync(
+            _temporaryDirectory,
+            "Source/Player Controller.cpp",
+            "feature/branch-files",
+            exported);
+
+        Assert.False(result.IsLfsObject);
+        Assert.Equal("// feature\nvoid Move();\n", await File.ReadAllTextAsync(exported));
+        Assert.Equal("// main\n", (await File.ReadAllTextAsync(sourcePath)).Replace("\r\n", "\n", StringComparison.Ordinal));
+        GitRepositoryStatus status = await service.GetStatusAsync(_temporaryDirectory);
+        Assert.Equal("main", status.CurrentBranch);
+        Assert.DoesNotContain(status.Changes, change => change.Path == "Source/Player Controller.cpp");
+    }
+
+    [Fact]
+    public async Task RemoteBranchCanBeFetchedIntoPrivateInspectionReference()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        string source = Path.Combine(_temporaryDirectory, "source");
+        string clone = Path.Combine(_temporaryDirectory, "clone");
+        await service.InitializeAsync(source);
+        await service.ConfigureIdentityAsync(source, "CyRevision Tests", "tests@cyrevision.local");
+        await File.WriteAllTextAsync(Path.Combine(source, "shared.txt"), "main");
+        await service.CreateRevisionAsync(source, "Initial", ["shared.txt"]);
+        await service.CloneAsync(source, clone);
+
+        await service.CreateBranchAsync(source, "feature/remote-inspection");
+        await File.WriteAllTextAsync(Path.Combine(source, "shared.txt"), "remote feature");
+        await File.WriteAllTextAsync(Path.Combine(source, "only-remote.txt"), "selected branch only");
+        await service.CreateRevisionAsync(source, "Remote feature", ["shared.txt", "only-remote.txt"]);
+
+        string inspectionReference = await service.FetchRemoteBranchForInspectionAsync(
+            clone,
+            "origin",
+            "feature/remote-inspection");
+        IReadOnlyList<GitRevisionFile> files = await service.GetRevisionFilesAsync(clone, inspectionReference);
+        Assert.Contains(files, file => file.Path == "only-remote.txt");
+
+        string exported = Path.Combine(clone, ".cyrevision", "remote-export.txt");
+        await service.MaterializeFileFromRevisionAsync(
+            clone,
+            "only-remote.txt",
+            inspectionReference,
+            exported);
+        Assert.Equal("selected branch only", await File.ReadAllTextAsync(exported));
+        Assert.Equal("main", await File.ReadAllTextAsync(Path.Combine(clone, "shared.txt")));
+        Assert.Equal("main", (await service.GetStatusAsync(clone)).CurrentBranch);
+    }
+
+    [Fact]
     public async Task LocalRemoteCanBeClonedIntoChosenDestination()
     {
         GitCliRepositoryService service = new();
