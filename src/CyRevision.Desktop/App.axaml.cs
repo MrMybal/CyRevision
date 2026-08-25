@@ -37,6 +37,9 @@ public partial class App : Application
     private DesktopBehaviorPreferences _desktopPreferences = DesktopBehaviorPreferences.Default;
     private ApplicationLogService? _applicationLogService;
     private bool _explicitExit;
+    private bool _exitConfirmationActive;
+    private bool _shutdownStarted;
+    private bool _viewModelDisposalStarted;
     private TrayIcon _mainTrayIcon = null!;
     private NativeMenuItem _trayOpenItem = null!;
     private NativeMenuItem _trayHideItem = null!;
@@ -153,7 +156,21 @@ public partial class App : Application
                 _mainTrayIcon.Dispose();
                 localization.LanguageChanged -= OnLanguageChanged;
                 viewModel.PropertyChanged -= OnViewModelPropertyChanged;
-                Task.Run(async () => await viewModel.DisposeAsync()).GetAwaiter().GetResult();
+                if (!_viewModelDisposalStarted)
+                {
+                    _viewModelDisposalStarted = true;
+                    try
+                    {
+                        bool completed = Task.Run(async () => await viewModel.DisposeAsync())
+                            .Wait(TimeSpan.FromSeconds(3));
+                        if (!completed)
+                            applicationLog.Warning("Application", "Final service cleanup exceeded 3 seconds; process shutdown will continue.");
+                    }
+                    catch (Exception exception)
+                    {
+                        applicationLog.Error("Application", "Final service cleanup failed during shutdown.", exception);
+                    }
+                }
                 catalog.Dispose();
                 applicationLog.Information("Application", "CyRevision stopped normally.");
                 AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
@@ -405,16 +422,86 @@ public partial class App : Application
         _mainWindow.Hide();
     }
 
-    private void RequestExit()
+    private async void RequestExit()
     {
-        if (_explicitExit)
+        if (_explicitExit || _shutdownStarted || _exitConfirmationActive)
         {
             return;
         }
 
+        _exitConfirmationActive = true;
+        try
+        {
+            if (_mainWindow is not null)
+            {
+                ShowMainWindow();
+                if (!await _mainWindow.ShowExitConfirmationAsync())
+                {
+                    return;
+                }
+            }
+
+            await ShutdownApplicationAsync();
+        }
+        finally
+        {
+            _exitConfirmationActive = false;
+        }
+    }
+
+    private async Task ShutdownApplicationAsync()
+    {
+        if (_shutdownStarted)
+        {
+            return;
+        }
+
+        _shutdownStarted = true;
         _explicitExit = true;
         _mainTrayIcon.IsVisible = false;
+        if (_mainWindow is not null)
+        {
+            _mainWindow.IsEnabled = false;
+        }
+
+        StartForcedExitWatchdog();
+        if (_viewModel is not null && !_viewModelDisposalStarted)
+        {
+            _viewModelDisposalStarted = true;
+            try
+            {
+                await _viewModel.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            catch (TimeoutException)
+            {
+                _applicationLogService?.Warning(
+                    "Application",
+                    "Service cleanup exceeded 10 seconds. CyRevision will finish shutting down without waiting longer.");
+            }
+            catch (Exception exception)
+            {
+                _applicationLogService?.Error(
+                    "Application",
+                    "A service failed while CyRevision was shutting down. Process shutdown will continue.",
+                    exception);
+            }
+        }
+
         _desktop?.Shutdown();
+    }
+
+    private static void StartForcedExitWatchdog()
+    {
+        Thread watchdog = new(() =>
+        {
+            Thread.Sleep(TimeSpan.FromSeconds(15));
+            Environment.Exit(0);
+        })
+        {
+            IsBackground = true,
+            Name = "CyRevision exit watchdog"
+        };
+        watchdog.Start();
     }
 
     private void ResolveTrayControls()

@@ -45,12 +45,53 @@ public sealed record PullRequestSummary(
     DateTimeOffset UpdatedAt,
     Uri WebUrl,
     bool IsMerged,
-    bool? IsMergeable)
+    bool? IsMergeable,
+    string MergeableState = "",
+    string CurrentUser = "",
+    string CiStatus = "",
+    string CiConclusion = "")
 {
     public string NumberText => $"#{Number}";
     public string StateText => IsMerged ? "MERGED" : IsDraft ? "DRAFT" : State.ToUpperInvariant();
     public string BranchText => $"{HeadBranch} → {BaseBranch}";
     public string UpdatedText => UpdatedAt.LocalDateTime.ToString("g");
+    public string StateColor => IsMerged
+        ? "#C792EA"
+        : IsDraft
+            ? "#E6B85C"
+            : State.Equals("open", StringComparison.OrdinalIgnoreCase)
+                ? "#66D9A9"
+                : "#FF7B86";
+    public string StateBackgroundColor => IsMerged
+        ? "#392A48"
+        : IsDraft
+            ? "#443A25"
+            : State.Equals("open", StringComparison.OrdinalIgnoreCase)
+                ? "#203E35"
+                : "#472930";
+    public bool IsOwnedByCurrentUser =>
+        !string.IsNullOrWhiteSpace(CurrentUser) &&
+        Author.Equals(CurrentUser, StringComparison.OrdinalIgnoreCase);
+    public string OwnershipText => IsOwnedByCurrentUser ? "MINE" : string.Empty;
+    public string OwnershipColor => IsOwnedByCurrentUser ? "#55C7E8" : "#7F8796";
+    public string CiStateText => string.IsNullOrWhiteSpace(CiConclusion)
+        ? string.IsNullOrWhiteSpace(CiStatus) ? "NO CI" : CiStatus.ToUpperInvariant()
+        : CiConclusion.ToUpperInvariant();
+    public string CiStateColor => CiStatePresentation.Color(CiStatus, CiConclusion);
+    public bool HasCiFailure => CiConclusion.Equals("failure", StringComparison.OrdinalIgnoreCase) ||
+                                CiConclusion.Equals("timed_out", StringComparison.OrdinalIgnoreCase) ||
+                                CiConclusion.Equals("startup_failure", StringComparison.OrdinalIgnoreCase);
+    public bool HasMergeConflicts =>
+        MergeableState.Equals("dirty", StringComparison.OrdinalIgnoreCase) ||
+        IsMergeable == false;
+    public string MergeabilityText => HasMergeConflicts
+        ? "CONFLICTS"
+        : IsMergeable == true
+            ? "MERGEABLE"
+            : string.IsNullOrWhiteSpace(MergeableState)
+                ? "UNKNOWN"
+                : MergeableState.ToUpperInvariant();
+    public string MergeabilityColor => HasMergeConflicts ? "#FF7B86" : IsMergeable == true ? "#66D9A9" : "#A7ACB7";
 }
 
 public sealed record PullRequestFile(
@@ -63,6 +104,14 @@ public sealed record PullRequestFile(
     Uri? WebUrl)
 {
     public string ChangeText => $"+{Additions} / -{Deletions}";
+}
+
+public sealed record PullRequestConflictFile(
+    string Path,
+    string Detail)
+{
+    public string Name => System.IO.Path.GetFileName(Path);
+    public string DirectoryPath => System.IO.Path.GetDirectoryName(Path)?.Replace('\\', '/') ?? string.Empty;
 }
 
 public sealed record PullRequestReview(

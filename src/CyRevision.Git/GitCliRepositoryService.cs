@@ -383,7 +383,7 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
         }
 
         arguments.AddRange([
-            "--date-order",
+            "--topo-order",
             $"--max-count={maximumCount}",
             "--date=iso-strict",
             "--decorate=short",

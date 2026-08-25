@@ -4,6 +4,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:controls="using:CyRevision.Desktop.Controls"
         xmlns:views="using:CyRevision.Desktop.Views"
+        xmlns:local="using:CyRevision.Desktop"
         mc:Ignorable="d"
         d:DesignWidth="1440"
         d:DesignHeight="900"
@@ -764,28 +765,41 @@
                         </Border>
 
                         <Border Grid.Row="2" Classes="card" Padding="5">
-                            <ListBox x:Name="WorkspaceTabVisibilityList" Background="#14171D"
-                                     BorderBrush="#343A46" BorderThickness="1" Padding="2" SelectionMode="Single">
-                                <ListBox.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal" ItemWidth="285" />
-                                    </ItemsPanelTemplate>
-                                </ListBox.ItemsPanel>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Width="277" Height="31" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7" Margin="1,0">
+                            <TreeView x:Name="WorkspaceTabVisibilityList" Background="#14171D"
+                                      BorderBrush="#343A46" BorderThickness="1" Padding="5"
+                                      SelectionMode="Single">
+                                <TreeView.Styles>
+                                    <Style Selector="TreeViewItem">
+                                        <Setter Property="IsExpanded" Value="True" />
+                                    </Style>
+                                </TreeView.Styles>
+                                <TreeView.DataTemplates>
+                                    <TreeDataTemplate DataType="local:WorkspaceTabVisibilityGroup"
+                                                      ItemsSource="{Binding Items}">
+                                        <Grid Height="34" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                            <TextBlock Text="▾" Foreground="#75D7BD" VerticalAlignment="Center"
+                                                       FontSize="11" FontWeight="Bold" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
+                                                       FontWeight="SemiBold" FontSize="12.5" />
+                                            <Border Grid.Column="2" Background="#263247" CornerRadius="4" Padding="7,2"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding VisibleSummary}" Foreground="#9CC7FF" FontSize="9" />
+                                            </Border>
+                                        </Grid>
+                                    </TreeDataTemplate>
+                                    <DataTemplate DataType="local:WorkspaceTabVisibilityItem">
+                                        <Grid MinWidth="560" Height="30" ColumnDefinitions="Auto,220,*" ColumnSpacing="8">
                                             <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}"
                                                       IsEnabled="{Binding IsAvailableInMode}" VerticalAlignment="Center" />
                                             <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
                                                        TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
-                                            <Border Grid.Column="2" Background="#252C3A" CornerRadius="3" Padding="5,1"
-                                                    VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding AvailabilitySummary}" FontSize="8.5" Foreground="#9AA8C2" />
-                                            </Border>
+                                            <TextBlock Grid.Column="2" Text="{Binding AvailabilitySummary}"
+                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                       FontSize="9" Foreground="#8E9BB3" />
                                         </Grid>
                                     </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
+                                </TreeView.DataTemplates>
+                            </TreeView>
                         </Border>
                     </Grid>
                 </TabItem>
@@ -2291,7 +2305,7 @@
                             </Grid>
                         </Border>
 
-                        <Grid Grid.Row="1" ColumnDefinitions="420,8,*">
+                        <Grid Grid.Row="1" ColumnDefinitions="500,8,*">
                             <Border Classes="card" Padding="0" ClipToBounds="True" MinWidth="310">
                                 <TabControl>
                                     <TabItem Header="Requests">
@@ -2302,11 +2316,27 @@
                                                   AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
                                                   Background="Transparent" BorderThickness="0" Margin="4">
                                             <DataGrid.Columns>
-                                                <DataGridTextColumn Header="#" Binding="{Binding NumberText}" Width="58" />
-                                                <DataGridTextColumn Header="State" Binding="{Binding StateText}" Width="72" />
+                                                <DataGridTextColumn Header="#" Binding="{Binding NumberText}" SortMemberPath="Number" Width="55" />
+                                                <DataGridTemplateColumn Header="State" Width="82">
+                                                    <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                        <Border Background="{Binding StateBackgroundColor}" CornerRadius="4" Padding="5,2" HorizontalAlignment="Left">
+                                                            <TextBlock Text="{Binding StateText}" Foreground="{Binding StateColor}" FontSize="9" FontWeight="Bold" />
+                                                        </Border>
+                                                    </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+                                                <DataGridTemplateColumn Header="CI" Width="72">
+                                                    <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                        <TextBlock Text="{Binding CiStateText}" Foreground="{Binding CiStateColor}" FontSize="9" FontWeight="SemiBold" />
+                                                    </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
                                                 <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*" />
-                                                <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="100" />
-                                                <DataGridTextColumn Header="Updated" Binding="{Binding UpdatedText}" Width="125" />
+                                                <DataGridTemplateColumn Header="Mine" Width="45">
+                                                    <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                        <TextBlock Text="{Binding OwnershipText}" Foreground="{Binding OwnershipColor}" FontSize="9" FontWeight="Bold" />
+                                                    </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+                                                <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="92" />
+                                                <DataGridTextColumn Header="Updated" Binding="{Binding UpdatedText}" Width="118" />
                                             </DataGrid.Columns>
                                         </DataGrid>
                                         </Grid>
@@ -2356,45 +2386,74 @@
                             <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
                                 <Grid RowDefinitions="Auto,*">
                                     <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="12,9">
-                                        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="5">
-                                            <StackPanel>
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
+                                            <TextBlock Text="{Binding SelectedPullRequest.NumberText}" FontWeight="Bold"
+                                                       FontSize="14" Foreground="#78D7B7" VerticalAlignment="Center" />
+                                            <StackPanel Grid.Column="1" Spacing="3">
+                                                <TextBlock Text="{Binding SelectedPullRequest.Title}" FontSize="15" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis" />
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <TextBlock Text="{Binding SelectedPullRequest.NumberText}" FontWeight="Bold" Foreground="#78D7B7" />
-                                                    <TextBlock Text="{Binding SelectedPullRequest.Title}" FontSize="15" FontWeight="SemiBold"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                    <Border Background="#34363A" CornerRadius="4" Padding="6,2">
+                                                    <Border Background="{Binding SelectedPullRequest.StateBackgroundColor}" CornerRadius="4" Padding="6,2">
                                                         <TextBlock Text="{Binding SelectedPullRequest.StateText}" FontSize="9" FontWeight="Bold"
-                                                                   Foreground="#F2C66D" />
+                                                                   Foreground="{Binding SelectedPullRequest.StateColor}" />
                                                     </Border>
+                                                    <TextBlock Text="{Binding SelectedPullRequest.CiStateText}" FontSize="9" FontWeight="Bold"
+                                                               Foreground="{Binding SelectedPullRequest.CiStateColor}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding SelectedPullRequest.OwnershipText}" FontSize="9" FontWeight="Bold"
+                                                               Foreground="{Binding SelectedPullRequest.OwnershipColor}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding SelectedPullRequest.BranchText}" FontSize="10" Classes="muted"
+                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding PullRequestDetailsSummary}" FontSize="10" Foreground="#78D7B7"
+                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                                                 </StackPanel>
-                                                <TextBlock Text="{Binding SelectedPullRequest.BranchText}" FontSize="10" Classes="muted" />
-                                                <TextBlock Text="{Binding PullRequestDetailsSummary}" FontSize="10" Foreground="#78D7B7" />
                                             </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                                                <Button Classes="secondary" Content="Commit Explorer ↗"
-                                                        Click="OnOpenPullRequestCommitExplorerClick"
-                                                        IsEnabled="{Binding HasSelectedPullRequest}" />
-                                                <Button Classes="secondary" Content="Open ↗" Click="OnOpenPullRequestClick"
-                                                        IsEnabled="{Binding HasSelectedPullRequest}" />
-                                                <Button Classes="secondary" Content="Checkout" Click="OnCheckoutPullRequestClick"
-                                                        IsEnabled="{Binding HasSelectedPullRequest}" />
-                                                <Button Classes="secondary" Content="Close / reopen" Click="OnTogglePullRequestStateClick"
-                                                        IsEnabled="{Binding HasSelectedPullRequest}" />
-                                            </StackPanel>
-                                            <TextBlock Grid.Row="1" Text="{Binding PullRequestBody}" TextWrapping="Wrap"
-                                                       MaxHeight="72" Classes="muted" />
-                                            <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6"
-                                                        VerticalAlignment="Bottom">
-                                                <ComboBox Width="105" ItemsSource="{Binding PullRequestMergeMethods}"
-                                                          SelectedItem="{Binding PullRequestMergeMethod}" />
-                                                <Button Classes="primary" Content="Merge" Click="OnMergePullRequestClick"
-                                                        IsEnabled="{Binding CanMergeSelectedPullRequest}" />
-                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Text="{Binding PullRequestStatus}" MaxWidth="220"
+                                                       Classes="muted" FontSize="9.5" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
                                         </Grid>
                                     </Border>
-
                                     <TabControl Grid.Row="1">
-                                        <TabItem Header="Files and patch">
+                                        <TabItem Header="Description">
+                                            <Grid Margin="12" RowDefinitions="Auto,Auto,*" RowSpacing="10">
+                                                <TextBlock Text="{Binding SelectedPullRequest.Title}" FontSize="17" FontWeight="SemiBold"
+                                                           TextWrapping="Wrap" />
+                                                <Grid Grid.Row="1" ColumnDefinitions="1*,1*,1*,1*" ColumnSpacing="8">
+                                                    <Border Background="#252A31" CornerRadius="5" Padding="9,6">
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock Text="BRANCH" FontSize="9" FontWeight="Bold" Classes="muted" />
+                                                            <TextBlock Text="{Binding SelectedPullRequest.BranchText}" TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Grid.Column="1" Background="#252A31" CornerRadius="5" Padding="9,6">
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock Text="AUTHOR" FontSize="9" FontWeight="Bold" Classes="muted" />
+                                                            <TextBlock Text="{Binding SelectedPullRequest.Author}" TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Grid.Column="2" Background="#252A31" CornerRadius="5" Padding="9,6">
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock Text="UPDATED" FontSize="9" FontWeight="Bold" Classes="muted" />
+                                                            <TextBlock Text="{Binding SelectedPullRequest.UpdatedText}" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Grid.Column="3" Background="#252A31" CornerRadius="5" Padding="9,6">
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock Text="CHANGES" FontSize="9" FontWeight="Bold" Classes="muted" />
+                                                            <TextBlock Text="{Binding PullRequestDetailsSummary}" Foreground="#78D7B7"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Grid>
+                                                <Border Grid.Row="2" Background="#111820" BorderBrush="#343A44" BorderThickness="1"
+                                                        CornerRadius="5" Padding="12">
+                                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                        <TextBlock Text="{Binding PullRequestBody}" TextWrapping="Wrap" FontSize="11.5" />
+                                                    </ScrollViewer>
+                                                </Border>
+                                            </Grid>
+                                        </TabItem>
+
+                                        <TabItem Header="Files">
                                             <Grid RowDefinitions="30,*" Margin="4">
                                                 <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
                                                     <TextBlock Text="LAYOUT" Classes="muted" FontSize="9" FontWeight="Bold"
@@ -2412,24 +2471,25 @@
                                                     <Button Grid.Column="5" Classes="secondary" Content="Open diff ↗"
                                                             Click="OnOpenPullRequestDiffWindowClick" />
                                                 </Grid>
-                                            <Grid x:Name="PullRequestFilesWorkspaceGrid" Grid.Row="1" ColumnDefinitions="0.78*,8,1.22*">
-                                                <DataGrid ItemsSource="{Binding PullRequestFiles}" SelectedItem="{Binding SelectedPullRequestFile}"
-                                                          AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
-                                                          Background="Transparent" BorderThickness="0">
-                                                    <DataGrid.Columns>
-                                                        <DataGridTextColumn Header="State" Binding="{Binding Status}" Width="78" />
-                                                        <DataGridTextColumn Header="File" Binding="{Binding Path}" Width="*" />
-                                                        <DataGridTextColumn Header="Change" Binding="{Binding ChangeText}" Width="95" />
-                                                    </DataGrid.Columns>
-                                                </DataGrid>
-                                                <GridSplitter x:Name="PullRequestDiffSplitter" Grid.Column="1" Width="8" ResizeDirection="Columns"
-                                                              ResizeBehavior="PreviousAndNext" ShowsPreview="False"
-                                                              Background="#4B4D52" Cursor="SizeWestEast" />
-                                                <controls:CodeDiffView x:Name="PullRequestDiffPanel" Grid.Column="2" DiffText="{Binding PullRequestPatch}"
-                                                                       FilePath="{Binding SelectedPullRequestFile.Path}" />
-                                            </Grid>
+                                                <Grid x:Name="PullRequestFilesWorkspaceGrid" Grid.Row="1" ColumnDefinitions="0.95*,8,1.05*">
+                                                    <DataGrid ItemsSource="{Binding PullRequestFiles}" SelectedItem="{Binding SelectedPullRequestFile}"
+                                                              AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                                              Background="Transparent" BorderThickness="0">
+                                                        <DataGrid.Columns>
+                                                            <DataGridTextColumn Header="State" Binding="{Binding Status}" Width="78" />
+                                                            <DataGridTextColumn Header="File path" Binding="{Binding Path}" Width="*" />
+                                                            <DataGridTextColumn Header="Change" Binding="{Binding ChangeText}" Width="95" />
+                                                        </DataGrid.Columns>
+                                                    </DataGrid>
+                                                    <GridSplitter x:Name="PullRequestDiffSplitter" Grid.Column="1" Width="8" ResizeDirection="Columns"
+                                                                  ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                                                                  Background="#4B4D52" Cursor="SizeWestEast" />
+                                                    <controls:CodeDiffView x:Name="PullRequestDiffPanel" Grid.Column="2" DiffText="{Binding PullRequestPatch}"
+                                                                           FilePath="{Binding SelectedPullRequestFile.Path}" />
+                                                </Grid>
                                             </Grid>
                                         </TabItem>
+
                                         <TabItem Header="Conversation">
                                             <Grid Margin="8" RowDefinitions="*,Auto" RowSpacing="8">
                                                 <TabControl>
@@ -2457,15 +2517,283 @@
                                                         </DataGrid>
                                                     </TabItem>
                                                 </TabControl>
-                                                <Grid Grid.Row="1" ColumnDefinitions="1*,Auto,1*,125,Auto" ColumnSpacing="7">
-                                                    <TextBox Text="{Binding PullRequestComment}" PlaceholderText="General comment…" />
-                                                    <Button Grid.Column="1" Classes="secondary" Content="Comment" Click="OnAddPullRequestCommentClick" />
-                                                    <TextBox Grid.Column="2" Text="{Binding PullRequestReviewBody}" PlaceholderText="Review summary…" />
-                                                    <ComboBox Grid.Column="3" ItemsSource="{Binding PullRequestReviewActions}"
-                                                              SelectedItem="{Binding PullRequestReviewAction}" />
-                                                    <Button Grid.Column="4" Classes="primary" Content="Submit review" Click="OnSubmitPullRequestReviewClick" />
+                                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                                    <TextBox Text="{Binding PullRequestComment}" PlaceholderText="Write a general comment…" />
+                                                    <Button Grid.Column="1" Classes="secondary" Content="Publish comment"
+                                                            Click="OnAddPullRequestCommentClick"
+                                                            IsEnabled="{Binding HasSelectedPullRequest}" />
                                                 </Grid>
                                             </Grid>
+                                        </TabItem>
+
+                                        <TabItem Header="CI">
+                                            <Grid Margin="8" RowDefinitions="Auto,3,*" RowSpacing="7">
+                                                <Border Classes="card" Padding="10">
+                                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="7">
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock Text="Pull request continuous integration" FontSize="14" FontWeight="SemiBold" />
+                                                            <TextBlock Text="{Binding PullRequestCiStatus}" Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                        <ComboBox Grid.Column="1" Width="250" ItemsSource="{Binding PullRequestCiWorkflows}"
+                                                                  SelectedItem="{Binding SelectedPullRequestCiWorkflow}"
+                                                                  ToolTip.Tip="Workflow to dispatch on the pull request head branch">
+                                                            <ComboBox.ItemTemplate><DataTemplate>
+                                                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                                            </DataTemplate></ComboBox.ItemTemplate>
+                                                        </ComboBox>
+                                                        <Button Grid.Column="2" Classes="secondary" Content="Run workflow"
+                                                                Click="OnDispatchPullRequestCiClick"
+                                                                IsEnabled="{Binding CanDispatchPullRequestCiWorkflow}"
+                                                                ToolTip.Tip="Dispatch the selected CI workflow on the pull request branch" />
+                                                        <Button Grid.Column="3" Classes="secondary" Content="Rerun failed"
+                                                                Click="OnRerunPullRequestCiClick"
+                                                                IsEnabled="{Binding CanRerunSelectedPullRequestCiRun}"
+                                                                ToolTip.Tip="Rerun only the failed jobs of the selected CI run" />
+                                                        <Button Grid.Column="4" Classes="primary" Content="Refresh"
+                                                                Click="OnRefreshPullRequestCiClick" />
+                                                    </Grid>
+                                                </Border>
+                                                <ProgressBar Grid.Row="1" Classes="inlineLoader" IsVisible="{Binding IsPullRequestCiLoading}" IsIndeterminate="True" />
+                                                <Grid Grid.Row="2" ColumnDefinitions="0.9*,8,1.2*">
+                                                    <Border Classes="card" Padding="0" ClipToBounds="True">
+                                                        <Grid RowDefinitions="Auto,*">
+                                                            <Border Background="#2B2D30" Padding="10,7">
+                                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                                                    <TextBlock Text="Runs for this PR" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                                    <Button Grid.Column="1" Classes="secondary" Content="Open run ↗"
+                                                                            Click="OnOpenPullRequestCiRunClick" />
+                                                                </Grid>
+                                                            </Border>
+                                                            <DataGrid Grid.Row="1" ItemsSource="{Binding PullRequestCiRuns}"
+                                                                      SelectedItem="{Binding SelectedPullRequestCiRun}"
+                                                                      AutoGenerateColumns="False" IsReadOnly="True"
+                                                                      GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                                <DataGrid.Columns>
+                                                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
+                                                                    <DataGridTextColumn Header="Branch" Binding="{Binding Branch}" Width="115" />
+                                                                    <DataGridTemplateColumn Header="State" Width="80">
+                                                                        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                                            <TextBlock Text="{Binding StateText}" Foreground="{Binding StateColor}" FontWeight="SemiBold" />
+                                                                        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                                    </DataGridTemplateColumn>
+                                                                    <DataGridTextColumn Header="Updated" Binding="{Binding UpdatedText}" Width="120" />
+                                                                </DataGrid.Columns>
+                                                            </DataGrid>
+                                                        </Grid>
+                                                    </Border>
+                                                    <GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                                                  Background="#4B4D52" Cursor="SizeWestEast" />
+                                                    <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+                                                        <TabControl>
+                                                            <TabItem Header="Jobs">
+                                                                <DataGrid x:Name="PullRequestCiJobsGrid"
+                                                                          ItemsSource="{Binding PullRequestCiJobs}"
+                                                                          SelectedItem="{Binding SelectedPullRequestCiJob}"
+                                                                          PointerPressed="OnPullRequestCiJobsPointerPressed"
+                                                                          AutoGenerateColumns="False" IsReadOnly="True"
+                                                                          GridLinesVisibility="Horizontal"
+                                                                          Background="Transparent" BorderThickness="0">
+                                                                    <DataGrid.ContextMenu>
+                                                                        <ContextMenu Opened="OnPullRequestCiJobContextMenuOpened">
+                                                                            <MenuItem Header="Open workflow run ↗" Click="OnOpenPullRequestCiRunClick" />
+                                                                            <Separator />
+                                                                            <MenuItem Tag="CancelRun" Header="Cancel this workflow run…"
+                                                                                      Click="OnCancelPullRequestCiRunClick"
+                                                                                      ToolTip.Tip="GitHub cancellation applies to the complete workflow run, including every active job" />
+                                                                        </ContextMenu>
+                                                                    </DataGrid.ContextMenu>
+                                                                    <DataGrid.Columns>
+                                                                        <DataGridTextColumn Header="Job" Binding="{Binding Name}" Width="*" />
+                                                                        <DataGridTemplateColumn Header="State" Width="90">
+                                                                            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                                                <TextBlock Text="{Binding StateText}" Foreground="{Binding StateColor}" FontWeight="SemiBold" />
+                                                                            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                                        </DataGridTemplateColumn>
+                                                                        <DataGridTextColumn Header="Duration" Binding="{Binding DurationText}" Width="90" />
+                                                                        <DataGridTextColumn Header="Failed step" Binding="{Binding FailedStepSummary}" Width="1.2*" />
+                                                                    </DataGrid.Columns>
+                                                                </DataGrid>
+                                                            </TabItem>
+                                                            <TabItem Header="Logs">
+                                                                <Grid RowDefinitions="Auto,*">
+                                                                    <Border Background="#252A31" Padding="9,6">
+                                                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                                                            <TextBlock Text="Build log" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                                            <Button Grid.Column="1" Classes="secondary" Content="Open large ↗" Click="OnOpenPullRequestCiLogWindowClick" />
+                                                                            <ComboBox Grid.Column="2" Width="132"
+                                                                                      ItemsSource="{Binding CiLogFilterModes}"
+                                                                                      SelectedItem="{Binding PullRequestCiLogFilterMode}"
+                                                                                      ToolTip.Tip="Show all log lines, only errors, or only warnings" />
+                                                                        </Grid>
+                                                                    </Border>
+                                                                    <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredPullRequestCiLogLines}"
+                                                                              AutoGenerateColumns="False" IsReadOnly="True"
+                                                                              GridLinesVisibility="Horizontal" Background="#0D1420" BorderThickness="0"
+                                                                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                                                        <DataGrid.Columns>
+                                                                            <DataGridTemplateColumn Header="#" SortMemberPath="Number" Width="55">
+                                                                                <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                                                    <TextBlock Text="{Binding NumberText}" FontFamily="Cascadia Mono, Consolas" FontSize="10" TextWrapping="NoWrap" />
+                                                                                </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                                            </DataGridTemplateColumn>
+                                                                            <DataGridTemplateColumn Header="Source" SortMemberPath="Source" Width="150">
+                                                                                <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                                                    <TextBlock Text="{Binding Source}" FontFamily="Cascadia Mono, Consolas" FontSize="10" TextWrapping="NoWrap" />
+                                                                                </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                                            </DataGridTemplateColumn>
+                                                                            <DataGridTemplateColumn Header="Line" Width="Auto" MinWidth="520">
+                                                                                <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                                                    <TextBlock Text="{Binding Text}" Foreground="{Binding StateColor}"
+                                                                                               FontFamily="Cascadia Mono, Consolas" FontSize="10" TextWrapping="NoWrap" />
+                                                                                </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                                            </DataGridTemplateColumn>
+                                                                        </DataGrid.Columns>
+                                                                    </DataGrid>
+                                                                </Grid>
+                                                            </TabItem>
+                                                        </TabControl>
+                                                    </Border>
+                                                </Grid>
+                                            </Grid>
+                                        </TabItem>
+
+                                        <TabItem Header="Conflicts">
+                                            <Grid Margin="10" RowDefinitions="Auto,*" RowSpacing="9">
+                                                <Border Classes="card" Padding="11">
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                        <StackPanel Spacing="3">
+                                                            <TextBlock Text="Merge conflict analysis" FontSize="14" FontWeight="SemiBold" />
+                                                            <TextBlock Text="{Binding PullRequestConflictSummary}" Classes="muted" FontSize="10" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                        <Border Grid.Column="1" Background="#252A31" CornerRadius="5" Padding="8,5" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding SelectedPullRequest.MergeabilityText}"
+                                                                       Foreground="{Binding SelectedPullRequest.MergeabilityColor}"
+                                                                       FontWeight="Bold" FontSize="10" />
+                                                        </Border>
+                                                    </Grid>
+                                                </Border>
+                                                <Border Grid.Row="1" Classes="card" Padding="0" ClipToBounds="True">
+                                                    <Grid RowDefinitions="Auto,*">
+                                                        <Border Background="#2B2D30" Padding="10,7">
+                                                            <TextBlock Text="Files that conflict with the base branch" FontWeight="SemiBold" />
+                                                        </Border>
+                                                        <DataGrid Grid.Row="1" ItemsSource="{Binding PullRequestConflictFiles}"
+                                                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                                                  GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                            <DataGrid.Columns>
+                                                                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="230" />
+                                                                <DataGridTextColumn Header="Folder" Binding="{Binding DirectoryPath}" Width="*" />
+                                                                <DataGridTextColumn Header="Reason" Binding="{Binding Detail}" Width="280" />
+                                                            </DataGrid.Columns>
+                                                        </DataGrid>
+                                                    </Grid>
+                                                </Border>
+                                            </Grid>
+                                        </TabItem>
+                                        <TabItem Header="Actions">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                <Grid Margin="10" ColumnDefinitions="1.15*,0.85*" ColumnSpacing="10">
+                                                    <StackPanel Spacing="10">
+                                                        <Border Classes="card" Padding="12">
+                                                            <StackPanel Spacing="8">
+                                                                <TextBlock Text="Review this pull request" FontSize="14" FontWeight="SemiBold" />
+                                                                <TextBlock Text="{Binding PullRequestReviewAvailability}" Foreground="#78D7B7"
+                                                                           FontSize="10" TextWrapping="Wrap" />
+                                                                <TextBlock Text="{Binding PullRequestAuthenticationState}" Foreground="#E5C07B"
+                                                                           FontSize="9.5" TextWrapping="Wrap" />
+                                                                <TextBox Text="{Binding PullRequestReviewBody}" PlaceholderText="Review summary…"
+                                                                         AcceptsReturn="True" TextWrapping="Wrap" Height="115" />
+                                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                                                    <ComboBox ItemsSource="{Binding PullRequestReviewActions}"
+                                                                              SelectedItem="{Binding PullRequestReviewAction}" />
+                                                                    <Button Grid.Column="1" Classes="primary" Content="Submit review"
+                                                                            Click="OnSubmitPullRequestReviewClick"
+                                                                            IsEnabled="{Binding CanReviewSelectedPullRequest}" />
+                                                                </Grid>
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <Border Classes="card" Padding="12">
+                                                            <Grid RowDefinitions="Auto,Auto,150,Auto,Auto" RowSpacing="7">
+                                                                <TextBlock Text="Linked Jira / ClickUp tasks" FontSize="14" FontWeight="SemiBold" />
+                                                                <TextBlock Grid.Row="1" Text="{Binding PullRequestLinkedTaskStatus}" Classes="muted"
+                                                                           FontSize="9.5" TextWrapping="Wrap" />
+                                                                <DataGrid Grid.Row="2" ItemsSource="{Binding PullRequestLinkedWorkItems}"
+                                                                          AutoGenerateColumns="False" IsReadOnly="True"
+                                                                          GridLinesVisibility="Horizontal" Background="Transparent" BorderThickness="0">
+                                                                    <DataGrid.Columns>
+                                                                        <DataGridTextColumn Header="Provider" Binding="{Binding ProviderName}" Width="82" />
+                                                                        <DataGridTextColumn Header="Task" Binding="{Binding Key}" Width="90" />
+                                                                        <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*" />
+                                                                        <DataGridTemplateColumn Header="Status" Width="100">
+                                                                            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                                                <TextBlock Text="{Binding Status}" Foreground="{Binding StatusColor}" />
+                                                                            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                                        </DataGridTemplateColumn>
+                                                                    </DataGrid.Columns>
+                                                                </DataGrid>
+                                                                <Grid Grid.Row="3" ColumnDefinitions="Auto,*" ColumnSpacing="7">
+                                                                    <TextBlock Text="After merge" Classes="muted" VerticalAlignment="Center" />
+                                                                    <ComboBox Grid.Column="1" ItemsSource="{Binding PullRequestTaskUpdateModeOptions}"
+                                                                              SelectedItem="{Binding SelectedPullRequestTaskUpdateModeOption}">
+                                                                        <ComboBox.ItemTemplate><DataTemplate>
+                                                                            <TextBlock Text="{Binding DisplayName}" />
+                                                                        </DataTemplate></ComboBox.ItemTemplate>
+                                                                    </ComboBox>
+                                                                </Grid>
+                                                                <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="7">
+                                                                    <TextBlock Text="{Binding PullRequestTaskUpdateModeDescription}" Classes="muted"
+                                                                               FontSize="9" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                                                    <Button Grid.Column="1" Classes="secondary" Content="Complete detected tasks"
+                                                                            Click="OnCompletePullRequestTasksClick"
+                                                                            IsEnabled="{Binding SelectedPullRequest.IsMerged}"
+                                                                            ToolTip.Tip="Move resolved Jira and ClickUp tasks to a provider completion status after confirmation" />
+                                                                </Grid>
+                                                            </Grid>
+                                                        </Border>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Spacing="10">
+                                                        <Border Classes="card" Padding="12">
+                                                            <StackPanel Spacing="7">
+                                                                <TextBlock Text="Repository actions" FontSize="14" FontWeight="SemiBold" />
+                                                                <Button Classes="secondary" Content="Open on provider ↗" HorizontalAlignment="Stretch"
+                                                                        Click="OnOpenPullRequestClick" IsEnabled="{Binding HasSelectedPullRequest}" />
+                                                                <Button Classes="secondary" Content="Open Commit Explorer ↗" HorizontalAlignment="Stretch"
+                                                                        Click="OnOpenPullRequestCommitExplorerClick" IsEnabled="{Binding HasSelectedPullRequest}" />
+                                                                <Button Classes="secondary" Content="Checkout locally" HorizontalAlignment="Stretch"
+                                                                        Click="OnCheckoutPullRequestClick" IsEnabled="{Binding HasSelectedPullRequest}" />
+                                                                <Button Classes="secondary" Content="Close / reopen" HorizontalAlignment="Stretch"
+                                                                        Click="OnTogglePullRequestStateClick" IsEnabled="{Binding HasSelectedPullRequest}" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <Border Classes="card" Padding="12">
+                                                            <StackPanel Spacing="7">
+                                                                <TextBlock Text="Merge" FontSize="14" FontWeight="SemiBold" />
+                                                                <TextBlock Text="The provider revalidates mergeability and permissions before applying this action."
+                                                                           Classes="muted" FontSize="9.5" TextWrapping="Wrap" />
+                                                                <ComboBox ItemsSource="{Binding PullRequestMergeMethods}"
+                                                                          SelectedItem="{Binding PullRequestMergeMethod}" />
+                                                                <Button Classes="primary" Content="Merge pull request"
+                                                                        Click="OnMergePullRequestClick"
+                                                                        IsEnabled="{Binding CanMergeSelectedPullRequest}" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <Border Classes="card" Padding="12">
+                                                            <StackPanel Spacing="7">
+                                                                <TextBlock Text="Local branch after merge" FontSize="14" FontWeight="SemiBold" />
+                                                                <TextBlock Text="{Binding PullRequestLocalBranchStatus}" Classes="muted"
+                                                                           FontSize="9.5" TextWrapping="Wrap" />
+                                                                <TextBlock Text="Only the local branch reference is removed. The remote branch and repository files remain untouched."
+                                                                           Foreground="#78D7B7" FontSize="9" TextWrapping="Wrap" />
+                                                                <Button Classes="danger" Content="Remove local merged branch…"
+                                                                        Click="OnRemoveMergedPullRequestBranchClick"
+                                                                        IsEnabled="{Binding CanRemovePullRequestLocalBranch}"
+                                                                        ToolTip.Tip="Run a safety analysis, show a confirmation, then remove only this local branch" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </ScrollViewer>
                                         </TabItem>
                                     </TabControl>
                                 </Grid>
@@ -2527,9 +2855,17 @@
                                               Classes="historyCompact" AutoGenerateColumns="False" IsReadOnly="True"
                                               GridLinesVisibility="Horizontal" BorderThickness="0" Background="Transparent">
                                         <DataGrid.Columns>
-                                            <DataGridTextColumn Header="Workflow" Binding="{Binding Name}" Width="*" />
-                                            <DataGridTextColumn Header="Branch" Binding="{Binding Branch}" Width="105" />
-                                            <DataGridTextColumn Header="State" Binding="{Binding StateText}" Width="82" />
+                                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="1.3*" />
+                                            <DataGridTextColumn Header="Event" Binding="{Binding Event}" Width="105" />
+                                            <DataGridTextColumn Header="Branch" Binding="{Binding Branch}" Width="110" />
+                                            <DataGridTemplateColumn Header="Status" Width="92">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding StateText}" Foreground="{Binding StateColor}"
+                                                                   FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
                                             <DataGridTextColumn Header="Updated" Binding="{Binding UpdatedText}" Width="116" />
                                         </DataGrid.Columns>
                                     </DataGrid>
@@ -2538,26 +2874,85 @@
                             <GridSplitter Grid.Column="3" Width="7" Background="#45484E"
                                           ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
                             <Border Grid.Column="4" Classes="card" Padding="0" ClipToBounds="True">
-                                <Grid RowDefinitions="Auto,0.8*,Auto,1.2*">
+                                <Grid RowDefinitions="Auto,*">
                                     <Grid Margin="9,7" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
                                         <TextBlock Text="Jobs and failures" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
                                         <Button Grid.Column="1" Classes="secondary" Content="Open on GitHub" Click="OnOpenCiRunClick" />
                                         <Button Grid.Column="2" Classes="secondary" Content="Rerun failed" Click="OnRerunFailedCiClick" />
                                         <Button Grid.Column="3" Classes="danger" Content="Cancel" Click="OnCancelCiRunClick" />
                                     </Grid>
-                                    <DataGrid Grid.Row="1" ItemsSource="{Binding CiJobs}" Classes="historyCompact"
-                                              AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
-                                              BorderThickness="0" Background="Transparent">
-                                        <DataGrid.Columns>
-                                            <DataGridTextColumn Header="Job" Binding="{Binding Name}" Width="*" />
-                                            <DataGridTextColumn Header="State" Binding="{Binding StateText}" Width="90" />
-                                            <DataGridTextColumn Header="Failed step" Binding="{Binding FailedStepSummary}" Width="1.2*" />
-                                        </DataGrid.Columns>
-                                    </DataGrid>
-                                    <TextBlock Grid.Row="2" Text="Error summary" Margin="9,7,9,4" FontWeight="SemiBold" />
-                                    <TextBox Grid.Row="3" Text="{Binding CiRunDetails}" IsReadOnly="True" AcceptsReturn="True"
-                                             FontFamily="Cascadia Mono,Consolas" FontSize="10" TextWrapping="Wrap"
-                                             BorderThickness="0" Background="#111820" Padding="8" />
+                                    <TabControl Grid.Row="1">
+                                        <TabItem Header="Overview">
+                                            <Grid RowDefinitions="0.75*,Auto,0.48*,Auto,1*">
+                                                <DataGrid ItemsSource="{Binding CiJobs}" Classes="historyCompact"
+                                                          AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
+                                                          BorderThickness="0" Background="Transparent">
+                                                    <DataGrid.Columns>
+                                                        <DataGridTextColumn Header="Job" Binding="{Binding Name}" Width="*" />
+                                                        <DataGridTemplateColumn Header="Status" Width="96">
+                                                            <DataGridTemplateColumn.CellTemplate>
+                                                                <DataTemplate>
+                                                                    <TextBlock Text="{Binding StateText}" Foreground="{Binding StateColor}"
+                                                                               FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                                </DataTemplate>
+                                                            </DataGridTemplateColumn.CellTemplate>
+                                                        </DataGridTemplateColumn>
+                                                        <DataGridTextColumn Header="Duration" Binding="{Binding DurationText}" Width="82" />
+                                                        <DataGridTextColumn Header="Failed step" Binding="{Binding FailedStepSummary}" Width="1.1*" />
+                                                    </DataGrid.Columns>
+                                                </DataGrid>
+                                                <TextBlock Grid.Row="1" Text="Error summary" Margin="9,7,9,4" FontWeight="SemiBold" />
+                                                <TextBox Grid.Row="2" Text="{Binding CiRunDetails}" IsReadOnly="True" AcceptsReturn="True"
+                                                         FontFamily="Cascadia Mono,Consolas" FontSize="10" TextWrapping="Wrap"
+                                                         BorderThickness="0" Background="#111820" Padding="8" />
+                                                <TextBlock Grid.Row="3" Text="Run details" Margin="9,7,9,4" FontWeight="SemiBold" />
+                                                <TextBox Grid.Row="4" Text="{Binding CiRunDescription}" IsReadOnly="True" AcceptsReturn="True"
+                                                         FontFamily="Cascadia Mono,Consolas" FontSize="9.5" TextWrapping="NoWrap"
+                                                         ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                         BorderThickness="0" Background="#10141B" Padding="8" />
+                                            </Grid>
+                                        </TabItem>
+                                        <TabItem Header="Full log">
+                                            <Grid RowDefinitions="Auto,*">
+                                                <Border Background="#252A31" Padding="9,6">
+                                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                                        <TextBlock Text="Complete build log" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                        <Button Grid.Column="1" Classes="secondary" Content="Open large ↗" Click="OnOpenCiLogWindowClick" />
+                                                        <ComboBox Grid.Column="2" Width="132"
+                                                                  ItemsSource="{Binding CiLogFilterModes}"
+                                                                  SelectedItem="{Binding CiLogFilterMode}"
+                                                                  ToolTip.Tip="Show all log lines, only errors, or only warnings" />
+                                                    </Grid>
+                                                </Border>
+                                                <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredCiLogLines}"
+                                                          AutoGenerateColumns="False" IsReadOnly="True"
+                                                          GridLinesVisibility="Horizontal" Background="#0D1420" BorderThickness="0"
+                                                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                          ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                                    <DataGrid.Columns>
+                                                        <DataGridTemplateColumn Header="#" SortMemberPath="Number" Width="55">
+                                                            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                                <TextBlock Text="{Binding NumberText}" FontFamily="Cascadia Mono, Consolas" FontSize="10" TextWrapping="NoWrap" />
+                                                            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                        </DataGridTemplateColumn>
+                                                        <DataGridTemplateColumn Header="Source" SortMemberPath="Source" Width="150">
+                                                            <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                                <TextBlock Text="{Binding Source}" FontFamily="Cascadia Mono, Consolas" FontSize="10" TextWrapping="NoWrap" />
+                                                            </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                        </DataGridTemplateColumn>
+                                                        <DataGridTemplateColumn Header="Line" Width="Auto" MinWidth="520">
+                                                            <DataGridTemplateColumn.CellTemplate>
+                                                                <DataTemplate>
+                                                                    <TextBlock Text="{Binding Text}" Foreground="{Binding StateColor}"
+                                                                               FontFamily="Cascadia Mono, Consolas" FontSize="10" TextWrapping="NoWrap" />
+                                                                </DataTemplate>
+                                                            </DataGridTemplateColumn.CellTemplate>
+                                                        </DataGridTemplateColumn>
+                                                    </DataGrid.Columns>
+                                                </DataGrid>
+                                            </Grid>
+                                        </TabItem>
+                                    </TabControl>
                                 </Grid>
                             </Border>
                         </Grid>
@@ -2631,11 +3026,11 @@
                                 </Grid>
                             </TabItem>
 
-                            <TabItem Header="Activité d'équipe">
-                                <Grid Margin="0,6,0,0" RowDefinitions="Auto,190,*" RowSpacing="7">
+                            <TabItem Header="Git activity">
+                                <Grid Margin="0,6,0,0" RowDefinitions="Auto,220,*" RowSpacing="7">
                                     <Border Classes="card" Padding="13">
                                         <StackPanel Spacing="3">
-                                            <TextBlock Text="Vue d'activité Git" FontSize="16" FontWeight="SemiBold" />
+                                            <TextBlock Text="Git activity heatmap" FontSize="16" FontWeight="SemiBold" />
                                             <TextBlock Text="{Binding GitInsightsSummary}" Classes="muted" TextWrapping="Wrap" />
                                             <TextBlock Text="Données calculées localement depuis les commits — aucun suivi utilisateur en arrière-plan."
                                                        FontSize="10" Foreground="#78D7B7" TextWrapping="Wrap" />

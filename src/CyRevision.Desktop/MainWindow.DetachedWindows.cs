@@ -111,6 +111,40 @@ public partial class MainWindow
         window.Show();
     }
 
+    private void OnOpenCiLogWindowClick(object? sender, RoutedEventArgs e) =>
+        OpenCiLogWindow(CiLogWindowSource.ContinuousIntegration);
+
+    private void OnOpenPullRequestCiLogWindowClick(object? sender, RoutedEventArgs e) =>
+        OpenCiLogWindow(CiLogWindowSource.PullRequest);
+
+    private void OpenCiLogWindow(CiLogWindowSource source)
+    {
+        CiLogWindow? existing = source == CiLogWindowSource.PullRequest
+            ? _pullRequestCiLogWindow
+            : _ciLogWindow;
+        if (existing is not null)
+        {
+            if (existing.WindowState == WindowState.Minimized)
+                existing.WindowState = WindowState.Normal;
+            existing.Activate();
+            return;
+        }
+
+        CiLogWindow window = new(_viewModel, source);
+        if (source == CiLogWindowSource.ContinuousIntegration)
+        {
+            window.Closed += (_, _) => _ciLogWindow = null;
+            _ciLogWindow = window;
+        }
+        else
+        {
+            window.Closed += (_, _) => _pullRequestCiLogWindow = null;
+            _pullRequestCiLogWindow = window;
+        }
+
+        window.Show();
+    }
+
     private void OnOpenCommitExplorerWindowClick(object? sender, RoutedEventArgs e)
     {
         if (_commitExplorerWindow is not null)

@@ -270,6 +270,17 @@ public sealed record GitLocalBranchRemovalAnalysis(
             : "No verified Git reference";
 }
 
+public sealed record GitMergeConflictAnalysis(
+    bool IsMergeable,
+    IReadOnlyList<string> ConflictPaths,
+    string Detail)
+{
+    public string Summary => IsMergeable
+        ? "The selected refs merge cleanly."
+        : ConflictPaths.Count == 0
+            ? "Git reported conflicts but did not identify a path."
+            : $"{ConflictPaths.Count:N0} conflicting file(s).";
+}
 public sealed record GitToolAvailability(
     bool GitAvailable,
     string? GitVersion,

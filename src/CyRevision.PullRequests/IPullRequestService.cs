@@ -4,6 +4,11 @@ public interface IPullRequestService : IAsyncDisposable
 {
     bool TryResolveRepository(string remoteUrl, string? apiBaseUrl, out PullRequestRepository? repository);
 
+    Task<string?> GetCurrentUserAsync(
+        PullRequestRepository repository,
+        string? token,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<PullRequestSummary>> ListAsync(
         PullRequestRepository repository,
         PullRequestStateFilter state,

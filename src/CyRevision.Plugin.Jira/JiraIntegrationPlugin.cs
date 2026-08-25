@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using CyRevision.Plugin.Abstractions;
@@ -168,6 +169,133 @@ public sealed class JiraIntegrationPlugin : IWorkItemIntegrationPlugin
         return results;
     }
 
+    public async Task<WorkItemReference?> ResolveAsync(
+        WorkItemConnectionSettings settings,
+        string? sessionToken,
+        string identifierOrUrl,
+        CancellationToken cancellationToken = default)
+    {
+        settings = Normalize(settings);
+        string key = ExtractIssueKey(identifierOrUrl);
+        if (key.Length == 0) return null;
+        using HttpRequestMessage request = CreateRequest(
+            settings,
+            sessionToken,
+            HttpMethod.Get,
+            $"/rest/api/3/issue/{Uri.EscapeDataString(key)}?fields=summary,status");
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(await CreateApiErrorAsync(response, cancellationToken).ConfigureAwait(false));
+
+        using JsonDocument payload = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        JsonElement root = payload.RootElement;
+        JsonElement fields = root.TryGetProperty("fields", out JsonElement fieldObject)
+            ? fieldObject
+            : default;
+        string resolvedKey = GetString(root, "key") ?? key;
+        string title = fields.ValueKind == JsonValueKind.Object
+            ? GetString(fields, "summary") ?? string.Empty
+            : string.Empty;
+        string status = fields.ValueKind == JsonValueKind.Object &&
+                        fields.TryGetProperty("status", out JsonElement statusObject)
+            ? GetString(statusObject, "name") ?? string.Empty
+            : string.Empty;
+        return new WorkItemReference(
+            Provider.Id,
+            Provider.Name,
+            GetString(root, "id") ?? resolvedKey,
+            resolvedKey,
+            title.Trim(),
+            status.Trim(),
+            $"{settings.BaseUrl.TrimEnd('/')}/browse/{Uri.EscapeDataString(resolvedKey)}");
+    }
+
+    public async Task<IReadOnlyList<WorkItemTransitionOption>> GetTransitionsAsync(
+        WorkItemConnectionSettings settings,
+        string? sessionToken,
+        WorkItemReference workItem,
+        CancellationToken cancellationToken = default)
+    {
+        settings = Normalize(settings);
+        string key = ExtractIssueKey(workItem.DisplayKey);
+        using HttpRequestMessage request = CreateRequest(
+            settings,
+            sessionToken,
+            HttpMethod.Get,
+            $"/rest/api/3/issue/{Uri.EscapeDataString(key)}/transitions");
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(await CreateApiErrorAsync(response, cancellationToken).ConfigureAwait(false));
+
+        using JsonDocument payload = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        if (!payload.RootElement.TryGetProperty("transitions", out JsonElement transitions) ||
+            transitions.ValueKind != JsonValueKind.Array)
+            return [];
+
+        return transitions.EnumerateArray().Select(transition =>
+        {
+            string id = GetString(transition, "id") ?? string.Empty;
+            string name = GetString(transition, "name") ?? id;
+            string category = transition.TryGetProperty("to", out JsonElement target) &&
+                              target.TryGetProperty("statusCategory", out JsonElement statusCategory)
+                ? GetString(statusCategory, "key") ?? string.Empty
+                : string.Empty;
+            bool completion = category.Equals("done", StringComparison.OrdinalIgnoreCase) ||
+                              IsCompletionName(name);
+            return new WorkItemTransitionOption(id, name, completion);
+        }).Where(transition => transition.Id.Length > 0).ToArray();
+    }
+
+    public async Task<WorkItemStatusUpdateResult> ApplyTransitionAsync(
+        WorkItemConnectionSettings settings,
+        string? sessionToken,
+        WorkItemReference workItem,
+        WorkItemTransitionOption transition,
+        CancellationToken cancellationToken = default)
+    {
+        settings = Normalize(settings);
+        string key = ExtractIssueKey(workItem.DisplayKey);
+        using HttpRequestMessage request = CreateRequest(
+            settings,
+            sessionToken,
+            HttpMethod.Post,
+            $"/rest/api/3/issue/{Uri.EscapeDataString(key)}/transitions");
+        request.Content = JsonContent.Create(new { transition = new { id = transition.Id } });
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(await CreateApiErrorAsync(response, cancellationToken).ConfigureAwait(false));
+        return new WorkItemStatusUpdateResult(
+            workItem with { Status = transition.Name },
+            workItem.Status,
+            transition.Name);
+    }
+
+    private static string ExtractIssueKey(string value)
+    {
+        string candidate = value.Trim();
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out Uri? uri))
+        {
+            string[] segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            int browse = Array.FindIndex(segments, segment => segment.Equals("browse", StringComparison.OrdinalIgnoreCase));
+            candidate = browse >= 0 && browse + 1 < segments.Length ? segments[browse + 1] : segments.LastOrDefault() ?? string.Empty;
+        }
+        int separator = candidate.IndexOfAny([' ', '?', '#']);
+        if (separator >= 0) candidate = candidate[..separator];
+        return Uri.UnescapeDataString(candidate).Trim();
+    }
+
+    private static bool IsCompletionName(string name) =>
+        name.Contains("done", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("close", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("resolve", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("complete", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("termin", StringComparison.OrdinalIgnoreCase);
     public ValueTask DisposeAsync()
     {
         if (_ownsHttpClient) _httpClient.Dispose();

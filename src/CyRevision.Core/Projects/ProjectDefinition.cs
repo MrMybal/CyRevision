@@ -27,7 +27,8 @@ public sealed record ProjectDefinition(
     bool StartSyncAutomatically = false,
     bool StartVpnAutomatically = false,
     bool ProjectNotificationsEnabled = true,
-    string? SidebarGroup = null)
+    string? SidebarGroup = null,
+    string? PullRequestTaskUpdateMode = null)
 {
     public void Validate()
     {
@@ -101,6 +102,10 @@ public sealed record ProjectDefinition(
         {
             throw new InvalidOperationException("The provider of a plugin operating mode must be enabled for the project.");
         }
+
+        if (!string.IsNullOrWhiteSpace(PullRequestTaskUpdateMode) &&
+            PullRequestTaskUpdateMode is not ("AskAfterMerge" or "AutomaticAfterMerge" or "Disabled"))
+            throw new InvalidOperationException("The pull-request task update mode is invalid.");
 
         if (SidebarGroup is { Length: > 80 })
             throw new InvalidOperationException("The project group name cannot exceed 80 characters.");

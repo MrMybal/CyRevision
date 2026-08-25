@@ -783,5 +783,7 @@
   "Images": "Images",
   "Audio": "Audio",
   "Video": "Vidéo",
-  "Archives": "Archives"
+  "Archives": "Archives",
+  "Quit CyRevision?": "Quitter CyRevision ?",
+  "Running operations will be cancelled and all CyRevision background services will stop. Unsaved text entered in editors may be lost. Do you want to quit?": "Les opérations en cours seront annulées et tous les services CyRevision en arrière-plan seront arrêtés. Le texte non enregistré dans les éditeurs peut être perdu. Voulez-vous quitter ?"
 }

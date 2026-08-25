@@ -69,11 +69,20 @@ public sealed record WorkItemReference(
 }
 
 public sealed record WorkItemConnectionTestResult(bool Succeeded, string Message);
+public sealed record WorkItemTransitionOption(
+    string Id,
+    string Name,
+    bool IsCompletion);
+
+public sealed record WorkItemStatusUpdateResult(
+    WorkItemReference WorkItem,
+    string PreviousStatus,
+    string NewStatus);
 
 /// <summary>
-/// Optional project-scoped issue tracker integration. Implementations perform read-only API
-/// calls for search/list operations; CyRevision only adds the selected task references to local
-/// commit or pull-request drafts.
+/// Optional project-scoped issue tracker integration. Search and list operations are read-only.
+/// Status transitions require an explicit host action after a pull-request merge; access tokens
+/// remain session-only or environment-backed and are never persisted.
 /// </summary>
 public interface IWorkItemIntegrationPlugin : ICyRevisionPlugin
 {
@@ -97,6 +106,25 @@ public interface IWorkItemIntegrationPlugin : ICyRevisionPlugin
         string? sessionToken,
         string query,
         int maximumResults = 50,
+        CancellationToken cancellationToken = default);
+
+    Task<WorkItemReference?> ResolveAsync(
+        WorkItemConnectionSettings settings,
+        string? sessionToken,
+        string identifierOrUrl,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<WorkItemTransitionOption>> GetTransitionsAsync(
+        WorkItemConnectionSettings settings,
+        string? sessionToken,
+        WorkItemReference workItem,
+        CancellationToken cancellationToken = default);
+
+    Task<WorkItemStatusUpdateResult> ApplyTransitionAsync(
+        WorkItemConnectionSettings settings,
+        string? sessionToken,
+        WorkItemReference workItem,
+        WorkItemTransitionOption transition,
         CancellationToken cancellationToken = default);
 }
 

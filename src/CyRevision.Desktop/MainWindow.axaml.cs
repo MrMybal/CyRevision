@@ -46,6 +46,49 @@ internal sealed record WorkspaceTabVisibilityPreset(
     public string TabCountLabel => VisibleTabs is null ? "Manual selection" : $"{VisibleTabs.Count} tabs";
 }
 
+internal sealed class WorkspaceTabVisibilityGroup : INotifyPropertyChanged
+{
+    public WorkspaceTabVisibilityGroup(string name)
+    {
+        Name = name;
+    }
+
+    public string Name { get; }
+
+    public ObservableCollection<WorkspaceTabVisibilityItem> Items { get; } = [];
+
+    public string VisibleSummary
+    {
+        get
+        {
+            int available = Items.Count(item => item.IsAvailableInMode);
+            int visible = Items.Count(item => item.IsAvailableInMode && item.IsVisible);
+            return $"{visible} / {available} visible";
+        }
+    }
+
+    public void Add(WorkspaceTabVisibilityItem item)
+    {
+        Items.Add(item);
+        item.PropertyChanged += OnItemPropertyChanged;
+        OnPropertyChanged(nameof(VisibleSummary));
+    }
+
+    private void OnItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(WorkspaceTabVisibilityItem.IsVisible) or
+            nameof(WorkspaceTabVisibilityItem.IsAvailableInMode))
+        {
+            OnPropertyChanged(nameof(VisibleSummary));
+        }
+    }
+
+    private void OnPropertyChanged(string propertyName) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
 internal sealed class WorkspaceTabVisibilityItem : INotifyPropertyChanged
 {
     private bool _isVisible;
@@ -101,6 +144,8 @@ public partial class MainWindow : Window
     private FocusedDiffWindow? _focusedDiffWindow;
     private FocusedDiffWindow? _changesDiffWindow;
     private FocusedDiffWindow? _pullRequestDiffWindow;
+    private CiLogWindow? _ciLogWindow;
+    private CiLogWindow? _pullRequestCiLogWindow;
     private CommitExplorerWindow? _commitExplorerWindow;
     private BranchFileExplorerWindow? _branchFileExplorerWindow;
     private GitConflictResolverWindow? _gitConflictResolverWindow;
@@ -121,6 +166,7 @@ public partial class MainWindow : Window
     private readonly HashSet<string> _hiddenWorkspaceTabNames = new(StringComparer.Ordinal);
     private readonly HashSet<string> _hiddenChangeColumnNames = new(StringComparer.Ordinal);
     private readonly ObservableCollection<WorkspaceTabVisibilityItem> _workspaceTabVisibilityItems = [];
+    private readonly ObservableCollection<WorkspaceTabVisibilityGroup> _workspaceTabVisibilityGroups = [];
     private IReadOnlyList<WorkspaceTabVisibilityPreset> _workspaceTabVisibilityPresets = [];
     private string _workspaceTabVisibilityPreset = "Full workspace";
     private bool _updatingWorkspaceTabVisibility;
@@ -256,6 +302,10 @@ public partial class MainWindow : Window
         _changesDiffWindow = null;
         _pullRequestDiffWindow?.Close();
         _pullRequestDiffWindow = null;
+        _ciLogWindow?.Close();
+        _ciLogWindow = null;
+        _pullRequestCiLogWindow?.Close();
+        _pullRequestCiLogWindow = null;
         _commitExplorerWindow?.Close();
         _commitExplorerWindow = null;
         foreach (DetachedWorkspaceWindow window in _detachedWorkspaceWindows.ToArray())
@@ -380,7 +430,7 @@ public partial class MainWindow : Window
     private void OnRepositoryChangesDetected(RepositoryChangeBatch batch)
     {
         Dispatcher.UIThread.Post(async () => await _viewModel.RefreshDetectedChangesAsync(
-            batch.Paths.Count,
+            batch.Paths,
             batch.RequiresUntrackedScan,
             batch.GitMetadataChanged,
             batch.WatcherOverflowed));
@@ -1315,7 +1365,10 @@ public partial class MainWindow : Window
     {
         _workspaceTabVisibilityPresets = CreateWorkspaceTabVisibilityPresets();
         WorkspaceTabPresetSelector.ItemsSource = _workspaceTabVisibilityPresets;
-        WorkspaceTabVisibilityList.ItemsSource = _workspaceTabVisibilityItems;
+        WorkspaceTabVisibilityList.ItemsSource = _workspaceTabVisibilityGroups;
+        _workspaceTabVisibilityItems.Clear();
+        _workspaceTabVisibilityGroups.Clear();
+        Dictionary<string, WorkspaceTabVisibilityGroup> groupsByCategory = new(StringComparer.Ordinal);
 
         foreach (TabItem tab in AllWorkspaceTabs().Where(tab =>
                      !ReferenceEquals(tab, ProjectWorkspaceTab) &&
@@ -1330,6 +1383,13 @@ public partial class MainWindow : Window
                 isVisible: true);
             item.VisibilityChanged += OnWorkspaceTabVisibilityItemChanged;
             _workspaceTabVisibilityItems.Add(item);
+            if (!groupsByCategory.TryGetValue(item.Category, out WorkspaceTabVisibilityGroup? group))
+            {
+                group = new WorkspaceTabVisibilityGroup(item.Category);
+                groupsByCategory.Add(item.Category, group);
+                _workspaceTabVisibilityGroups.Add(group);
+            }
+            group.Add(item);
         }
 
         WorkspaceTabVisibilityPreset initialPreset = _workspaceTabVisibilityPresets.First();
@@ -2692,6 +2752,56 @@ public partial class MainWindow : Window
     private async void OnRefreshPullRequestsClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RefreshPullRequestsAsync();
 
+    private async void OnRefreshPullRequestCiClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RefreshSelectedPullRequestCiAsync();
+
+    private async void OnDispatchPullRequestCiClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.DispatchSelectedPullRequestCiWorkflowAsync();
+
+    private async void OnRerunPullRequestCiClick(object? sender, RoutedEventArgs e) =>
+        await _viewModel.RerunSelectedPullRequestCiAsync();
+
+    private void OnOpenPullRequestCiRunClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedPullRequestCiRun is not { } run) return;
+        Process.Start(new ProcessStartInfo { FileName = run.WebUrl.AbsoluteUri, UseShellExecute = true });
+    }
+
+    private void OnPullRequestCiJobsPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not DataGrid grid ||
+            !e.GetCurrentPoint(grid).Properties.IsRightButtonPressed ||
+            e.Source is not Control source ||
+            source.FindAncestorOfType<DataGridRow>() is not
+                { DataContext: CyRevision.PullRequests.CiWorkflowJob job })
+            return;
+        grid.SelectedItem = job;
+        _viewModel.SelectedPullRequestCiJob = job;
+    }
+
+    private void OnPullRequestCiJobContextMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu contextMenu) return;
+        foreach (MenuItem item in contextMenu.Items.OfType<MenuItem>())
+        {
+            if (item.Tag as string == "CancelRun")
+                item.IsEnabled = _viewModel.CanCancelSelectedPullRequestCiRun;
+        }
+    }
+
+    private async void OnCancelPullRequestCiRunClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedPullRequestCiRun is not { } run ||
+            _viewModel.SelectedPullRequestCiJob is not { } job ||
+            !_viewModel.CanCancelSelectedPullRequestCiRun)
+            return;
+        if (await ShowConfirmationAsync(
+                "Cancel CI workflow run",
+                $"Cancel workflow run #{run.Id} containing job '{job.Name}'? GitHub cancels the complete run, including every queued or running job. This requires Actions write permission.",
+                "Cancel workflow run"))
+            await _viewModel.CancelSelectedPullRequestCiRunAsync();
+    }
+
     private async void OnRefreshCiClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RefreshCiAsync();
 
@@ -2781,13 +2891,74 @@ public partial class MainWindow : Window
     private async void OnMergePullRequestClick(object? sender, RoutedEventArgs e)
     {
         if (_viewModel.SelectedPullRequest is not { } pullRequest) return;
-        if (await ShowConfirmationAsync(
+        if (!await ShowConfirmationAsync(
                 "Merge pull request",
                 $"Merge #{pullRequest.Number} '{pullRequest.Title}' into {pullRequest.BaseBranch} using {_viewModel.PullRequestMergeMethod}? This changes the remote repository and may trigger CI or deployments.",
                 "Merge"))
+            return;
+
+        bool merged = await _viewModel.MergeSelectedPullRequestAsync();
+        if (!merged) return;
+
+        if (_viewModel.ShouldAutomaticallyUpdatePullRequestTasksAfterMerge)
         {
-            await _viewModel.MergeSelectedPullRequestAsync();
+            await _viewModel.CompleteLinkedPullRequestTasksAsync();
         }
+        else if (_viewModel.ShouldAskToUpdatePullRequestTasksAfterMerge &&
+                 await ShowConfirmationAsync(
+                     "Complete linked tasks",
+                     "The pull request was merged. Move the detected Jira and ClickUp tasks to their configured completion status now? Each provider validates permissions before applying the transition.",
+                     "Complete tasks"))
+        {
+            await _viewModel.CompleteLinkedPullRequestTasksAsync();
+        }
+    }
+
+    private async void OnCompletePullRequestTasksClick(object? sender, RoutedEventArgs e)
+    {
+        if (!_viewModel.HasPullRequestLinkedWorkItems) return;
+        if (await ShowConfirmationAsync(
+                "Complete linked tasks",
+                "Move every resolved Jira and ClickUp task detected in this merged pull request to its provider completion status? Unresolved references are skipped.",
+                "Complete tasks"))
+            await _viewModel.CompleteLinkedPullRequestTasksAsync();
+    }
+
+    private async void OnRemoveMergedPullRequestBranchClick(object? sender, RoutedEventArgs e)
+    {
+        GitLocalBranchRemovalAnalysis? analysis =
+            await _viewModel.AnalyzeSelectedPullRequestLocalBranchRemovalAsync();
+        if (analysis is null)
+        {
+            await ShowMessageAsync(
+                "Local branch unavailable",
+                "CyRevision could not analyze this local branch. Check that the pull request is merged and that its head branch still exists locally.");
+            return;
+        }
+
+        string details =
+            $"{analysis.SafetyMessage}\n\nUnique commits: {analysis.UniqueCommitCount:N0}\nRetained by: {analysis.RetainedBy}\n\nOnly the local branch reference will be removed. The remote branch and working files are not deleted.";
+        if (analysis.CanRemoveSafely)
+        {
+            if (await ShowConfirmationAsync(
+                    "Remove merged local branch",
+                    details,
+                    "Remove local branch"))
+                await _viewModel.RemoveSelectedPullRequestLocalBranchAsync(force: false);
+            return;
+        }
+
+        if (!analysis.CanForceRemove)
+        {
+            await ShowMessageAsync("Local branch protected", details);
+            return;
+        }
+
+        if (await ShowConfirmationAsync(
+                "Force-remove local branch",
+                details + "\n\nNo verified Git reference retains every unique commit. Force removal can make unpublished commits difficult to recover.",
+                "Force remove"))
+            await _viewModel.RemoveSelectedPullRequestLocalBranchAsync(force: true);
     }
 
     private async void OnTogglePullRequestStateClick(object? sender, RoutedEventArgs e)
@@ -4310,6 +4481,13 @@ public partial class MainWindow : Window
         confirm.Click += (_, _) => dialog.Close(new ProjectRemovalChoice(true, removeCaches.IsChecked == true));
         return await dialog.ShowDialog<ProjectRemovalChoice?>(this);
     }
+
+    public Task<bool> ShowExitConfirmationAsync() =>
+        ShowConfirmationAsync(
+            Translate("Quit CyRevision?"),
+            Translate("Running operations will be cancelled and all CyRevision background services will stop. Unsaved text entered in editors may be lost. Do you want to quit?"),
+            Translate("Quit CyRevision"),
+            Translate("Cancel"));
 
     private async Task<bool> ShowConfirmationAsync(
         string title,

@@ -62,6 +62,60 @@ public sealed class WorkItemIntegrationPluginTests
     }
 
     [Fact]
+    public async Task JiraExposesAndAppliesProviderCompletionTransition()
+    {
+        using TemporaryDirectory temporary = new();
+        RecordingHandler handler = new(request => request.Method == HttpMethod.Get
+            ? Json("""{"transitions":[{"id":"21","name":"In progress","to":{"statusCategory":{"key":"indeterminate"}}},{"id":"31","name":"Done","to":{"statusCategory":{"key":"done"}}}]}""")
+            : new HttpResponseMessage(HttpStatusCode.NoContent));
+        await using JiraIntegrationPlugin plugin = new(new HttpClient(handler));
+        await InitializeAsync(plugin, temporary.Path);
+        WorkItemConnectionSettings settings = new(
+            Guid.NewGuid(), "https://studio.atlassian.net", "GAME", "developer@example.com", "JIRA_API_TOKEN");
+        WorkItemReference issue = new(
+            "jira", "Jira", "10042", "GAME-42", "Fix editor crash", "In progress",
+            "https://studio.atlassian.net/browse/GAME-42");
+
+        WorkItemTransitionOption completion = Assert.Single(
+            (await plugin.GetTransitionsAsync(settings, "jira-secret", issue)).Where(option => option.IsCompletion));
+        WorkItemStatusUpdateResult result = await plugin.ApplyTransitionAsync(
+            settings, "jira-secret", issue, completion);
+
+        Assert.Equal("Done", result.NewStatus);
+        Assert.Equal(HttpMethod.Post, handler.LastMethod);
+        Assert.EndsWith("/rest/api/3/issue/GAME-42/transitions", handler.LastRequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task ClickUpExposesAndAppliesClosedListStatus()
+    {
+        using TemporaryDirectory temporary = new();
+        RecordingHandler handler = new(request =>
+        {
+            if (request.Method == HttpMethod.Put)
+                return Json("{}");
+            if (request.RequestUri!.AbsolutePath.EndsWith("/list/99", StringComparison.Ordinal))
+                return Json("""{"statuses":[{"status":"in progress","type":"custom"},{"status":"Complete","type":"closed"}]}""");
+            return Json("""{"id":"abc","name":"Improve project sync","list":{"id":"99"}}""");
+        });
+        await using ClickUpIntegrationPlugin plugin = new(new HttpClient(handler));
+        await InitializeAsync(plugin, temporary.Path);
+        WorkItemConnectionSettings settings = new(
+            Guid.NewGuid(), "https://api.clickup.com/api/v2", "7654321", string.Empty, "CLICKUP_API_TOKEN");
+        WorkItemReference task = new(
+            "clickup", "ClickUp", "abc", "TEAM-9", "Improve project sync", "in progress",
+            "https://app.clickup.com/t/abc");
+
+        WorkItemTransitionOption completion = Assert.Single(
+            (await plugin.GetTransitionsAsync(settings, "pk_session", task)).Where(option => option.IsCompletion));
+        WorkItemStatusUpdateResult result = await plugin.ApplyTransitionAsync(
+            settings, "pk_session", task, completion);
+
+        Assert.Equal("Complete", result.NewStatus);
+        Assert.Equal(HttpMethod.Put, handler.LastMethod);
+        Assert.EndsWith("/api/v2/task/abc", handler.LastRequestUri!.AbsolutePath);
+    }
+    [Fact]
     public async Task ProjectSettingsRoundTripWithoutPersistingSessionTokens()
     {
         using TemporaryDirectory temporary = new();
@@ -99,6 +153,7 @@ public sealed class WorkItemIntegrationPluginTests
         : HttpMessageHandler
     {
         public Uri? LastRequestUri { get; private set; }
+        public HttpMethod? LastMethod { get; private set; }
         public string? LastAuthorizationScheme { get; private set; }
         public string? LastAuthorizationValue { get; private set; }
         public string? RawAuthorization { get; private set; }
@@ -108,6 +163,7 @@ public sealed class WorkItemIntegrationPluginTests
             CancellationToken cancellationToken)
         {
             LastRequestUri = request.RequestUri;
+            LastMethod = request.Method;
             LastAuthorizationScheme = request.Headers.Authorization?.Scheme;
             LastAuthorizationValue = request.Headers.Authorization?.Parameter;
             RawAuthorization = request.Headers.TryGetValues("Authorization", out IEnumerable<string>? values)

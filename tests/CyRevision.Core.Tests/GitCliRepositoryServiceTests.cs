@@ -260,6 +260,16 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
         Assert.Equal(5, commitGraph.Count);
         Assert.Contains(commitGraph, commit => commit.IsMerge && commit.ParentHashes.Count == 2);
         Assert.Contains(commitGraph, commit => commit.Decorations.Contains("HEAD", StringComparison.Ordinal));
+        Dictionary<string, int> commitIndexes = commitGraph
+            .Select((commit, index) => (commit.Hash, index))
+            .ToDictionary(item => item.Hash, item => item.index, StringComparer.Ordinal);
+        foreach (GitGraphCommit commit in commitGraph)
+        {
+            foreach (string parentHash in commit.ParentHashes.Where(commitIndexes.ContainsKey))
+            {
+                Assert.True(commitIndexes[commit.Hash] < commitIndexes[parentHash]);
+            }
+        }
         Assert.Equal(3, fileGraph.TotalFileCount);
         Assert.Contains(fileGraph.Files, file => file.Path == "README.md" && file.ChangeCount == 3);
         Assert.Contains(fileGraph.Files, file =>
@@ -779,6 +789,36 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
         Assert.Equal("reviewed result", await reader.ReadToEndAsync());
     }
 
+    [Fact]
+    public async Task MergeConflictAnalysisListsFilesWithoutTouchingWorkingTree()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.ConfigureIdentityAsync(_temporaryDirectory, "CyRevision Tests", "tests@cyrevision.local");
+        string conflictPath = Path.Combine(_temporaryDirectory, "Source", "Conflict.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(conflictPath)!);
+        await File.WriteAllTextAsync(conflictPath, "base");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Base", ["Source/Conflict.cs"]);
+        await service.CreateBranchAsync(_temporaryDirectory, "feature/conflicting-pr");
+        await File.WriteAllTextAsync(conflictPath, "incoming branch");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Incoming", ["Source/Conflict.cs"]);
+        await service.CheckoutBranchAsync(_temporaryDirectory, "main");
+        await File.WriteAllTextAsync(conflictPath, "current branch");
+        await service.CreateRevisionAsync(_temporaryDirectory, "Current", ["Source/Conflict.cs"]);
+
+        GitMergeConflictAnalysis analysis = await service.AnalyzeMergeConflictsAsync(
+            _temporaryDirectory,
+            "main",
+            "feature/conflicting-pr");
+
+        Assert.False(analysis.IsMergeable);
+        Assert.Contains("Source/Conflict.cs", analysis.ConflictPaths);
+        Assert.Equal("main", (await service.GetStatusAsync(_temporaryDirectory)).CurrentBranch);
+        Assert.Equal("current branch", await File.ReadAllTextAsync(conflictPath));
+    }
     [Fact]
     public async Task MergedLocalBranchCanBeRemovedWithoutChangingCurrentHistory()
     {
