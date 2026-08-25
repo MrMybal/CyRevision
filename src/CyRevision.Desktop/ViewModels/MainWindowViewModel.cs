@@ -625,8 +625,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private int _pullRequestDetailsLoadVersion;
     private CiWorkflow? _selectedCiWorkflow;
     private CiWorkflowRun? _selectedCiRun;
+    private CiLogFilterMode _ciLogFilterMode;
     private string _ciStatus = "Select a GitHub-backed project to inspect CI workflows.";
     private string _ciRunDetails = "Select a workflow run to inspect jobs and failed steps.";
+    private string _ciRunDescription = "Select a workflow run to inspect its complete details.";
     private string _ciGitRef = string.Empty;
     private string _ciReleaseVersion = string.Empty;
     private bool _isCiLoading;
@@ -1007,6 +1009,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public ObservableCollection<CiWorkflowRun> CiRuns { get; } = new BatchObservableCollection<CiWorkflowRun>();
 
     public ObservableCollection<CiWorkflowJob> CiJobs { get; } = [];
+
+    public ObservableCollection<CiLogLine> CiLogLines { get; } = [];
+
+    public ObservableCollection<CiLogLine> FilteredCiLogLines { get; } = [];
 
     public ObservableCollection<GitRevision> PullRequestCommitRevisions { get; } = [];
 
@@ -5164,6 +5170,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             {
                 OnPropertyChanged(nameof(HasSelectedPullRequest));
                 OnPropertyChanged(nameof(CanMergeSelectedPullRequest));
+                OnPropertyChanged(nameof(CanReviewSelectedPullRequest));
+                OnPropertyChanged(nameof(PullRequestReviewAvailability));
                 _ = LoadSelectedPullRequestAsync(value);
             }
         }
@@ -5280,6 +5288,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public bool CanMergeSelectedPullRequest =>
         SelectedPullRequest is { IsMerged: false } pull && pull.State.Equals("open", StringComparison.OrdinalIgnoreCase);
 
+    public bool CanReviewSelectedPullRequest =>
+        _pullRequestRepository is not null &&
+        SelectedPullRequest is { IsMerged: false } pull &&
+        pull.State.Equals("open", StringComparison.OrdinalIgnoreCase);
+
+    public string PullRequestReviewAvailability => SelectedPullRequest switch
+    {
+        null => "Select an open pull request to review it.",
+        { IsMerged: true } => "This pull request is already merged and can no longer be reviewed.",
+        { State: var state } when !state.Equals("open", StringComparison.OrdinalIgnoreCase) =>
+            "This pull request is closed and can no longer be reviewed.",
+        _ when _pullRequestRepository is null => "No supported pull-request provider is connected.",
+        _ => "Review is available. GitHub validates the connected account permissions when you submit."
+    };
+
     public string PullRequestDetailsSummary => _selectedPullRequestDetails?.ChangeSummary ?? "Select a pull request.";
 
     public string PullRequestBody => string.IsNullOrWhiteSpace(_selectedPullRequestDetails?.Body)
@@ -5302,6 +5325,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }
     }
 
+    public CiLogFilterMode CiLogFilterMode
+    {
+        get => _ciLogFilterMode;
+        set
+        {
+            if (!SetProperty(ref _ciLogFilterMode, value)) return;
+            ApplyCiLogFilter();
+        }
+    }
+
     public string CiStatus
     {
         get => _ciStatus;
@@ -5312,6 +5345,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     {
         get => _ciRunDetails;
         private set => SetProperty(ref _ciRunDetails, value);
+    }
+
+    public string CiRunDescription
+    {
+        get => _ciRunDescription;
+        private set => SetProperty(ref _ciRunDescription, value);
     }
 
     public string CiGitRef
@@ -6167,13 +6206,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     {
         int version = Interlocked.Increment(ref _ciRunLoadVersion);
         CiJobs.Clear();
+        CiLogLines.Clear();
+        FilteredCiLogLines.Clear();
         if (_pullRequestRepository is null || run is null)
         {
             CiRunDetails = "Select a workflow run to inspect jobs and failed steps.";
+            CiRunDescription = "Select a workflow run to inspect its complete details.";
             return;
         }
 
         CiRunDetails = $"Loading jobs for {run.Name}…";
+        CiRunDescription = $"{run.Name}\n#{run.Id} · {run.Event} · {run.Branch} · {run.ShortSha}\n{run.StateText} · updated {run.UpdatedText}";
         try
         {
             string? token = await ResolvePullRequestTokenAsync(_pullRequestRepository);
@@ -6181,11 +6224,43 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             if (version != _ciRunLoadVersion || SelectedCiRun?.Id != run.Id) return;
             ReplaceCollection(CiJobs, details.Jobs);
             CiRunDetails = details.ErrorReport;
+            CiRunDescription = details.FullReport;
+
+            string logStatus = string.Empty;
+            try
+            {
+                IReadOnlyList<CiLogLine> logs = await _ciWorkflowService.GetRunLogLinesAsync(
+                    _pullRequestRepository,
+                    run,
+                    token);
+                if (version != _ciRunLoadVersion || SelectedCiRun?.Id != run.Id) return;
+                ReplaceCollection(CiLogLines, logs);
+                ApplyCiLogFilter();
+            }
+            catch (Exception exception)
+            {
+                logStatus = " · logs unavailable: " + exception.Message;
+            }
+
+            int errors = CiLogLines.Count(line => line.IsError);
+            int warnings = CiLogLines.Count(line => line.IsWarning);
+            CiStatus = $"{details.Run.Name} · {details.Run.StateText} · {details.Jobs.Count:N0} job(s) · " +
+                       $"{CiLogLines.Count:N0} log line(s) · {errors:N0} error(s) · {warnings:N0} warning(s){logStatus}";
         }
         catch (Exception exception)
         {
-            if (version == _ciRunLoadVersion) CiRunDetails = exception.Message;
+            if (version == _ciRunLoadVersion)
+            {
+                CiRunDetails = exception.Message;
+                CiRunDescription = $"Unable to load complete run details.\n{exception.Message}";
+            }
         }
+    }
+
+    private void ApplyCiLogFilter()
+    {
+        IEnumerable<CiLogLine> source = CiLogLines.Where(line => line.Matches(CiLogFilterMode));
+        ReplaceCollection(FilteredCiLogLines, source);
     }
 
     public async Task CreatePullRequestAsync()
@@ -6269,21 +6344,42 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }, "Review submitted");
     }
 
-    public async Task MergeSelectedPullRequestAsync()
+    public async Task<bool> MergeSelectedPullRequestAsync()
     {
-        if (_pullRequestRepository is null || SelectedPullRequest is null) return;
+        if (_pullRequestRepository is null || SelectedPullRequest is null) return false;
         string? token = await GetPullRequestWriteTokenAsync();
-        if (token is null) return;
-        int number = SelectedPullRequest.Number;
+        if (token is null) return false;
+        PullRequestSummary original = SelectedPullRequest;
+        int number = original.Number;
         CyRevision.PullRequests.PullRequestMergeMethod method = this.PullRequestMergeMethod;
+        bool merged = false;
         await RunOperationAsync($"Merging pull request #{number}…", async () =>
         {
             try
             {
                 MergePullRequestResult result = await _pullRequestService.MergeAsync(
                     _pullRequestRepository, number, method, token);
-                await RefreshPullRequestsCoreAsync(number);
+                PullRequestSummary updated = original with
+                {
+                    State = "closed",
+                    IsMerged = true,
+                    IsMergeable = true,
+                    MergeableState = "clean"
+                };
+                int sourceIndex = PullRequests.IndexOf(original);
+                if (sourceIndex >= 0) PullRequests[sourceIndex] = updated;
+                int filteredIndex = FilteredPullRequests.IndexOf(original);
+                if (filteredIndex >= 0) FilteredPullRequests[filteredIndex] = updated;
+                _selectedPullRequest = updated;
+                if (_selectedPullRequestDetails is { } details)
+                    _selectedPullRequestDetails = details with { Summary = updated };
+                OnPropertyChanged(nameof(SelectedPullRequest));
+                OnPropertyChanged(nameof(CanMergeSelectedPullRequest));
+                OnPropertyChanged(nameof(CanReviewSelectedPullRequest));
+                OnPropertyChanged(nameof(PullRequestReviewAvailability));
+                await RefreshPullRequestLocalBranchStateAsync(updated, _pullRequestDetailsLoadVersion);
                 PullRequestStatus = result.Message;
+                merged = true;
             }
             catch (Exception exception)
             {
@@ -6291,8 +6387,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 throw;
             }
         }, $"Pull request #{number} merged");
+        return merged;
     }
-
     public async Task ToggleSelectedPullRequestStateAsync()
     {
         if (_pullRequestRepository is null || SelectedPullRequest is null) return;
@@ -6369,6 +6465,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 _pullRequestRepository,
                 PullRequestStateFilter,
                 token);
+            pulls = await EnrichPullRequestSummariesAsync(pulls, token);
             ReplaceCollection(PullRequests, pulls);
             ApplyPullRequestFilter();
             PullRequestStatus = $"{pulls.Count} pull request(s) · {_pullRequestRepository.FullName} · {PullRequestStateFilter}";
@@ -6394,6 +6491,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 repository,
                 PullRequestStateFilter,
                 token);
+            pulls = await EnrichPullRequestSummariesAsync(pulls, token);
             if (SelectedProject?.Id != projectId || _pullRequestRepository != repository) return;
             ReplaceCollection(PullRequests, pulls);
             ApplyPullRequestFilter();
@@ -6454,6 +6552,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 _pullRequestRepository,
                 pullRequest.Number,
                 token);
+            details = details with
+            {
+                Summary = details.Summary with
+                {
+                    CurrentUser = pullRequest.CurrentUser,
+                    CiStatus = pullRequest.CiStatus,
+                    CiConclusion = pullRequest.CiConclusion
+                }
+            };
             if (loadVersion != _pullRequestDetailsLoadVersion || SelectedPullRequest?.Number != pullRequest.Number) return;
             _selectedPullRequestDetails = details;
             ReplaceCollection(PullRequestCommitRevisions, details.Commits.Select(commit => new GitRevision(
@@ -6470,7 +6577,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             OnPropertyChanged(nameof(PullRequestDetailsSummary));
             OnPropertyChanged(nameof(PullRequestBody));
             OnPropertyChanged(nameof(CanMergeSelectedPullRequest));
+            OnPropertyChanged(nameof(CanReviewSelectedPullRequest));
             PullRequestStatus = $"Pull request #{pullRequest.Number} loaded.";
+            await LoadPullRequestOperationalDataAsync(details, token, loadVersion);
         }
         catch (Exception exception)
         {
@@ -6601,10 +6710,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             CiWorkflows.Clear();
             CiRuns.Clear();
             CiJobs.Clear();
+            CiLogLines.Clear();
+            FilteredCiLogLines.Clear();
             SelectedCiWorkflow = null;
             SelectedCiRun = null;
             CiStatus = "Select a GitHub-backed project to inspect CI workflows.";
             CiRunDetails = "Select a workflow run to inspect jobs and failed steps.";
+            CiRunDescription = "Select a workflow run to inspect its complete details.";
             _pullRequestRepository = null;
             _pullRequestCredentialToken = null;
             PullRequestToken = string.Empty;
@@ -6622,6 +6734,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         PullRequestReviews.Clear();
         PullRequestComments.Clear();
         SelectedPullRequestFile = null;
+        ClearPullRequestOperationalData();
         OnPropertyChanged(nameof(PullRequestDetailsSummary));
         OnPropertyChanged(nameof(PullRequestBody));
     }
@@ -8877,11 +8990,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     }, "Repository, untracked files and reservations refreshed");
 
     public async Task RefreshDetectedChangesAsync(
-        int eventCount,
+        IReadOnlyList<string> changedPaths,
         bool includeUntrackedFiles,
         bool gitMetadataChanged,
         bool watcherOverflowed)
     {
+        int eventCount = changedPaths.Count;
         ProjectItemViewModel? project = SelectedProject;
         if (project is null || !project.Definition.Features.GitEnabled || IsProjectLoading)
         {
@@ -8930,14 +9044,23 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 detectedStatus = detectedStatus with { Changes = mergedChanges };
             }
 
-            if (changesAreIdentical)
+            GitChangeViewModel? selectedChange = SelectedChange;
+            bool selectedChangeWasAffected = selectedChange is not null && changedPaths.Any(path =>
+                string.Equals(
+                    NormalizeChangePath(path),
+                    NormalizeChangePath(selectedChange.Path),
+                    StringComparison.OrdinalIgnoreCase));
+            if (changesAreIdentical && selectedChangeWasAffected)
             {
                 Interlocked.Increment(ref _workingTreeDiffGeneration);
             }
             ApplyPrimaryGitStatus(project, detectedStatus, rebuildChanges: !changesAreIdentical);
-            CacheCurrentProjectSession(project);
-            ScheduleProjectGitCacheSave(project, detectedStatus);
-            if (changesAreIdentical && SelectedChange is not null)
+            if (!changesAreIdentical)
+            {
+                CacheCurrentProjectSession(project);
+                ScheduleProjectGitCacheSave(project, detectedStatus);
+            }
+            if (changesAreIdentical && selectedChangeWasAffected)
             {
                 await LoadSelectedDiffForExternalAsync();
             }
@@ -8947,7 +9070,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 "git.watch",
                 $"refresh complete events={eventCount} mode={mode} metadata={gitMetadataChanged.ToString().ToLowerInvariant()} " +
                 $"overflow={watcherOverflowed.ToString().ToLowerInvariant()} changes={detectedStatus.Changes.Count} " +
-                $"duration={stopwatch.Elapsed.TotalMilliseconds:N0}ms",
+                $"paths=[{string.Join(", ", changedPaths.Take(4))}] duration={stopwatch.Elapsed.TotalMilliseconds:N0}ms",
                 project.RootPath);
             if (trackedTask is not null)
             {
@@ -8961,7 +9084,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             if (trackedTask is not null)
             {
-                CompleteTrackedTask(trackedTask, "Cancelled", "Superseded by newer file-system events");
+                DiscardTrackedTask(trackedTask, "Superseded by newer file-system events");
             }
         }
         catch (Exception exception)
@@ -8979,7 +9102,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             if (trackedTask is not null && ActiveOperations.Contains(trackedTask))
             {
-                CompleteTrackedTask(trackedTask, "Cancelled", "Project changed before refresh completed");
+                DiscardTrackedTask(trackedTask, "Project changed before refresh completed");
             }
             if (ReferenceEquals(_automaticGitRefreshCancellation, cancellation))
             {
@@ -13988,6 +14111,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             ProjectDefinition updated = project.Definition with { LastOpenedAt = DateTimeOffset.UtcNow };
             project.Update(updated);
             LoadBackupSettings(updated);
+            LoadPullRequestTaskUpdatePreference(updated);
             RefreshProjectModeCatalog();
             ClearGitGraphView();
 
@@ -14259,12 +14383,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         RecentOperations.Remove(task);
         RecentOperations.Insert(0, task);
         while (RecentOperations.Count > 80) RecentOperations.RemoveAt(RecentOperations.Count - 1);
-        if (task.IsAttention)
-        {
-            IsActivityCenterExpanded = true;
-        }
         NotifyActiveOperationsChanged();
         RefreshProjectNotifications();
+    }
+
+    private void DiscardTrackedTask(OperationTaskViewModel task, string detail)
+    {
+        task.Complete("Cancelled", detail);
+        ActiveOperations.Remove(task);
+        RecentOperations.Remove(task);
+        NotifyActiveOperationsChanged();
     }
 
     public void PublishApplicationError(string title, string detail)
@@ -14274,7 +14402,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         notification.PromoteToNotification();
         RecentOperations.Insert(0, notification);
         while (RecentOperations.Count > 80) RecentOperations.RemoveAt(RecentOperations.Count - 1);
-        IsActivityCenterExpanded = true;
         NotifyActiveOperationsChanged();
         RefreshProjectNotifications();
     }

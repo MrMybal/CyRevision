@@ -23,7 +23,7 @@ public sealed class OperationTaskViewModel : ObservableObject
     public string StartedText => StartedAt.ToString("HH:mm:ss");
     public bool IsRunning => string.Equals(State, "Running", StringComparison.Ordinal);
     public DateTimeOffset? CompletedAt { get; private set; }
-    public bool IsAttention => State is "Failed" or "Cancelled";
+    public bool IsAttention => State is "Failed";
     public bool IsNotification { get; private set; }
     public bool IsRead { get; private set; }
     public string NotificationState => IsRead ? "Read" : "New";

@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Text.Json;
 using CyRevision.Plugin.Abstractions;
 
@@ -169,6 +170,146 @@ public sealed class ClickUpIntegrationPlugin : IWorkItemIntegrationPlugin
         return results;
     }
 
+    public async Task<WorkItemReference?> ResolveAsync(
+        WorkItemConnectionSettings settings,
+        string? sessionToken,
+        string identifierOrUrl,
+        CancellationToken cancellationToken = default)
+    {
+        settings = Normalize(settings);
+        string identifier = ExtractTaskIdentifier(identifierOrUrl);
+        if (identifier.Length == 0) return null;
+        using HttpRequestMessage request = CreateRequest(
+            settings,
+            sessionToken,
+            HttpMethod.Get,
+            BuildTaskPath(settings, identifier));
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(await CreateApiErrorAsync(response, cancellationToken).ConfigureAwait(false));
+
+        using JsonDocument payload = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        return ParseWorkItem(payload.RootElement);
+    }
+
+    public async Task<IReadOnlyList<WorkItemTransitionOption>> GetTransitionsAsync(
+        WorkItemConnectionSettings settings,
+        string? sessionToken,
+        WorkItemReference workItem,
+        CancellationToken cancellationToken = default)
+    {
+        settings = Normalize(settings);
+        using HttpRequestMessage taskRequest = CreateRequest(
+            settings,
+            sessionToken,
+            HttpMethod.Get,
+            BuildTaskPath(settings, workItem.Id));
+        using HttpResponseMessage taskResponse = await _httpClient.SendAsync(taskRequest, cancellationToken)
+            .ConfigureAwait(false);
+        if (!taskResponse.IsSuccessStatusCode)
+            throw new InvalidOperationException(await CreateApiErrorAsync(taskResponse, cancellationToken).ConfigureAwait(false));
+        using JsonDocument taskPayload = JsonDocument.Parse(
+            await taskResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        string listId = taskPayload.RootElement.TryGetProperty("list", out JsonElement list)
+            ? GetString(list, "id") ?? string.Empty
+            : string.Empty;
+        if (listId.Length == 0) return [];
+
+        using HttpRequestMessage listRequest = CreateRequest(
+            settings,
+            sessionToken,
+            HttpMethod.Get,
+            $"/list/{Uri.EscapeDataString(listId)}");
+        using HttpResponseMessage listResponse = await _httpClient.SendAsync(listRequest, cancellationToken)
+            .ConfigureAwait(false);
+        if (!listResponse.IsSuccessStatusCode)
+            throw new InvalidOperationException(await CreateApiErrorAsync(listResponse, cancellationToken).ConfigureAwait(false));
+        using JsonDocument listPayload = JsonDocument.Parse(
+            await listResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        if (!listPayload.RootElement.TryGetProperty("statuses", out JsonElement statuses) ||
+            statuses.ValueKind != JsonValueKind.Array)
+            return [];
+
+        return statuses.EnumerateArray().Select(status =>
+        {
+            string name = GetString(status, "status") ?? string.Empty;
+            string type = GetString(status, "type") ?? string.Empty;
+            bool completion = type.Equals("closed", StringComparison.OrdinalIgnoreCase) ||
+                              IsCompletionName(name);
+            return new WorkItemTransitionOption(name, name, completion);
+        }).Where(status => status.Name.Length > 0).ToArray();
+    }
+
+    public async Task<WorkItemStatusUpdateResult> ApplyTransitionAsync(
+        WorkItemConnectionSettings settings,
+        string? sessionToken,
+        WorkItemReference workItem,
+        WorkItemTransitionOption transition,
+        CancellationToken cancellationToken = default)
+    {
+        settings = Normalize(settings);
+        using HttpRequestMessage request = CreateRequest(
+            settings,
+            sessionToken,
+            HttpMethod.Put,
+            $"/task/{Uri.EscapeDataString(workItem.Id)}");
+        request.Content = JsonContent.Create(new { status = transition.Name });
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(await CreateApiErrorAsync(response, cancellationToken).ConfigureAwait(false));
+        return new WorkItemStatusUpdateResult(
+            workItem with { Status = transition.Name },
+            workItem.Status,
+            transition.Name);
+    }
+
+    private WorkItemReference ParseWorkItem(JsonElement task)
+    {
+        string id = GetString(task, "id") ?? string.Empty;
+        string key = GetString(task, "custom_id") ?? id;
+        string title = GetString(task, "name") ?? string.Empty;
+        string status = task.TryGetProperty("status", out JsonElement statusObject)
+            ? GetString(statusObject, "status") ?? string.Empty
+            : string.Empty;
+        string url = GetString(task, "url") ?? $"https://app.clickup.com/t/{Uri.EscapeDataString(id)}";
+        return new WorkItemReference(
+            Provider.Id,
+            Provider.Name,
+            id,
+            key,
+            title.Trim(),
+            status.Trim(),
+            url);
+    }
+
+    private static string BuildTaskPath(WorkItemConnectionSettings settings, string identifier)
+    {
+        string escaped = Uri.EscapeDataString(identifier);
+        return identifier.Contains('-', StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(settings.ScopeId)
+            ? $"/task/{escaped}?custom_task_ids=true&team_id={Uri.EscapeDataString(settings.ScopeId)}"
+            : $"/task/{escaped}";
+    }
+
+    private static string ExtractTaskIdentifier(string value)
+    {
+        string candidate = value.Trim();
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out Uri? uri))
+            candidate = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? string.Empty;
+        int separator = candidate.IndexOfAny([' ', '?', '#']);
+        if (separator >= 0) candidate = candidate[..separator];
+        return Uri.UnescapeDataString(candidate).Trim();
+    }
+
+    private static bool IsCompletionName(string name) =>
+        name.Contains("done", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("close", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("resolve", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("complete", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("termin", StringComparison.OrdinalIgnoreCase);
     public ValueTask DisposeAsync()
     {
         if (_ownsHttpClient) _httpClient.Dispose();

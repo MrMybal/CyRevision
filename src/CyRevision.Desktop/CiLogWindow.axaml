@@ -1,0 +1,79 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CyRevision.Desktop.CiLogWindow"
+        x:CompileBindings="False"
+        Icon="/Assets/Branding/cyrevision.ico"
+        Width="1480"
+        Height="860"
+        MinWidth="900"
+        MinHeight="480"
+        Background="#1E1F22"
+        WindowStartupLocation="CenterScreen">
+    <Window.Styles>
+        <Style Selector="Button.secondary">
+            <Setter Property="Background" Value="#393B40" />
+            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="MinHeight" Value="27" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="54,*">
+        <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="12,0">
+            <Grid ColumnDefinitions="*,300,Auto,Auto,Auto" ColumnSpacing="10">
+                <StackPanel VerticalAlignment="Center" Spacing="2">
+                    <TextBlock x:Name="WindowTitleBlock" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock x:Name="StatusBlock" FontSize="9.5" Foreground="#9B9DA3"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBox x:Name="LogSearch" Grid.Column="1" PlaceholderText="Search text, source, or line number…"
+                         VerticalAlignment="Center" TextChanged="OnSearchTextChanged" />
+                <ComboBox x:Name="LogFilter" Grid.Column="2" Width="138" VerticalAlignment="Center"
+                          SelectionChanged="OnFilterSelectionChanged"
+                          ToolTip.Tip="Show all log lines, only errors, or only warnings" />
+                <CheckBox x:Name="AlwaysOnTopToggle" Grid.Column="3" Content="Always on top"
+                          VerticalAlignment="Center" Click="OnAlwaysOnTopClick" />
+                <Button Grid.Column="4" Classes="secondary" Content="Close" Click="OnCloseClick"
+                        VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Margin="10" Background="#0D1420" BorderBrush="#393B40"
+                BorderThickness="1" CornerRadius="5" ClipToBounds="True">
+            <DataGrid x:Name="LogLinesGrid"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      GridLinesVisibility="Horizontal"
+                      BorderThickness="0"
+                      Background="#0D1420"
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="#" SortMemberPath="Number" Width="64">
+                        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                            <TextBlock Text="{Binding NumberText}" FontFamily="Cascadia Mono, Consolas" FontSize="11"
+                                       TextWrapping="NoWrap" Margin="3,0" />
+                        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="Source" SortMemberPath="Source" Width="220">
+                        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                            <TextBlock Text="{Binding Source}" FontFamily="Cascadia Mono, Consolas" FontSize="11"
+                                       TextWrapping="NoWrap" Margin="3,0" />
+                        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="Line" Width="Auto" MinWidth="720">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Text}" Foreground="{Binding StateColor}"
+                                           FontFamily="Cascadia Mono, Consolas" FontSize="11"
+                                           TextWrapping="NoWrap" Margin="3,0,12,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+    </Grid>
+</Window>

@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -92,6 +93,74 @@ public sealed class GitHubActionsService : ICiWorkflowService, IDisposable
         return new CiWorkflowRunDetails(run, result);
     }
 
+    public async Task<IReadOnlyList<CiLogLine>> GetRunLogLinesAsync(
+        PullRequestRepository repository,
+        CiWorkflowRun run,
+        string? token,
+        CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = CreateRequest(
+            repository,
+            HttpMethod.Get,
+            $"repos/{repository.Owner}/{repository.Name}/actions/runs/{run.Id}/logs",
+            token,
+            null);
+        using HttpResponseMessage response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            string error = await response.Content.ReadAsStringAsync(cancellationToken);
+            EnsureSuccess(response, error);
+        }
+
+        const int maximumArchiveBytes = 64 * 1024 * 1024;
+        if (response.Content.Headers.ContentLength is > maximumArchiveBytes)
+            throw new InvalidOperationException("The CI log archive is larger than the 64 MB inspection limit.");
+
+        byte[] payload = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        if (payload.Length > maximumArchiveBytes)
+            throw new InvalidOperationException("The CI log archive is larger than the 64 MB inspection limit.");
+
+        List<CiLogLine> lines = [];
+        const int maximumLines = 20000;
+        if (payload.Length >= 4 && payload[0] == (byte)'P' && payload[1] == (byte)'K')
+        {
+            using MemoryStream stream = new(payload, writable: false);
+            using ZipArchive archive = new(stream, ZipArchiveMode.Read, leaveOpen: false);
+            foreach (ZipArchiveEntry entry in archive.Entries
+                         .Where(entry => !string.IsNullOrEmpty(entry.Name))
+                         .OrderBy(entry => entry.FullName, StringComparer.OrdinalIgnoreCase))
+            {
+                if (entry.Length > 16 * 1024 * 1024)
+                {
+                    lines.Add(CiLogLine.Create(lines.Count + 1, entry.FullName, "[Log omitted: entry exceeds 16 MB]"));
+                    continue;
+                }
+
+                await using Stream entryStream = entry.Open();
+                using StreamReader reader = new(entryStream, detectEncodingFromByteOrderMarks: true);
+                while (lines.Count < maximumLines &&
+                       await reader.ReadLineAsync(cancellationToken) is { } line)
+                {
+                    lines.Add(CiLogLine.Create(lines.Count + 1, entry.FullName, line));
+                }
+
+                if (lines.Count >= maximumLines) break;
+            }
+        }
+        else
+        {
+            using StringReader reader = new(Encoding.UTF8.GetString(payload));
+            while (lines.Count < maximumLines && reader.ReadLine() is { } line)
+                lines.Add(CiLogLine.Create(lines.Count + 1, run.Name, line));
+        }
+
+        if (lines.Count == maximumLines)
+            lines.Add(CiLogLine.Create(lines.Count + 1, "CyRevision", "[Log truncated after 20,000 lines]"));
+        return lines;
+    }
     public Task DispatchAsync(
         PullRequestRepository repository,
         CiWorkflow workflow,

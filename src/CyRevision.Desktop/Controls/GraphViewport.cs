@@ -129,17 +129,31 @@ internal sealed class GraphViewport : UserControl
         ScheduleOffsetUpdate();
     }
 
+    public void FitToViewDeferred()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            UpdateSurfaceExtent();
+            FitToView();
+        }, DispatcherPriority.Background);
+    }
+
     public void FitToView()
     {
         (double graphWidth, double graphHeight) = GetGraphSize();
         double viewportWidth = Math.Max(1, _scrollViewer.Viewport.Width - 36);
         double viewportHeight = Math.Max(1, _scrollViewer.Viewport.Height - 36);
-        double fit = Math.Min(viewportWidth / graphWidth, viewportHeight / graphHeight);
+        bool isLongVerticalGraph = graphHeight > viewportHeight * 1.6;
+        double fit = isLongVerticalGraph
+            ? viewportWidth / graphWidth
+            : Math.Min(viewportWidth / graphWidth, viewportHeight / graphHeight);
         double fittedZoom = Math.Clamp(fit, MinimumZoom, 1.25);
         SetZoom(fittedZoom, null);
         _pendingOffset = new Vector(
             Math.Max(0, graphWidth * fittedZoom - _scrollViewer.Viewport.Width) / 2,
-            Math.Max(0, graphHeight * fittedZoom - _scrollViewer.Viewport.Height) / 2);
+            isLongVerticalGraph
+                ? 0
+                : Math.Max(0, graphHeight * fittedZoom - _scrollViewer.Viewport.Height) / 2);
         ScheduleOffsetUpdate();
     }
 

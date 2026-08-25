@@ -1,7 +1,7 @@
 # CyRevision
 
 <p align="center">
-  <img src="src/CyRevision.Desktop/Assets/Branding/cyrevision-logo-concept.png" alt="CyRevision logo" width="420">
+  <img src="src/CyRevision.Desktop/Assets/Branding/cyrevision-cy-simple-badge-transparent.png" alt="CyRevision logo" width="190">
 </p>
 
 **English** · [Français](README.fr.md)
@@ -14,7 +14,7 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 
 - Native Avalonia desktop application for Windows, Linux, and macOS, with a system tray, close-to-tray behavior, and per-user launch-at-login integration.
 - Core project modes for **Git**, **Git + Sync**, **Sync**, **Sync + Versions**, and **Backup**, plus optional project-scoped modes contributed by plugins.
-- Integrated GitHub pull request manager with repository detection, filters, request creation, files and patches, conversations, reviews, safe local checkout, state changes, and confirmed merge operations. Provider adapters keep the module open to other forges.
+- Integrated GitHub pull request manager with repository detection, colored ownership/state/CI indicators, request creation, files and patches, conversations, reviews, CI logs and reruns, non-destructive conflict inspection, safe local checkout, confirmed merge operations, and safe local branch cleanup. Provider adapters keep the module open to other forges.
 - Local Git workflows: status, staging, commits, branches, merges, remotes, Git LFS, an interactive history explorer, A ↔ B comparisons, and per-file history.
 - Safe Multi Restore composer: select several files from one commit, independently choose the version before or at that commit, preview restore/delete operations, protect local changes, verify LFS availability, and create a timestamped recovery copy without touching the index or creating a commit.
 - Branch comparison and cherry-pick composer with patch-equivalence detection, explicit commit ordering, separate or combined commit modes, conflict rollback, and temporary Git worktrees for updating an inactive local target branch without switching the displayed project or pushing automatically.
@@ -33,7 +33,7 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 - Autonomous Unreal Editor plugin with a revision dashboard, Git actions, advisory asset reservations, and an authenticated loopback bridge to CyRevision.
 - Unreal plugin installation and safe updates from the CyRevision Plugins page, with recoverable backups of the previous project plugin.
 - Optional, project-scoped Perforce Helix Core plugin using the official `p4` CLI for validated workspaces, opened files, changelists, history, reconcile, sync, revert, and submit; writes are disabled by default and credentials are never stored.
-- Optional, project-scoped Jira Cloud and ClickUp integrations for searching work items and adding stable task links to commit messages and pull-request drafts; session tokens are never persisted.
+- Optional, project-scoped Jira Cloud and ClickUp integrations for searching work items, adding stable task links, auto-detecting them in pull requests, and applying confirmed or automatic completion transitions after merge; session tokens are never persisted.
 - Optional WireGuard integration with a selectable system or bundled runtime, guided Windows/macOS/Linux firewall setup, router/NAT checklists, signed Sync-assisted onboarding, isolated tunnels, VPN-only peers, and Unreal Swarm/CI/service profiles.
 - Unreal Swarm over VPN workspace with Agent/Coordinator roles, safe Agent XML backups, reversible local DNS aliases, VPN-only firewall rules, process controls, and actionable end-to-end diagnostics; matching autonomous tools are included in CyRevisionUnreal.
 - Secure VPN file inbox and explicit folder sharing with VPN-address binding, subnet filtering, project token authentication, SHA-256 verification, no overwrites, and traversal/symlink protection.
@@ -78,7 +78,7 @@ Publish on Windows:
 Build a self-contained Windows installer and portable release locally:
 
 ```powershell
-./scripts/build-release.cmd 0.1.20
+./scripts/build-release.cmd 0.1.21
 ```
 
 Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).

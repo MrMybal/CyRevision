@@ -20,6 +20,17 @@ public sealed class OperationTaskViewModelTests
     }
 
     [Fact]
+    public void Complete_MarksCancellationAsNonAttention()
+    {
+        OperationTaskViewModel task = new("Refresh repository", "Demo");
+
+        task.Complete("Cancelled", "Superseded by a newer request");
+
+        Assert.False(task.IsAttention);
+        Assert.Equal("Cancelled", task.State);
+    }
+
+    [Fact]
     public void Complete_MarksSuccessfulTaskAsNonAttention()
     {
         OperationTaskViewModel task = new("Refresh repository", "Demo");

@@ -29,6 +29,24 @@ public sealed class GitHubPullRequestService : IPullRequestService
         out PullRequestRepository? repository) =>
         GitRemoteRepositoryParser.TryParseGitHub(remoteUrl, apiBaseUrl, out repository);
 
+    public async Task<string?> GetCurrentUserAsync(
+        PullRequestRepository repository,
+        string? token,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return null;
+        using HttpRequestMessage request = new(HttpMethod.Get, new Uri(repository.ApiBaseUri, "user"));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+        request.Headers.UserAgent.ParseAdd("CyRevision/0.1");
+        request.Headers.Add("X-GitHub-Api-Version", ApiVersion);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode) return null;
+        string payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        using JsonDocument document = JsonDocument.Parse(payload);
+        string login = GetString(document.RootElement, "login").Trim();
+        return login.Length == 0 ? null : login;
+    }
     public async Task<IReadOnlyList<PullRequestSummary>> ListAsync(
         PullRequestRepository repository,
         PullRequestStateFilter state,
@@ -292,7 +310,8 @@ public sealed class GitHubPullRequestService : IPullRequestService
             GetDate(item, "updated_at"),
             Uri.TryCreate(htmlUrl, UriKind.Absolute, out Uri? uri) ? uri : new Uri("https://github.com/"),
             GetBool(item, "merged"),
-            GetNullableBool(item, "mergeable"));
+            GetNullableBool(item, "mergeable"),
+            GetString(item, "mergeable_state"));
     }
 
     private static PullRequestFile ParseFile(JsonElement item)

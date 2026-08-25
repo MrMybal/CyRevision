@@ -81,7 +81,23 @@ public sealed class GitCommitGraphView : UserControl
             double x = 24 + lane * laneSpacing;
             double y = headerHeight + index * rowHeight + rowHeight / 2;
             positions[commit.Hash] = new NodePosition(x, y, lane);
-            activeLanes[lane] = commit.ParentHashes.FirstOrDefault();
+
+            string? primaryParent = commit.ParentHashes.FirstOrDefault();
+            int existingPrimaryLane = -1;
+            if (primaryParent is not null)
+            {
+                for (int activeLane = 0; activeLane < activeLanes.Count; activeLane++)
+                {
+                    if (activeLane != lane &&
+                        string.Equals(activeLanes[activeLane], primaryParent, StringComparison.Ordinal))
+                    {
+                        existingPrimaryLane = activeLane;
+                        break;
+                    }
+                }
+            }
+            activeLanes[lane] = existingPrimaryLane >= 0 ? null : primaryParent;
+
             foreach (string additionalParent in commit.ParentHashes.Skip(1))
             {
                 if (activeLanes.Any(value => string.Equals(value, additionalParent, StringComparison.Ordinal)))
@@ -99,14 +115,23 @@ public sealed class GitCommitGraphView : UserControl
                     activeLanes[freeLane] = additionalParent;
                 }
             }
+
+            while (activeLanes.Count > 0 && activeLanes[^1] is null)
+            {
+                activeLanes.RemoveAt(activeLanes.Count - 1);
+            }
         }
 
-        const double canvasWidth = 1540;
+        double graphWidth = 48 + (largestLane + 1) * laneSpacing;
+        double subjectStart = Math.Max(150, graphWidth + 16);
+        double canvasWidth = Math.Max(1280, subjectStart + 1100);
+        double dateStart = canvasWidth - 195;
+        double authorStart = dateStart - 190;
+        double decorationStart = authorStart - 190;
         _canvas.Width = canvasWidth;
         _canvas.Height = headerHeight + commits.Length * rowHeight;
         _canvas.Background = new SolidColorBrush(Color.Parse("#1E1F22"));
-        double subjectStart = Math.Max(132, 48 + (largestLane + 1) * laneSpacing);
-        AddColumnHeaders(subjectStart, canvasWidth, headerHeight);
+        AddColumnHeaders(subjectStart, authorStart, dateStart, canvasWidth, headerHeight);
 
         for (int index = 0; index < commits.Length; index++)
         {
@@ -158,11 +183,13 @@ public sealed class GitCommitGraphView : UserControl
             NodePosition position = positions[commit.Hash];
             Color laneColor = LaneColors[position.Lane % LaneColors.Length];
             bool isHead = commit.Decorations.Contains("HEAD", StringComparison.OrdinalIgnoreCase);
-            AddCommitRow(commit, position, laneColor, isHead, index, subjectStart, canvasWidth, rowHeight, headerHeight);
+            AddCommitRow(
+                commit, position, laneColor, isHead, index, subjectStart, authorStart, dateStart,
+                decorationStart, canvasWidth, rowHeight, headerHeight);
         }
 
         ApplySelection();
-        _viewport.ResetView();
+        _viewport.FitToViewDeferred();
     }
 
     private void AddCommitRow(
@@ -172,6 +199,9 @@ public sealed class GitCommitGraphView : UserControl
         bool isHead,
         int index,
         double subjectStart,
+        double authorStart,
+        double dateStart,
+        double decorationStart,
         double canvasWidth,
         double rowHeight,
         double headerHeight)
@@ -193,13 +223,11 @@ public sealed class GitCommitGraphView : UserControl
         hash.FontFamily = new FontFamily("Cascadia Mono,Consolas,monospace");
         _canvas.Children.Add(hash);
 
-        double authorStart = 1100;
-        double dateStart = 1325;
         TextBlock subject = CreateCell(
             commit.Subject,
             subjectStart + 76,
             position.Y,
-            authorStart - subjectStart - 94,
+            Math.Max(180, decorationStart - subjectStart - 94),
             isHead ? "#F2F3F5" : "#D7D8DC",
             11.5);
         subject.FontWeight = isHead ? FontWeight.SemiBold : FontWeight.Normal;
@@ -209,7 +237,7 @@ public sealed class GitCommitGraphView : UserControl
         {
             Border decoration = new()
             {
-                MaxWidth = 190,
+                MaxWidth = 175,
                 Height = 20,
                 Background = new SolidColorBrush(Color.Parse("#243C35")),
                 BorderBrush = new SolidColorBrush(Color.Parse("#3C8A76")),
@@ -225,13 +253,13 @@ public sealed class GitCommitGraphView : UserControl
                 },
                 IsHitTestVisible = false
             };
-            Canvas.SetLeft(decoration, 900);
+            Canvas.SetLeft(decoration, decorationStart);
             Canvas.SetTop(decoration, position.Y - 10);
             _canvas.Children.Add(decoration);
         }
 
-        _canvas.Children.Add(CreateCell(commit.AuthorName, authorStart, position.Y, 205, "#B4B6BC", 10.5));
-        _canvas.Children.Add(CreateCell(commit.AuthoredAt.LocalDateTime.ToString("g"), dateStart, position.Y, 190, "#9B9DA3", 10.5));
+        _canvas.Children.Add(CreateCell(commit.AuthorName, authorStart, position.Y, 170, "#B4B6BC", 10.5));
+        _canvas.Children.Add(CreateCell(commit.AuthoredAt.LocalDateTime.ToString("g"), dateStart, position.Y, 185, "#9B9DA3", 10.5));
 
         Border hitTarget = new()
         {
@@ -290,7 +318,12 @@ public sealed class GitCommitGraphView : UserControl
         return cell;
     }
 
-    private void AddColumnHeaders(double subjectStart, double width, double height)
+    private void AddColumnHeaders(
+        double subjectStart,
+        double authorStart,
+        double dateStart,
+        double width,
+        double height)
     {
         Border background = new()
         {
@@ -302,10 +335,10 @@ public sealed class GitCommitGraphView : UserControl
             IsHitTestVisible = false
         };
         _canvas.Children.Add(background);
-        _canvas.Children.Add(CreateCell("Graph", 20, height / 2 + 1, 90, "#9B9DA3", 10));
-        _canvas.Children.Add(CreateCell("Commit", subjectStart, height / 2 + 1, 700, "#9B9DA3", 10));
-        _canvas.Children.Add(CreateCell("Auteur", 1100, height / 2 + 1, 205, "#9B9DA3", 10));
-        _canvas.Children.Add(CreateCell("Date", 1325, height / 2 + 1, 190, "#9B9DA3", 10));
+        _canvas.Children.Add(CreateCell("Graph", 20, height / 2 + 1, Math.Max(90, subjectStart - 28), "#9B9DA3", 10));
+        _canvas.Children.Add(CreateCell("Commit", subjectStart, height / 2 + 1, authorStart - subjectStart - 10, "#9B9DA3", 10));
+        _canvas.Children.Add(CreateCell("Author", authorStart, height / 2 + 1, 170, "#9B9DA3", 10));
+        _canvas.Children.Add(CreateCell("Date", dateStart, height / 2 + 1, 185, "#9B9DA3", 10));
     }
 
     private void AddEdgeSegment(

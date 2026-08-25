@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.21 Alpha — 2026-08-25
+
+- redesigned the GitHub pull-request workspace with numeric sorting, colored state/ownership/CI indicators, separated description/files/conversation/CI/conflicts/actions views, accurate active-job aggregation, and permission-aware rerun or cancellation actions;
+- added complete GitHub Actions logs to both CI and pull-request workflows with error/warning classification, combined search and severity filters, horizontal scrolling, consistent monospace presentation, and a synchronized non-modal large-log window;
+- added non-destructive pull-request conflict inspection through disposable private references plus confirmed cleanup of merged local branches after Git safety analysis;
+- expanded the project-scoped Jira and ClickUp plugins with automatic task-link detection and configurable confirmed or automatic completion transitions after a successful merge;
+- repaired and refined alternative Git history visualizations with stable pan/zoom/fit behavior and a calendar-style activity heatmap with contributor and hotspot summaries;
+- refreshed the application and repository branding, and made explicit exit confirmation perform bounded service cleanup so quitting closes the complete CyRevision process reliably.
+
 ## 0.1.20 Alpha — 2026-08-25
 
 - added the optional, project-scoped **Git + CyStore — ALPHA** mode: standard Git and Git LFS remain authoritative while hydrated LFS files can be captured into a verified, content-defined, deduplicated local chunk store and reconstructed non-destructively on demand;

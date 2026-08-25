@@ -100,6 +100,11 @@ public interface IGitRepositoryService
         string toRevision,
         CancellationToken cancellationToken = default);
 
+    Task<GitMergeConflictAnalysis> AnalyzeMergeConflictsAsync(
+        string repositoryPath,
+        string baseReference,
+        string headReference,
+        CancellationToken cancellationToken = default);
     Task<GitBranchComparison> CompareBranchesAsync(
         string repositoryPath,
         string sourceBranch,
