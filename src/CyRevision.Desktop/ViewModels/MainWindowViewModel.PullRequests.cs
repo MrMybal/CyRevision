@@ -91,7 +91,7 @@ public sealed partial class MainWindowViewModel
     public string PullRequestTaskUpdateModeDescription => PullRequestTaskUpdateMode switch
     {
         PullRequestTaskUpdateMode.AutomaticAfterMerge =>
-            "After a successful merge, detected Jira and ClickUp tasks are moved to their provider completion status automatically.",
+            "After a successful merge, detected tasks are moved to their provider completion status automatically.",
         PullRequestTaskUpdateMode.Disabled =>
             "Linked tasks remain unchanged. Detection stays visible for review.",
         _ =>
@@ -639,7 +639,7 @@ public sealed partial class MainWindowViewModel
         IReadOnlyList<IWorkItemIntegrationPlugin> plugins = GetActiveWorkItemPlugins();
         if (SelectedProject is null || plugins.Count == 0)
         {
-            PullRequestLinkedTaskStatus = "Enable Jira Tasks or ClickUp Tasks for this project to resolve detected links.";
+            PullRequestLinkedTaskStatus = "Enable a task integration plugin for this project to resolve detected links.";
             return;
         }
 
@@ -656,7 +656,7 @@ public sealed partial class MainWindowViewModel
         IReadOnlyList<DetectedWorkItemCandidate> candidates = PullRequestWorkItemLinkDetector.Detect(content);
         if (candidates.Count == 0)
         {
-            PullRequestLinkedTaskStatus = "No Jira or ClickUp task ID/link was detected in this pull request.";
+            PullRequestLinkedTaskStatus = "No supported task ID/link was detected in this pull request.";
             return;
         }
 
@@ -876,6 +876,12 @@ public sealed partial class MainWindowViewModel
         private static readonly Regex ClickUpId = new(
             @"(?:ClickUp|CU)\s*[:#-]\s*(?<id>[A-Za-z0-9_-]{4,})",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+        private static readonly Regex CyTaskUrl = new(
+            @"https?://[^\s)\]]+/#/tasks/(?<id>[0-9a-fA-F-]{36})",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+        private static readonly Regex CyTaskKey = new(
+            @"(?:CyTask|CT)\s*[:#-]\s*(?<id>[A-Z][A-Z0-9]{1,15}-\d+)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
         public static IReadOnlyList<DetectedWorkItemCandidate> Detect(string content)
         {
@@ -888,6 +894,10 @@ public sealed partial class MainWindowViewModel
                 Add(result, "clickup", match.Groups["id"].Value, match.Value);
             foreach (Match match in ClickUpId.Matches(content))
                 Add(result, "clickup", match.Groups["id"].Value, string.Empty);
+            foreach (Match match in CyTaskUrl.Matches(content))
+                Add(result, "cytask", match.Groups["id"].Value, match.Value);
+            foreach (Match match in CyTaskKey.Matches(content))
+                Add(result, "cytask", match.Groups["id"].Value, string.Empty);
             return result;
         }
 

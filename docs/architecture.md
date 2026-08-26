@@ -22,6 +22,7 @@
 | `CyRevision.Plugin.Perforce` | Extension Perforce optionnelle et isolée par projet : orchestration sûre du CLI officiel `p4` sans stockage d'identifiants |
 | `CyRevision.Plugin.Jira` | Extension Jira Cloud optionnelle et isolée par projet : recherche de tâches en lecture seule et références dans les brouillons Git |
 | `CyRevision.Plugin.ClickUp` | Extension ClickUp optionnelle et isolée par projet : recherche de tâches Workspace et références dans les brouillons Git |
+| `CyRevision.Plugin.CyTask` | Extension CyTask optionnelle et isolée par projet : recherche de tickets, liens stables et transitions après fusion |
 | `CyRevision.Server` | Pair Linux, API, ordonnanceurs et dashboard web |
 | `CyRevisionUnreal` | Plugin Editor autonome : révisions Git, présence et connexion facultative au client |
 

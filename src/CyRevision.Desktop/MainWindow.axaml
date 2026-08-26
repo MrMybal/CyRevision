@@ -1324,7 +1324,7 @@
                                 <Button Grid.Row="1" Grid.Column="2" Classes="secondary" Content="Tasks…"
                                         Click="OnAddCommitTaskLinksClick"
                                         IsVisible="{Binding HasWorkItemPlugins}"
-                                        ToolTip.Tip="Search enabled Jira or ClickUp plugins and add selected task links to this commit message" />
+                                        ToolTip.Tip="Search enabled task plugins and add selected task links to this commit message" />
                                 <Button Grid.Row="1" Grid.Column="3" Classes="secondary" Content="AI description"
                                         Click="OnGenerateAiCommitDescriptionClick"
                                         IsEnabled="{Binding CanGenerateAiCommitDescription}"
@@ -2352,7 +2352,7 @@
                                                     <Button Grid.Column="1" Classes="secondary" Content="Tasks…"
                                                             Click="OnAddPullRequestTaskLinksClick"
                                                             IsVisible="{Binding HasWorkItemPlugins}"
-                                                            ToolTip.Tip="Search enabled Jira or ClickUp plugins and add selected task links to this pull request draft" />
+                                                            ToolTip.Tip="Search enabled task plugins and add selected task links to this pull request draft" />
                                                     <Button Grid.Column="2" Classes="secondary" Content="AI draft"
                                                             Click="OnGenerateAiPullRequestDraftClick"
                                                             IsEnabled="{Binding CanGenerateAiPullRequestDraft}"
@@ -2715,7 +2715,7 @@
                                                         </Border>
                                                         <Border Classes="card" Padding="12">
                                                             <Grid RowDefinitions="Auto,Auto,150,Auto,Auto" RowSpacing="7">
-                                                                <TextBlock Text="Linked Jira / ClickUp tasks" FontSize="14" FontWeight="SemiBold" />
+                                                                <TextBlock Text="Linked tasks" FontSize="14" FontWeight="SemiBold" />
                                                                 <TextBlock Grid.Row="1" Text="{Binding PullRequestLinkedTaskStatus}" Classes="muted"
                                                                            FontSize="9.5" TextWrapping="Wrap" />
                                                                 <DataGrid Grid.Row="2" ItemsSource="{Binding PullRequestLinkedWorkItems}"
@@ -2747,7 +2747,7 @@
                                                                     <Button Grid.Column="1" Classes="secondary" Content="Complete detected tasks"
                                                                             Click="OnCompletePullRequestTasksClick"
                                                                             IsEnabled="{Binding SelectedPullRequest.IsMerged}"
-                                                                            ToolTip.Tip="Move resolved Jira and ClickUp tasks to a provider completion status after confirmation" />
+                                                                            ToolTip.Tip="Move resolved tasks to a provider completion status after confirmation" />
                                                                 </Grid>
                                                             </Grid>
                                                         </Border>

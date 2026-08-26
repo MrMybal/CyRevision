@@ -27,7 +27,7 @@ The Pull Requests tab provides:
 - a direct link to the provider page;
 - a dedicated CI view with matching workflow runs, jobs, complete searchable logs, all/error/warning filters, a synchronized detached log window, workflow dispatch, failed-job reruns, and cancellation when permitted;
 - a non-destructive merge-conflict view that lists conflicting paths without checking out or merging either branch;
-- automatic Jira/ClickUp link detection in the title, description, commits, comments, and reviews;
+- automatic Jira/ClickUp/CyTask link detection in the title, description, commits, comments, and reviews;
 - optional confirmed or automatic completion transitions for detected tasks after a successful merge;
 - confirmed removal of the merged local head branch after a Git safety analysis.
 
@@ -39,7 +39,7 @@ The CI page associates workflow runs by pull-request head branch and commit SHA.
 
 Conflict inspection fetches disposable private references under `refs/cyrevision/inspect`, analyzes them with `git merge-tree`, and removes those references after inspection. It does not switch branches, touch the index, or write a merge result into the working tree.
 
-When the Jira or ClickUp plugin is enabled for the selected project, CyRevision recognizes provider URLs and task IDs across the complete pull-request discussion. After a successful merge, the per-project policy can ask before applying provider completion transitions, apply them automatically, or leave all tasks unchanged. Provider permissions and workflow-specific transition availability are revalidated for every task.
+When a Jira, ClickUp, or CyTask plugin is enabled for the selected project, CyRevision recognizes provider URLs and task IDs across the complete pull-request discussion. After a successful merge, the per-project policy can ask before applying provider completion transitions, apply them automatically, or leave all tasks unchanged. Provider permissions and workflow-specific transition availability are revalidated for every task.
 
 ## Safe checkout and remote changes
 

@@ -14,6 +14,8 @@ Reference `CyRevision.Plugin.Abstractions` and implement `ICyRevisionPlugin`. Op
 
 The package contains `cyrevision-plugin.json`, an entry assembly, and an entry type. UI-independent records keep plugins decoupled from Avalonia.
 
+The bundled Jira, ClickUp, and CyTask connectors are reference implementations of `IWorkItemIntegrationPlugin`. They store only project-scoped server/scope settings; tokens remain in memory or are read from a named environment variable.
+
 ## Project file sandbox
 
 Project-scoped extensions should access files through `IPluginProjectFileSandbox`. The host policy grants only explicit operations and relative roots. The broker rejects absolute paths, `..` traversal, disallowed roots, oversized reads/writes, and symbolic links escaping the project. Writes use a temporary file followed by an atomic replacement.

@@ -39,6 +39,7 @@
     <ProjectReference Include="..\..\src\CyRevision.Plugin.Perforce\CyRevision.Plugin.Perforce.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Plugin.Jira\CyRevision.Plugin.Jira.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Plugin.ClickUp\CyRevision.Plugin.ClickUp.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Plugin.CyTask\CyRevision.Plugin.CyTask.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Plugin.AI\CyRevision.Plugin.AI.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.PullRequests\CyRevision.PullRequests.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.RemoteBuild\CyRevision.RemoteBuild.csproj" />
