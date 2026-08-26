@@ -37,6 +37,7 @@
     <ProjectReference Include="..\CyRevision.Plugin.AI\CyRevision.Plugin.AI.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.Plugin.Jira\CyRevision.Plugin.Jira.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.Plugin.ClickUp\CyRevision.Plugin.ClickUp.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\CyRevision.Plugin.CyTask\CyRevision.Plugin.CyTask.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\CyRevision.PullRequests\CyRevision.PullRequests.csproj" />
     <ProjectReference Include="..\CyRevision.RemoteBuild\CyRevision.RemoteBuild.csproj" />
     <ProjectReference Include="..\CyRevision.Security\CyRevision.Security.csproj" />
@@ -81,6 +82,10 @@
           Link="Plugins\CyRevision.ClickUpIntegration\cyrevision-plugin.json"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\plugins\CyRevision.CyTaskIntegration\cyrevision-plugin.json"
+          Link="Plugins\CyRevision.CyTaskIntegration\cyrevision-plugin.json"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\plugins\CyRevision.CyStoreIntegration\cyrevision-plugin.json"
           Link="Plugins\CyRevision.CyStoreIntegration\cyrevision-plugin.json"
           CopyToOutputDirectory="PreserveNewest"
@@ -116,6 +121,7 @@
       <PerforcePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Perforce\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Perforce.dll</PerforcePluginAssembly>
       <JiraPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Jira\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Jira.dll</JiraPluginAssembly>
       <ClickUpPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.ClickUp\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.ClickUp.dll</ClickUpPluginAssembly>
+      <CyTaskPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.CyTask\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.CyTask.dll</CyTaskPluginAssembly>
       <CyStorePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.CyStore\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.CyStore.dll</CyStorePluginAssembly>
     </PropertyGroup>
     <MakeDir Directories="$(OutDir)Plugins\CyRevision.UnrealIntegration" />
@@ -150,6 +156,10 @@
     <Copy SourceFiles="$(ClickUpPluginAssembly)"
           DestinationFolder="$(OutDir)Plugins\CyRevision.ClickUpIntegration"
           SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(OutDir)Plugins\CyRevision.CyTaskIntegration" />
+    <Copy SourceFiles="$(CyTaskPluginAssembly)"
+          DestinationFolder="$(OutDir)Plugins\CyRevision.CyTaskIntegration"
+          SkipUnchangedFiles="true" />
     <MakeDir Directories="$(OutDir)Plugins\CyRevision.CyStoreIntegration" />
     <Copy SourceFiles="$(CyStorePluginAssembly)"
           DestinationFolder="$(OutDir)Plugins\CyRevision.CyStoreIntegration"
@@ -166,6 +176,7 @@
       <PerforcePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Perforce\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Perforce.dll</PerforcePluginAssembly>
       <JiraPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.Jira\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.Jira.dll</JiraPluginAssembly>
       <ClickUpPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.ClickUp\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.ClickUp.dll</ClickUpPluginAssembly>
+      <CyTaskPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.CyTask\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.CyTask.dll</CyTaskPluginAssembly>
       <CyStorePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.CyStore\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.CyStore.dll</CyStorePluginAssembly>
     </PropertyGroup>
     <MakeDir Directories="$(PublishDir)Plugins\CyRevision.UnrealIntegration" />
@@ -199,6 +210,10 @@
     <MakeDir Directories="$(PublishDir)Plugins\CyRevision.ClickUpIntegration" />
     <Copy SourceFiles="$(ClickUpPluginAssembly)"
           DestinationFolder="$(PublishDir)Plugins\CyRevision.ClickUpIntegration"
+          SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(PublishDir)Plugins\CyRevision.CyTaskIntegration" />
+    <Copy SourceFiles="$(CyTaskPluginAssembly)"
+          DestinationFolder="$(PublishDir)Plugins\CyRevision.CyTaskIntegration"
           SkipUnchangedFiles="true" />
     <MakeDir Directories="$(PublishDir)Plugins\CyRevision.CyStoreIntegration" />
     <Copy SourceFiles="$(CyStorePluginAssembly)"

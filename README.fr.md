@@ -26,7 +26,7 @@ CyRevision est un client de révision, synchronisation et sauvegarde pensé pour
 - Serveur Linux optionnel avec API, backups planifiés, échange Git planifié et tableau de bord web protégé.
 - Plugin Unreal Editor optionnel avec ouverture de CyRevision et réservations souples non bloquantes des assets.
 - Plugin Perforce Helix Core optionnel et activable par projet, utilisant le CLI officiel `p4` pour les workspaces, fichiers ouverts, changelists, historiques, reconcile, sync, revert et submit ; les écritures sont désactivées par défaut et aucun secret n'est stocké.
-- Plugins Jira Cloud et ClickUp optionnels et activables par projet pour rechercher les tâches, détecter automatiquement leurs liens dans les pull requests et appliquer après fusion une transition de fin confirmée ou automatique ; les jetons de session ne sont jamais enregistrés.
+- Plugins Jira Cloud, ClickUp et CyTask optionnels et activables par projet pour rechercher les tâches, détecter automatiquement leurs liens dans les pull requests et appliquer après fusion une transition de fin confirmée ou automatique ; les jetons de session ne sont jamais enregistrés.
 - WireGuard optionnel avec configuration guidée, tunnels isolés, pairs VPN-only et profils Unreal Swarm/CI/services.
 - Agent Discord optionnel avec webhook propre au salon, commits groupés, changements de branche et anti-doublon par projet, sans dépendre de GitHub.
 - Localisation extensible : anglais par défaut, français inclus et catalogues JSON supplémentaires pour le client et le dashboard web.

@@ -2847,7 +2847,7 @@ public partial class MainWindow : Window
         {
             await ShowMessageAsync(
                 Translate("Task integration unavailable"),
-                Translate("Enable the Jira Tasks or ClickUp Tasks plugin for this project first."));
+                Translate("Enable a task integration plugin for this project first."));
             return;
         }
 
@@ -2907,7 +2907,7 @@ public partial class MainWindow : Window
         else if (_viewModel.ShouldAskToUpdatePullRequestTasksAfterMerge &&
                  await ShowConfirmationAsync(
                      "Complete linked tasks",
-                     "The pull request was merged. Move the detected Jira and ClickUp tasks to their configured completion status now? Each provider validates permissions before applying the transition.",
+                     "The pull request was merged. Move the detected linked tasks to their configured completion status now? Each provider validates permissions before applying the transition.",
                      "Complete tasks"))
         {
             await _viewModel.CompleteLinkedPullRequestTasksAsync();
@@ -2919,7 +2919,7 @@ public partial class MainWindow : Window
         if (!_viewModel.HasPullRequestLinkedWorkItems) return;
         if (await ShowConfirmationAsync(
                 "Complete linked tasks",
-                "Move every resolved Jira and ClickUp task detected in this merged pull request to its provider completion status? Unresolved references are skipped.",
+                "Move every resolved linked task detected in this merged pull request to its provider completion status? Unresolved references are skipped.",
                 "Complete tasks"))
             await _viewModel.CompleteLinkedPullRequestTasksAsync();
     }

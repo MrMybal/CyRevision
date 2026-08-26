@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "cyrevision.cytask",
+  "name": "CyTask Tickets",
+  "version": "0.1.0",
+  "description": "Project-scoped CyTask ticket search, stable revision links and workflow transitions. API tokens are session-only or read from an environment variable.",
+  "category": "Project management",
+  "entryAssembly": "CyRevision.Plugin.CyTask.dll",
+  "entryType": "CyRevision.Plugin.CyTask.CyTaskIntegrationPlugin",
+  "enabledByDefault": false
+}
