@@ -9,7 +9,7 @@
         Height="880"
         MinWidth="980"
         MinHeight="620"
-        Background="#1E1F22"
+        Background="{DynamicResource CyBackgroundBrush}"
         WindowStartupLocation="CenterScreen">
     <Window.Styles>
         <Style Selector="Border.card">
@@ -19,8 +19,8 @@
             <Setter Property="CornerRadius" Value="5" />
         </Style>
         <Style Selector="Button.secondary">
-            <Setter Property="Background" Value="#393B40" />
-            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="Background" Value="{DynamicResource CyBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource CyForegroundBrush}" />
             <Setter Property="CornerRadius" Value="4" />
             <Setter Property="Padding" Value="9,5" />
             <Setter Property="MinHeight" Value="26" />
@@ -33,18 +33,18 @@
             <Setter Property="FontSize" Value="10" />
         </Style>
         <Style Selector="TextBlock.muted">
-            <Setter Property="Foreground" Value="#9B9DA3" />
+            <Setter Property="Foreground" Value="{DynamicResource CyMutedForegroundBrush}" />
         </Style>
     </Window.Styles>
 
     <Grid RowDefinitions="52,38,36,*,24">
-        <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="12,0">
+        <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,0,0,1" Padding="12,0">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="Commit Explorer" FontSize="15" FontWeight="SemiBold" />
                     <StackPanel Orientation="Horizontal" Spacing="7">
-                        <TextBlock Text="{Binding CurrentProjectName}" Foreground="#DFE1E5" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding CurrentBranch}" Foreground="#78D7B7" />
+                        <TextBlock Text="{Binding CurrentProjectName}" Foreground="{DynamicResource CyForegroundBrush}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding CurrentBranch}" Foreground="{DynamicResource CyAccentBrush}" />
                         <TextBlock Text="Read-only · selection never switches branches" Classes="muted" FontSize="9" />
                     </StackPanel>
                 </StackPanel>
@@ -61,7 +61,7 @@
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="650" />
         </Grid>
 
-        <Border Grid.Row="2" Background="#26282B" BorderBrush="#393B40" BorderThickness="0,1" Padding="8,4">
+        <Border Grid.Row="2" Background="{DynamicResource CyCardBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,1" Padding="8,4">
             <Grid ColumnDefinitions="Auto,Auto,Auto,1,Auto,Auto,Auto,*" ColumnSpacing="6">
                 <TextBlock Text="LAYOUT" Classes="muted" FontSize="9" FontWeight="Bold" VerticalAlignment="Center" />
                 <ToggleButton x:Name="ColumnsLayoutToggle" Grid.Column="1" Classes="layoutChoice" Content="Columns"
@@ -83,7 +83,7 @@
               ColumnDefinitions="0.9*,7,1.05*,7,1.35*" RowDefinitions="*,7,*">
             <Border x:Name="CommitsPanel" Classes="card" Padding="0" ClipToBounds="True">
                 <Grid RowDefinitions="36,*">
-                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                    <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
                         <TextBlock Text="Commits" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
                     </Border>
                     <DataGrid x:Name="CommitList" Grid.Row="1" Classes="compact"
@@ -106,7 +106,7 @@
 
             <Border x:Name="FilesPanel" Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
                 <Grid RowDefinitions="36,*">
-                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                    <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Committed files" FontSize="12" FontWeight="SemiBold" />
                             <TextBlock Text="Select a file to update the diff" Classes="muted" FontSize="8.5" />
@@ -154,14 +154,14 @@
 
             <Border x:Name="DiffPanel" Grid.Column="4" Classes="card" Padding="0" ClipToBounds="True">
                 <Grid RowDefinitions="36,*">
-                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                    <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel VerticalAlignment="Center">
                                 <TextBlock Text="Selected file diff" FontSize="12" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding SelectedExplorerFile.Path}" Classes="muted" FontSize="8.5"
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <TextBlock Grid.Column="1" Text="Unified / side-by-side available" Foreground="#78D7B7"
+                            <TextBlock Grid.Column="1" Text="Unified / side-by-side available" Foreground="{DynamicResource CyAccentBrush}"
                                        FontSize="8.5" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
@@ -181,7 +181,7 @@
             </Border>
         </Grid>
 
-        <Border Grid.Row="4" Background="#24262A" BorderBrush="#393B40" BorderThickness="0,1,0,0" Padding="8,0">
+        <Border Grid.Row="4" Background="{DynamicResource CySurfaceAltBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,1,0,0" Padding="8,0">
             <TextBlock Text="{Binding RepositoryPath}" Classes="muted" FontSize="8.5" VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis" />
         </Border>

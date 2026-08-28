@@ -6,11 +6,11 @@
         Title="{Binding WindowTitle}"
         Icon="/Assets/Branding/cyrevision.ico"
         Width="1380" Height="860" MinWidth="820" MinHeight="520"
-        Background="#1E1F22" WindowStartupLocation="CenterScreen">
+        Background="{DynamicResource CyBackgroundBrush}" WindowStartupLocation="CenterScreen">
     <Window.Styles>
         <Style Selector="Button.secondary">
-            <Setter Property="Background" Value="#393B40" />
-            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="Background" Value="{DynamicResource CyBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource CyForegroundBrush}" />
             <Setter Property="CornerRadius" Value="5" />
             <Setter Property="Padding" Value="9,5" />
             <Setter Property="MinHeight" Value="26" />
@@ -29,12 +29,12 @@
     </Window.Styles>
 
     <Grid RowDefinitions="46,42,*,46">
-        <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="12,0">
+        <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,0,0,1" Padding="12,0">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
                 <StackPanel VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="Branch file explorer" FontSize="14" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding BranchName}" Foreground="#78D7B7" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding BranchName}" Foreground="{DynamicResource CyAccentBrush}" FontWeight="SemiBold" />
                     </StackPanel>
                     <TextBlock Text="{Binding ProjectName}" Classes="muted" FontSize="9" />
                 </StackPanel>
@@ -44,7 +44,7 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="1" Background="#24262A" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="9,5">
+        <Border Grid.Row="1" Background="{DynamicResource CySurfaceAltBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,0,0,1" Padding="9,5">
             <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="7">
                 <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
                          PlaceholderText="Search path, file name, *.cpp, Content/*.uasset…" />
@@ -72,13 +72,13 @@
         <Grid Grid.Row="2" ColumnDefinitions="0.92*,8,1.45*" Margin="8">
             <Border Classes="card" Padding="0" ClipToBounds="True">
                 <Grid RowDefinitions="38,*">
-                    <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="9,0">
+                    <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,0,0,1" Padding="9,0">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel VerticalAlignment="Center">
                                 <TextBlock Text="Files at selected branch" FontWeight="SemiBold" FontSize="12" />
                                 <TextBlock Text="{Binding Summary}" Classes="muted" FontSize="8.5" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <TextBlock Grid.Column="1" Text="Read-only" Foreground="#78D7B7" FontSize="8.5"
+                            <TextBlock Grid.Column="1" Text="Read-only" Foreground="{DynamicResource CyAccentBrush}" FontSize="8.5"
                                        VerticalAlignment="Center" />
                         </Grid>
                     </Border>
@@ -134,7 +134,7 @@
                 <TabControl>
                     <TabItem Header="Preview">
                         <Grid RowDefinitions="42,*">
-                            <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="9,0">
+                            <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,0,0,1" Padding="9,0">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock Text="Selected branch file" FontWeight="SemiBold" FontSize="12" />
@@ -164,7 +164,7 @@
                     </TabItem>
                     <TabItem Header="Diff against HEAD">
                         <Grid RowDefinitions="42,*">
-                            <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="9,0">
+                            <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,0,0,1" Padding="9,0">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock Text="Branch ↔ current HEAD" FontWeight="SemiBold" FontSize="12" />
@@ -213,7 +213,7 @@
                     </TabItem>
                     <TabItem Header="Retrieval history">
                         <Grid RowDefinitions="38,*">
-                            <Border Background="#2B2D30" BorderBrush="#393B40" BorderThickness="0,0,0,1" Padding="9,0">
+                            <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,0,0,1" Padding="9,0">
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="Branch file activity" FontWeight="SemiBold" FontSize="12" />
                                     <TextBlock Text="Persistent retrieval, export, and safe-restore audit for this project"
@@ -236,7 +236,7 @@
             </Border>
         </Grid>
 
-        <Border Grid.Row="3" Background="#24262A" BorderBrush="#393B40" BorderThickness="0,1,0,0" Padding="9,0">
+        <Border Grid.Row="3" Background="{DynamicResource CySurfaceAltBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,1,0,0" Padding="9,0">
             <Grid RowDefinitions="*,5" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="{Binding Status}" Classes="muted" FontSize="8.5" TextTrimming="CharacterEllipsis" />
@@ -245,7 +245,7 @@
                 </StackPanel>
                 <TextBlock Grid.Column="1" Text="{Binding SelectedFileSummary}" Classes="muted" FontSize="8.5"
                            VerticalAlignment="Center" IsVisible="{Binding HasSelectedFiles}" />
-                <TextBlock Grid.Column="2" Text="{Binding RevisionReference}" Foreground="#78D7B7" FontSize="8.5"
+                <TextBlock Grid.Column="2" Text="{Binding RevisionReference}" Foreground="{DynamicResource CyAccentBrush}" FontSize="8.5"
                            VerticalAlignment="Center" />
                 <ProgressBar Grid.Row="1" Grid.ColumnSpan="3" IsVisible="{Binding IsOperationActive}"
                              IsIndeterminate="{Binding OperationIsIndeterminate}" Value="{Binding OperationPercent}"

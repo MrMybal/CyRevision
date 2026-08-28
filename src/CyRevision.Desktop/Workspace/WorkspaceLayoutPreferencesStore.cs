@@ -12,6 +12,7 @@ internal enum HistoryLayoutMode
 
 internal enum ChangesLayoutMode
 {
+    FilesOnly,
     Balanced,
     CommitFocus,
     DiffFocus
@@ -50,7 +51,7 @@ internal sealed record WorkspaceLayoutPreferences(
     bool ShowPullRequestDiff = true,
     bool ShowMultiRestoreDiff = true,
     bool ShowCherryPickDiff = true,
-    int SchemaVersion = 4)
+    int SchemaVersion = 6)
 {
     public static WorkspaceLayoutPreferences Default { get; } =
         new(
@@ -58,7 +59,7 @@ internal sealed record WorkspaceLayoutPreferences(
             true,
             true,
             true,
-            ChangesLayoutMode.Balanced,
+            ChangesLayoutMode.FilesOnly,
             CodeLayoutMode.Balanced,
             true,
             true,
@@ -74,7 +75,8 @@ internal sealed record WorkspaceLayoutPreferences(
             1.25,
             1.15,
             1.0,
-            1.0);
+            1.0,
+            false);
 }
 
 internal sealed class WorkspaceLayoutPreferencesStore
@@ -137,6 +139,28 @@ internal sealed class WorkspaceLayoutPreferencesStore
                     ShowMultiRestoreDiff = true,
                     ShowCherryPickDiff = true,
                     SchemaVersion = 4
+                };
+            }
+
+            if (preferences.SchemaVersion < 5)
+            {
+                preferences = preferences with
+                {
+                    ChangesLayout = ChangesLayoutMode.FilesOnly,
+                    ShowChangesDiff = false,
+                    SchemaVersion = 5
+                };
+            }
+
+            if (preferences.SchemaVersion < 6 ||
+                preferences.ChangesLayout is ChangesLayoutMode.CommitFocus or ChangesLayoutMode.DiffFocus)
+            {
+                preferences = preferences with
+                {
+                    ChangesLayout = preferences.ChangesLayout == ChangesLayoutMode.FilesOnly
+                        ? ChangesLayoutMode.FilesOnly
+                        : ChangesLayoutMode.Balanced,
+                    SchemaVersion = 6
                 };
             }
 

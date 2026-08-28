@@ -20,7 +20,7 @@ public sealed partial class BranchFileExplorerViewModel
                 _historyLoaded = true;
             }
 
-            await _workspaceStore.CleanupCacheAsync(RepositoryPath, GetCacheRoot(), token);
+            await _workspaceStore.CleanupCacheAsync(_cacheRoot, GetCacheRoot(), token);
             await LoadTreeCoreAsync(token);
             Status = "Ready · read-only branch inspection · no checkout, merge, index, or working file changed.";
         }

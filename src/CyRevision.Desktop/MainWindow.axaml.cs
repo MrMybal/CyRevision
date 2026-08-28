@@ -12,6 +12,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using CyRevision.Code;
+using CyRevision.Core.Configuration;
 using CyRevision.Desktop.Controls;
 using CyRevision.Desktop.Localization;
 using CyRevision.Desktop.SystemIntegration;
@@ -159,7 +160,7 @@ public partial class MainWindow : Window
     private bool _restoringProjectWorkspace;
     private WorkspaceLayoutPreferences _layoutPreferences = WorkspaceLayoutPreferences.Default;
     private HistoryLayoutMode _historyLayout = HistoryLayoutMode.Columns;
-    private ChangesLayoutMode _changesLayout = ChangesLayoutMode.Balanced;
+    private ChangesLayoutMode _changesLayout = ChangesLayoutMode.FilesOnly;
     private CodeLayoutMode _codeLayout = CodeLayoutMode.Balanced;
     private WorkspaceCategory _workspaceCategory = WorkspaceCategory.Overview;
     private readonly Dictionary<string, string> _categoryWorkspaceTabs = new(StringComparer.Ordinal);
@@ -168,7 +169,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<WorkspaceTabVisibilityItem> _workspaceTabVisibilityItems = [];
     private readonly ObservableCollection<WorkspaceTabVisibilityGroup> _workspaceTabVisibilityGroups = [];
     private IReadOnlyList<WorkspaceTabVisibilityPreset> _workspaceTabVisibilityPresets = [];
-    private string _workspaceTabVisibilityPreset = "Full workspace";
+    private string _workspaceTabVisibilityPreset = "Git essentials";
     private bool _updatingWorkspaceTabVisibility;
     private bool _pullRequestDiffFocused;
     private bool _solutionExplorerTreeLayout = true;
@@ -176,6 +177,11 @@ public partial class MainWindow : Window
     private DataGrid? _lastChangesSelectionGrid;
     private TreeView? _lastChangesSelectionTree;
     private Action<DesktopBehaviorSetting>? _desktopBehaviorToggle;
+    private Func<DesktopBehaviorPreferences, Task>? _desktopBehaviorApply;
+    private Func<ApplicationPreferences, Task>? _applicationPreferencesApply;
+    private DesktopBehaviorPreferences _desktopBehaviorPreferences = DesktopBehaviorPreferences.Default;
+    private ApplicationPreferences _applicationPreferences = ApplicationPreferences.Default;
+    private string _activeCacheDirectory = ApplicationPaths.CreateDefault().CacheDirectory;
 
     public bool StartHidden { get; set; }
 
@@ -215,7 +221,7 @@ public partial class MainWindow : Window
         CodeExplorerPanelToggle.IsChecked = _layoutPreferences.ShowCodeExplorer;
         CodeSymbolsPanelToggle.IsChecked = _layoutPreferences.ShowCodeSymbols;
         CodeResultsPanelToggle.IsChecked = _layoutPreferences.ShowCodeResults;
-        ApplyHistoryLayout(_layoutPreferences.HistoryLayout, false);
+        ApplyHistoryLayout(_layoutPreferences.HistoryLayout, false, applyPanelPreset: false);
         ApplyChangesLayout(_layoutPreferences.ChangesLayout, false, true);
         ApplyPullRequestDiffVisibility();
         MainRevisionCompositionView.SetDiffVisibility(
@@ -250,7 +256,6 @@ public partial class MainWindow : Window
             ConfigureGlobalDataGridPreferences();
             ApplyAutomaticButtonTooltips();
         }, DispatcherPriority.Background);
-        KeyDown += OnWindowKeyDown;
         Opened += OnOpened;
         Closed += OnClosed;
     }
@@ -269,9 +274,12 @@ public partial class MainWindow : Window
 
     internal void ConfigureDesktopBehavior(
         DesktopBehaviorPreferences preferences,
-        Action<DesktopBehaviorSetting> toggle)
+        Action<DesktopBehaviorSetting> toggle,
+        Func<DesktopBehaviorPreferences, Task> apply)
     {
+        _desktopBehaviorPreferences = preferences;
         _desktopBehaviorToggle = toggle;
+        _desktopBehaviorApply = apply;
         LaunchAtLoginMenuItem.IsChecked = preferences.LaunchAtLogin;
         StartHiddenAtLoginMenuItem.IsChecked = preferences.StartHiddenAtLogin;
         StartHiddenAtLoginMenuItem.IsEnabled = preferences.LaunchAtLogin && preferences.ShowTrayIcon;
@@ -280,6 +288,18 @@ public partial class MainWindow : Window
         CloseToTrayMenuItem.IsEnabled = preferences.ShowTrayIcon;
     }
 
+    internal void ConfigureApplicationPreferences(
+        ApplicationPreferences preferences,
+        string activeCacheDirectory,
+        Func<ApplicationPreferences, Task> apply)
+    {
+        _applicationPreferences = preferences.Normalize();
+        _activeCacheDirectory = activeCacheDirectory;
+        _applicationPreferencesApply = apply;
+        _viewModel.ConfigureNotificationPreferences(_applicationPreferences);
+        ApplyKeyboardShortcuts();
+        ConfigureRepositoryChangeMonitor();
+    }
     private void OnClosed(object? sender, EventArgs e)
     {
         SaveCurrentProjectWorkspaceState();
@@ -418,7 +438,8 @@ public partial class MainWindow : Window
     private void ConfigureRepositoryChangeMonitor()
     {
         ProjectItemViewModel? project = _viewModel.SelectedProject;
-        if (project is null || !project.Definition.Features.GitEnabled || !Directory.Exists(project.RootPath))
+        if (!_applicationPreferences.AutomaticRepositoryRefresh ||
+            project is null || !project.Definition.Features.GitEnabled || !Directory.Exists(project.RootPath))
         {
             _repositoryChangeMonitor?.Stop();
             return;
@@ -444,7 +465,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        ProjectWorkspaceState state = _projectWorkspaceStateStore.Get(_viewModel.SelectedProject.Id);
+        bool hasSavedState = _projectWorkspaceStateStore.TryGet(
+            _viewModel.SelectedProject.Id,
+            out ProjectWorkspaceState state);
+        if (!hasSavedState)
+        {
+            state = state with
+            {
+                TabVisibilityPreset = _applicationPreferences.WorkspacePresetFor(
+                    ResolveProjectPresetKind(_viewModel.SelectedProject.Definition))
+            };
+        }
         _activeWorkspaceProjectId = state.ProjectId;
         _restoringProjectWorkspace = true;
         try
@@ -471,6 +502,18 @@ public partial class MainWindow : Window
 
         EnsureCodeWorkspaceForVisibleTab();
         EnsureSelectedWorkspaceData();
+    }
+
+    private static ProjectPresetKind ResolveProjectPresetKind(CyRevision.Core.Projects.ProjectDefinition definition)
+    {
+        if (definition.OperatingMode is { } explicitMode) return explicitMode;
+        ProjectFeatures features = definition.Features;
+        if (features.GitEnabled && features.PeerSyncEnabled) return ProjectPresetKind.GitWithPeerSync;
+        if (features.GitEnabled) return ProjectPresetKind.GitOnly;
+        if (features.PeerSyncEnabled && features.BackupEnabled) return ProjectPresetKind.SyncWithVersions;
+        if (features.PeerSyncEnabled) return ProjectPresetKind.SyncOnly;
+        if (features.BackupEnabled) return ProjectPresetKind.BackupOnly;
+        return ProjectPresetKind.Custom;
     }
 
     private void SaveCurrentProjectWorkspaceState()
@@ -764,35 +807,32 @@ public partial class MainWindow : Window
     private void OnBalancedChangesLayoutClick(object? sender, RoutedEventArgs e) =>
         ApplyChangesLayout(ChangesLayoutMode.Balanced);
 
-    private void OnDiffFocusChangesLayoutClick(object? sender, RoutedEventArgs e) =>
-        ApplyChangesLayout(ChangesLayoutMode.DiffFocus);
-
-    private void OnCommitFocusChangesLayoutClick(object? sender, RoutedEventArgs e) =>
-        ApplyChangesLayout(ChangesLayoutMode.CommitFocus);
+    private void OnFilesOnlyChangesLayoutClick(object? sender, RoutedEventArgs e) =>
+        ApplyChangesLayout(ChangesLayoutMode.FilesOnly);
 
     private void ApplyChangesLayout(ChangesLayoutMode layout, bool persist = true, bool restoreSavedSize = false)
     {
+        if (layout is ChangesLayoutMode.CommitFocus or ChangesLayoutMode.DiffFocus)
+            layout = ChangesLayoutMode.Balanced;
+
         _changesLayout = layout;
         ChangesBalancedLayoutToggle.IsChecked = layout == ChangesLayoutMode.Balanced;
-        ChangesCommitFocusLayoutToggle.IsChecked = layout == ChangesLayoutMode.CommitFocus;
-        ChangesDiffFocusLayoutToggle.IsChecked = layout == ChangesLayoutMode.DiffFocus;
-        bool restore = restoreSavedSize && _layoutPreferences.ChangesLayout == layout;
-        double listWeight = restore
-            ? _layoutPreferences.ChangesListWeight
-            : layout switch
-            {
-                ChangesLayoutMode.DiffFocus => 0.68,
-                ChangesLayoutMode.CommitFocus => 1.65,
-                _ => 1.05
-            };
-        double diffWeight = restore
-            ? _layoutPreferences.ChangesDiffWeight
-            : layout switch
-            {
-                ChangesLayoutMode.DiffFocus => 1.72,
-                ChangesLayoutMode.CommitFocus => 0.95,
-                _ => 1.35
-            };
+        ChangesFilesOnlyLayoutToggle.IsChecked = layout == ChangesLayoutMode.FilesOnly;
+        if (layout == ChangesLayoutMode.FilesOnly)
+        {
+            ChangesDiffToggle.IsChecked = false;
+            _viewModel.IsChangesDiffPreviewEnabled = false;
+        }
+        else if (persist)
+        {
+            ChangesDiffToggle.IsChecked = true;
+            _viewModel.IsChangesDiffPreviewEnabled = true;
+        }
+        bool restore = restoreSavedSize &&
+                       (_layoutPreferences.ChangesLayout == layout ||
+                        _layoutPreferences.ChangesLayout is ChangesLayoutMode.CommitFocus or ChangesLayoutMode.DiffFocus);
+        double listWeight = restore ? _layoutPreferences.ChangesListWeight : 1.05;
+        double diffWeight = restore ? _layoutPreferences.ChangesDiffWeight : 1.35;
         bool showDiff = ChangesDiffToggle.IsChecked == true;
         ChangesDiffPanel.IsVisible = showDiff;
         ChangesWorkspaceSplitter.IsVisible = showDiff;
@@ -807,7 +847,9 @@ public partial class MainWindow : Window
     private void OnChangesDiffToggleClick(object? sender, RoutedEventArgs e)
     {
         _viewModel.IsChangesDiffPreviewEnabled = ChangesDiffToggle.IsChecked == true;
-        ApplyChangesLayout(_changesLayout);
+        ApplyChangesLayout(ChangesDiffToggle.IsChecked == true
+            ? _changesLayout == ChangesLayoutMode.FilesOnly ? ChangesLayoutMode.Balanced : _changesLayout
+            : ChangesLayoutMode.FilesOnly);
     }
 
     private void OnPullRequestDiffToggleClick(object? sender, RoutedEventArgs e)
@@ -953,16 +995,16 @@ public partial class MainWindow : Window
         HistoryTimelineToggle.IsChecked = true;
         HistoryFilesToggle.IsChecked = true;
         HistoryDiffToggle.IsChecked = true;
-        ChangesDiffToggle.IsChecked = true;
+        ChangesDiffToggle.IsChecked = false;
         PullRequestDiffToggle.IsChecked = true;
-        _viewModel.IsChangesDiffPreviewEnabled = true;
+        _viewModel.IsChangesDiffPreviewEnabled = false;
         _viewModel.IsPullRequestDiffPreviewEnabled = true;
         MainRevisionCompositionView.SetDiffVisibility(true, true);
         CodeExplorerPanelToggle.IsChecked = true;
         CodeSymbolsPanelToggle.IsChecked = true;
         CodeResultsPanelToggle.IsChecked = true;
-        ApplyHistoryLayout(HistoryLayoutMode.Columns, false);
-        ApplyChangesLayout(ChangesLayoutMode.Balanced, false);
+        ApplyHistoryLayout(HistoryLayoutMode.Columns, false, applyPanelPreset: false);
+        ApplyChangesLayout(ChangesLayoutMode.FilesOnly, false);
         ApplyPullRequestDiffVisibility();
         ApplyCodeLayout(CodeLayoutMode.Balanced, false);
         SaveWorkspaceLayoutPreferences();
@@ -977,12 +1019,21 @@ public partial class MainWindow : Window
     private void OnDiffFocusedHistoryLayoutClick(object? sender, RoutedEventArgs e) =>
         ApplyHistoryLayout(HistoryLayoutMode.DiffFocus);
 
-    private void ApplyHistoryLayout(HistoryLayoutMode layout, bool persist = true)
+    private void ApplyHistoryLayout(
+        HistoryLayoutMode layout,
+        bool persist = true,
+        bool applyPanelPreset = true)
     {
         _historyLayout = layout;
         HistoryColumnsLayoutToggle.IsChecked = layout == HistoryLayoutMode.Columns;
         HistoryReviewLayoutToggle.IsChecked = layout == HistoryLayoutMode.Review;
         HistoryDiffFocusLayoutToggle.IsChecked = layout == HistoryLayoutMode.DiffFocus;
+        if (applyPanelPreset)
+        {
+            HistoryTimelineToggle.IsChecked = layout is HistoryLayoutMode.Columns or HistoryLayoutMode.Review;
+            HistoryFilesToggle.IsChecked = true;
+            HistoryDiffToggle.IsChecked = layout is HistoryLayoutMode.Columns or HistoryLayoutMode.DiffFocus;
+        }
         RefreshHistoryWorkspaceLayout();
         if (persist)
         {
@@ -1392,7 +1443,8 @@ public partial class MainWindow : Window
             group.Add(item);
         }
 
-        WorkspaceTabVisibilityPreset initialPreset = _workspaceTabVisibilityPresets.First();
+        WorkspaceTabVisibilityPreset initialPreset =
+            _workspaceTabVisibilityPresets.First(preset => preset.Name == "Git essentials");
         WorkspaceTabPresetSelector.SelectedItem = initialPreset;
         UpdateWorkspaceTabVisibilitySummary();
     }
@@ -1418,7 +1470,7 @@ public partial class MainWindow : Window
                 "Daily commits and repository review",
                 "Changes, history, branches, pull requests, locks, LFS, and backups",
                 Visible(
-                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
+                    "ProjectWorkspaceTab", "GitOverviewWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
                     "BranchesWorkspaceTab", "PullRequestsWorkspaceTab", "LfsLocksWorkspaceTab",
                     "GitLfsWorkspaceTab", "BackupsWorkspaceTab", "HelpWorkspaceTab")),
             new WorkspaceTabVisibilityPreset(
@@ -1427,7 +1479,7 @@ public partial class MainWindow : Window
                 "Programming and assisted code review",
                 "Git, solution explorer, code search, console, assets, AI, MCP, and plugins",
                 Visible(
-                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
+                    "ProjectWorkspaceTab", "GitOverviewWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
                     "CompositionWorkspaceTab", "BranchesWorkspaceTab", "PullRequestsWorkspaceTab", "CiWorkspaceTab",
                     "GitGraphsWorkspaceTab", "LfsLocksWorkspaceTab", "GitIgnoreWorkspaceTab", "GitLfsWorkspaceTab",
                     "BackupsWorkspaceTab", "SolutionExplorerWorkspaceTab", "CodeWorkspaceTab", "ConsoleWorkspaceTab",
@@ -1439,7 +1491,7 @@ public partial class MainWindow : Window
                 "Unreal Engine projects and plugin validation",
                 "Git, locks, LFS, assets, CI, console, Unreal connection, builds, and diagnostics",
                 Visible(
-                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab",
+                    "ProjectWorkspaceTab", "GitOverviewWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab",
                     "HistoryWorkspaceTab", "CompositionWorkspaceTab", "BranchesWorkspaceTab", "PullRequestsWorkspaceTab",
                     "CiWorkspaceTab", "GitGraphsWorkspaceTab", "LfsLocksWorkspaceTab", "GitIgnoreWorkspaceTab",
                     "GitLfsWorkspaceTab", "BackupsWorkspaceTab", "SolutionExplorerWorkspaceTab", "CodeWorkspaceTab",
@@ -1451,7 +1503,7 @@ public partial class MainWindow : Window
                 "Mixed-engine game development",
                 "Git, code, assets, plugins, Unreal, Unity, Godot, builds, and diagnostics",
                 Visible(
-                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab",
+                    "ProjectWorkspaceTab", "GitOverviewWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab",
                     "HistoryWorkspaceTab", "BranchesWorkspaceTab", "PullRequestsWorkspaceTab", "CiWorkspaceTab",
                     "LfsLocksWorkspaceTab", "GitIgnoreWorkspaceTab", "GitLfsWorkspaceTab", "BackupsWorkspaceTab",
                     "SolutionExplorerWorkspaceTab", "CodeWorkspaceTab", "ConsoleWorkspaceTab", "AssetDiffWorkspaceTab",
@@ -1463,7 +1515,7 @@ public partial class MainWindow : Window
                 "Distributed teams and self-hosted infrastructure",
                 "Members, Sync, VPN, Swarm, shared files, team chat, Discord, WIP, and remote builds",
                 Visible(
-                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab",
+                    "ProjectWorkspaceTab", "GitOverviewWorkspaceTab", "VisibleTabsWorkspaceTab", "MembersWorkspaceTab", "ChangesWorkspaceTab",
                     "HistoryWorkspaceTab", "SynchronizationWorkspaceTab", "SyncConflictsWorkspaceTab", "SharedSyncWorkspaceTab", "VpnWorkspaceTab", "SwarmWorkspaceTab",
                     "VpnFilesWorkspaceTab", "TeamChatWorkspaceTab", "RemoteBuildsWorkspaceTab", "DiscordWorkspaceTab",
                     "WorkInProgressWorkspaceTab", "ConsoleWorkspaceTab", "DiagnosticsWorkspaceTab", "HelpWorkspaceTab")),
@@ -1473,7 +1525,7 @@ public partial class MainWindow : Window
                 "A clean interface for quick repository checks",
                 "Project, changes, history, solution explorer, console, and help",
                 Visible(
-                    "ProjectWorkspaceTab", "VisibleTabsWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
+                    "ProjectWorkspaceTab", "GitOverviewWorkspaceTab", "VisibleTabsWorkspaceTab", "ChangesWorkspaceTab", "HistoryWorkspaceTab",
                     "SolutionExplorerWorkspaceTab", "ConsoleWorkspaceTab", "HelpWorkspaceTab")),
             new WorkspaceTabVisibilityPreset(
                 "Custom",
@@ -1489,9 +1541,21 @@ public partial class MainWindow : Window
     {
         HashSet<string> knownTabs = _workspaceTabVisibilityItems.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
         _hiddenWorkspaceTabNames.Clear();
-        foreach (string hiddenTab in state.HiddenTabs ?? [])
+        WorkspaceTabVisibilityPreset? requestedPreset = _workspaceTabVisibilityPresets.FirstOrDefault(preset =>
+            !preset.IsCustom && string.Equals(preset.Name, state.TabVisibilityPreset, StringComparison.Ordinal));
+        if (state.HiddenTabs is null && requestedPreset?.VisibleTabs is not null)
         {
-            if (knownTabs.Contains(hiddenTab)) _hiddenWorkspaceTabNames.Add(hiddenTab);
+            foreach (WorkspaceTabVisibilityItem item in _workspaceTabVisibilityItems)
+            {
+                if (!requestedPreset.VisibleTabs.Contains(item.Id)) _hiddenWorkspaceTabNames.Add(item.Id);
+            }
+        }
+        else
+        {
+            foreach (string hiddenTab in state.HiddenTabs ?? [])
+            {
+                if (knownTabs.Contains(hiddenTab)) _hiddenWorkspaceTabNames.Add(hiddenTab);
+            }
         }
 
         _updatingWorkspaceTabVisibility = true;
@@ -1651,6 +1715,7 @@ public partial class MainWindow : Window
 
     private static string WorkspaceTabDisplayName(TabItem tab) => tab.Name switch
     {
+        "GitOverviewWorkspaceTab" => "Git repository",
         "MembersWorkspaceTab" => "Members",
         "NotificationsWorkspaceTab" => "Notifications",
         "VisibleTabsWorkspaceTab" => "Visible tabs",
@@ -1798,6 +1863,7 @@ public partial class MainWindow : Window
         CyRevision.Core.Configuration.ProjectFeatures? features = _viewModel?.SelectedProject?.Definition.Features;
         if (features is null)
             return ReferenceEquals(tab, ProjectWorkspaceTab) || ReferenceEquals(tab, VisibleTabsWorkspaceTab);
+        if (ReferenceEquals(tab, GitOverviewWorkspaceTab)) return features.GitEnabled;
 
         if (ReferenceEquals(tab, SynchronizationWorkspaceTab)) return features.PeerSyncEnabled;
         if (ReferenceEquals(tab, SyncConflictsWorkspaceTab))
@@ -1891,7 +1957,7 @@ public partial class MainWindow : Window
 
     private TabItem[] TabsFor(WorkspaceCategory category) => category switch
     {
-        WorkspaceCategory.Overview => [ProjectWorkspaceTab, MembersWorkspaceTab, NotificationsWorkspaceTab, VisibleTabsWorkspaceTab, LicenseWorkspaceTab],
+        WorkspaceCategory.Overview => [ProjectWorkspaceTab, GitOverviewWorkspaceTab, MembersWorkspaceTab, NotificationsWorkspaceTab, VisibleTabsWorkspaceTab, LicenseWorkspaceTab],
         WorkspaceCategory.Git =>
         [
             ChangesWorkspaceTab, HistoryWorkspaceTab, CompositionWorkspaceTab, BranchesWorkspaceTab,
@@ -1916,7 +1982,7 @@ public partial class MainWindow : Window
 
     private TabItem[] AllWorkspaceTabs() =>
     [
-        ProjectWorkspaceTab, MembersWorkspaceTab, NotificationsWorkspaceTab, VisibleTabsWorkspaceTab, LicenseWorkspaceTab,
+        ProjectWorkspaceTab, GitOverviewWorkspaceTab, MembersWorkspaceTab, NotificationsWorkspaceTab, VisibleTabsWorkspaceTab, LicenseWorkspaceTab,
         ChangesWorkspaceTab, SolutionExplorerWorkspaceTab, CodeWorkspaceTab,
         ConsoleWorkspaceTab, HistoryWorkspaceTab,
         CompositionWorkspaceTab, BranchesWorkspaceTab, GitAnnotationsWorkspaceTab, PullRequestsWorkspaceTab, CiWorkspaceTab, GitGraphsWorkspaceTab,
@@ -2123,17 +2189,64 @@ public partial class MainWindow : Window
 
     private async void OnAboutClick(object? sender, RoutedEventArgs e) => await ShowAboutAsync();
 
-    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    private async void OnPreferencesClick(object? sender, RoutedEventArgs e) =>
+        await ShowPreferencesAsync();
+
+    private async Task ShowPreferencesAsync()
     {
-        KeyModifiers required = KeyModifiers.Control | KeyModifiers.Shift;
-        if (e.Key == Key.F && (e.KeyModifiers & required) == required)
+        PreferencesWindow dialog = new(
+            _applicationPreferences,
+            _desktopBehaviorPreferences,
+            ApplicationPaths.CreateDefault(),
+            _activeCacheDirectory);
+        PreferencesDialogResult? result = await dialog.ShowDialog<PreferencesDialogResult?>(this);
+        if (result is null) return;
+
+        try
         {
-            NavigateToWorkspace(CodeWorkspaceTab, GlobalCodeSearch);
-            GlobalCodeSearch.SelectAll();
-            e.Handled = true;
+            if (_applicationPreferencesApply is not null)
+                await _applicationPreferencesApply(result.Application);
+            if (_desktopBehaviorApply is not null)
+                await _desktopBehaviorApply(result.Desktop);
+
+            _applicationPreferences = result.Application.Normalize();
+            _desktopBehaviorPreferences = result.Desktop;
+            _viewModel.ConfigureNotificationPreferences(_applicationPreferences);
+            ApplyKeyboardShortcuts();
+            ConfigureRepositoryChangeMonitor();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            await ShowSystemIntegrationErrorAsync(exception.Message);
         }
     }
 
+    private void ApplyKeyboardShortcuts()
+    {
+        SetShortcut(PreferencesMenuItem, "preferences");
+        SetShortcut(AddFolderMenuItem, "add-folder");
+        SetShortcut(FindInFilesMenuItem, "global-search");
+        SetShortcut(RefreshProjectMenuItem, "refresh");
+        SetShortcut(OpenRepositoryMenuItem, "open-repository");
+        SetShortcut(CloneRepositoryMenuItem, "clone-repository");
+        SetShortcut(CreateRepositoryMenuItem, "create-repository");
+        SetShortcut(ShowChangesMenuItem, "changes");
+        SetShortcut(ShowHistoryMenuItem, "history");
+        SetShortcut(ShowBranchesMenuItem, "branches");
+        SetShortcut(ShowPullRequestsMenuItem, "pull-requests");
+        SetShortcut(FetchMenuItem, "fetch");
+        SetShortcut(PullMenuItem, "pull");
+        SetShortcut(PushMenuItem, "push");
+        SetShortcut(ExitMenuItem, "exit");
+    }
+
+    private void SetShortcut(MenuItem menuItem, string shortcutId)
+    {
+        menuItem.HotKey = _applicationPreferences.KeyboardShortcuts.TryGetValue(shortcutId, out string? value) &&
+                          ShortcutCatalog.TryParse(value, out KeyGesture? gesture)
+            ? gesture
+            : null;
+    }
     private async void OnCodeSearchBoxKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
@@ -2571,11 +2684,6 @@ public partial class MainWindow : Window
         await _viewModel.CommitAsync();
     }
 
-    private async void OnCreateBranchClick(object? sender, RoutedEventArgs e) =>
-        await _viewModel.CreateBranchAsync(NewBranchName.Text ?? string.Empty);
-
-    private async void OnCreateBranchFromCommitClick(object? sender, RoutedEventArgs e) =>
-        await _viewModel.CreateBranchFromSelectedCommitAsync(NewBranchName.Text ?? string.Empty);
 
     private async void OnRefreshHistoricalWorktreesClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.RefreshHistoricalWorktreesAsync();

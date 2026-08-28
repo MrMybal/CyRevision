@@ -33,8 +33,10 @@ public partial class App : Application
     private MainWindowViewModel? _viewModel;
     private LocalizationService? _localization;
     private DesktopBehaviorPreferencesStore? _desktopPreferencesStore;
+    private ApplicationPreferencesStore? _applicationPreferencesStore;
     private StartupRegistrationService? _startupRegistration;
     private DesktopBehaviorPreferences _desktopPreferences = DesktopBehaviorPreferences.Default;
+    private ApplicationPreferences _applicationPreferences = ApplicationPreferences.Default;
     private ApplicationLogService? _applicationLogService;
     private bool _explicitExit;
     private bool _exitConfirmationActive;
@@ -62,7 +64,28 @@ public partial class App : Application
             ResolveTrayControls();
             _desktop = desktop;
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            ApplicationPaths paths = ApplicationPaths.CreateDefault();
+            ApplicationPaths defaultPaths = ApplicationPaths.CreateDefault();
+            _applicationPreferencesStore = new ApplicationPreferencesStore(defaultPaths.ConfigurationDirectory);
+            _applicationPreferences = _applicationPreferencesStore.Load();
+            string pendingCacheMove = _applicationPreferences.PendingCacheMoveSource;
+            _applicationPreferences = ApplicationCacheService.CompletePendingMove(
+                _applicationPreferences,
+                defaultPaths.CacheDirectory,
+                out _);
+            if (!string.Equals(
+                    pendingCacheMove,
+                    _applicationPreferences.PendingCacheMoveSource,
+                    StringComparison.Ordinal))
+            {
+                _applicationPreferencesStore.Save(_applicationPreferences);
+            }
+            ApplicationPaths paths = defaultPaths with
+            {
+                CacheDirectory = ApplicationPreferencesStore.ResolveCacheDirectory(
+                    _applicationPreferences,
+                    defaultPaths.CacheDirectory)
+            };
+            InterfaceThemeService.Apply(_applicationPreferences.ThemePreset);
             ApplicationLogService applicationLog = new(paths.DataDirectory);
             _applicationLogService = applicationLog;
             AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -144,7 +167,14 @@ public partial class App : Application
             _mainWindow = mainWindow;
             mainWindow.ExitRequested += OnExitRequested;
             mainWindow.Closing += OnMainWindowClosing;
-            mainWindow.ConfigureDesktopBehavior(_desktopPreferences, ToggleDesktopBehaviorSetting);
+            mainWindow.ConfigureDesktopBehavior(
+                _desktopPreferences,
+                ToggleDesktopBehaviorSetting,
+                SetDesktopBehaviorPreferencesAsync);
+            mainWindow.ConfigureApplicationPreferences(
+                _applicationPreferences,
+                paths.CacheDirectory,
+                SetApplicationPreferencesAsync);
             viewModel.PropertyChanged += OnViewModelPropertyChanged;
             localization.LanguageChanged += OnLanguageChanged;
             desktop.MainWindow = mainWindow;
@@ -236,32 +266,30 @@ public partial class App : Application
 
     private async void ToggleDesktopBehaviorSetting(DesktopBehaviorSetting setting)
     {
-        if (_desktopPreferencesStore is null || _startupRegistration is null)
-        {
-            return;
-        }
-
-        DesktopBehaviorPreferences previous = _desktopPreferences;
         DesktopBehaviorPreferences updated = setting switch
         {
-            DesktopBehaviorSetting.LaunchAtLogin => previous with { LaunchAtLogin = !previous.LaunchAtLogin },
-            DesktopBehaviorSetting.StartHiddenAtLogin => previous with { StartHiddenAtLogin = !previous.StartHiddenAtLogin },
-            DesktopBehaviorSetting.CloseToTray => previous with { CloseToTray = !previous.CloseToTray },
-            DesktopBehaviorSetting.ShowTrayIcon => previous with { ShowTrayIcon = !previous.ShowTrayIcon },
-            _ => previous
+            DesktopBehaviorSetting.LaunchAtLogin => _desktopPreferences with { LaunchAtLogin = !_desktopPreferences.LaunchAtLogin },
+            DesktopBehaviorSetting.StartHiddenAtLogin => _desktopPreferences with { StartHiddenAtLogin = !_desktopPreferences.StartHiddenAtLogin },
+            DesktopBehaviorSetting.CloseToTray => _desktopPreferences with { CloseToTray = !_desktopPreferences.CloseToTray },
+            DesktopBehaviorSetting.ShowTrayIcon => _desktopPreferences with { ShowTrayIcon = !_desktopPreferences.ShowTrayIcon },
+            _ => _desktopPreferences
         };
+        await SetDesktopBehaviorPreferencesAsync(updated);
+    }
 
+    private async Task SetDesktopBehaviorPreferencesAsync(DesktopBehaviorPreferences updated)
+    {
+        if (_desktopPreferencesStore is null || _startupRegistration is null) return;
+        DesktopBehaviorPreferences previous = _desktopPreferences;
         if (!updated.ShowTrayIcon)
-        {
             updated = updated with { CloseToTray = false, StartHiddenAtLogin = false };
-        }
+        if (!updated.LaunchAtLogin)
+            updated = updated with { StartHiddenAtLogin = false };
 
         try
         {
             if (updated.LaunchAtLogin || previous.LaunchAtLogin)
-            {
                 _startupRegistration.SetEnabled(updated.LaunchAtLogin, updated.StartHiddenAtLogin);
-            }
 
             _desktopPreferencesStore.Save(updated);
             _desktopPreferences = updated;
@@ -272,10 +300,18 @@ public partial class App : Application
             _desktopPreferences = previous;
             ApplyDesktopPreferencesToUi();
             if (_mainWindow is not null)
-            {
                 await _mainWindow.ShowSystemIntegrationErrorAsync(exception.Message);
-            }
         }
+    }
+
+    private Task SetApplicationPreferencesAsync(ApplicationPreferences preferences)
+    {
+        if (_applicationPreferencesStore is null) return Task.CompletedTask;
+        ApplicationPreferences normalized = preferences.Normalize();
+        _applicationPreferencesStore.Save(normalized);
+        _applicationPreferences = normalized;
+        InterfaceThemeService.Apply(normalized.ThemePreset);
+        return Task.CompletedTask;
     }
 
     private void ApplyDesktopPreferencesToUi()
@@ -285,7 +321,10 @@ public partial class App : Application
         _trayStartHiddenItem.IsChecked = _desktopPreferences.StartHiddenAtLogin;
         _trayCloseToTrayItem.IsChecked = _desktopPreferences.CloseToTray;
         _trayStartHiddenItem.IsEnabled = _desktopPreferences.LaunchAtLogin && _desktopPreferences.ShowTrayIcon;
-        _mainWindow?.ConfigureDesktopBehavior(_desktopPreferences, ToggleDesktopBehaviorSetting);
+        _mainWindow?.ConfigureDesktopBehavior(
+            _desktopPreferences,
+            ToggleDesktopBehaviorSetting,
+            SetDesktopBehaviorPreferencesAsync);
         UpdateTrayText();
     }
 
@@ -435,7 +474,8 @@ public partial class App : Application
             if (_mainWindow is not null)
             {
                 ShowMainWindow();
-                if (!await _mainWindow.ShowExitConfirmationAsync())
+                if (_applicationPreferences.ConfirmBeforeExit &&
+                    !await _mainWindow.ShowExitConfirmationAsync())
                 {
                     return;
                 }

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using CyRevision.Desktop.SystemIntegration;
 
 namespace CyRevision.Desktop.ViewModels;
 
@@ -6,6 +7,10 @@ public sealed partial class MainWindowViewModel
 {
     private string _projectNotificationSearch = string.Empty;
     private string _projectNotificationStateFilter = "All";
+    private bool _defaultProjectNotificationsEnabled = true;
+    private bool _notifyOnFailures = true;
+    private bool _notifyOnWarnings = true;
+    private bool _notifyOnSuccesses = true;
 
     public ObservableCollection<OperationTaskViewModel> ProjectNotifications { get; } = [];
     public IReadOnlyList<string> ProjectNotificationStateFilters { get; } = ["All", "New", "Read", "Alerts"];
@@ -42,6 +47,15 @@ public sealed partial class MainWindowViewModel
         }
     }
 
+    internal void ConfigureNotificationPreferences(ApplicationPreferences preferences)
+    {
+        ApplicationPreferences normalized = preferences.Normalize();
+        _defaultProjectNotificationsEnabled = normalized.DefaultProjectNotificationsEnabled;
+        _notifyOnFailures = normalized.NotifyOnFailures;
+        _notifyOnWarnings = normalized.NotifyOnWarnings;
+        _notifyOnSuccesses = normalized.NotifyOnSuccesses;
+    }
+
     public async Task SetProjectNotificationsEnabledAsync(bool enabled)
     {
         ProjectItemViewModel? project = SelectedProject;
@@ -70,7 +84,15 @@ public sealed partial class MainWindowViewModel
         ProjectItemViewModel? project = Projects.FirstOrDefault(item =>
             string.Equals(item.Name, task.ProjectName, StringComparison.OrdinalIgnoreCase));
         if (project?.Definition.ProjectNotificationsEnabled != true) return;
-        if (task.IsAttention || IsImportantProjectOperation(task.Title)) task.PromoteToNotification();
+
+        bool promote = task.State switch
+        {
+            "Failed" => _notifyOnFailures,
+            "Cancelled" => _notifyOnWarnings,
+            "Completed" => _notifyOnSuccesses && IsImportantProjectOperation(task.Title),
+            _ => false
+        };
+        if (promote) task.PromoteToNotification();
     }
 
     private static bool IsImportantProjectOperation(string title)

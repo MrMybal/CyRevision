@@ -690,6 +690,8 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
         Assert.Equal("Base Author", details.InferredCreatorName);
         Assert.NotNull(details.InferredCreatedAt);
         Assert.Equal("Latest Author", details.LastAuthorName);
+
+
         Assert.Equal("Latest branch commit", details.LastSubject);
         Assert.NotNull(details.LastUpdatedAt);
     }
@@ -886,6 +888,59 @@ public sealed class GitCliRepositoryServiceTests : IDisposable
         Assert.DoesNotContain(
             await service.GetBranchesAsync(_temporaryDirectory),
             branch => branch.Name == "feature/local-only");
+    }
+
+    [Theory]
+    [InlineData("git@github.com:MrMybal/CyRevision.git", "GitHub", "https://github.com/MrMybal/CyRevision")]
+    [InlineData("https://gitlab.example.com/team/project.git", "GitLab", "https://gitlab.example.com/team/project")]
+    [InlineData("git@ssh.dev.azure.com:v3/team/product/repository", "Azure DevOps", "https://dev.azure.com/team/product/_git/repository")]
+    [InlineData("http://git.internal.local/team/repository.git", "git.internal.local", "http://git.internal.local/team/repository")]
+    public void RemoteAddressResolvesProviderAndWebPage(string remoteUrl, string provider, string webUrl)
+    {
+        Assert.Equal(provider, GitRemoteAddress.GetProvider(remoteUrl));
+        Assert.Equal(webUrl, GitRemoteAddress.TryGetWebUrl(remoteUrl));
+    }
+
+    [Fact]
+    public async Task RemotesCanBeListedUpdatedAndRemoved()
+    {
+        GitCliRepositoryService service = new();
+        GitToolAvailability tools = await service.GetToolAvailabilityAsync();
+        if (!tools.GitAvailable) return;
+
+        await service.InitializeAsync(_temporaryDirectory);
+        await service.AddOrUpdateRemoteAsync(
+            _temporaryDirectory,
+            "origin",
+            "git@github.com:MrMybal/CyRevision.git");
+        await service.SetRemotePushUrlAsync(
+            _temporaryDirectory,
+            "origin",
+            "ssh://git@github.com/MrMybal/CyRevision-write.git");
+        await service.AddOrUpdateRemoteAsync(
+            _temporaryDirectory,
+            "upstream",
+            "https://gitlab.example.com/team/project.git");
+
+        IReadOnlyList<GitRemoteInfo> remotes = await service.GetRemotesAsync(_temporaryDirectory);
+        Assert.Collection(
+            remotes,
+            origin =>
+            {
+                Assert.Equal("origin", origin.Name);
+                Assert.Equal("GitHub", origin.Provider);
+                Assert.Contains("CyRevision-write.git", origin.PushUrl);
+                Assert.Equal("https://github.com/MrMybal/CyRevision", origin.WebUrl);
+            },
+            upstream =>
+            {
+                Assert.Equal("upstream", upstream.Name);
+                Assert.Equal("GitLab", upstream.Provider);
+            });
+
+        await service.RemoveRemoteAsync(_temporaryDirectory, "upstream");
+        GitRemoteInfo remaining = Assert.Single(await service.GetRemotesAsync(_temporaryDirectory));
+        Assert.Equal("origin", remaining.Name);
     }
 
     public void Dispose()

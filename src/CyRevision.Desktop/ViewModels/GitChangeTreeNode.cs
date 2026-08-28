@@ -21,7 +21,8 @@ public sealed class GitChangeTreeNode : ObservableObject
         IReadOnlyList<GitChangeViewModel>? lazyChanges = null,
         bool isFilePage = false,
         bool isPlaceholder = false,
-        bool isExpanded = false)
+        bool isExpanded = false,
+        bool isAlternateRow = false)
     {
         Name = name;
         RelativePath = relativePath;
@@ -32,6 +33,7 @@ public sealed class GitChangeTreeNode : ObservableObject
         _isFilePage = isFilePage;
         _isExpanded = isExpanded;
         IsPlaceholder = isPlaceholder;
+        IsAlternateRow = isAlternateRow;
         GitChangeTreeNode[] initialChildren = children?.ToArray() ?? [];
         if (initialChildren.Length == 0 && lazyChanges is { Count: > 0 })
         {
@@ -56,6 +58,10 @@ public sealed class GitChangeTreeNode : ObservableObject
     public bool HasChange => Change is not null;
 
     public bool IsPlaceholder { get; }
+
+    public bool IsAlternateRow { get; }
+
+    public string RowBackground => IsAlternateRow ? "#08FFFFFF" : "Transparent";
 
     public bool HasUnloadedChildren => _lazyChanges is { Count: > 0 };
 
@@ -132,7 +138,7 @@ public sealed class GitChangeTreeNode : ObservableObject
             int end = Math.Min(_loadedFileCount + FilePageSize, changes.Count);
             for (int index = _loadedFileCount; index < end; index++)
             {
-                Children.Add(CreateFile(changes[index]));
+                Children.Add(CreateFile(changes[index], (index & 1) == 1));
             }
             _loadedFileCount = end;
             if (_loadedFileCount < changes.Count) Children.Add(CreatePlaceholder("Load more files…"));
@@ -184,7 +190,8 @@ public sealed class GitChangeTreeNode : ObservableObject
         directFiles.Sort((left, right) => StringComparer.OrdinalIgnoreCase.Compare(left.FileName, right.FileName));
         if (directFiles.Count <= FilePageSize)
         {
-            foreach (GitChangeViewModel change in directFiles) Children.Add(CreateFile(change));
+            for (int index = 0; index < directFiles.Count; index++)
+                Children.Add(CreateFile(directFiles[index], (index & 1) == 1));
             return;
         }
 
@@ -227,12 +234,13 @@ public sealed class GitChangeTreeNode : ObservableObject
         isFilePage: true,
         isExpanded: isExpanded);
 
-    private GitChangeTreeNode CreateFile(GitChangeViewModel change) => new(
+    private GitChangeTreeNode CreateFile(GitChangeViewModel change, bool isAlternateRow = false) => new(
         change.FileName,
         change.Path,
         false,
         change,
-        groupKind: GroupKind);
+        groupKind: GroupKind,
+        isAlternateRow: isAlternateRow);
 
     private static GitChangeTreeNode CreatePlaceholder(string name = "Open to load…") => new(
         name,

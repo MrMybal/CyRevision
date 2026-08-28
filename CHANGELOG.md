@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.22 Alpha — 2026-08-28
+
+- added repository-aware Git settings in Overview with remote discovery, add/update/remove actions, provider information, and direct access to remote pages;
+- added contextual file history for Solution Explorer assets, including Git LFS revisions, authors, associated commits, remote-backed inspection, restores, and dedicated history views;
+- added OpenCode as a project-scoped AI assistant provider alongside the existing local and remote integrations;
+- introduced Edit > Preferences with configurable cache location, safe size analysis/purge/migration, interface color presets with immediate preview, keyboard shortcuts, per-mode default workspaces, and notification policies;
+- simplified the Changes layouts, synchronized History layouts with their visible panels, improved tree selection and local-only presentation, and aligned shared table columns and theme resources across detached windows;
+- added the CyTask work-item plugin and preserved project-scoped activation for every plugin-contributed workspace;
+- expanded automated coverage for Git history, branch inspection caches, OpenCode, application preferences, and non-destructive cache operations.
+
 ## 0.1.21 Alpha — 2026-08-25
 
 - redesigned the GitHub pull-request workspace with numeric sorting, colored state/ownership/CI indicators, separated description/files/conversation/CI/conflicts/actions views, accurate active-job aggregation, and permission-aware rerun or cancellation actions;

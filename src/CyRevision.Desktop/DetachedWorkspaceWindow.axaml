@@ -6,7 +6,7 @@
         Title="CyRevision Workspace"
         Icon="/Assets/Branding/cyrevision.ico"
         Width="1460" Height="880" MinWidth="850" MinHeight="520"
-        Background="#1E1F22" WindowStartupLocation="CenterScreen">
+        Background="{DynamicResource CyBackgroundBrush}" WindowStartupLocation="CenterScreen">
     <Window.Styles>
         <Style Selector="Border.toolCard">
             <Setter Property="Background" Value="#25272B" />
@@ -16,7 +16,7 @@
         </Style>
         <Style Selector="Button.toolButton">
             <Setter Property="Background" Value="#34373D" />
-            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="Foreground" Value="{DynamicResource CyForegroundBrush}" />
             <Setter Property="Padding" Value="9,5" />
             <Setter Property="MinHeight" Value="27" />
             <Setter Property="CornerRadius" Value="4" />
@@ -30,11 +30,11 @@
             <Setter Property="CornerRadius" Value="4" />
             <Setter Property="FontSize" Value="11" />
         </Style>
-        <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#9B9DA3" /></Style>
+        <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource CyMutedForegroundBrush}" /></Style>
     </Window.Styles>
 
     <Grid RowDefinitions="42,*">
-        <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+        <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
                 <Image Source="/Assets/Branding/cyrevision-icon-master.png" Width="24" Height="24" VerticalAlignment="Center" />
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -105,7 +105,7 @@
                             <Grid RowDefinitions="34,*">
                                 <Grid Margin="9,0" ColumnDefinitions="*,Auto">
                                     <TextBlock Text="Focused diff" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" Text="Read-only" Foreground="#78D7B7" FontSize="9" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Read-only" Foreground="{DynamicResource CyAccentBrush}" FontSize="9" VerticalAlignment="Center" />
                                 </Grid>
                                 <controls:CodeDiffView Grid.Row="1" DiffText="{Binding ExplorerDiff}"
                                                        PreviewImage="{Binding ExplorerDiffPreviewImage}"

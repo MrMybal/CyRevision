@@ -129,6 +129,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private string _currentBranch = "—";
     private string _repositoryPath = "Aucun projet ouvert";
     private string _changeSummary = "0 modification";
+    private string _changeSummaryBase = "0 modification";
+    private string _gitAheadSummary = string.Empty;
+    private string _gitBehindSummary = string.Empty;
     private string _changeSummaryColor = "#A9ABB2";
     private string _currentProjectName = "No project";
     private int _projectLicenseLoadVersion;
@@ -674,7 +677,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private string _applicationLogSearch = string.Empty;
     private string _applicationLogLevelFilter = "All";
     private ApplicationLogEntry? _selectedApplicationLogEntry;
-    private string _sidebarGroupDraft = string.Empty;
+    private string _projectDisplayNameDraft = string.Empty;
+    private string _sidebarGroupDraft = "General";
     private readonly Dictionary<string, bool> _projectGroupExpansion = new(StringComparer.OrdinalIgnoreCase);
 
     public MainWindowViewModel(
@@ -775,6 +779,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public ObservableCollection<ProjectSidebarGroupViewModel> ProjectSidebarGroups { get; } = [];
 
+    public ObservableCollection<string> ProjectSidebarGroupOptions { get; } = [];
+
     public IReadOnlyList<string> ProjectAccentColors { get; } =
     [
         "#4E9F8A", "#4C9BE8", "#7B7FF0", "#A66DE0", "#D65C9A",
@@ -818,7 +824,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             _filePresentationService,
             SelectedProject.Name,
             SelectedProject.RootPath,
-            SelectedBranch);
+            SelectedBranch,
+            _applicationPaths.CacheDirectory);
     }
 
     public ObservableCollection<LfsTrackedPattern> LfsPatterns { get; } = [];
@@ -2107,7 +2114,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             _ = ResetCodexChatForProjectAsync(value);
             int loadVersion = Interlocked.Increment(ref _projectLoadVersion);
             CurrentProjectName = value?.Name ?? "No project";
-            SidebarGroupDraft = value?.Definition.SidebarGroup ?? string.Empty;
+            ProjectDisplayNameDraft = value?.Name ?? string.Empty;
+            SidebarGroupDraft = value?.SidebarGroup ?? "General";
             foreach (ProjectSidebarGroupViewModel group in ProjectSidebarGroups)
                 group.SelectedProject = value is not null && group.Projects.Contains(value) ? value : null;
             ApplyProjectPluginScope(value);
@@ -2116,6 +2124,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             OnPropertyChanged(nameof(GitConnectionKind));
             OnPropertyChanged(nameof(IsGitProject));
             OnPropertyChanged(nameof(AreGitActionsEnabled));
+            NotifyGitRemoteCommandStateChanged();
             OnPropertyChanged(nameof(IsGitInteractionLocked));
             OnPropertyChanged(nameof(RuntimeModeSummary));
             OnPropertyChanged(nameof(ProjectDiskSummary));
@@ -2173,6 +2182,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public string SelectedProjectAccentColor =>
         SelectedProject?.AccentColor ?? ProjectItemViewModel.DefaultAccentColor;
+
+    public string ProjectDisplayNameDraft
+    {
+        get => _projectDisplayNameDraft;
+        set => SetProperty(ref _projectDisplayNameDraft, value);
+    }
 
     public string SidebarGroupDraft
     {
@@ -2498,6 +2513,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 OnPropertyChanged(nameof(AreGitActionsEnabled));
                 OnPropertyChanged(nameof(IsGitInteractionLocked));
                 OnPropertyChanged(nameof(GitInteractionLockMessage));
+                NotifyGitRemoteCommandStateChanged();
                 OnPropertyChanged(nameof(CanCommitPreparedChanges));
                 NotifyAiGenerationStateChanged();
             }
@@ -2745,6 +2761,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         ProjectDefinition? definition = SelectedProject?.Definition;
         ProjectPreset? restored = null;
         if (definition is not null &&
+            definition.OperatingMode is null or ProjectPresetKind.Custom &&
             !string.IsNullOrWhiteSpace(definition.PluginOperatingModeId) &&
             !string.IsNullOrWhiteSpace(definition.PluginOperatingModeProviderId))
         {
@@ -2961,10 +2978,35 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         private set => SetProperty(ref _changeSummary, value);
     }
 
+    public string ChangeSummaryBase
+    {
+        get => _changeSummaryBase;
+        private set => SetProperty(ref _changeSummaryBase, value);
+    }
+
+    public string GitAheadSummary
+    {
+        get => _gitAheadSummary;
+        private set => SetProperty(ref _gitAheadSummary, value);
+    }
+
+    public string GitBehindSummary
+    {
+        get => _gitBehindSummary;
+        private set => SetProperty(ref _gitBehindSummary, value);
+    }
+
     public string ChangeSummaryColor
     {
         get => _changeSummaryColor;
         private set => SetProperty(ref _changeSummaryColor, value);
+    }
+
+    private void SetChangeSummaryPresentation(string baseText, int? ahead = null, int? behind = null)
+    {
+        ChangeSummaryBase = baseText;
+        GitAheadSummary = ahead is null ? string.Empty : $"↑{ahead.Value:N0}";
+        GitBehindSummary = behind is null ? string.Empty : $"↓{behind.Value:N0}";
     }
 
     public int GitConflictCount => Changes.Count(change => change.Change.Kind == GitChangeKind.Conflicted);
@@ -3210,6 +3252,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             ProjectDefinition? definition = SelectedProject?.Definition;
             if (definition is null ||
+                definition.OperatingMode is not (null or ProjectPresetKind.Custom) ||
                 string.IsNullOrWhiteSpace(definition.PluginOperatingModeId) ||
                 string.IsNullOrWhiteSpace(definition.PluginOperatingModeProviderId))
             {
@@ -4835,8 +4878,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public bool IsCodeSearchRunning
     {
         get => _isCodeSearchRunning;
-        private set => SetProperty(ref _isCodeSearchRunning, value);
+        private set
+        {
+            if (SetProperty(ref _isCodeSearchRunning, value))
+                OnPropertyChanged(nameof(CanStartCodeSearch));
+        }
     }
+
+    public bool CanStartCodeSearch => !IsCodeSearchRunning;
 
     public string CodePreviewText
     {
@@ -4915,9 +4964,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             if (!SetProperty(ref _selectedAiProvider, value) || value is null) return;
             AiModel = value.DefaultModel;
             AiEndpoint = value.DefaultEndpoint;
+            if (value.Kind == AiProviderKind.OpenCodeCli && IsKnownAiExecutable(AiExecutablePath, "codex"))
+                AiExecutablePath = "opencode";
+            else if (value.Kind is AiProviderKind.CodexCli or AiProviderKind.CodexLocalProvider &&
+                     IsKnownAiExecutable(AiExecutablePath, "opencode"))
+                AiExecutablePath = "codex";
             OnPropertyChanged(nameof(AiProviderDescription));
             OnPropertyChanged(nameof(AiProviderRequiresKey));
             OnPropertyChanged(nameof(AiProviderSupportsEdits));
+            OnPropertyChanged(nameof(IsOpenCodeProviderSelected));
         }
     }
 
@@ -4926,6 +4981,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public bool AiProviderRequiresKey => SelectedAiProvider?.RequiresApiKey == true;
 
     public bool AiProviderSupportsEdits => SelectedAiProvider?.SupportsWorkspaceEdits == true;
+
+    public bool IsOpenCodeProviderSelected => SelectedAiProvider?.Kind == AiProviderKind.OpenCodeCli;
+
+    private static bool IsKnownAiExecutable(string path, string executable)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return true;
+        string fileName = Path.GetFileNameWithoutExtension(path.Trim());
+        return fileName.Equals(executable, StringComparison.OrdinalIgnoreCase);
+    }
 
     public string AiModel
     {
@@ -8809,11 +8873,49 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         StatusMessage = $"Color saved for {project.Name}";
     }
 
+    public async Task SetSelectedProjectDisplayNameAsync()
+    {
+        ProjectItemViewModel? project = SelectedProject;
+        if (project is null) return;
+
+        string displayName = ProjectDisplayNameDraft.Trim();
+        if (displayName.Length == 0)
+        {
+            StatusMessage = "The project display name cannot be empty.";
+            ProjectDisplayNameDraft = project.Name;
+            return;
+        }
+
+        if (displayName.Length > 120)
+        {
+            StatusMessage = "The project display name cannot exceed 120 characters.";
+            return;
+        }
+
+        string previousName = project.Name;
+        if (string.Equals(previousName, displayName, StringComparison.Ordinal)) return;
+
+        ProjectDefinition updated = project.Definition with { Name = displayName };
+        updated.Validate();
+        project.Update(updated);
+        await _projectCatalog.UpsertAsync(updated);
+
+        CurrentProjectName = displayName;
+        if (ChangeSummary.StartsWith(previousName + " ·", StringComparison.Ordinal))
+            ChangeSummary = displayName + ChangeSummary[previousName.Length..];
+        if (ChangeSummaryBase.StartsWith(previousName + " ·", StringComparison.Ordinal))
+            ChangeSummaryBase = displayName + ChangeSummaryBase[previousName.Length..];
+
+        RebuildProjectSidebarGroups();
+        StatusMessage = $"Project display name changed to {displayName}";
+    }
+
     public async Task SetSelectedProjectSidebarGroupAsync()
     {
         ProjectItemViewModel? project = SelectedProject;
         if (project is null) return;
-        string? groupName = string.IsNullOrWhiteSpace(SidebarGroupDraft)
+        string? groupName = string.IsNullOrWhiteSpace(SidebarGroupDraft) ||
+                            string.Equals(SidebarGroupDraft.Trim(), "General", StringComparison.OrdinalIgnoreCase)
             ? null
             : SidebarGroupDraft.Trim();
         ProjectDefinition updated = project.Definition with { SidebarGroup = groupName };
@@ -8852,6 +8954,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             };
             ProjectSidebarGroups.Add(item);
         }
+
+        ReplaceCollection(
+            ProjectSidebarGroupOptions,
+            ProjectSidebarGroups
+                .Select(group => group.Name)
+                .Prepend("General")
+                .Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     public async Task SetProjectServiceAutoStartAsync(bool? sync = null, bool? vpn = null)
@@ -14269,6 +14378,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         RefreshCompositionBranches();
         SelectedBranch = Branches.FirstOrDefault(branch => branch.IsCurrent);
         _allExplorerRevisions = cached.History.ToArray();
+        UpdateGitOverviewHead(_allExplorerRevisions.FirstOrDefault());
         ApplyExplorerFilter();
         ReplaceCollection(LfsPatterns, cached.LfsPatterns);
         StatusMessage = $"{project.Name} restored from .cyrevision · validating in background";
@@ -14449,6 +14559,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             ? "—"
             : project.Definition.Features.GitEnabled ? "Loading branch…" : "No Git";
         ChangeSummary = project is null ? "0 changes" : $"{project.Name} · loading changes…";
+        SetChangeSummaryPresentation(ChangeSummary);
         ChangeSummaryColor = project is null ? "#A9ABB2" : "#61AFEF";
         foreach (GitChangeViewModel change in Changes)
         {
@@ -14461,6 +14572,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         FilteredUnversionedChanges.Clear();
         LocalOnlyChanges.Clear();
         FilteredLocalOnlyChanges.Clear();
+        ClearGitOverview();
         ChangeTree.Clear();
         History.Clear();
         _allExplorerRevisions = [];
@@ -15169,11 +15281,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         if (!project.Definition.Features.GitEnabled)
         {
+            ClearGitOverview();
             RemoteUrl = string.Empty;
             RepositoryPath = project.RootPath;
             CurrentProjectName = project.Name;
             CurrentBranch = "No Git";
             ChangeSummary = $"{project.Name} · file synchronization / backup";
+            SetChangeSummaryPresentation(ChangeSummary);
             ChangeSummaryColor = "#78D7B7";
             Changes.Clear();
             NotifyGitConflictStateChanged();
@@ -15217,13 +15331,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             ? _gitService.GetDetailedStatusAsync(rootPath, cancellationToken)
             : _gitService.GetQuickStatusAsync(rootPath, cancellationToken);
         Task<IReadOnlyList<GitBranch>> branchesTask = _gitService.GetBranchesAsync(rootPath, cancellationToken);
-        Task<string?> remoteTask = _gitService.GetRemoteUrlAsync(rootPath);
+        Task<IReadOnlyList<GitRemoteInfo>> remotesTask = _gitService.GetRemotesAsync(rootPath, cancellationToken);
         Task<IReadOnlyList<GitRevision>> historyTask = IncludeRemoteHistory
             ? _gitService.GetHistoryAcrossRefsAsync(rootPath, cancellationToken: cancellationToken)
             : _gitService.GetHistoryAsync(rootPath, cancellationToken: cancellationToken);
         Task<IReadOnlyList<LfsTrackedPattern>> lfsTask = _gitService.GetLfsPatternsAsync(rootPath, cancellationToken);
 
-        await Task.WhenAll(statusTask, branchesTask, remoteTask);
+        await Task.WhenAll(statusTask, branchesTask, remotesTask);
         cancellationToken.ThrowIfCancellationRequested();
         if (!IsRefreshContextCurrent(project, expectedLoadVersion))
         {
@@ -15231,7 +15345,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }
 
         GitRepositoryStatus status = await statusTask;
-        RemoteUrl = await remoteTask ?? string.Empty;
+        ApplyGitRemoteSnapshot(project, await remotesTask);
         ApplyPrimaryGitStatus(project, status);
         ReplaceCollection(Branches, await branchesTask);
         ApplyBranchFilter();
@@ -15250,6 +15364,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }
 
         _allExplorerRevisions = (await historyTask).ToArray();
+        UpdateGitOverviewHead(_allExplorerRevisions.FirstOrDefault());
         ApplyExplorerFilter();
         ReplaceCollection(LfsPatterns, await lfsTask);
         GitRevision? firstRevision = History.FirstOrDefault();
@@ -15289,9 +15404,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         CurrentProjectName = project.Name;
         RepositoryPath = status.RootPath;
         ChangeSummary = $"{project.Name} · {status.Changes.Count:N0} change(s) · ↑{status.AheadBy} ↓{status.BehindBy}";
+        SetChangeSummaryPresentation($"{project.Name} · {status.Changes.Count:N0} change(s) ·", status.AheadBy, status.BehindBy);
         ChangeSummaryColor = status.Changes.Any(change => change.Kind == GitChangeKind.Conflicted)
             ? "#E06C75"
             : status.Changes.Count > 0 ? "#E5C07B" : "#78D7B7";
+        UpdateGitOverviewFromStatus(status);
         if (rebuildChanges)
             RebuildChangePreparation(status.Changes, SelectedChange?.Path);
         project.SetGitState(CurrentBranch, $"{status.Changes.Count:N0} change(s)");
@@ -17626,7 +17743,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             definition = definition with
             {
                 SidebarOrder = 0,
-                AccentColor = ProjectItemViewModel.DefaultAccentColor
+                AccentColor = ProjectItemViewModel.DefaultAccentColor,
+                ProjectNotificationsEnabled = _defaultProjectNotificationsEnabled
             };
         }
 
@@ -18060,6 +18178,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         CurrentProjectName = "No project";
         CurrentBranch = "—";
         ChangeSummary = "0 modification";
+        SetChangeSummaryPresentation(ChangeSummary);
         ChangeSummaryColor = "#A9ABB2";
         Changes.Clear();
         NotifyGitConflictStateChanged();

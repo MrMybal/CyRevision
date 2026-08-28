@@ -1,0 +1,148 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CyRevision.Desktop.FileHistoryWindow"
+        x:CompileBindings="False"
+        Icon="/Assets/Branding/cyrevision.ico"
+        Width="1320"
+        Height="760"
+        MinWidth="920"
+        MinHeight="520"
+        Background="{DynamicResource CyBackgroundBrush}"
+        WindowStartupLocation="CenterOwner">
+    <Window.Styles>
+        <Style Selector="Button.secondary">
+            <Setter Property="Background" Value="{DynamicResource CyBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource CyForegroundBrush}" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="MinHeight" Value="27" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="{DynamicResource CyMutedForegroundBrush}" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="64,*">
+        <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,0,0,1" Padding="12,0">
+            <Grid ColumnDefinitions="*,330,Auto,Auto,Auto" ColumnSpacing="9">
+                <StackPanel VerticalAlignment="Center" Spacing="2">
+                    <TextBlock x:Name="WindowTitleBlock" FontSize="14" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="StatusBlock" FontSize="9.5" Classes="muted"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBox x:Name="HistorySearch" Grid.Column="1"
+                         PlaceholderText="Search commit, author, message, or LFS OID…"
+                         VerticalAlignment="Center" TextChanged="OnSearchTextChanged" />
+                <Button x:Name="RefreshButton" Grid.Column="2" Classes="secondary" Content="Refresh"
+                        Click="OnRefreshClick" VerticalAlignment="Center"
+                        ToolTip.Tip="Reload this file's Git history from the repository" />
+                <Button x:Name="CancelButton" Grid.Column="3" Classes="secondary" Content="Cancel"
+                        Click="OnCancelClick" VerticalAlignment="Center" IsEnabled="False"
+                        ToolTip.Tip="Cancel the current history scan" />
+                <Button Grid.Column="4" Classes="secondary" Content="Close" Click="OnCloseClick"
+                        VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="10" ColumnDefinitions="1.65*,8,0.8*">
+            <Border Background="#232428" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="1"
+                    CornerRadius="5" ClipToBounds="True">
+                <Grid RowDefinitions="Auto,*">
+                    <Border Padding="10,7" Background="{DynamicResource CySurfaceBrush}" BorderBrush="{DynamicResource CyBorderBrush}" BorderThickness="0,0,0,1">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <StackPanel>
+                                <TextBlock Text="Git / LFS file history" FontSize="13" FontWeight="SemiBold" />
+                                <TextBlock x:Name="PathBlock" Classes="muted" FontSize="9.5"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <ProgressBar x:Name="LoadingProgress" Width="150" Height="4"
+                                             IsIndeterminate="True" IsVisible="False" />
+                                <TextBlock Text="LFS metadata only" Foreground="{DynamicResource CyAccentBrush}" FontSize="9.5"
+                                           ToolTip.Tip="Browsing history reads Git LFS pointer metadata and does not download historical asset payloads." />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <DataGrid x:Name="HistoryGrid" Grid.Row="1"
+                              AutoGenerateColumns="False" IsReadOnly="True"
+                              GridLinesVisibility="Horizontal" BorderThickness="0"
+                              Background="#151A22" SelectionMode="Single"
+                              SelectionChanged="OnHistorySelectionChanged"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Commit" Binding="{Binding Commit}" Width="92" />
+                            <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="155" />
+                            <DataGridTextColumn Header="Date" Binding="{Binding Date}" Width="142" />
+                            <DataGridTemplateColumn Header="Change" SortMemberPath="Change" Width="86">
+                                <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                    <TextBlock Text="{Binding Change}" Foreground="{Binding ChangeColor}" />
+                                </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Storage" SortMemberPath="Storage" Width="92">
+                                <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                    <TextBlock Text="{Binding Storage}" Foreground="{Binding StorageColor}" />
+                                </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="82" />
+                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" MinWidth="260" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns"
+                          ResizeBehavior="PreviousAndNext" Background="#4B4D52" Cursor="SizeWestEast" />
+
+            <Border Grid.Column="2" Background="#232428" BorderBrush="{DynamicResource CyBorderBrush}"
+                    BorderThickness="1" CornerRadius="5" Padding="13">
+                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <StackPanel>
+                            <TextBlock Text="Selected revision" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock Text="Author, commit, change, and LFS pointer" Classes="muted" FontSize="9.5" />
+                        </StackPanel>
+                        <Button x:Name="OpenCommitButton" Grid.Column="1" Classes="secondary"
+                                Content="Open commit ↗" Click="OnOpenCommitClick" IsEnabled="False"
+                                ToolTip.Tip="Inspect the complete commit and its changed files" />
+                    </Grid>
+
+                    <Border Grid.Row="1" Background="#151A22" BorderBrush="#343941" BorderThickness="1"
+                            CornerRadius="4" Padding="11">
+                        <StackPanel Spacing="9">
+                            <StackPanel>
+                                <TextBlock Text="Commit" Classes="muted" FontSize="9" />
+                                <TextBlock x:Name="CommitDetailBlock" FontFamily="Cascadia Mono, Consolas"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="Author" Classes="muted" FontSize="9" />
+                                <TextBlock x:Name="AuthorDetailBlock" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="Date and change" Classes="muted" FontSize="9" />
+                                <TextBlock x:Name="ChangeDetailBlock" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="Git LFS" Classes="muted" FontSize="9" />
+                                <TextBlock x:Name="LfsDetailBlock" Foreground="{DynamicResource CyAccentBrush}"
+                                           FontFamily="Cascadia Mono, Consolas" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Row="2" Background="#151A22" BorderBrush="#343941" BorderThickness="1"
+                            CornerRadius="4" Padding="11">
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="Commit message" Classes="muted" FontSize="9" />
+                            <TextBlock x:Name="MessageDetailBlock" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
