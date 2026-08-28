@@ -287,6 +287,21 @@ public interface IGitRepositoryService
         string remoteName = "origin",
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<GitRemoteInfo>> GetRemotesAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task SetRemotePushUrlAsync(
+        string repositoryPath,
+        string remoteName,
+        string pushUrl,
+        CancellationToken cancellationToken = default);
+
+    Task RemoveRemoteAsync(
+        string repositoryPath,
+        string remoteName,
+        CancellationToken cancellationToken = default);
+
     Task FetchAsync(string repositoryPath, CancellationToken cancellationToken = default);
 
     Task FetchReferenceAsync(

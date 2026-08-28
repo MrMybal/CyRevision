@@ -20,7 +20,7 @@
         </Style>
         <Style Selector="Button.compSecondary">
             <Setter Property="Background" Value="#34373D" />
-            <Setter Property="Foreground" Value="#DFE1E5" />
+            <Setter Property="Foreground" Value="{DynamicResource CyForegroundBrush}" />
             <Setter Property="Padding" Value="9,5" />
             <Setter Property="MinHeight" Value="27" />
             <Setter Property="CornerRadius" Value="4" />
@@ -34,7 +34,7 @@
             <Setter Property="FontSize" Value="10.5" />
         </Style>
         <Style Selector="TextBlock.compMuted">
-            <Setter Property="Foreground" Value="#9B9DA3" />
+            <Setter Property="Foreground" Value="{DynamicResource CyMutedForegroundBrush}" />
             <Setter Property="FontSize" Value="9.5" />
         </Style>
     </UserControl.Styles>
@@ -58,7 +58,7 @@
                             <ComboBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid ColumnDefinitions="62,*" ColumnSpacing="7">
-                                        <TextBlock Text="{Binding ShortHash}" Foreground="#78D7B7" FontFamily="Cascadia Mono, Consolas" />
+                                        <TextBlock Text="{Binding ShortHash}" Foreground="{DynamicResource CyAccentBrush}" FontFamily="Cascadia Mono, Consolas" />
                                         <TextBlock Grid.Column="1" Text="{Binding Subject}" TextTrimming="CharacterEllipsis" />
                                     </Grid>
                                 </DataTemplate>
@@ -82,7 +82,7 @@
                 <Grid x:Name="MultiRestoreWorkspaceGrid" Grid.Row="1" ColumnDefinitions="0.72*,7,1.18*,7,1*">
                     <Border x:Name="MultiRestoreTimelinePanel" Classes="compCard" Padding="0" ClipToBounds="True">
                         <Grid RowDefinitions="38,*">
-                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                            <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="Commits" FontWeight="SemiBold" FontSize="12" />
                                     <TextBlock Text="Select one to load its files" Classes="compMuted" />
@@ -107,7 +107,7 @@
 
                     <Border x:Name="MultiRestoreFilesPanel" Grid.Column="2" Classes="compCard" Padding="0" ClipToBounds="True">
                         <Grid RowDefinitions="38,1.25*,34,0.75*">
-                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                            <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock Text="File composition" FontWeight="SemiBold" FontSize="12" />
@@ -134,12 +134,12 @@
                                     </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
-                            <Border Grid.Row="2" Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,1"
+                            <Border Grid.Row="2" Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,1"
                                     Padding="10,0">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Text="Planned working-tree operations" FontWeight="SemiBold" FontSize="11"
                                                VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" Text="Index and commits remain untouched" Foreground="#78D7B7"
+                                    <TextBlock Grid.Column="1" Text="Index and commits remain untouched" Foreground="{DynamicResource CyAccentBrush}"
                                                FontSize="9.5" VerticalAlignment="Center" />
                                 </Grid>
                             </Border>
@@ -161,7 +161,7 @@
 
                     <Border x:Name="MultiRestoreDiffPanel" Grid.Column="4" Classes="compCard" Padding="0" ClipToBounds="True">
                         <Grid RowDefinitions="38,Auto,*">
-                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                            <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="Selected file patch" FontWeight="SemiBold" FontSize="12" />
                                     <TextBlock Text="{Binding SelectedMultiRestoreFile.Path}" Classes="compMuted" TextTrimming="CharacterEllipsis" />
@@ -220,7 +220,7 @@
                 <Grid Grid.Row="1" ColumnDefinitions="1.28*,7,1*">
                     <Border Classes="compCard" Padding="0" ClipToBounds="True">
                         <Grid RowDefinitions="38,*">
-                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                            <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock Text="Commit composition order" FontWeight="SemiBold" FontSize="12" />
@@ -252,7 +252,7 @@
 
                     <Border x:Name="CherryPickDiffPanel" Grid.Column="2" Classes="compCard" Padding="0" ClipToBounds="True">
                         <Grid RowDefinitions="38,Auto,*">
-                            <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
+                            <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="10,0">
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="Selected commit patch" FontWeight="SemiBold" FontSize="12" />
                                     <TextBlock Text="{Binding SelectedCherryPickCommit.Subject}" Classes="compMuted" TextTrimming="CharacterEllipsis" />

@@ -128,6 +128,123 @@ public sealed record GitRepositoryStatus(
     int BehindBy,
     IReadOnlyList<GitChange> Changes);
 
+
+public sealed record GitRemoteInfo(
+    string Name,
+    string FetchUrl,
+    string PushUrl)
+{
+    public string Provider => GitRemoteAddress.GetProvider(FetchUrl);
+
+    public string? WebUrl => GitRemoteAddress.TryGetWebUrl(FetchUrl);
+
+    public bool CanOpenWebPage => WebUrl is not null;
+
+    public string PushUrlDisplay => string.Equals(FetchUrl, PushUrl, StringComparison.Ordinal)
+        ? "Same as fetch"
+        : PushUrl;
+}
+
+public static class GitRemoteAddress
+{
+    public static string GetProvider(string remoteUrl)
+    {
+        RemoteParts? parts = Parse(remoteUrl);
+        if (parts is null)
+        {
+            return "Local / custom";
+        }
+
+        string host = parts.Host;
+        if (host.Contains("github", StringComparison.OrdinalIgnoreCase)) return "GitHub";
+        if (host.Contains("gitlab", StringComparison.OrdinalIgnoreCase)) return "GitLab";
+        if (host.Contains("bitbucket", StringComparison.OrdinalIgnoreCase)) return "Bitbucket";
+        if (host.Contains("dev.azure.com", StringComparison.OrdinalIgnoreCase) ||
+            host.Contains("visualstudio.com", StringComparison.OrdinalIgnoreCase) ||
+            host.Contains("ssh.dev.azure.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Azure DevOps";
+        }
+
+        return parts.Host;
+    }
+
+    public static string? TryGetWebUrl(string remoteUrl)
+    {
+        RemoteParts? parts = Parse(remoteUrl);
+        if (parts is null)
+        {
+            return null;
+        }
+
+        string path = parts.Path.Trim('/').Replace('\u005c', '/');
+        if (path.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            path = path[..^4];
+        }
+
+        if (path.Length == 0)
+        {
+            return null;
+        }
+
+        if (parts.Host.Equals("ssh.dev.azure.com", StringComparison.OrdinalIgnoreCase) &&
+            path.StartsWith("v3/", StringComparison.OrdinalIgnoreCase))
+        {
+            string[] azure = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (azure.Length >= 4)
+            {
+                return $"https://dev.azure.com/{azure[1]}/{azure[2]}/_git/{azure[3]}";
+            }
+        }
+
+        return $"{parts.WebScheme}://{parts.Authority}/{path}";
+    }
+
+    private static RemoteParts? Parse(string remoteUrl)
+    {
+        string value = remoteUrl?.Trim() ?? string.Empty;
+        if (value.Length == 0)
+        {
+            return null;
+        }
+
+        if (Uri.TryCreate(value, UriKind.Absolute, out Uri? uri))
+        {
+            if (uri.Scheme is not ("http" or "https" or "ssh") || string.IsNullOrWhiteSpace(uri.Host))
+            {
+                return null;
+            }
+
+            string authority = uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}";
+            string webScheme = uri.Scheme is "http" or "https"
+                ? uri.Scheme
+                : "https";
+            return new RemoteParts(uri.Host, authority, Uri.UnescapeDataString(uri.AbsolutePath), webScheme);
+        }
+
+        int separator = value.IndexOf(':');
+        if (separator <= 1 || value.Contains("://", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        string userAndHost = value[..separator];
+        if (userAndHost.Contains('/') || userAndHost.Contains('\u005c'))
+        {
+            return null;
+        }
+
+        int at = userAndHost.LastIndexOf('@');
+        string host = at >= 0 ? userAndHost[(at + 1)..] : userAndHost;
+        string path = value[(separator + 1)..];
+        return string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(path)
+            ? null
+            : new RemoteParts(host, host, path, "https");
+    }
+    private sealed record RemoteParts(string Host, string Authority, string Path, string WebScheme);
+}
+
 public sealed record GitRevision(
     string Hash,
     string ShortHash,

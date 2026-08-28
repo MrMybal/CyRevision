@@ -6,9 +6,9 @@
         Title="Git three-way conflict resolver"
         Icon="/Assets/Branding/cyrevision.ico"
         Width="1500" Height="880" MinWidth="980" MinHeight="620"
-        Background="#1E1F22" WindowStartupLocation="CenterOwner">
+        Background="{DynamicResource CyBackgroundBrush}" WindowStartupLocation="CenterOwner">
     <Grid RowDefinitions="54,Auto,*,42">
-        <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="12,0">
+        <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="12,0">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
                 <StackPanel VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" Spacing="8">
@@ -17,7 +17,7 @@
                             <TextBlock Text="THREE-WAY" Foreground="#FF9B9B" FontSize="8.5" FontWeight="Bold" />
                         </Border>
                     </StackPanel>
-                    <TextBlock Text="{Binding ProjectName}" Foreground="#78D7B7" FontSize="10.5" />
+                    <TextBlock Text="{Binding ProjectName}" Foreground="{DynamicResource CyAccentBrush}" FontSize="10.5" />
                 </StackPanel>
                 <CheckBox x:Name="AlwaysOnTopToggle" Grid.Column="1" Content="Always on top"
                           Click="OnAlwaysOnTopClick" VerticalAlignment="Center" />
@@ -42,7 +42,7 @@
         <Grid Grid.Row="2" ColumnDefinitions="310,8,*">
             <Border Classes="card" Padding="0" Margin="8,8,0,8" ClipToBounds="True">
                 <Grid RowDefinitions="42,*">
-                    <Border Background="#2B2D30" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
+                    <Border Background="{DynamicResource CySurfaceBrush}" BorderBrush="#3A3D43" BorderThickness="0,0,0,1" Padding="9,0">
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Conflicted files" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding SelectedConflictSummary}" Classes="muted" FontSize="8.5"
@@ -124,7 +124,7 @@
                             <Border Background="#23332F" BorderBrush="#3E756A" BorderThickness="0,0,0,1" Padding="9,0">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="RESULT" Foreground="#78D7B7" FontWeight="Bold" FontSize="10" />
+                                        <TextBlock Text="RESULT" Foreground="{DynamicResource CyAccentBrush}" FontWeight="Bold" FontSize="10" />
                                         <TextBlock Text="{Binding OursSummary}" Classes="muted" FontSize="8" />
                                     </StackPanel>
                                     <TextBlock Grid.Column="1" Text="{Binding ResolutionSource}" Foreground="{Binding ResolutionColor}"
@@ -134,7 +134,7 @@
                             <TextBox Grid.Row="1" Text="{Binding ResultText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      IsReadOnly="{Binding ResultIsReadOnly}" AcceptsReturn="True" TextWrapping="NoWrap"
                                      FontFamily="Cascadia Mono,Consolas,monospace" FontSize="11" LineHeight="16"
-                                     Background="#0B1224" Foreground="#DFE1E5" BorderThickness="0" Padding="8"
+                                     Background="#0B1224" Foreground="{DynamicResource CyForegroundBrush}" BorderThickness="0" Padding="8"
                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto" />
                         </Grid>

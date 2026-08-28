@@ -18,14 +18,16 @@ public sealed class AiIntegrationPlugin : IAiIntegrationPlugin
     public CyRevisionPluginDescriptor Descriptor { get; } = new(
         "cyrevision.ai",
         "AI Workspace",
-        "0.3.0",
-        "Optional Codex CLI, API, local-model, and project-scoped MCP integration.",
+        "0.4.0",
+        "Optional Codex, OpenCode, API, local-model, and project-scoped MCP integration.",
         "AI");
 
     public IReadOnlyList<AiProviderDescriptor> Providers { get; } =
     [
         new("codex-cli", "Codex CLI", AiProviderKind.CodexCli, string.Empty, string.Empty, string.Empty,
             true, false, "Runs the installed Codex CLI inside the selected repository sandbox."),
+        new("opencode-cli", "OpenCode CLI", AiProviderKind.OpenCodeCli, string.Empty, string.Empty, string.Empty,
+            true, false, "Runs OpenCode in the selected repository using its configured providers and authentication."),
         new("openai-api", "OpenAI API", AiProviderKind.OpenAiApi, "gpt-5.2-codex", "https://api.openai.com/v1/responses", string.Empty,
             false, true, "Uses the Responses API. The API key is kept for this session only."),
         new("compatible-api", "OpenAI-compatible API", AiProviderKind.OpenAiCompatibleApi, string.Empty, "http://127.0.0.1:1234/v1/responses", string.Empty,
@@ -46,9 +48,12 @@ public sealed class AiIntegrationPlugin : IAiIntegrationPlugin
     public Task<AiAgentResult> RunAsync(AiAgentRequest request, CancellationToken cancellationToken = default)
     {
         EnsureRequest(request);
-        return request.Provider.Kind is AiProviderKind.CodexCli or AiProviderKind.CodexLocalProvider
-            ? RunCodexAsync(request, cancellationToken)
-            : RunApiAsync(request, cancellationToken);
+        return request.Provider.Kind switch
+        {
+            AiProviderKind.CodexCli or AiProviderKind.CodexLocalProvider => RunCodexAsync(request, cancellationToken),
+            AiProviderKind.OpenCodeCli => RunOpenCodeAsync(request, cancellationToken),
+            _ => RunApiAsync(request, cancellationToken)
+        };
     }
 
     public bool IsCodexChatConnected => _codexChatSession?.IsConnected == true;
@@ -184,6 +189,51 @@ public sealed class AiIntegrationPlugin : IAiIntegrationPlugin
         return arguments;
     }
 
+    public static IReadOnlyList<string> BuildOpenCodeArguments(AiAgentRequest request)
+    {
+        List<string> arguments =
+        [
+            "run",
+            "--format",
+            "json",
+            "--dir",
+            Path.GetFullPath(request.RepositoryPath)
+        ];
+        if (!string.IsNullOrWhiteSpace(request.Model))
+        {
+            arguments.Add("--model");
+            arguments.Add(request.Model.Trim());
+        }
+        arguments.Add(BuildGuardedPrompt(request));
+        return arguments;
+    }
+
+    public static string BuildOpenCodeConfiguration(AiAgentRequest request)
+    {
+        bool canModify = request.Permissions.HasFlag(AiWorkspacePermission.ModifyFiles);
+        bool canUseNetwork = request.Permissions.HasFlag(AiWorkspacePermission.NetworkAccess);
+        Dictionary<string, string> permissions = new(StringComparer.Ordinal)
+        {
+            ["*"] = "deny",
+            ["read"] = "allow",
+            ["glob"] = "allow",
+            ["grep"] = "allow",
+            ["list"] = "allow",
+            ["lsp"] = "allow",
+            ["edit"] = canModify ? "allow" : "deny",
+            ["bash"] = "deny",
+            ["external_directory"] = "deny",
+            ["webfetch"] = canUseNetwork ? "allow" : "deny",
+            ["websearch"] = canUseNetwork ? "allow" : "deny",
+            ["task"] = "deny"
+        };
+        return JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["permission"] = permissions,
+            ["share"] = "disabled"
+        });
+    }
+
     private async Task<AiAgentResult> RunCodexAsync(AiAgentRequest request, CancellationToken cancellationToken)
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
@@ -230,6 +280,62 @@ public sealed class AiIntegrationPlugin : IAiIntegrationPlugin
         return new AiAgentResult(
             process.ExitCode == 0,
             string.Join(Environment.NewLine + Environment.NewLine, messages.Distinct()),
+            error.Trim(),
+            process.ExitCode,
+            stopwatch.Elapsed);
+    }
+
+    private async Task<AiAgentResult> RunOpenCodeAsync(AiAgentRequest request, CancellationToken cancellationToken)
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = string.IsNullOrWhiteSpace(request.ExecutablePath) ? "opencode" : request.ExecutablePath.Trim(),
+            WorkingDirectory = Path.GetFullPath(request.RepositoryPath),
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        startInfo.Environment["OPENCODE_CONFIG_CONTENT"] = BuildOpenCodeConfiguration(request);
+        startInfo.Environment["OPENCODE_DISABLE_AUTOUPDATE"] = "true";
+        foreach (string argument in BuildOpenCodeArguments(request)) startInfo.ArgumentList.Add(argument);
+        using Process process = new() { StartInfo = startInfo };
+        try
+        {
+            if (!process.Start()) throw new InvalidOperationException("OpenCode CLI could not start.");
+        }
+        catch (Exception exception) when (exception is not InvalidOperationException)
+        {
+            return new AiAgentResult(false, string.Empty,
+                "OpenCode CLI was not found. Install it or configure its executable path. " + exception.Message,
+                -1, stopwatch.Elapsed);
+        }
+
+        List<string> messages = [];
+        List<string> fallbackOutput = [];
+        Task<string> errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        try
+        {
+            while (await process.StandardOutput.ReadLineAsync(cancellationToken) is { } line)
+            {
+                string? message = ExtractOpenCodeMessage(line);
+                if (!string.IsNullOrWhiteSpace(message)) messages.Add(message);
+                else if (!string.IsNullOrWhiteSpace(line) && !LooksLikeJson(line)) fallbackOutput.Add(line);
+            }
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(true);
+            throw;
+        }
+        string error = await errorTask;
+        stopwatch.Stop();
+        IReadOnlyList<string> output = messages.Count > 0 ? messages : fallbackOutput;
+        return new AiAgentResult(
+            process.ExitCode == 0,
+            string.Join(Environment.NewLine + Environment.NewLine, output.Distinct()),
             error.Trim(),
             process.ExitCode,
             stopwatch.Elapsed);
@@ -336,6 +442,44 @@ public sealed class AiIntegrationPlugin : IAiIntegrationPlugin
         {
             return null;
         }
+    }
+
+    public static string? ExtractOpenCodeMessage(string jsonLine)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(jsonLine);
+            JsonElement root = document.RootElement;
+            string? type = root.TryGetProperty("type", out JsonElement typeElement)
+                ? typeElement.GetString()
+                : null;
+            if (type is not ("text" or "message" or "assistant")) return null;
+            if (root.TryGetProperty("part", out JsonElement part) &&
+                part.ValueKind == JsonValueKind.Object &&
+                part.TryGetProperty("text", out JsonElement partText) &&
+                partText.ValueKind == JsonValueKind.String)
+                return partText.GetString();
+            if (root.TryGetProperty("text", out JsonElement text) && text.ValueKind == JsonValueKind.String)
+                return text.GetString();
+            if (root.TryGetProperty("message", out JsonElement message) && message.ValueKind == JsonValueKind.String)
+                return message.GetString();
+            if (root.TryGetProperty("data", out JsonElement data) &&
+                data.ValueKind == JsonValueKind.Object &&
+                data.TryGetProperty("text", out JsonElement dataText) &&
+                dataText.ValueKind == JsonValueKind.String)
+                return dataText.GetString();
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool LooksLikeJson(string value)
+    {
+        string trimmed = value.TrimStart();
+        return trimmed.StartsWith('{') || trimmed.StartsWith('[');
     }
 
     private static string ExtractResponsesApiText(string payload)

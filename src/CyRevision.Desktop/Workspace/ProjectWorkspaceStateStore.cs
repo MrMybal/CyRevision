@@ -8,7 +8,7 @@ internal sealed record ProjectWorkspaceState(
     string CodeRefreshFrequency,
     int ConsoleSection = 0,
     Dictionary<string, string>? CategoryTabs = null,
-    string TabVisibilityPreset = "Full workspace",
+    string TabVisibilityPreset = "Git essentials",
     List<string>? HiddenTabs = null,
     List<string>? HiddenChangeColumns = null,
     string ChangeSort = "Name",
@@ -29,9 +29,24 @@ internal sealed class ProjectWorkspaceStateStore
     }
 
     public ProjectWorkspaceState Get(Guid projectId) =>
-        _states.TryGetValue(projectId, out ProjectWorkspaceState? state)
+        TryGet(projectId, out ProjectWorkspaceState state)
             ? state
-            : new ProjectWorkspaceState(projectId, "ProjectWorkspaceTab", "Low · 5 min");
+            : CreateDefault(projectId);
+
+    public bool TryGet(Guid projectId, out ProjectWorkspaceState state)
+    {
+        if (_states.TryGetValue(projectId, out ProjectWorkspaceState? saved))
+        {
+            state = saved;
+            return true;
+        }
+
+        state = CreateDefault(projectId);
+        return false;
+    }
+
+    private static ProjectWorkspaceState CreateDefault(Guid projectId) =>
+        new(projectId, "ProjectWorkspaceTab", "Low · 5 min");
 
     public void Save(ProjectWorkspaceState state)
     {

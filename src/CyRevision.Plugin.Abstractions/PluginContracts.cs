@@ -992,6 +992,7 @@ public enum AiWorkspacePermission
 public enum AiProviderKind
 {
     CodexCli,
+    OpenCodeCli,
     OpenAiApi,
     OpenAiCompatibleApi,
     CodexLocalProvider

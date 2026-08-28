@@ -16,6 +16,7 @@ public sealed partial class BranchFileExplorerViewModel : ObservableObject, IDis
     private readonly FilePresentationService _filePresentationService;
     private readonly BranchFileWorkspaceStore _workspaceStore = new();
     private readonly GitBranch _branch;
+    private readonly string _cacheRoot;
     private CancellationTokenSource? _operationCancellation;
     private CancellationTokenSource? _previewCancellation;
     private IReadOnlyList<GitRevisionFile> _allFiles = [];
@@ -51,13 +52,17 @@ public sealed partial class BranchFileExplorerViewModel : ObservableObject, IDis
         FilePresentationService filePresentationService,
         string projectName,
         string repositoryPath,
-        GitBranch branch)
+        GitBranch branch,
+        string cacheDirectory)
     {
         _gitService = gitService;
         _codeWorkspaceService = codeWorkspaceService;
         _filePresentationService = filePresentationService.CreateProjectSnapshot();
         ProjectName = projectName;
         RepositoryPath = Path.GetFullPath(repositoryPath);
+        byte[] repositoryHash = SHA256.HashData(Encoding.UTF8.GetBytes(RepositoryPath));
+        string repositoryKey = Convert.ToHexString(repositoryHash.AsSpan(0, 8)).ToLowerInvariant();
+        _cacheRoot = Path.Combine(Path.GetFullPath(cacheDirectory), "branch-files", repositoryKey);
         _branch = branch;
         _revisionReference = branch.Name;
         (RemoteName, RemoteBranchName) = ResolveRemote(branch);
@@ -211,7 +216,7 @@ public sealed partial class BranchFileExplorerViewModel : ObservableObject, IDis
     {
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(RevisionReference));
         string referenceKey = Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
-        string root = Path.Combine(RepositoryPath, ".cyrevision", "cache", "branch-files", referenceKey);
+        string root = Path.Combine(_cacheRoot, referenceKey);
         if (!string.IsNullOrWhiteSpace(category)) root = Path.Combine(root, category);
         Directory.CreateDirectory(root);
         return Path.GetFullPath(root);
@@ -282,7 +287,7 @@ public sealed partial class BranchFileExplorerViewModel : ObservableObject, IDis
         }
         try
         {
-            await _workspaceStore.CleanupCacheAsync(RepositoryPath, null, cleanupTimeout.Token).ConfigureAwait(false);
+            await _workspaceStore.CleanupCacheAsync(_cacheRoot, null, cleanupTimeout.Token).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or OperationCanceledException)
         {

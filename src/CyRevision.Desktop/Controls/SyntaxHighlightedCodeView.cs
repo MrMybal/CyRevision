@@ -11,6 +11,7 @@ public sealed class SyntaxHighlightedCodeView : UserControl
 {
     private const int MaximumHighlightedCharacters = 96 * 1024;
     private const int MaximumHighlightedLines = 3_000;
+    private const double CodeLineHeight = 18;
     public static readonly StyledProperty<string> TextProperty = AvaloniaProperty.Register<SyntaxHighlightedCodeView, string>(
         nameof(Text), string.Empty);
 
@@ -43,10 +44,12 @@ public sealed class SyntaxHighlightedCodeView : UserControl
 
     public SyntaxHighlightedCodeView()
     {
+        UseLayoutRounding = true;
         _lineNumbers = new TextBlock
         {
             FontFamily = MonospaceFont(),
             FontSize = 11.5,
+            LineHeight = CodeLineHeight,
             Foreground = Brush("#606A7B"),
             TextAlignment = TextAlignment.Right,
             TextWrapping = TextWrapping.NoWrap,
@@ -57,6 +60,7 @@ public sealed class SyntaxHighlightedCodeView : UserControl
         {
             FontFamily = MonospaceFont(),
             FontSize = 11.5,
+            LineHeight = CodeLineHeight,
             Foreground = PlainBrush,
             TextWrapping = TextWrapping.NoWrap,
             Padding = new Thickness(10, 7, 24, 10),
@@ -227,8 +231,7 @@ public sealed class SyntaxHighlightedCodeView : UserControl
             _code.SelectionStart = selectionStart;
             _code.SelectionEnd = selectionEnd;
 
-            double estimatedLineHeight = _code.FontSize * 1.55;
-            double centeredOffset = (line - 1) * estimatedLineHeight - (_scrollViewer.Viewport.Height * 0.35);
+            double centeredOffset = (line - 1) * CodeLineHeight - (_scrollViewer.Viewport.Height * 0.35);
             _scrollViewer.Offset = new Vector(_scrollViewer.Offset.X, Math.Max(0, centeredOffset));
         }, DispatcherPriority.Background);
     }

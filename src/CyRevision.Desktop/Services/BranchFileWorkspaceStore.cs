@@ -66,17 +66,17 @@ public sealed class BranchFileWorkspaceStore
     }
 
     public Task CleanupCacheAsync(
-        string repositoryPath,
+        string cacheRoot,
         string? protectedDirectory = null,
         CancellationToken cancellationToken = default) =>
-        Task.Run(() => CleanupCache(repositoryPath, protectedDirectory, cancellationToken), cancellationToken);
+        Task.Run(() => CleanupCache(cacheRoot, protectedDirectory, cancellationToken), cancellationToken);
 
     private static void CleanupCache(
-        string repositoryPath,
+        string cacheRoot,
         string? protectedDirectory,
         CancellationToken cancellationToken)
     {
-        string root = Path.Combine(repositoryPath, ".cyrevision", "cache", "branch-files");
+        string root = Path.GetFullPath(cacheRoot);
         if (!Directory.Exists(root)) return;
         string? protectedPath = string.IsNullOrWhiteSpace(protectedDirectory)
             ? null

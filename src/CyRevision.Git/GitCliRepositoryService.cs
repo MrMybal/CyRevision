@@ -1553,6 +1553,70 @@ public sealed partial class GitCliRepositoryService : IGitRepositoryService
             ? result.StandardOutput.Trim()
             : null;
     }
+    public async Task<IReadOnlyList<GitRemoteInfo>> GetRemotesAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default)
+    {
+        string output = await RunGitAsync(repositoryPath, ["remote"], cancellationToken).ConfigureAwait(false);
+        string[] names = output.Split(
+            ['\r', '\n'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        List<GitRemoteInfo> remotes = new(names.Length);
+        foreach (string name in names.Distinct(StringComparer.Ordinal))
+        {
+            ValidateReferenceName(name);
+            Task<ProcessResult> fetchTask = RunGitResultAsync(
+                repositoryPath,
+                ["remote", "get-url", name],
+                cancellationToken);
+            Task<ProcessResult> pushTask = RunGitResultAsync(
+                repositoryPath,
+                ["remote", "get-url", "--push", name],
+                cancellationToken);
+            await Task.WhenAll(fetchTask, pushTask).ConfigureAwait(false);
+
+            ProcessResult fetch = await fetchTask.ConfigureAwait(false);
+            EnsureSuccess(fetch, $"Unable to read the fetch URL for remote '{name}'.");
+            string fetchUrl = fetch.StandardOutput.Trim();
+            ProcessResult push = await pushTask.ConfigureAwait(false);
+            string pushUrl = push.Succeeded && !string.IsNullOrWhiteSpace(push.StandardOutput)
+                ? push.StandardOutput.Trim()
+                : fetchUrl;
+            remotes.Add(new GitRemoteInfo(name, fetchUrl, pushUrl));
+        }
+
+        return remotes
+            .OrderBy(remote => remote.Name.Equals("origin", StringComparison.Ordinal) ? 0 : 1)
+            .ThenBy(remote => remote.Name, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    public Task SetRemotePushUrlAsync(
+        string repositoryPath,
+        string remoteName,
+        string pushUrl,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(remoteName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(pushUrl);
+        return RunGitWithoutOutputAsync(
+            repositoryPath,
+            ["remote", "set-url", "--push", remoteName, pushUrl.Trim()],
+            cancellationToken);
+    }
+
+    public Task RemoveRemoteAsync(
+        string repositoryPath,
+        string remoteName,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReferenceName(remoteName);
+        return RunGitWithoutOutputAsync(
+            repositoryPath,
+            ["remote", "remove", remoteName],
+            cancellationToken);
+    }
+
 
     public Task FetchAsync(string repositoryPath, CancellationToken cancellationToken = default) =>
         RunGitWithoutOutputAsync(repositoryPath, ["fetch", "--all", "--prune"], cancellationToken);

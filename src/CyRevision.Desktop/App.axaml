@@ -3,6 +3,20 @@
              x:Class="CyRevision.Desktop.App"
              RequestedThemeVariant="Dark">
 
+    <Application.Resources>
+        <SolidColorBrush x:Key="CyBackgroundBrush" Color="#1E1F22" />
+        <SolidColorBrush x:Key="CySurfaceBrush" Color="#2B2D30" />
+        <SolidColorBrush x:Key="CySurfaceAltBrush" Color="#242529" />
+        <SolidColorBrush x:Key="CyCardBrush" Color="#26282B" />
+        <SolidColorBrush x:Key="CyBorderBrush" Color="#393B40" />
+        <SolidColorBrush x:Key="CyForegroundBrush" Color="#DFE1E5" />
+        <SolidColorBrush x:Key="CyForegroundStrongBrush" Color="#F2F3F5" />
+        <SolidColorBrush x:Key="CyMutedForegroundBrush" Color="#9B9DA3" />
+        <SolidColorBrush x:Key="CyAccentBrush" Color="#78D7B7" />
+        <SolidColorBrush x:Key="CyAccentBrightBrush" Color="#7DE2CC" />
+        <SolidColorBrush x:Key="CyAccentStrongBrush" Color="#3BAA96" />
+        <SolidColorBrush x:Key="CyAccentMutedBrush" Color="#203D50" />
+    </Application.Resources>
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
