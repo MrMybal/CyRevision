@@ -182,6 +182,7 @@ public partial class MainWindow : Window
     private DesktopBehaviorPreferences _desktopBehaviorPreferences = DesktopBehaviorPreferences.Default;
     private ApplicationPreferences _applicationPreferences = ApplicationPreferences.Default;
     private string _activeCacheDirectory = ApplicationPaths.CreateDefault().CacheDirectory;
+    private string _configurationDirectory = ApplicationPaths.CreateDefault().ConfigurationDirectory;
 
     public bool StartHidden { get; set; }
 
@@ -198,6 +199,7 @@ public partial class MainWindow : Window
         string configurationDirectory) : this()
     {
         _viewModel = viewModel;
+        _configurationDirectory = configurationDirectory;
         DataContext = viewModel;
         _viewModel.UnrealBuildLogLines.CollectionChanged += OnUnrealBuildLogLinesChanged;
         _viewModel.AiChatMessages.CollectionChanged += OnAiChatMessagesChanged;
@@ -3475,8 +3477,14 @@ public partial class MainWindow : Window
 
     private async void OnShowSelectedFileSyncHistoryClick(object? sender, RoutedEventArgs e)
     {
-        if (_viewModel.SelectedCodeNode is not { IsDirectory: false, IsPlaceholder: false } node) return;
-        await _viewModel.FilterSyncHistoryForFileAsync(node.RelativePath);
+        string? relativePath = GetSelectedSolutionFilePath();
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            _viewModel.ReportFileHistoryIssue("Select a file before opening Sync history.");
+            return;
+        }
+
+        await _viewModel.FilterSyncHistoryForFileAsync(relativePath);
         if (_viewModel.SelectedProject?.Definition.Features.PeerSyncEnabled == true)
         {
             NavigateToWorkspace(SynchronizationWorkspaceTab);

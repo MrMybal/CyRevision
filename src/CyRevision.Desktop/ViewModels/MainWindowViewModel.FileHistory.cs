@@ -4,6 +4,11 @@ namespace CyRevision.Desktop.ViewModels;
 
 public sealed partial class MainWindowViewModel
 {
+    public void ReportFileHistoryIssue(string message)
+    {
+        StatusMessage = message;
+    }
+
     public Task<IReadOnlyList<GitFileRevision>> LoadProjectFileHistoryAsync(
         ProjectItemViewModel project,
         string relativePath,

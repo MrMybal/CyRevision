@@ -21,6 +21,31 @@
         <Style Selector="TextBlock.muted">
             <Setter Property="Foreground" Value="{DynamicResource CyMutedForegroundBrush}" />
         </Style>
+        <Style Selector="DataGrid.fileHistoryGrid">
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="RowHeaderWidth" Value="0" />
+        </Style>
+        <Style Selector="DataGrid.fileHistoryGrid DataGridRow">
+            <Setter Property="MinHeight" Value="31" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="DataGrid.fileHistoryGrid DataGridCell">
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="DataGrid.fileHistoryGrid DataGridCell TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style Selector="DataGrid.fileHistoryGrid DataGridColumnHeader">
+            <Setter Property="Height" Value="31" />
+            <Setter Property="MinHeight" Value="31" />
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
     </Window.Styles>
 
     <Grid RowDefinitions="64,*">
@@ -58,7 +83,10 @@
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <ProgressBar x:Name="LoadingProgress" Width="150" Height="4"
+                                <Button x:Name="ColumnsButton" Classes="secondary" Content="Columns"
+                                        Click="OnColumnsClick"
+                                        ToolTip.Tip="Choose visible columns; drag headers to reorder and resize them" />
+                                <ProgressBar x:Name="LoadingProgress" Width="130" Height="4"
                                              IsIndeterminate="True" IsVisible="False" />
                                 <TextBlock Text="LFS metadata only" Foreground="{DynamicResource CyAccentBrush}" FontSize="9.5"
                                            ToolTip.Tip="Browsing history reads Git LFS pointer metadata and does not download historical asset payloads." />
@@ -66,29 +94,37 @@
                         </Grid>
                     </Border>
 
-                    <DataGrid x:Name="HistoryGrid" Grid.Row="1"
+                    <DataGrid x:Name="HistoryGrid" Grid.Row="1" Classes="fileHistoryGrid"
                               AutoGenerateColumns="False" IsReadOnly="True"
+                              CanUserResizeColumns="True" CanUserReorderColumns="True" CanUserSortColumns="True"
+                              ColumnReordered="OnHistoryColumnReordered"
                               GridLinesVisibility="Horizontal" BorderThickness="0"
                               Background="#151A22" SelectionMode="Single"
                               SelectionChanged="OnHistorySelectionChanged"
                               ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              ToolTip.Tip="Drag headers to reorder or resize. Right-click for visible columns.">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Commit" Binding="{Binding Commit}" Width="92" />
-                            <DataGridTextColumn Header="Author" Binding="{Binding Author}" Width="155" />
-                            <DataGridTextColumn Header="Date" Binding="{Binding Date}" Width="142" />
-                            <DataGridTemplateColumn Header="Change" SortMemberPath="Change" Width="86">
+                            <DataGridTextColumn Header="Commit" Tag="Commit" Binding="{Binding Commit}"
+                                                SortMemberPath="Revision.Hash" Width="102" MinWidth="72" />
+                            <DataGridTextColumn Header="Author" Tag="Author" Binding="{Binding Author}"
+                                                SortMemberPath="Revision.AuthorName" Width="158" MinWidth="80" />
+                            <DataGridTextColumn Header="Date" Tag="Date" Binding="{Binding Date}"
+                                                SortMemberPath="Revision.AuthoredAt" Width="148" MinWidth="105" />
+                            <DataGridTemplateColumn Header="Change" Tag="Change" SortMemberPath="Change" Width="90" MinWidth="70">
                                 <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                     <TextBlock Text="{Binding Change}" Foreground="{Binding ChangeColor}" />
                                 </DataTemplate></DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="Storage" SortMemberPath="Storage" Width="92">
+                            <DataGridTemplateColumn Header="Storage" Tag="Storage" SortMemberPath="Storage" Width="96" MinWidth="75">
                                 <DataGridTemplateColumn.CellTemplate><DataTemplate>
                                     <TextBlock Text="{Binding Storage}" Foreground="{Binding StorageColor}" />
                                 </DataTemplate></DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="82" />
-                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" MinWidth="260" />
+                            <DataGridTextColumn Header="Size" Tag="Size" Binding="{Binding Size}"
+                                                SortMemberPath="Entry.LfsPointer.Size" Width="88" MinWidth="66" />
+                            <DataGridTextColumn Header="Message" Tag="Message" Binding="{Binding Message}"
+                                                SortMemberPath="Message" Width="*" MinWidth="220" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
