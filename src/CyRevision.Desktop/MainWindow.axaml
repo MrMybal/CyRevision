@@ -1674,10 +1674,16 @@
                                                 <TextBlock Text="{Binding CodePreviewSummary}" Classes="muted" FontSize="9"
                                                            TextTrimming="CharacterEllipsis" />
                                             </StackPanel>
-                                            <Button Grid.Column="1" Classes="secondary" Content="AI summary"
-                                                    Click="OnGenerateAiCodeSummaryClick"
-                                                    IsEnabled="{Binding CanGenerateAiCodeSummary}"
-                                                    ToolTip.Tip="Summarize the selected file with the connected project AI" />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7">
+                                                <Button Classes="secondary" Content="Git / LFS history"
+                                                        Click="OnShowSelectedCodeFileGitHistoryClick"
+                                                        IsVisible="{Binding IsGitProject}"
+                                                        ToolTip.Tip="Open the selected file history in a dedicated window" />
+                                                <Button Classes="secondary" Content="AI summary"
+                                                        Click="OnGenerateAiCodeSummaryClick"
+                                                        IsEnabled="{Binding CanGenerateAiCodeSummary}"
+                                                        ToolTip.Tip="Summarize the selected file with the connected project AI" />
+                                            </StackPanel>
                                         </Grid>
                                     </Border>
                                     <Border Grid.Row="1" IsVisible="{Binding HasCodeAiSummary}"

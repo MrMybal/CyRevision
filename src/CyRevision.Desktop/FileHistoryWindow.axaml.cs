@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using CyRevision.Desktop.ViewModels;
+using CyRevision.Desktop.Workspace;
 using CyRevision.Git;
 
 namespace CyRevision.Desktop;
@@ -13,6 +14,11 @@ public partial class FileHistoryWindow : Window
     private IReadOnlyList<FileHistoryRow> _rows = [];
     private CancellationTokenSource? _loadCancellation;
     private CommitExplorerWindow? _commitExplorerWindow;
+    private FileHistoryColumnPreferencesStore? _columnPreferencesStore;
+    private ContextMenu? _columnsMenu;
+    private ContextMenu? _gridColumnsMenu;
+    private readonly Dictionary<string, DataGridLength> _defaultColumnWidths = new(StringComparer.Ordinal);
+    private bool _restoringColumnPreferences;
 
     public FileHistoryWindow()
     {
@@ -22,18 +28,232 @@ public partial class FileHistoryWindow : Window
     public FileHistoryWindow(
         MainWindowViewModel viewModel,
         ProjectItemViewModel project,
-        string relativePath) : this()
+        string relativePath,
+        string configurationDirectory) : this()
     {
         _viewModel = viewModel;
         _project = project;
         _relativePath = relativePath.Replace('\\', '/');
+        _columnPreferencesStore = new FileHistoryColumnPreferencesStore(configurationDirectory);
         Title = $"CyRevision — {System.IO.Path.GetFileName(_relativePath)} history";
         WindowTitleBlock.Text = $"{project.Name} · {System.IO.Path.GetFileName(_relativePath)}";
         PathBlock.Text = _relativePath;
         StatusBlock.Text = "Loading Git history and LFS pointer metadata…";
+        ConfigureColumnPreferences();
+        RestoreColumnPreferences();
         Opened += OnWindowOpened;
         Closed += OnWindowClosed;
     }
+
+    public bool IsShowing(ProjectItemViewModel project, string relativePath) =>
+        _project?.Id == project.Id &&
+        string.Equals(
+            _relativePath,
+            relativePath.Replace('\\', '/'),
+            StringComparison.OrdinalIgnoreCase);
+
+    private void ConfigureColumnPreferences()
+    {
+        _defaultColumnWidths.Clear();
+        for (int index = 0; index < HistoryGrid.Columns.Count; index++)
+        {
+            DataGridColumn column = HistoryGrid.Columns[index];
+            _defaultColumnWidths[ColumnKey(column, index)] = column.Width;
+        }
+
+        _columnsMenu = CreateColumnsMenu();
+        _gridColumnsMenu = CreateColumnsMenu();
+        ColumnsButton.ContextMenu = _columnsMenu;
+        HistoryGrid.ContextMenu = _gridColumnsMenu;
+    }
+
+    private ContextMenu CreateColumnsMenu()
+    {
+        MenuItem visibleColumns = new() { Header = "Visible columns" };
+        for (int index = 0; index < HistoryGrid.Columns.Count; index++)
+        {
+            DataGridColumn column = HistoryGrid.Columns[index];
+            string key = ColumnKey(column, index);
+            MenuItem item = new()
+            {
+                Header = key == "Commit" ? "Commit (always visible)" : key,
+                ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked = column.IsVisible,
+                IsEnabled = key != "Commit",
+                Tag = column
+            };
+            item.Click += OnColumnVisibilityClick;
+            visibleColumns.Items.Add(item);
+        }
+
+        MenuItem reset = new() { Header = "Reset columns" };
+        reset.Click += OnResetColumnsClick;
+        ContextMenu menu = new()
+        {
+            ItemsSource = new object[] { visibleColumns, new Separator(), reset }
+        };
+        menu.Opened += (_, _) => SyncColumnMenuChecks();
+        return menu;
+    }
+    private void RestoreColumnPreferences()
+    {
+        if (_columnPreferencesStore is null || _project is null)
+        {
+            return;
+        }
+
+        Dictionary<string, FileHistoryColumnPreference> saved = _columnPreferencesStore.Load(_project.Id)
+            .GroupBy(item => item.Key, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+        if (saved.Count == 0)
+        {
+            return;
+        }
+
+        _restoringColumnPreferences = true;
+        try
+        {
+            DataGridColumn[] declarationOrder = HistoryGrid.Columns.ToArray();
+            for (int index = 0; index < declarationOrder.Length; index++)
+            {
+                DataGridColumn column = declarationOrder[index];
+                string key = ColumnKey(column, index);
+                if (!saved.TryGetValue(key, out FileHistoryColumnPreference? preference))
+                {
+                    continue;
+                }
+
+                column.IsVisible = key == "Commit" || preference.IsVisible;
+                if (double.IsFinite(preference.Width) && preference.Width >= column.MinWidth)
+                {
+                    column.Width = new DataGridLength(preference.Width);
+                }
+            }
+
+            DataGridColumn[] displayOrder = declarationOrder
+                .Select((column, index) => new
+                {
+                    Column = column,
+                    Index = index,
+                    Preference = saved.GetValueOrDefault(ColumnKey(column, index))
+                })
+                .OrderBy(item => item.Preference?.DisplayIndex ?? item.Index)
+                .ThenBy(item => item.Index)
+                .Select(item => item.Column)
+                .ToArray();
+            for (int displayIndex = 0; displayIndex < displayOrder.Length; displayIndex++)
+            {
+                displayOrder[displayIndex].DisplayIndex = displayIndex;
+            }
+        }
+        finally
+        {
+            _restoringColumnPreferences = false;
+        }
+
+        SyncColumnMenuChecks();
+    }
+
+    private void SaveColumnPreferences()
+    {
+        if (_restoringColumnPreferences || _columnPreferencesStore is null || _project is null)
+        {
+            return;
+        }
+
+        Dictionary<string, FileHistoryColumnPreference> previous = _columnPreferencesStore.Load(_project.Id)
+            .GroupBy(item => item.Key, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+        FileHistoryColumnPreference[] preferences = HistoryGrid.Columns
+            .Select((column, index) =>
+            {
+                string key = ColumnKey(column, index);
+                double width = column.ActualWidth;
+                if (!double.IsFinite(width) || width < column.MinWidth)
+                {
+                    width = previous.GetValueOrDefault(key)?.Width ?? Math.Max(column.MinWidth, 80);
+                }
+
+                return new FileHistoryColumnPreference(
+                    key,
+                    column.DisplayIndex,
+                    width,
+                    key == "Commit" || column.IsVisible);
+            })
+            .OrderBy(item => item.DisplayIndex)
+            .ToArray();
+        _columnPreferencesStore.Save(_project.Id, preferences);
+    }
+
+    private void OnColumnsClick(object? sender, RoutedEventArgs e)
+    {
+        SyncColumnMenuChecks();
+        _columnsMenu?.Open(ColumnsButton);
+    }
+
+    private void OnColumnVisibilityClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: DataGridColumn column } item)
+        {
+            return;
+        }
+
+        string key = ColumnKey(column, HistoryGrid.Columns.IndexOf(column));
+        column.IsVisible = key == "Commit" || item.IsChecked == true;
+        SyncColumnMenuChecks();
+        SaveColumnPreferences();
+    }
+
+    private void OnHistoryColumnReordered(object? sender, DataGridColumnEventArgs e) =>
+        SaveColumnPreferences();
+
+    private void OnResetColumnsClick(object? sender, RoutedEventArgs e)
+    {
+        _restoringColumnPreferences = true;
+        try
+        {
+            for (int index = 0; index < HistoryGrid.Columns.Count; index++)
+            {
+                DataGridColumn column = HistoryGrid.Columns[index];
+                string key = ColumnKey(column, index);
+                column.IsVisible = true;
+                column.DisplayIndex = index;
+                if (_defaultColumnWidths.TryGetValue(key, out DataGridLength width))
+                {
+                    column.Width = width;
+                }
+            }
+        }
+        finally
+        {
+            _restoringColumnPreferences = false;
+        }
+
+        SyncColumnMenuChecks();
+        SaveColumnPreferences();
+    }
+
+    private void SyncColumnMenuChecks()
+    {
+        foreach (ContextMenu menu in new[] { _columnsMenu, _gridColumnsMenu }.OfType<ContextMenu>())
+        {
+            if (menu.Items.OfType<MenuItem>().FirstOrDefault() is not { } root)
+            {
+                continue;
+            }
+
+            foreach (MenuItem item in root.Items.OfType<MenuItem>())
+            {
+                if (item.Tag is DataGridColumn column)
+                {
+                    item.IsChecked = column.IsVisible;
+                }
+            }
+        }
+    }
+
+    private static string ColumnKey(DataGridColumn column, int index) =>
+        column.Tag as string ?? column.Header?.ToString() ?? $"Column {index + 1}";
 
     private async void OnWindowOpened(object? sender, EventArgs e)
     {
@@ -172,6 +392,7 @@ public partial class FileHistoryWindow : Window
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {
+        SaveColumnPreferences();
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
         _loadCancellation = null;
