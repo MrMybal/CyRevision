@@ -64,7 +64,7 @@ Publication Windows :
 Création locale d'un installateur Windows autonome et d'une archive portable :
 
 ```powershell
-./scripts/build-release.cmd 0.1.22
+./scripts/build-release.cmd 0.1.23
 ```
 
 Les paquets Linux (`.deb`) et macOS (`.dmg`) natifs sont construits par le workflow GitHub Actions multiplateforme. Ils peuvent aussi être créés sur leur système natif avec `scripts/build-linux-release.sh` et `scripts/build-macos-release.sh`. Consultez [Créer une release](docs/releasing.md).

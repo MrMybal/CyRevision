@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.23 Alpha — 2026-08-29
+
+- fixed Solution Explorer contextual Git/LFS history so the selected file reliably opens in a dedicated, reusable revision window with commit, author, change, message and LFS pointer details;
+- added movable, resizable, sortable and configurable file-history columns, with consistent header/cell alignment, per-project persistence, right-click visibility controls and a safe reset action.
+
 ## 0.1.22 Alpha — 2026-08-28
 
 - added repository-aware Git settings in Overview with remote discovery, add/update/remove actions, provider information, and direct access to remote pages;
