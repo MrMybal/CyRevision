@@ -138,4 +138,26 @@ public sealed class FileSystemBackupServiceTests : IDisposable
 
         Directory.Delete(_root, true);
     }
+
+    [Theory]
+    [InlineData(RetentionMode.Timeline, 2)]
+    [InlineData(RetentionMode.LimitedVersions, 2)]
+    [InlineData(RetentionMode.Permanent, 4)]
+    public async Task VersionLimitAppliesToTimelineButNeverToPermanentRetention(RetentionMode mode, int expected)
+    {
+        string source = Path.Combine(_root, "count-source");
+        Directory.CreateDirectory(source);
+        FileSystemBackupService service = new(new BackupStoreOptions(Path.Combine(_root, "count-store")));
+        Guid project = Guid.NewGuid();
+        for (int i = 0; i < 4; i++)
+        {
+            await File.WriteAllTextAsync(Path.Combine(source, "data.txt"), "version " + i);
+            await service.CreateSnapshotAsync(project, source, new RetentionPolicy(mode, 2, TimeSpan.FromDays(90)));
+        }
+        IReadOnlyList<BackupSnapshot> snapshots = await service.GetSnapshotsAsync(project);
+        Assert.Equal(expected, snapshots.Count);
+        string restore = Path.Combine(_root, "count-restore");
+        await service.RestoreSnapshotAsync(snapshots[0].SnapshotId, restore);
+        Assert.Equal("version 3", await File.ReadAllTextAsync(Path.Combine(restore, "data.txt")));
+    }
 }

@@ -238,7 +238,8 @@ public sealed class ManagedSyncthingEngine : ISyncEngine, IAsyncDisposable
         if (!File.Exists(configPath))
         {
             ProcessResult generation = await RunSyncthingUtilityAsync(
-                ["generate", "--config=" + Path.GetFullPath(_options.ConfigurationDirectory)],
+                ["generate", "--config=" + Path.GetFullPath(_options.ConfigurationDirectory),
+                    "--data=" + Path.GetFullPath(_options.DataDirectory)],
                 cancellationToken);
             if (!generation.Succeeded)
             {

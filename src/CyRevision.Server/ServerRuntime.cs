@@ -11,6 +11,14 @@ namespace CyRevision.Server;
 
 public sealed class ServerRuntime : IAsyncDisposable
 {
+    public static bool SupportsPreset(ProjectPresetKind kind) =>
+        kind != ProjectPresetKind.SyncWithCommits && ProjectPresets.All.Any(preset => preset.Kind == kind);
+
+    public static void RequireSupportedPreset(ProjectPresetKind? kind)
+    {
+        if (kind is { } value && !SupportsPreset(value))
+            throw new InvalidOperationException("Sync + Commit is currently desktop-only. The server cannot run it as continuous folder Sync.");
+    }
     private readonly ServerOptions _options;
     private readonly IProjectCatalog _catalog;
     private readonly IGitRepositoryService _git;
@@ -47,6 +55,7 @@ public sealed class ServerRuntime : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
+        RequireSupportedPreset(request.Preset);
         ProjectPreset preset = ProjectPresets.All.FirstOrDefault(item => item.Kind == request.Preset)
                                ?? throw new ArgumentException("Unsupported project preset.", nameof(request));
         string path = string.IsNullOrWhiteSpace(request.ExistingPath)
@@ -78,7 +87,8 @@ public sealed class ServerRuntime : IAsyncDisposable
             preset.Retention,
             CreatedAt: now,
             LastOpenedAt: now,
-            BackupStorePath: Path.Combine(_options.BackupDirectory, SanitizeDirectoryName(request.Name)));
+            BackupStorePath: Path.Combine(_options.BackupDirectory, SanitizeDirectoryName(request.Name)),
+            OperatingMode: preset.Kind);
         await _catalog.UpsertAsync(project, cancellationToken);
         return project;
     }
@@ -137,6 +147,7 @@ public sealed class ServerRuntime : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ProjectDefinition project = await GetProjectAsync(projectId, cancellationToken);
+        RequireSupportedPreset(project.OperatingMode);
         await StopSyncAsync(projectId, cancellationToken);
         return await _syncProfiles.CreateOrUpdateAsync(
             project.Id,
@@ -148,6 +159,7 @@ public sealed class ServerRuntime : IAsyncDisposable
     public async Task<SyncEngineStatus> StartSyncAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         ProjectDefinition project = await GetProjectAsync(projectId, cancellationToken);
+        RequireSupportedPreset(project.OperatingMode);
         if (!project.Features.PeerSyncEnabled)
         {
             throw new InvalidOperationException("Synchronization is disabled for this project profile.");
@@ -155,6 +167,13 @@ public sealed class ServerRuntime : IAsyncDisposable
 
         SyncthingProfile profile = await _syncProfiles.GetAsync(projectId, cancellationToken)
                                     ?? throw new InvalidOperationException("Configure the Syncthing executable first.");
+        string folderId = "cyrevision-" + project.SyncProjectId.ToString("N");
+        string exchange = ResolveExchangeDirectory(project);
+        if (profile.FolderId != folderId || profile.ExchangeDirectory != exchange)
+        {
+            await StopSyncAsync(projectId, cancellationToken);
+            profile = await _syncProfiles.SaveAsync(profile with { FolderId = folderId, ExchangeDirectory = exchange }, cancellationToken);
+        }
         ManagedSyncthingEngine engine = _syncEngines.GetOrAdd(projectId, _ => new ManagedSyncthingEngine(profile.ToIsolationOptions()));
         await engine.StartAsync(cancellationToken);
         await ConfigureFolderAsync(project, profile, [], cancellationToken);
@@ -318,7 +337,7 @@ public sealed class ServerRuntime : IAsyncDisposable
         (ProjectDefinition project, SyncthingProfile _, ManagedSyncthingEngine engine) = await GetRunningSyncContextAsync(projectId, cancellationToken);
         using FileDeviceIdentityStore identity = await OpenLocalIdentityAsync(project, engine.DeviceId, cancellationToken);
         JsonPeerAdmissionService admission = CreateAdmissionService(project.Id, identity);
-        return await admission.CreateInvitationAsync(project.Id, role, TimeSpan.FromHours(24), cancellationToken);
+        return await admission.CreateInvitationAsync(project.SyncProjectId, role, TimeSpan.FromHours(24), cancellationToken);
     }
 
     public async Task<string> PrepareJoinRequestAsync(
@@ -329,13 +348,17 @@ public sealed class ServerRuntime : IAsyncDisposable
     {
         (ProjectDefinition project, SyncthingProfile _, ManagedSyncthingEngine engine) = await GetRunningSyncContextAsync(projectId, cancellationToken);
         PeerInvitationOffer offer = PeerExchangeCodec.ImportInvitation(invitationText);
-        if (offer.Invitation.ProjectId != project.Id || string.IsNullOrWhiteSpace(verificationCode))
+        PeerProjectAssociation.ValidateInvitation(project, offer);
+        if (string.IsNullOrWhiteSpace(verificationCode))
         {
             throw new InvalidOperationException("The invitation or out-of-band verification code is invalid.");
         }
 
         using FileDeviceIdentityStore identity = await OpenLocalIdentityAsync(project, engine.DeviceId, cancellationToken);
         string pendingPath = GetPendingInvitationPath(project.Id);
+        if (offer.Invitation.ProjectId != project.SyncProjectId &&
+            (await CreateAdmissionService(project.Id, identity).GetMembersAsync(project.SyncProjectId, cancellationToken)).Count > 0)
+            throw new InvalidOperationException("Join this invitation in a separate local project; this project already has members.");
         Directory.CreateDirectory(Path.GetDirectoryName(pendingPath)!);
         await File.WriteAllTextAsync(
             pendingPath,
@@ -355,7 +378,7 @@ public sealed class ServerRuntime : IAsyncDisposable
     {
         (ProjectDefinition project, SyncthingProfile profile, ManagedSyncthingEngine engine) = await GetRunningSyncContextAsync(projectId, cancellationToken);
         PeerJoinRequest request = PeerExchangeCodec.ImportJoinRequest(joinRequestText);
-        if (request.InvitationOffer.Invitation.ProjectId != project.Id)
+        if (request.InvitationOffer.Invitation.ProjectId != project.SyncProjectId)
         {
             throw new InvalidOperationException("The join request targets another project.");
         }
@@ -386,7 +409,7 @@ public sealed class ServerRuntime : IAsyncDisposable
 
         using SyncthingApiClient api = new(profile.ApiEndpoint, profile.ApiKey);
         await api.PutDeviceAsync(new SyncthingDeviceConfiguration(request.Device.SyncthingDeviceId, request.Device.DisplayName), cancellationToken);
-        IReadOnlyList<MembershipCertificate> members = await admission.GetMembersAsync(project.Id, cancellationToken);
+        IReadOnlyList<MembershipCertificate> members = await admission.GetMembersAsync(project.SyncProjectId, cancellationToken);
         await ConfigureFolderAsync(project, profile, members.Select(member => member.Device.SyncthingDeviceId).ToArray(), cancellationToken);
         return PeerExchangeCodec.ExportMembershipGrant(grant);
     }
@@ -405,31 +428,23 @@ public sealed class ServerRuntime : IAsyncDisposable
 
         PeerMembershipGrant grant = PeerExchangeCodec.ImportMembershipGrant(grantText);
         PeerInvitationOffer pending = PeerExchangeCodec.ImportInvitation(await File.ReadAllTextAsync(pendingPath, cancellationToken));
-        bool expectedIssuer = pending.IssuerIdentity.DeviceId == grant.IssuerIdentity.DeviceId &&
-                              string.Equals(pending.IssuerIdentity.SigningPublicKey, grant.IssuerIdentity.SigningPublicKey, StringComparison.Ordinal);
-        if (grant.Certificate.ProjectId != project.Id ||
-            grant.InvitationId != pending.Invitation.InvitationId ||
-            !expectedIssuer ||
-            !PeerExchangeCodec.VerifyGrant(grant))
-        {
-            throw new UnauthorizedAccessException("The membership grant is invalid.");
-        }
-
         using FileDeviceIdentityStore localIdentity = await OpenLocalIdentityAsync(project, engine.DeviceId, cancellationToken);
-        if (grant.Certificate.Device.DeviceId != localIdentity.Identity.DeviceId)
-        {
-            throw new UnauthorizedAccessException("The membership grant belongs to another device.");
-        }
+        project = PeerProjectAssociation.AcceptGrant(project, pending, grant, localIdentity.Identity);
+        await _catalog.UpsertAsync(project, cancellationToken);
+        string previousFolderId = profile.FolderId;
+        profile = await _syncProfiles.SaveAsync(profile with { FolderId = "cyrevision-" + project.SyncProjectId.ToString("N") }, cancellationToken);
 
         string localGrantPath = GetLocalGrantPath(project.Id);
         Directory.CreateDirectory(Path.GetDirectoryName(localGrantPath)!);
         await File.WriteAllTextAsync(localGrantPath, grantText, cancellationToken);
-        File.Delete(pendingPath);
         using SyncthingApiClient api = new(profile.ApiEndpoint, profile.ApiKey);
+        if (previousFolderId != profile.FolderId)
+            await api.DeleteFolderAsync(previousFolderId, cancellationToken);
         await api.PutDeviceAsync(new SyncthingDeviceConfiguration(
             grant.IssuerIdentity.SyncthingDeviceId,
             grant.IssuerIdentity.DisplayName), cancellationToken);
         await ConfigureFolderAsync(project, profile, [grant.IssuerIdentity.SyncthingDeviceId], cancellationToken);
+        File.Delete(pendingPath);
         return grant.Certificate;
     }
 
@@ -439,7 +454,7 @@ public sealed class ServerRuntime : IAsyncDisposable
     {
         (ProjectDefinition project, _, ManagedSyncthingEngine engine) = await GetRunningSyncContextAsync(projectId, cancellationToken);
         using FileDeviceIdentityStore identity = await OpenLocalIdentityAsync(project, engine.DeviceId, cancellationToken);
-        return await CreateAdmissionService(project.Id, identity).GetMembersAsync(project.Id, cancellationToken);
+        return await CreateAdmissionService(project.Id, identity).GetMembersAsync(project.SyncProjectId, cancellationToken);
     }
 
     public async Task RevokePeerAsync(
@@ -450,14 +465,14 @@ public sealed class ServerRuntime : IAsyncDisposable
         (ProjectDefinition project, SyncthingProfile profile, ManagedSyncthingEngine engine) = await GetRunningSyncContextAsync(projectId, cancellationToken);
         using FileDeviceIdentityStore identity = await OpenLocalIdentityAsync(project, engine.DeviceId, cancellationToken);
         JsonPeerAdmissionService admission = CreateAdmissionService(project.Id, identity);
-        IReadOnlyList<MembershipCertificate> before = await admission.GetMembersAsync(project.Id, cancellationToken);
+        IReadOnlyList<MembershipCertificate> before = await admission.GetMembersAsync(project.SyncProjectId, cancellationToken);
         MembershipCertificate member = before.FirstOrDefault(item => item.Device.DeviceId == deviceId)
                                        ?? throw new KeyNotFoundException("The peer is not an active member.");
-        await admission.RevokeDeviceAsync(project.Id, deviceId, cancellationToken);
+        await admission.RevokeDeviceAsync(project.SyncProjectId, deviceId, cancellationToken);
         File.Delete(Path.Combine(profile.ExchangeDirectory, "members", deviceId.ToString("N") + ".json"));
         using SyncthingApiClient api = new(profile.ApiEndpoint, profile.ApiKey);
         await api.DeleteDeviceAsync(member.Device.SyncthingDeviceId, cancellationToken);
-        IReadOnlyList<MembershipCertificate> remaining = await admission.GetMembersAsync(project.Id, cancellationToken);
+        IReadOnlyList<MembershipCertificate> remaining = await admission.GetMembersAsync(project.SyncProjectId, cancellationToken);
         await ConfigureFolderAsync(project, profile, remaining.Select(item => item.Device.SyncthingDeviceId).ToArray(), cancellationToken);
     }
 
@@ -481,7 +496,7 @@ public sealed class ServerRuntime : IAsyncDisposable
             recentVersionCount,
             50L * 1024 * 1024 * 1024);
         GitPeerExportResult exported = await _gitExchange.ExportDetailedAsync(
-            project.Id,
+            project.SyncProjectId,
             project.RootPath,
             profile.ExchangeDirectory,
             identity,
@@ -489,10 +504,10 @@ public sealed class ServerRuntime : IAsyncDisposable
             options,
             cancellationToken);
         GitPeerExchangeResult imported = await _gitExchange.ImportDetailedAsync(
-            project.Id,
+            project.SyncProjectId,
             project.RootPath,
             profile.ExchangeDirectory,
-            Path.Combine(_options.DataDirectory, "git-exchange-state", project.Id.ToString("N")),
+            ProjectSyncPolicy.ResolveStateDirectory(project, _options.DataDirectory, "git-exchange-state"),
             authorized,
             identity.Identity.DeviceId,
             options,
@@ -543,14 +558,25 @@ public sealed class ServerRuntime : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         string folderType = "sendreceive";
+        HashSet<string> sharedDevices = new(deviceIds, StringComparer.Ordinal);
         string grantPath = GetLocalGrantPath(project.Id);
         if (File.Exists(grantPath))
         {
             PeerMembershipGrant grant = PeerExchangeCodec.ImportMembershipGrant(await File.ReadAllTextAsync(grantPath, cancellationToken));
+            if (grant.Certificate.ProjectId != project.SyncProjectId || !PeerExchangeCodec.VerifyGrant(grant))
+                throw new UnauthorizedAccessException("The stored Sync membership grant is invalid.");
+            sharedDevices.Add(grant.IssuerIdentity.SyncthingDeviceId);
             if (grant.Certificate.Role is PeerRole.ReadOnly or PeerRole.Backup or PeerRole.EncryptedArchive)
             {
                 folderType = "receiveonly";
             }
+        }
+        if (_syncEngines.TryGetValue(project.Id, out ManagedSyncthingEngine? engine))
+        {
+            using FileDeviceIdentityStore identity = await OpenLocalIdentityAsync(project, engine.DeviceId, cancellationToken);
+            JsonPeerAdmissionService admission = CreateAdmissionService(project.Id, identity);
+            foreach (MembershipCertificate member in await admission.GetMembersAsync(project.SyncProjectId, cancellationToken))
+                if (admission.VerifyCertificate(member)) sharedDevices.Add(member.Device.SyncthingDeviceId);
         }
 
         using SyncthingApiClient api = new(profile.ApiEndpoint, profile.ApiKey);
@@ -558,7 +584,7 @@ public sealed class ServerRuntime : IAsyncDisposable
             profile.FolderId,
             project.Name,
             profile.ExchangeDirectory,
-            deviceIds.Distinct(StringComparer.Ordinal).ToArray(),
+            sharedDevices.ToArray(),
             folderType,
             project.Features.BackupEnabled ? "simple" : string.Empty,
             project.Retention.MaxVersionsPerFile,
@@ -576,7 +602,7 @@ public sealed class ServerRuntime : IAsyncDisposable
             [localIdentity.Identity.DeviceId] = localIdentity.Identity
         };
         JsonPeerAdmissionService admission = CreateAdmissionService(project.Id, localIdentity);
-        foreach (MembershipCertificate member in (await admission.GetMembersAsync(project.Id, cancellationToken))
+        foreach (MembershipCertificate member in (await admission.GetMembersAsync(project.SyncProjectId, cancellationToken))
                      .Where(item => admission.VerifyCertificate(item) && CanWriteGit(item.Role)))
         {
             devices[member.Device.DeviceId] = member.Device;
@@ -602,7 +628,7 @@ public sealed class ServerRuntime : IAsyncDisposable
                     PeerMembershipGrant grant = PeerExchangeCodec.ImportMembershipGrant(await File.ReadAllTextAsync(path, cancellationToken));
                     bool knownIssuer = devices.TryGetValue(grant.IssuerIdentity.DeviceId, out DeviceIdentity? issuer) &&
                                        string.Equals(issuer.SigningPublicKey, grant.IssuerIdentity.SigningPublicKey, StringComparison.Ordinal);
-                    if (grant.Certificate.ProjectId == project.Id &&
+                    if (grant.Certificate.ProjectId == project.SyncProjectId &&
                         knownIssuer &&
                         CanWriteGit(grant.Certificate.Role) &&
                         PeerExchangeCodec.VerifyGrant(grant))
@@ -658,9 +684,7 @@ public sealed class ServerRuntime : IAsyncDisposable
         new(new BackupStoreOptions(project.BackupStorePath ?? Path.Combine(_options.BackupDirectory, project.Id.ToString("N"))));
 
     private string ResolveExchangeDirectory(ProjectDefinition project) =>
-        project.Features.GitEnabled
-            ? Path.Combine(_options.DataDirectory, "git-exchange", project.Id.ToString("N"))
-            : project.RootPath;
+        ProjectSyncPolicy.ResolveExchangeDirectory(project, _options.DataDirectory);
 
     private static string SanitizeDirectoryName(string name)
     {

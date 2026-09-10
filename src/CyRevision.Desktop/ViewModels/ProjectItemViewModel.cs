@@ -95,8 +95,17 @@ public sealed class ProjectItemViewModel : ObservableObject
     }
 
     public string ModeAndServices => Mode +
+        $" · {ModeMaturity}" +
         (IsSyncRunning ? IsSyncPaused ? " · Sync paused" : " · Sync" : string.Empty) +
         (IsVpnRunning ? " · VPN" : string.Empty);
+
+    public string ModeMaturity =>
+        string.IsNullOrWhiteSpace(Definition.PluginOperatingModeProviderId) &&
+        Definition.Features.GitEnabled &&
+        !Definition.Features.PeerSyncEnabled &&
+        !Definition.Features.BackupEnabled
+            ? "BETA"
+            : "ALPHA";
 
     public int UnreadNotificationCount
     {
@@ -158,6 +167,7 @@ public sealed class ProjectItemViewModel : ObservableObject
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(RootPath));
         OnPropertyChanged(nameof(Mode));
+        OnPropertyChanged(nameof(ModeMaturity));
         OnPropertyChanged(nameof(ModeAndServices));
         OnPropertyChanged(nameof(AccentColor));
         OnPropertyChanged(nameof(SidebarGroup));

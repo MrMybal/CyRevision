@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.24 Alpha — 2026-09-11
+
+- added the in-app stable-release update prompt, verified package downloads, and installer handoff after background services and the application have stopped;
+- labeled Git features as Beta and experimental Sync, Git + Sync, Lore, Backup and plugin features as Alpha throughout project modes and navigation;
+- hardened Sync + Commit application with complete package validation, changed-path-only writes, retained recovery backups, rollback on failure, and preservation of unrelated local changes;
+- prevented stale signed Git peer announcements from rolling references backward and avoided publishing duplicate bundles when refs are unchanged;
+- isolated synchronization engines during project and mode switches, corrected modern Syncthing profile generation, and separated shared project identity from the local catalogue;
+- persisted server modes and authorized members, explicitly rejected unsupported server-side Sync + Commit, and applied configured Timeline backup limits;
+- expanded automated coverage to 285 tests and verified local exchanges between two isolated Syncthing instances; see the [mode verification report](docs/mode-verification-2026-09-11.md) for coverage and remaining limitations.
+
 ## 0.1.23 Alpha — 2026-08-29
 
 - fixed Solution Explorer contextual Git/LFS history so the selected file reliably opens in a dedicated, reusable revision window with commit, author, change, message and LFS pointer details;

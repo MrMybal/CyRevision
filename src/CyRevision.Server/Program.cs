@@ -102,7 +102,9 @@ app.MapGet("/api/v1/capabilities", () => Results.Ok(new
     projectChatChannels = true,
     projectChatAttachments = true,
     unrealSwarmPreset = true,
-    presets = ProjectPresets.All.Select(preset => new { preset.Kind, preset.Name, preset.Description })
+    syncCommits = false,
+    presets = ProjectPresets.All.Where(preset => ServerRuntime.SupportsPreset(preset.Kind))
+        .Select(preset => new { preset.Kind, preset.Name, preset.Description })
 }));
 
 app.MapGet("/api/v1/projects", async (IProjectCatalog catalog, CancellationToken cancellationToken) =>

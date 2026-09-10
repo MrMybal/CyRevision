@@ -798,5 +798,18 @@
   "Video": "Vidéo",
   "Archives": "Archives",
   "Quit CyRevision?": "Quitter CyRevision ?",
-  "Running operations will be cancelled and all CyRevision background services will stop. Unsaved text entered in editors may be lost. Do you want to quit?": "Les opérations en cours seront annulées et tous les services CyRevision en arrière-plan seront arrêtés. Le texte non enregistré dans les éditeurs peut être perdu. Voulez-vous quitter ?"
+  "Running operations will be cancelled and all CyRevision background services will stop. Unsaved text entered in editors may be lost. Do you want to quit?": "Les opérations en cours seront annulées et tous les services CyRevision en arrière-plan seront arrêtés. Le texte non enregistré dans les éditeurs peut être perdu. Voulez-vous quitter ?",
+  "CyRevision update available": "Mise à jour de CyRevision disponible",
+  "Version {0} is available": "La version {0} est disponible",
+  "Later": "Plus tard",
+  "View release": "Voir la release",
+  "Download and install": "Télécharger et installer",
+  "No release notes were published for this version.": "Aucune note de version n’a été publiée pour cette version.",
+  "After the verified download, CyRevision will close completely. The installer will start only after the application and its background services have stopped.": "Après le téléchargement vérifié, CyRevision se fermera complètement. L’installateur démarrera uniquement après l’arrêt de l’application et de ses services en arrière-plan.",
+  "Update installation failed": "Échec de l’installation de la mise à jour",
+  "The application update coordinator is unavailable.": "Le coordinateur de mise à jour de l’application est indisponible.",
+  "CyRevision could not start the external installer.": "CyRevision n’a pas pu démarrer l’installateur externe.",
+  "Downloading CyRevision update": "Téléchargement de la mise à jour CyRevision",
+  "Downloading and verifying the signed release package…": "Téléchargement et vérification du paquet de release signé…",
+  "CyRevision will close automatically when the verified package is ready.": "CyRevision se fermera automatiquement lorsque le paquet vérifié sera prêt."
 }

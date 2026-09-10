@@ -9,6 +9,7 @@ public sealed class PluginItemViewModel(PluginCatalogEntry entry, bool isEnabled
     public string Version => entry.Version;
     public string Description => entry.Description;
     public string Category => entry.Category;
+    public string Maturity => "ALPHA";
     public bool IsEnabled => isEnabledForProject;
     public string State => isEnabledForProject
         ? entry.InstanceLoaded ? "Enabled" : entry.Status

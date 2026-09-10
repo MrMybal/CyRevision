@@ -145,6 +145,31 @@
             <Setter Property="BorderBrush" Value="#4EC9B0" />
             <Setter Property="Background" Value="{DynamicResource CyCardBrush}" />
         </Style>
+        <Style Selector="Border.maturityBadge">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="5,1" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.maturityBadge.alpha">
+            <Setter Property="Background" Value="#49381E" />
+            <Setter Property="BorderBrush" Value="#A8792C" />
+        </Style>
+        <Style Selector="Border.maturityBadge.beta">
+            <Setter Property="Background" Value="#173B37" />
+            <Setter Property="BorderBrush" Value="#337E72" />
+        </Style>
+        <Style Selector="TextBlock.maturityLabel">
+            <Setter Property="FontSize" Value="8" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.maturityLabel.alpha">
+            <Setter Property="Foreground" Value="#FFD479" />
+        </Style>
+        <Style Selector="TextBlock.maturityLabel.beta">
+            <Setter Property="Foreground" Value="#7DE2CC" />
+        </Style>
         <Style Selector="Menu.topMenu">
             <Setter Property="Background" Value="{DynamicResource CySurfaceAltBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource CyForegroundBrush}" />
@@ -443,18 +468,45 @@
                 <StackPanel Orientation="Horizontal" Spacing="2">
                     <ToggleButton x:Name="OverviewCategoryToggle" Classes="workspaceCategory" Content="Overview"
                                   Click="OnOverviewCategoryClick" />
-                    <ToggleButton x:Name="GitCategoryToggle" Classes="workspaceCategory" Content="Git"
-                                  Click="OnGitCategoryClick" />
+                    <ToggleButton x:Name="GitCategoryToggle" Classes="workspaceCategory"
+                                  Click="OnGitCategoryClick" ToolTip.Tip="Git is in beta and has received extensive testing.">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="Git" />
+                            <Border Classes="maturityBadge beta">
+                                <TextBlock Classes="maturityLabel beta" Text="BETA" />
+                            </Border>
+                        </StackPanel>
+                    </ToggleButton>
                     <ToggleButton x:Name="CodeCategoryToggle" Classes="workspaceCategory" Content="Code &amp; Assets"
                                   Click="OnCodeCategoryClick" />
-                    <ToggleButton x:Name="BackupCategoryToggle" Classes="workspaceCategory" Content="Backup"
-                                  Click="OnBackupCategoryClick" />
-                    <ToggleButton x:Name="SyncCategoryToggle" Classes="workspaceCategory" Content="Sync"
-                                  Click="OnSyncCategoryClick" />
+                    <ToggleButton x:Name="BackupCategoryToggle" Classes="workspaceCategory"
+                                  Click="OnBackupCategoryClick" ToolTip.Tip="Backup is an alpha feature.">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="Backup" />
+                            <Border Classes="maturityBadge alpha">
+                                <TextBlock Classes="maturityLabel alpha" Text="ALPHA" />
+                            </Border>
+                        </StackPanel>
+                    </ToggleButton>
+                    <ToggleButton x:Name="SyncCategoryToggle" Classes="workspaceCategory"
+                                  Click="OnSyncCategoryClick" ToolTip.Tip="Sync modes are alpha features.">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock x:Name="SyncCategoryLabel" Text="Sync" />
+                            <Border Classes="maturityBadge alpha">
+                                <TextBlock Classes="maturityLabel alpha" Text="ALPHA" />
+                            </Border>
+                        </StackPanel>
+                    </ToggleButton>
                     <ToggleButton x:Name="PluginModeCategoryToggle" Classes="workspaceCategory"
-                                  Content="{Binding ActivePluginOperatingModeName}"
                                   IsVisible="{Binding HasActivePluginOperatingMode}"
-                                  Click="OnPluginModeCategoryClick" />
+                                  Click="OnPluginModeCategoryClick" ToolTip.Tip="Plugin-provided modes are alpha features.">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="{Binding ActivePluginOperatingModeName}" />
+                            <Border Classes="maturityBadge alpha">
+                                <TextBlock Classes="maturityLabel alpha" Text="ALPHA" />
+                            </Border>
+                        </StackPanel>
+                    </ToggleButton>
                     <ToggleButton x:Name="NetworkCategoryToggle" Classes="workspaceCategory" Content="Team &amp; Network"
                                   Click="OnNetworkCategoryClick" />
                     <ToggleButton x:Name="ExtensionsCategoryToggle" Classes="workspaceCategory" Content="Extensions &amp; Help"
@@ -479,6 +531,12 @@
                                                 <StackPanel Margin="4">
                                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                        <Border Classes="maturityBadge alpha" IsVisible="{Binding IsAlpha}">
+                                                            <TextBlock Classes="maturityLabel alpha" Text="ALPHA" />
+                                                        </Border>
+                                                        <Border Classes="maturityBadge beta" IsVisible="{Binding IsBeta}">
+                                                            <TextBlock Classes="maturityLabel beta" Text="BETA" />
+                                                        </Border>
                                                         <Border Background="#183C56" CornerRadius="3" Padding="5,1"
                                                                 IsVisible="{Binding IsPluginMode}">
                                                             <TextBlock Text="PLUGIN MODE" FontSize="8" Foreground="{DynamicResource CyAccentBrush}" />
@@ -599,7 +657,15 @@
                     </ScrollViewer>
                 </TabItem>
 
-                <TabItem x:Name="GitOverviewWorkspaceTab" Header="Git">
+                <TabItem x:Name="GitOverviewWorkspaceTab">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="Git" />
+                            <Border Classes="maturityBadge beta">
+                                <TextBlock Classes="maturityLabel beta" Text="BETA" />
+                            </Border>
+                        </StackPanel>
+                    </TabItem.Header>
                     <ScrollViewer Margin="0,8,0,0"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
@@ -4080,7 +4146,15 @@
                     </ScrollViewer>
                 </TabItem>
 
-                <TabItem x:Name="BackupsWorkspaceTab" Header="Backups">
+                <TabItem x:Name="BackupsWorkspaceTab">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="Backups" />
+                            <Border Classes="maturityBadge alpha">
+                                <TextBlock Classes="maturityLabel alpha" Text="ALPHA" />
+                            </Border>
+                        </StackPanel>
+                    </TabItem.Header>
                     <Grid Margin="0,8,0,0" ColumnDefinitions="1.25*,1*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*,Auto">
@@ -4243,7 +4317,15 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem x:Name="SynchronizationWorkspaceTab" Header="Syncthing">
+                <TabItem x:Name="SynchronizationWorkspaceTab">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="Syncthing" />
+                            <Border Classes="maturityBadge alpha">
+                                <TextBlock Classes="maturityLabel alpha" Text="ALPHA" />
+                            </Border>
+                        </StackPanel>
+                    </TabItem.Header>
                     <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="6">
                     <Border Classes="card" Padding="10,7">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
@@ -6304,12 +6386,25 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem x:Name="PluginsWorkspaceTab" Header="Plugins">
+                <TabItem x:Name="PluginsWorkspaceTab">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="Plugins" />
+                            <Border Classes="maturityBadge alpha">
+                                <TextBlock Classes="maturityLabel alpha" Text="ALPHA" />
+                            </Border>
+                        </StackPanel>
+                    </TabItem.Header>
                     <Grid Margin="0,8,0,0" ColumnDefinitions="0.85*,1.4*" ColumnSpacing="8">
                         <Border Classes="card">
                             <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
                                 <StackPanel Spacing="3">
-                                    <TextBlock Text="CyRevision plugins" FontSize="17" FontWeight="SemiBold" />
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <TextBlock Text="CyRevision plugins" FontSize="17" FontWeight="SemiBold" />
+                                        <Border Classes="maturityBadge alpha">
+                                            <TextBlock Classes="maturityLabel alpha" Text="ALPHA" />
+                                        </Border>
+                                    </StackPanel>
                                     <TextBlock Text="Plugin activation is saved separately for the selected project."
                                                Classes="muted" FontSize="11" TextWrapping="Wrap" />
                                 </StackPanel>
@@ -6325,6 +6420,7 @@
                                         <DataGridTextColumn Header="Plugin" Binding="{Binding Name}" Width="1.4*" />
                                         <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="75" />
                                         <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="105" />
+                                        <DataGridTextColumn Header="Maturity" Binding="{Binding Maturity}" Width="75" />
                                         <DataGridTextColumn Header="State" Binding="{Binding State}" Width="105" />
                                     </DataGrid.Columns>
                                 </DataGrid>
@@ -6353,12 +6449,16 @@
                                                                Classes="muted" />
                                                 </StackPanel>
                                             </StackPanel>
-                                            <Border Grid.Column="1" Background="{DynamicResource CyAccentMutedBrush}" BorderBrush="{DynamicResource CyAccentStrongBrush}"
-                                                    BorderThickness="1" CornerRadius="4" Padding="8,3"
-                                                    VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding SelectedPlugin.State}"
-                                                           Foreground="{DynamicResource CyAccentBrightBrush}" FontSize="10" FontWeight="SemiBold" />
-                                            </Border>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                <Border Classes="maturityBadge alpha">
+                                                    <TextBlock Classes="maturityLabel alpha" Text="ALPHA" />
+                                                </Border>
+                                                <Border Background="{DynamicResource CyAccentMutedBrush}" BorderBrush="{DynamicResource CyAccentStrongBrush}"
+                                                        BorderThickness="1" CornerRadius="4" Padding="8,3">
+                                                    <TextBlock Text="{Binding SelectedPlugin.State}"
+                                                               Foreground="{DynamicResource CyAccentBrightBrush}" FontSize="10" FontWeight="SemiBold" />
+                                                </Border>
+                                            </StackPanel>
                                         </Grid>
                                         <Border Height="1" Background="{DynamicResource CyBorderBrush}" />
                                         <TextBlock Text="{Binding SelectedPlugin.Description}"
@@ -6649,7 +6749,15 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem x:Name="LoreWorkspaceTab" Header="Lore">
+                <TabItem x:Name="LoreWorkspaceTab">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="Lore" />
+                            <Border Classes="maturityBadge alpha">
+                                <TextBlock Classes="maturityLabel alpha" Text="ALPHA" />
+                            </Border>
+                        </StackPanel>
+                    </TabItem.Header>
                     <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="8">
                         <Border Classes="card" Padding="10">
                             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">

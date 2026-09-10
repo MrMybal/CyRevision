@@ -35,6 +35,8 @@ namespace CyRevision.Desktop.ViewModels;
 
 public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDisposable
 {
+    public event EventHandler? UpdateAvailable;
+
     private static readonly FieldInfo[] ProjectSessionFields = typeof(MainWindowViewModel)
         .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
         .Where(ShouldCacheProjectField)
@@ -180,6 +182,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private SyncthingProfile? _currentSyncProfile;
     private ManagedSyncthingEngine? _syncEngine;
     private Guid? _syncEngineProjectId;
+    private Task _syncShutdownTask = Task.CompletedTask;
     private string _syncthingExecutablePath = string.Empty;
     private string _syncthingRuntimeSummary = "No Syncthing runtime detected.";
     private SyncthingFolderMode _selectedSyncthingFolderMode = SyncthingFolderMode.SendReceive;
@@ -2101,6 +2104,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             }
 
             _projectLoadCancellation?.Cancel();
+            // Detach immediately, including cached sessions. Never expose A's engine as B's.
+            if (_syncEngineProjectId != value?.Id)
+                _syncShutdownTask = Task.WhenAll(_syncShutdownTask, StopSyncCoreAsync(updateUi: false));
             _projectLoadCancellation?.Dispose();
             _projectLoadCancellation = null;
             _codeWorkspaceCancellation?.Cancel();
@@ -2140,6 +2146,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 ClearFastGitViewForProjectSwitch(value);
             }
             bool restoredFromSession = hasCachedSession && RestoreCachedProjectSession(value!);
+            if (_syncEngine is null)
+            {
+                SyncState = value?.Definition.Features.PeerSyncEnabled == true ? "Sync prêt — arrêté" : "Sync désactivé";
+                SyncDetails = "No Sync engine is running for this project.";
+            }
             if (!restoredFromSession) IncludeRemoteHistory = false;
             RestoreCodeWorkspaceForProject(value);
             RestoreRepositoryConsoleForProject(value);
@@ -2826,7 +2837,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             mode.WorkspaceTabIds,
             mode.CategoryLabel,
             availability.IsAvailable,
-            availability.Summary);
+            availability.Summary,
+            FeatureMaturity.Alpha);
     }
 
     private ProjectPresetKind CurrentOperatingMode
@@ -8535,6 +8547,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             return;
         }
 
+        bool notifyUpdateAvailable = false;
         IsCheckingForUpdates = true;
         UpdateStatus = "Recherche de la dernière release publiée…";
         try
@@ -8559,6 +8572,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             {
                 UpdateStatus = $"Version {LatestApplicationVersion} disponible · {update.Package.Name}";
             }
+
+            notifyUpdateAvailable = update.IsUpdateAvailable;
         }
         catch (Exception exception)
         {
@@ -8570,6 +8585,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         finally
         {
             IsCheckingForUpdates = false;
+        }
+
+        if (notifyUpdateAvailable)
+        {
+            UpdateAvailable?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -9828,7 +9848,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(project!, engine!.DeviceId);
             Guid requestId = await _gitPeerExchangeService.RequestLfsObjectAsync(
-                project!.Id,
+                project!.SyncProjectId,
                 profile!.ExchangeDirectory,
                 identity,
                 version.Pointer.OidSha256,
@@ -11058,7 +11078,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             await _lfsManagementProfileStore.SaveAsync(profile);
             _currentLfsManagementProfile = profile;
             PeerLfsAvailabilityCache peers = await _gitPeerExchangeService.GetCachedLfsAvailabilityAsync(
-                GetGitExchangeStatePath(project.Id), project.Id, cancellation.Token);
+                GetGitExchangeStatePath(project.Definition), project.Definition.SyncProjectId, cancellation.Token);
             string repositoryPath = project.RootPath;
             _lfsCleanupPlan = await Task.Run(() =>
                 _lfsStorageManager.AnalyzeAsync(
@@ -11810,6 +11830,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }
 
         ProjectPreset preset = SelectedPreset;
+        ProjectItemViewModel targetProject = SelectedProject;
+        SyncthingProfile? targetProfile = _currentSyncProfile?.ProjectId == targetProject.Id ? _currentSyncProfile : null;
+        string targetSource = ResolveConfiguredSyncSourceFolder(targetProject.Definition);
         if (!preset.IsAvailable)
         {
             StatusMessage = string.IsNullOrWhiteSpace(preset.AvailabilitySummary)
@@ -11827,15 +11850,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         await RunOperationAsync("Application du mode projet…", async () =>
         {
+            if (SelectedProject?.Id != targetProject.Id)
+                throw new OperationCanceledException("The selected project changed.");
+            // Stop before changing the contract. Start clears old folders before configuring the new mode.
+            await _syncShutdownTask;
+            await StopSyncCoreAsync();
             if (preset.Features.GitEnabled &&
-                !Directory.Exists(Path.Combine(SelectedProject.RootPath, ".git")) &&
-                !File.Exists(Path.Combine(SelectedProject.RootPath, ".git")))
+                !Directory.Exists(Path.Combine(targetProject.RootPath, ".git")) &&
+                !File.Exists(Path.Combine(targetProject.RootPath, ".git")))
             {
-                await _gitService.InitializeAsync(SelectedProject.RootPath);
+                await _gitService.InitializeAsync(targetProject.RootPath);
             }
-            await CreateRecommendedGitIgnoreIfMissingAsync(SelectedProject.RootPath, recommendedGitIgnore);
+            await CreateRecommendedGitIgnoreIfMissingAsync(targetProject.RootPath, recommendedGitIgnore);
 
-            ProjectDefinition updated = SelectedProject.Definition with
+            ProjectDefinition updated = targetProject.Definition with
             {
                 Features = preset.Features,
                 Retention = preset.Retention,
@@ -11844,19 +11872,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 PluginOperatingModeProviderId = preset.ProviderPluginId
             };
             await _projectCatalog.UpsertAsync(updated);
-            SelectedProject.Update(updated);
+            targetProject.Update(updated);
+            if (targetProfile is not null)
+                targetProfile = await _syncthingProfileStore.CreateOrUpdateAsync(updated.Id,
+                    targetProfile.ExecutablePath, ProjectSyncPolicy.ResolveExchangeDirectory(updated, _applicationPaths.DataDirectory, targetSource));
+            if (SelectedProject?.Id != targetProject.Id) return;
+            _currentSyncProfile = targetProfile;
             OnPropertyChanged(nameof(GitConnectionKind));
             OnPropertyChanged(nameof(RuntimeModeSummary));
             NotifySynchronizationModeChanged();
             NotifyMemberPanelLayoutChanged();
             RefreshProjectModeCatalog();
             LoadBackupSettings(updated);
-            if (!preset.Features.PeerSyncEnabled &&
-                _currentSyncProfile?.SharedFolders.Any(folder => folder.Enabled) != true)
-            {
-                await StopSyncCoreAsync();
-            }
-
             await RefreshCoreAsync();
             await RefreshCodeWorkspaceAsync();
             await LoadAiMcpProfileCoreAsync();
@@ -11876,6 +11903,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         await RunOperationAsync("Configuration de Syncthing…", async () =>
         {
+            await _syncShutdownTask;
+            await StopSyncCoreAsync();
             _currentSyncProfile = await _syncthingProfileStore.CreateOrUpdateAsync(
                 SelectedProject.Id,
                 executablePath,
@@ -12023,10 +12052,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             {
                 string exchange = ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition);
                 SyncCommitCreateResult result = await _syncCommitService.CreateCommitAsync(
-                    SelectedProject.Id,
+                    SelectedProject.Definition.SyncProjectId,
                     ResolveConfiguredSyncSourceFolder(SelectedProject.Definition),
                     exchange,
-                    GetSyncCommitStateDirectory(SelectedProject.Id),
+                    GetSyncCommitStateDirectory(SelectedProject.Definition),
                     SyncCommitMessage,
                     SyncCommitAuthor);
                 SyncCommitMessage = string.Empty;
@@ -12058,7 +12087,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             SelectedSyncCommitAnalysis = await _syncCommitService.AnalyzeAsync(
                 ResolveConfiguredSyncSourceFolder(SelectedProject.Definition),
                 ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition),
-                SelectedSyncCommit);
+                SelectedSyncCommit,
+                stateDirectory: GetSyncCommitStateDirectory(SelectedProject.Definition));
             foreach (SyncCommitConflictViewModel old in SyncCommitConflicts) old.Changed -= OnSyncCommitConflictChoiceChanged;
             SyncCommitConflicts.Clear();
             foreach (SyncCommitConflict conflict in SelectedSyncCommitAnalysis.Conflicts)
@@ -12098,7 +12128,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 await _syncCommitService.ApplyAsync(
                     ResolveConfiguredSyncSourceFolder(SelectedProject.Definition),
                     ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition),
-                    GetSyncCommitStateDirectory(SelectedProject.Id),
+                    GetSyncCommitStateDirectory(SelectedProject.Definition),
                     backupRoot,
                     SelectedSyncCommit,
                     choices);
@@ -12127,7 +12157,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         IReadOnlyList<SyncCommitManifest> commits = await _syncCommitService.ListCommitsAsync(
             ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition));
         string? selectedId = SelectedSyncCommit?.CommitId;
-        ReplaceCollection(SyncCommits, commits);
+        ReplaceCollection(SyncCommits, commits.Where(commit => commit.ProjectId == SelectedProject.Definition.SyncProjectId));
         SelectedSyncCommit = SyncCommits.FirstOrDefault(item => item.CommitId == selectedId) ?? SyncCommits.FirstOrDefault();
         SyncCommitStatus = commits.Count == 0
             ? "No Sync commit published yet. The synchronized exchange remains unchanged until you commit."
@@ -12140,8 +12170,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         OnPropertyChanged(nameof(SyncCommitConflictSummary));
     }
 
-    private string GetSyncCommitStateDirectory(Guid projectId) =>
-        Path.Combine(_applicationPaths.DataDirectory, "sync-commit-state", projectId.ToString("N"));
+    private string GetSyncCommitStateDirectory(ProjectDefinition project) =>
+        ProjectSyncPolicy.ResolveStateDirectory(project, _applicationPaths.DataDirectory, "sync-commit-state");
 
     private void PruneSyncCommitRecovery(string backupRoot)
     {
@@ -12632,6 +12662,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         await RunOperationAsync("Démarrage du moteur Sync isolé…", async () =>
         {
+            await _syncShutdownTask;
+            if (_currentSyncProfile is null || SelectedProject is null || _currentSyncProfile.ProjectId != SelectedProject.Id)
+                throw new InvalidOperationException("The Sync profile does not belong to the selected project. Reload the project first.");
             string desiredExchangePath = ResolveConfiguredSyncExchangeDirectory(SelectedProject.Definition);
             if (!string.Equals(_currentSyncProfile.ExchangeDirectory, desiredExchangePath, StringComparison.OrdinalIgnoreCase))
             {
@@ -12646,9 +12679,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 await StopSyncCoreAsync();
             }
 
-            _syncEngine ??= new ManagedSyncthingEngine(_currentSyncProfile.ToIsolationOptions());
+            string folderId = "cyrevision-" + SelectedProject.Definition.SyncProjectId.ToString("N");
+            if (_currentSyncProfile.FolderId != folderId)
+                _currentSyncProfile = await _syncthingProfileStore.SaveAsync(_currentSyncProfile with { FolderId = folderId });
+            ManagedSyncthingEngine engine = _syncEngine ??= new ManagedSyncthingEngine(_currentSyncProfile.ToIsolationOptions());
+            Guid startingProject = SelectedProject.Id;
             _syncEngineProjectId = SelectedProject.Id;
-            await _syncEngine.StartAsync();
+            await engine.StartAsync();
+            if (SelectedProject?.Id != startingProject || !ReferenceEquals(_syncEngine, engine))
+                return; // Project switching owns shutdown of this detached engine.
             await ConfigureCurrentSyncFolderAsync();
             if (SelectedProject.Definition.Features.PeerSyncEnabled)
                 await ExchangeGitCoreAsync();
@@ -12660,47 +12699,47 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 _currentSyncProfile.ExchangeDirectory,
                 "Engine started",
                 RuntimeModeSummary,
-                _syncEngine.DeviceId);
+                engine.DeviceId);
         }, "Synchronisation CyRevision active");
     }
 
     public async Task PauseSyncAsync()
     {
-        if (_syncEngine is null)
+        if (!TryGetRunningSyncContext(out _, out _, out ManagedSyncthingEngine? engine))
         {
             return;
         }
 
         await RunOperationAsync("Mise en pause de Sync…", async () =>
         {
-            await _syncEngine.PauseAsync();
-            UpdateSyncStatus(_syncEngine.Status);
+            await engine!.PauseAsync();
+            UpdateSyncStatus(engine.Status);
             await RecordSyncHistoryAsync(
                 SynchronizationOverviewTabTitle,
                 _currentSyncProfile?.ExchangeDirectory ?? SelectedProject?.RootPath ?? string.Empty,
                 "Engine paused",
                 "Local runtime",
-                _syncEngine.DeviceId);
+                engine.DeviceId);
         }, "Synchronisation en pause");
     }
 
     public async Task ResumeSyncAsync()
     {
-        if (_syncEngine is null)
+        if (!TryGetRunningSyncContext(out _, out _, out ManagedSyncthingEngine? engine))
         {
             return;
         }
 
         await RunOperationAsync("Reprise de Sync…", async () =>
         {
-            await _syncEngine.ResumeAsync();
-            UpdateSyncStatus(_syncEngine.Status);
+            await engine!.ResumeAsync();
+            UpdateSyncStatus(engine.Status);
             await RecordSyncHistoryAsync(
                 SynchronizationOverviewTabTitle,
                 _currentSyncProfile?.ExchangeDirectory ?? SelectedProject?.RootPath ?? string.Empty,
                 "Engine resumed",
                 "Local runtime",
-                _syncEngine.DeviceId);
+                engine.DeviceId);
         }, "Synchronisation reprise");
     }
 
@@ -12737,7 +12776,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(project!, engine!.DeviceId);
             JsonPeerAdmissionService admission = CreateAdmissionService(project!.Id, identity);
             PeerInvitationPackage package = await admission.CreateInvitationAsync(
-                project.Id,
+                project.SyncProjectId,
                 SelectedPeerRole,
                 TimeSpan.FromHours(24));
             PeerExchangeText = PeerExchangeCodec.ExportInvitation(package);
@@ -12756,10 +12795,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         await RunOperationAsync("Préparation de la demande d'adhésion…", async () =>
         {
             PeerInvitationOffer offer = PeerExchangeCodec.ImportInvitation(PeerExchangeText);
-            if (offer.Invitation.ProjectId != project!.Id)
-            {
-                throw new InvalidOperationException("Cette invitation concerne un autre projet.");
-            }
+            PeerProjectAssociation.ValidateInvitation(project!, offer);
+            // Do not silently rebind a project that already grants access to other devices.
+            using (FileDeviceIdentityStore existingIdentity = await OpenLocalDeviceIdentityAsync(project!, engine!.DeviceId))
+                if (offer.Invitation.ProjectId != project!.SyncProjectId &&
+                    (await CreateAdmissionService(project.Id, existingIdentity).GetMembersAsync(project.SyncProjectId)).Count > 0)
+                    throw new InvalidOperationException("This project already has members. Join the invitation in a separate local project.");
 
             if (string.IsNullOrWhiteSpace(PeerVerificationCode))
             {
@@ -12792,7 +12833,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         await RunOperationAsync("Vérification et approbation du pair…", async () =>
         {
             PeerJoinRequest request = PeerExchangeCodec.ImportJoinRequest(PeerExchangeText);
-            if (request.InvitationOffer.Invitation.ProjectId != project!.Id)
+            if (request.InvitationOffer.Invitation.ProjectId != project!.SyncProjectId)
             {
                 throw new InvalidOperationException("Cette demande concerne un autre projet.");
             }
@@ -12846,29 +12887,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             }
 
             PeerInvitationOffer pendingOffer = PeerExchangeCodec.ImportInvitation(await File.ReadAllTextAsync(pendingPath));
-            bool expectedIssuer = pendingOffer.IssuerIdentity.DeviceId == grant.IssuerIdentity.DeviceId &&
-                                  string.Equals(
-                                      pendingOffer.IssuerIdentity.SigningPublicKey,
-                                      grant.IssuerIdentity.SigningPublicKey,
-                                      StringComparison.Ordinal);
-            if (grant.Certificate.ProjectId != project.Id ||
-                grant.InvitationId != pendingOffer.Invitation.InvitationId ||
-                !expectedIssuer ||
-                !PeerExchangeCodec.VerifyGrant(grant))
-            {
-                throw new UnauthorizedAccessException("Le certificat d'adhésion est invalide.");
-            }
-
             using FileDeviceIdentityStore localIdentity = await OpenLocalDeviceIdentityAsync(project, engine!.DeviceId);
-            if (grant.Certificate.Device.DeviceId != localIdentity.Identity.DeviceId)
-            {
-                throw new UnauthorizedAccessException("Le certificat a été émis pour un autre appareil.");
-            }
+            ProjectDefinition associated = PeerProjectAssociation.AcceptGrant(project, pendingOffer, grant, localIdentity.Identity);
+            await _projectCatalog.UpsertAsync(associated);
+            if (SelectedProject?.Id != project.Id)
+                throw new InvalidOperationException("The selected project changed. Return to the joining project and import the grant again.");
+            SelectedProject.Update(associated);
+            string previousFolderId = profile!.FolderId;
+            profile = await _syncthingProfileStore.SaveAsync(profile with { FolderId = "cyrevision-" + associated.SyncProjectId.ToString("N") });
+            _currentSyncProfile = profile;
 
             string grantPath = Path.Combine(GetProjectSecurityPath(project.Id), "membership-grant.json");
             Directory.CreateDirectory(Path.GetDirectoryName(grantPath)!);
             await File.WriteAllTextAsync(grantPath, PeerExchangeCodec.ExportMembershipGrant(grant));
             using SyncthingApiClient api = new(profile!.ApiEndpoint, profile.ApiKey);
+            if (previousFolderId != profile.FolderId)
+                await api.DeleteFolderAsync(previousFolderId);
             await api.PutDeviceAsync(new SyncthingDeviceConfiguration(
                 grant.IssuerIdentity.SyncthingDeviceId,
                 grant.IssuerIdentity.DisplayName));
@@ -12891,7 +12925,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(project!, engine!.DeviceId);
             JsonPeerAdmissionService admission = CreateAdmissionService(project!.Id, identity);
-            await admission.RevokeDeviceAsync(project.Id, selected.DeviceId);
+            await admission.RevokeDeviceAsync(project.SyncProjectId, selected.DeviceId);
             File.Delete(Path.Combine(profile!.ExchangeDirectory, "members", selected.DeviceId.ToString("N") + ".json"));
             using SyncthingApiClient api = new(profile.ApiEndpoint, profile.ApiKey);
             await api.DeleteDeviceAsync(selected.Certificate.Device.SyncthingDeviceId);
@@ -12915,7 +12949,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(project!, engine!.DeviceId);
             JsonPeerAdmissionService admission = CreateAdmissionService(project!.Id, identity);
-            MembershipCertificate updated = await admission.UpdateDeviceRoleAsync(project.Id, selected.DeviceId, role);
+            MembershipCertificate updated = await admission.UpdateDeviceRoleAsync(project.SyncProjectId, selected.DeviceId, role);
             await LoadPeerMembersCoreAsync();
             SelectedPeerMember = PeerMembers.FirstOrDefault(member => member.DeviceId == updated.Device.DeviceId);
             _applicationLogService.Information(
@@ -14732,7 +14766,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         return name is not (
             "_selectedProject" or "_projectLoadVersion" or "_projectLoadProgress" or "_projectLoadStage" or
-            "_isProjectLoading" or "_isRestoringProjectSession" or "_isBusy" or "_statusMessage" or "_isActivityCenterExpanded" or "_syncEngine" or "_syncEngineProjectId" or
+            "_isProjectLoading" or "_isRestoringProjectSession" or "_isBusy" or "_statusMessage" or "_isActivityCenterExpanded" or "_syncEngine" or "_syncEngineProjectId" or "_syncShutdownTask" or
             "_vpnFileExchangeHost" or "_subscribedUnrealPlugin" or "_subscribedUnityPlugin" or "_subscribedGodotPlugin" or "_currentRemoteBuildJob" or "_availableUpdate" or
             "_selectedLanguage" or "_allDocumentationTopics" or "_selectedDocumentationTopic" or
             "_documentationSearch" or "_latestApplicationVersion" or "_updateStatus" or "_updateReleaseNotes" or
@@ -15185,8 +15219,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 file.Path,
                 200);
             PeerLfsAvailabilityCache peerAvailability = await _gitPeerExchangeService.GetCachedLfsAvailabilityAsync(
-                GetGitExchangeStatePath(SelectedProject.Id),
-                SelectedProject.Id);
+                GetGitExchangeStatePath(SelectedProject.Definition),
+                SelectedProject.Definition.SyncProjectId);
             if (SelectedLfsFile?.Path != file.Path)
             {
                 return;
@@ -16107,7 +16141,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             await LoadSyncthingIgnoreRulesAsync();
         }
-        if (!SelectedProject.Definition.Features.PeerSyncEnabled && SharedSyncFolders.Count == 0)
+        if (_syncEngine is not null && _syncEngineProjectId == SelectedProject.Id)
+        {
+            UpdateSyncStatus(_syncEngine.Status);
+        }
+        else if (!SelectedProject.Definition.Features.PeerSyncEnabled && SharedSyncFolders.Count == 0)
         {
             SyncState = "Sync désactivé";
             SyncDetails = "Le moteur ne sera pas lancé dans le mode actuel.";
@@ -16981,39 +17019,44 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     private async Task ConfigureCurrentSyncFolderAsync()
     {
-        if (SelectedProject is null || _currentSyncProfile is null || _syncEngine is null)
+        if (SelectedProject is null || _currentSyncProfile is null || _syncEngine is null ||
+            !TryGetRunningSyncContext(out _, out _, out _))
         {
             return;
         }
 
+        ProjectDefinition project = SelectedProject.Definition;
+        SyncthingProfile profile = _currentSyncProfile;
+        ManagedSyncthingEngine engine = _syncEngine;
         HashSet<string> deviceIds = new(StringComparer.Ordinal);
-        string securityPath = GetProjectSecurityPath(SelectedProject.Id);
+        string securityPath = GetProjectSecurityPath(project.Id);
         string grantPath = Path.Combine(securityPath, "membership-grant.json");
         if (File.Exists(grantPath))
         {
             PeerMembershipGrant grant = PeerExchangeCodec.ImportMembershipGrant(await File.ReadAllTextAsync(grantPath));
-            if (PeerExchangeCodec.VerifyGrant(grant))
+            if (grant.Certificate.ProjectId == project.SyncProjectId && PeerExchangeCodec.VerifyGrant(grant))
             {
                 deviceIds.Add(grant.IssuerIdentity.SyncthingDeviceId);
             }
         }
 
         using FileDeviceIdentityStore identity = await OpenLocalDeviceIdentityAsync(
-            SelectedProject.Definition,
-            _syncEngine.DeviceId);
-        JsonPeerAdmissionService admission = CreateAdmissionService(SelectedProject.Id, identity);
-        IReadOnlyList<MembershipCertificate> members = await admission.GetMembersAsync(SelectedProject.Id);
+            project,
+            engine.DeviceId);
+        JsonPeerAdmissionService admission = CreateAdmissionService(project.Id, identity);
+        IReadOnlyList<MembershipCertificate> members = await admission.GetMembersAsync(project.SyncProjectId);
         foreach (MembershipCertificate member in members.Where(admission.VerifyCertificate))
         {
             deviceIds.Add(member.Device.SyncthingDeviceId);
         }
 
-        using SyncthingApiClient api = new(_currentSyncProfile.ApiEndpoint, _currentSyncProfile.ApiKey);
+        if (SelectedProject?.Id != project.Id || !ReferenceEquals(_syncEngine, engine)) return;
+        using SyncthingApiClient api = new(profile.ApiEndpoint, profile.ApiKey);
         foreach (SyncthingDeviceConfiguration device in await api.GetDevicesAsync())
             deviceIds.Add(device.DeviceId);
-        if (SelectedProject.Definition.Features.PeerSyncEnabled)
-            await api.PutFolderAsync(CreateFolderConfiguration(_currentSyncProfile, deviceIds));
-        foreach (SyncthingSharedFolder folder in _currentSyncProfile.SharedFolders.Where(folder => folder.Enabled))
+        if (project.Features.PeerSyncEnabled)
+            await api.PutFolderAsync(CreateFolderConfiguration(profile, deviceIds, project));
+        foreach (SyncthingSharedFolder folder in profile.SharedFolders.Where(folder => folder.Enabled))
         {
             await api.PutFolderAsync(new SyncthingFolderConfiguration(
                 folder.FolderId,
@@ -17140,7 +17183,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             SelectedProject.Definition,
             _syncEngine?.DeviceId ?? "offline");
         JsonPeerAdmissionService admission = CreateAdmissionService(SelectedProject.Id, identity);
-        IReadOnlyList<MembershipCertificate> members = await admission.GetMembersAsync(SelectedProject.Id);
+        IReadOnlyList<MembershipCertificate> members = await admission.GetMembersAsync(SelectedProject.Definition.SyncProjectId);
         ReplaceCollection(
             PeerMembers,
             members.Where(admission.VerifyCertificate)
@@ -17155,35 +17198,41 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             !SelectedProject.Definition.Features.GitEnabled ||
             !SelectedProject.Definition.Features.PeerSyncEnabled ||
             _currentSyncProfile is null ||
+            _currentSyncProfile.ProjectId != SelectedProject.Id ||
+            _syncEngineProjectId != SelectedProject.Id ||
             _syncEngine is null ||
             _syncEngine.Status.State is not (SyncEngineState.Running or SyncEngineState.Paused))
         {
             return;
         }
 
-        using FileDeviceIdentityStore localIdentity = await OpenLocalDeviceIdentityAsync(
-            SelectedProject.Definition,
-            _syncEngine.DeviceId);
-        IReadOnlyCollection<DeviceIdentity> authorizedDevices = await GetAuthorizedExchangeDevicesAsync(
-            SelectedProject.Definition,
-            _currentSyncProfile,
-            localIdentity);
+        ProjectDefinition project = SelectedProject.Definition;
+        SyncthingProfile profile = _currentSyncProfile;
+        ManagedSyncthingEngine engine = _syncEngine;
         GitPeerExchangeOptions options = BuildGitPeerExchangeOptions();
+        using FileDeviceIdentityStore localIdentity = await OpenLocalDeviceIdentityAsync(project, engine.DeviceId);
+        IReadOnlyCollection<DeviceIdentity> authorizedDevices = await GetAuthorizedExchangeDevicesAsync(
+            project,
+            profile,
+            localIdentity);
+        if (SelectedProject?.Id != project.Id || !ReferenceEquals(_syncEngine, engine)) return;
         GitPeerExportResult exported = await _gitPeerExchangeService.ExportDetailedAsync(
-            SelectedProject.Id,
-            SelectedProject.RootPath,
-            _currentSyncProfile.ExchangeDirectory,
+            project.SyncProjectId,
+            project.RootPath,
+            profile.ExchangeDirectory,
             localIdentity,
             authorizedDevices,
             options);
+        if (SelectedProject?.Id != project.Id || !ReferenceEquals(_syncEngine, engine)) return;
         GitPeerExchangeResult imported = await _gitPeerExchangeService.ImportDetailedAsync(
-            SelectedProject.Id,
-            SelectedProject.RootPath,
-            _currentSyncProfile.ExchangeDirectory,
-            GetGitExchangeStatePath(SelectedProject.Id),
+            project.SyncProjectId,
+            project.RootPath,
+            profile.ExchangeDirectory,
+            GetGitExchangeStatePath(project),
             authorizedDevices,
             localIdentity.Identity.DeviceId,
             options);
+        if (SelectedProject?.Id != project.Id) return;
         SyncDetails = $"Transaction {(exported.TransactionId is null ? "non créée" : exported.TransactionId.Value.ToString("N")[..8])} · " +
                       $"{imported.ImportedTransactions} transaction(s) reçue(s) · " +
                       $"{imported.ImportedLfsObjects} objet(s) LFS importé(s)";
@@ -17194,7 +17243,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                                  $"{imported.AvailablePeerLfsObjects} disponible(s) chez les pairs";
         await RecordSyncHistoryAsync(
             "Git + Sync exchange",
-            _currentSyncProfile.ExchangeDirectory,
+            profile.ExchangeDirectory,
             "Signed Git exchange",
             "Bidirectional",
             $"published LFS={exported.PublishedLfsObjects}; imported transactions={imported.ImportedTransactions}; imported LFS={imported.ImportedLfsObjects}");
@@ -17224,7 +17273,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             [localIdentity.Identity.DeviceId] = localIdentity.Identity
         };
         JsonPeerAdmissionService admission = CreateAdmissionService(project.Id, localIdentity);
-        foreach (MembershipCertificate member in (await admission.GetMembersAsync(project.Id))
+        foreach (MembershipCertificate member in (await admission.GetMembersAsync(project.SyncProjectId))
                      .Where(member => admission.VerifyCertificate(member) && CanWriteGit(member.Role)))
         {
             devices[member.Device.DeviceId] = member.Device;
@@ -17248,7 +17297,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 try
                 {
                     PeerMembershipGrant grant = PeerExchangeCodec.ImportMembershipGrant(await File.ReadAllTextAsync(grantPath));
-                    bool correctProject = grant.Certificate.ProjectId == project.Id;
+                    bool correctProject = grant.Certificate.ProjectId == project.SyncProjectId;
                     bool knownIssuer = devices.TryGetValue(grant.IssuerIdentity.DeviceId, out DeviceIdentity? issuer) &&
                                        string.Equals(issuer.SigningPublicKey, grant.IssuerIdentity.SigningPublicKey, StringComparison.Ordinal);
                     if (correctProject && knownIssuer && CanWriteGit(grant.Certificate.Role) && PeerExchangeCodec.VerifyGrant(grant))
@@ -17271,9 +17320,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     private SyncthingFolderConfiguration CreateFolderConfiguration(
         SyncthingProfile profile,
-        IReadOnlyCollection<string> deviceIds)
+        IReadOnlyCollection<string> deviceIds,
+        ProjectDefinition? project = null)
     {
-        ProjectDefinition definition = SelectedProject?.Definition
+        ProjectDefinition definition = project ?? SelectedProject?.Definition
             ?? throw new InvalidOperationException("Aucun projet sélectionné.");
         string versioningType = definition.Features.BackupEnabled ? "simple" : string.Empty;
         int? keepVersions = definition.Features.BackupEnabled
@@ -17342,6 +17392,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         profile = _currentSyncProfile;
         engine = _syncEngine;
         if (project is null || profile is null || engine is null ||
+            !ProjectSyncPolicy.OwnsRuntime(project.Id, profile.ProjectId, _syncEngineProjectId) ||
             engine.Status.State is not (SyncEngineState.Running or SyncEngineState.Paused))
         {
             StatusMessage = "Démarrez d'abord l'instance Sync CyRevision de ce projet";
@@ -17366,11 +17417,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         Path.Combine(_applicationPaths.DataDirectory, "security", "projects", projectId.ToString("N"));
 
     private string ResolveSyncExchangeDirectory(ProjectDefinition definition) =>
-        definition.Features.GitEnabled
-            ? Path.Combine(_applicationPaths.DataDirectory, "git-exchange", definition.Id.ToString("N"))
-            : definition.OperatingMode == ProjectPresetKind.SyncWithCommits
-                ? Path.Combine(_applicationPaths.DataDirectory, "sync-commit-exchange", definition.Id.ToString("N"))
-            : definition.RootPath;
+        ProjectSyncPolicy.ResolveExchangeDirectory(definition, _applicationPaths.DataDirectory);
 
     private string ResolveConfiguredSyncExchangeDirectory(ProjectDefinition definition) =>
         definition.Features.GitEnabled || definition.OperatingMode == ProjectPresetKind.SyncWithCommits
@@ -17388,8 +17435,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private static string? NormalizeOptionalDirectory(string? path) =>
         string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path.Trim());
 
-    private string GetGitExchangeStatePath(Guid projectId) =>
-        Path.Combine(_applicationPaths.DataDirectory, "git-exchange-state", projectId.ToString("N"));
+    private string GetGitExchangeStatePath(ProjectDefinition project) =>
+        ProjectSyncPolicy.ResolveStateDirectory(project, _applicationPaths.DataDirectory, "git-exchange-state");
 
     private static LfsObjectLocation? GetColdArchiveLocation(ProjectDefinition project, string oidSha256)
     {
@@ -18697,6 +18744,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         _codexConnectionCancellation?.Cancel();
         _codexConnectionCancellation?.Dispose();
         await StopSyncCoreAsync(updateUi: false);
+        await _syncShutdownTask;
         if (_vpnFileExchangeHost is not null)
         {
             await _vpnFileExchangeHost.DisposeAsync();

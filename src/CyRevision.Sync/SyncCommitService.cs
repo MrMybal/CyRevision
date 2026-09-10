@@ -84,14 +84,21 @@ public sealed class SyncCommitService
         if (!Directory.Exists(sourceRoot)) throw new DirectoryNotFoundException(sourceRoot);
         if (IsInside(exchangeRoot, sourceRoot))
             throw new InvalidOperationException("The Sync + Commit exchange folder must be outside the project folder.");
+        if (IsInside(stateRoot, sourceRoot))
+            throw new InvalidOperationException("The Sync + Commit state folder must be outside the project folder.");
 
         Directory.CreateDirectory(exchangeRoot);
         Directory.CreateDirectory(stateRoot);
+        using FileStream operationLock = new(Path.Combine(stateRoot, "operation.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         IReadOnlyList<SyncCommitFile> files = await ScanAsync(sourceRoot, cancellationToken).ConfigureAwait(false);
         string? parent = await ReadHeadAsync(stateRoot, cancellationToken).ConfigureAwait(false);
+        if (parent is not null && !(await ListCommitsAsync(exchangeRoot, cancellationToken).ConfigureAwait(false))
+            .Any(commit => commit.CommitId == parent && commit.ProjectId == projectId))
+            throw new InvalidDataException("The local HEAD belongs to a missing revision or a different shared project.");
         DateTimeOffset createdAt = DateTimeOffset.UtcNow;
         string commitId = ComputeCommitId(projectId, parent, message.Trim(), author.Trim(), createdAt, files);
         SyncCommitManifest manifest = new(commitId, parent, projectId, message.Trim(), author.Trim(), createdAt, files);
+        ValidateManifest(manifest);
         string packagePath = Path.Combine(exchangeRoot, $"{createdAt:yyyyMMdd-HHmmss}-{commitId}.cycommit");
         string temporaryPath = packagePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -128,18 +135,34 @@ public sealed class SyncCommitService
         string sourceDirectory,
         string exchangeDirectory,
         SyncCommitManifest incoming,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? stateDirectory = null)
     {
+        ValidateManifest(incoming);
         IReadOnlyList<SyncCommitFile> localFiles = await ScanAsync(sourceDirectory, cancellationToken).ConfigureAwait(false);
         Dictionary<string, string> local = localFiles.ToDictionary(item => item.Path, item => item.Sha256, StringComparer.OrdinalIgnoreCase);
         Dictionary<string, string> next = incoming.Files.ToDictionary(item => item.Path, item => item.Sha256, StringComparer.OrdinalIgnoreCase);
         Dictionary<string, string> parent = new(StringComparer.OrdinalIgnoreCase);
-        if (!string.IsNullOrWhiteSpace(incoming.ParentCommitId))
+        string? baseId = incoming.ParentCommitId;
+        string? localHead = stateDirectory is null ? null : await ReadHeadAsync(stateDirectory, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<SyncCommitManifest>? history = null;
+        if (localHead is not null && localHead != incoming.ParentCommitId)
         {
-            SyncCommitManifest? parentManifest = (await ListCommitsAsync(exchangeDirectory, cancellationToken).ConfigureAwait(false))
-                .FirstOrDefault(item => item.CommitId.Equals(incoming.ParentCommitId, StringComparison.OrdinalIgnoreCase));
-            if (parentManifest is not null)
-                parent = parentManifest.Files.ToDictionary(item => item.Path, item => item.Sha256, StringComparer.OrdinalIgnoreCase);
+            history = await ListCommitsAsync(exchangeDirectory, cancellationToken).ConfigureAwait(false);
+            Dictionary<string, SyncCommitManifest> commits = history.Where(commit => commit.ProjectId == incoming.ProjectId)
+                .GroupBy(commit => commit.CommitId).ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+            commits[incoming.CommitId] = incoming;
+            HashSet<string> localAncestors = Ancestors(localHead, commits).ToHashSet(StringComparer.Ordinal);
+            baseId = Ancestors(incoming.CommitId, commits).FirstOrDefault(localAncestors.Contains);
+        }
+        if (!string.IsNullOrWhiteSpace(baseId))
+        {
+            SyncCommitManifest? parentManifest = (history ?? await ListCommitsAsync(exchangeDirectory, cancellationToken).ConfigureAwait(false))
+                .FirstOrDefault(item => item.CommitId.Equals(baseId, StringComparison.OrdinalIgnoreCase));
+            if (parentManifest is null || parentManifest.ProjectId != incoming.ProjectId)
+                throw new InvalidDataException("The parent revision is missing or belongs to another project. Wait for synchronization before applying this commit.");
+            ValidateManifest(parentManifest);
+            parent = parentManifest.Files.ToDictionary(item => item.Path, item => item.Sha256, StringComparer.OrdinalIgnoreCase);
         }
 
         HashSet<string> paths = new(parent.Keys, StringComparer.OrdinalIgnoreCase);
@@ -156,12 +179,12 @@ public sealed class SyncCommitService
             next.TryGetValue(path, out string? incomingHash);
             bool localChanged = !StringComparer.Ordinal.Equals(baseHash, localHash);
             bool incomingChanged = !StringComparer.Ordinal.Equals(baseHash, incomingHash);
-            if (incomingChanged)
+            if (incomingChanged && !StringComparer.Ordinal.Equals(localHash, incomingHash))
             {
                 changed++;
                 pathsToChange.Add(path);
             }
-            if (incomingChanged && incomingHash is null) deleted++;
+            if (incomingChanged && incomingHash is null && localHash is not null) deleted++;
             if (localChanged && incomingChanged && !StringComparer.Ordinal.Equals(localHash, incomingHash))
                 conflicts.Add(new SyncCommitConflict(path, baseHash, localHash, incomingHash));
         }
@@ -177,7 +200,12 @@ public sealed class SyncCommitService
         IReadOnlyDictionary<string, SyncCommitConflictChoice>? conflictChoices = null,
         CancellationToken cancellationToken = default)
     {
-        SyncCommitAnalysis analysis = await AnalyzeAsync(sourceDirectory, exchangeDirectory, incoming, cancellationToken)
+        if (IsInside(Path.GetFullPath(stateDirectory), Path.GetFullPath(sourceDirectory)) ||
+            IsInside(Path.GetFullPath(backupDirectory), Path.GetFullPath(sourceDirectory)))
+            throw new InvalidOperationException("State and recovery folders must be outside the synchronized source.");
+        Directory.CreateDirectory(stateDirectory);
+        using FileStream operationLock = new(Path.Combine(stateDirectory, "operation.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        SyncCommitAnalysis analysis = await AnalyzeAsync(sourceDirectory, exchangeDirectory, incoming, cancellationToken, stateDirectory)
             .ConfigureAwait(false);
         conflictChoices ??= new Dictionary<string, SyncCommitConflictChoice>(StringComparer.OrdinalIgnoreCase);
         SyncCommitConflict[] unresolved = analysis.Conflicts.Where(conflict =>
@@ -188,17 +216,37 @@ public sealed class SyncCommitService
         string? package = FindPackage(exchangeDirectory, incoming.CommitId);
         if (package is null) throw new FileNotFoundException("The selected Sync + Commit package is missing.");
         string sourceRoot = Path.GetFullPath(sourceDirectory);
-        Directory.CreateDirectory(backupDirectory);
-        string backup = Path.Combine(backupDirectory, $"before-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{incoming.ShortId}.zip");
-        await Task.Run(() => BackupChangedFiles(sourceRoot, backup, analysis, cancellationToken), cancellationToken).ConfigureAwait(false);
         HashSet<string> keepLocal = analysis.Conflicts
             .Where(conflict => conflictChoices[conflict.Path] == SyncCommitConflictChoice.KeepLocal)
             .Select(conflict => conflict.Path)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        await Task.Run(() => ExtractPackage(sourceRoot, package, incoming, keepLocal, cancellationToken), cancellationToken).ConfigureAwait(false);
         Directory.CreateDirectory(stateDirectory);
-        await File.WriteAllTextAsync(Path.Combine(stateDirectory, "HEAD"), incoming.CommitId, Encoding.UTF8, cancellationToken)
-            .ConfigureAwait(false);
+        string staging = Path.Combine(Path.GetFullPath(stateDirectory), "apply-" + Guid.NewGuid().ToString("N"));
+        string[] paths = analysis.PathsToChange.Where(path => !keepLocal.Contains(path)).ToArray();
+        try
+        {
+            // Validate the entire package before touching the working tree or HEAD.
+            await Task.Run(() => StageVerifiedPackage(package, staging, incoming, paths.ToHashSet(StringComparer.OrdinalIgnoreCase), cancellationToken), cancellationToken).ConfigureAwait(false);
+            // A slow download/validation must not silently apply a now-obsolete conflict decision.
+            SyncCommitAnalysis latest = await AnalyzeAsync(sourceRoot, exchangeDirectory, incoming, cancellationToken, stateDirectory).ConfigureAwait(false);
+            if (!analysis.Conflicts.SequenceEqual(latest.Conflicts) || !analysis.PathsToChange.SequenceEqual(latest.PathsToChange))
+                throw new InvalidOperationException("Local files changed during validation. Analyze the revision again.");
+            Directory.CreateDirectory(backupDirectory);
+            string backup = Path.Combine(backupDirectory, $"before-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{incoming.ShortId}-{Guid.NewGuid():N}.zip");
+            await Task.Run(() => ApplyVerifiedPlan(sourceRoot, staging, backup, paths, cancellationToken), cancellationToken).ConfigureAwait(false);
+            string head = Path.Combine(stateDirectory, "HEAD");
+            string temporaryHead = head + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                await File.WriteAllTextAsync(temporaryHead, incoming.CommitId, Encoding.UTF8, CancellationToken.None).ConfigureAwait(false);
+                File.Move(temporaryHead, head, true);
+            }
+            finally { File.Delete(temporaryHead); }
+        }
+        finally
+        {
+            if (Directory.Exists(staging)) Directory.Delete(staging, true);
+        }
     }
 
     public static async Task<SyncCommitManifest?> ReadManifestAsync(string packagePath, CancellationToken cancellationToken = default)
@@ -222,11 +270,16 @@ public sealed class SyncCommitService
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 foreach (string child in Directory.EnumerateDirectories(directory))
-                    if (!ExcludedDirectoryNames.Contains(Path.GetFileName(child))) directories.Push(child);
+                    if (!ExcludedDirectoryNames.Contains(Path.GetFileName(child)))
+                    {
+                        RejectLink(child);
+                        directories.Push(child);
+                    }
                 foreach (string file in Directory.EnumerateFiles(directory))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     FileInfo info = new(file);
+                    RejectLink(file);
                     using FileStream input = new(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                     string hash = Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant();
                     files.Add(new SyncCommitFile(Path.GetRelativePath(root, file).Replace('\\', '/'), info.Length, hash));
@@ -245,45 +298,136 @@ public sealed class SyncCommitService
         {
             cancellationToken.ThrowIfCancellationRequested();
             string absolute = SafeCombine(sourceRoot, file.Path);
-            archive.CreateEntryFromFile(absolute, "files/" + file.Path, CompressionLevel.Optimal);
+            // Hash the bytes actually archived, not only the earlier directory scan.
+            using Stream input = new FileStream(absolute, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using Stream output = archive.CreateEntry("files/" + file.Path, CompressionLevel.Optimal).Open();
+            CopyVerified(input, output, file, cancellationToken);
         }
     }
 
-    private static void BackupChangedFiles(string sourceRoot, string backupPath, SyncCommitAnalysis analysis, CancellationToken cancellationToken)
+    private static void ApplyVerifiedPlan(string sourceRoot, string staging, string backupPath, string[] paths, CancellationToken cancellationToken)
     {
-        using ZipArchive archive = ZipFile.Open(backupPath, ZipArchiveMode.Create);
-        foreach (string path in analysis.PathsToChange.Distinct(StringComparer.OrdinalIgnoreCase))
+        HashSet<string> existed = new(StringComparer.OrdinalIgnoreCase);
+        using (ZipArchive archive = ZipFile.Open(backupPath, ZipArchiveMode.Create))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            string absolute = SafeCombine(sourceRoot, path);
-            if (File.Exists(absolute)) archive.CreateEntryFromFile(absolute, path, CompressionLevel.Optimal);
+            foreach (string path in paths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string absolute = SafeCombine(sourceRoot, path);
+                if (Directory.Exists(absolute))
+                    throw new IOException($"A local directory occupies the incoming file path '{path}'. Resolve it before applying.");
+                if (File.Exists(absolute))
+                {
+                    archive.CreateEntryFromFile(absolute, path, CompressionLevel.Optimal);
+                    existed.Add(path);
+                }
+            }
+            using Stream recovery = archive.CreateEntry(".cyrevision/recovery.json").Open();
+            JsonSerializer.Serialize(recovery, new { Paths = paths, PreviouslyPresent = existed }, JsonOptions);
+        }
+        List<string> touched = [];
+        try
+        {
+            foreach (string path in paths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string destination = SafeCombine(sourceRoot, path);
+                string staged = SafeCombine(staging, path);
+                if (File.Exists(staged))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".cycommit-tmp";
+                    try
+                    {
+                        File.Copy(staged, temporary);
+                        File.Move(temporary, destination, true);
+                    }
+                    finally { File.Delete(temporary); }
+                }
+                else File.Delete(destination);
+                touched.Add(path);
+            }
+        }
+        catch
+        {
+            using ZipArchive archive = ZipFile.OpenRead(backupPath);
+            foreach (string path in touched.AsEnumerable().Reverse())
+            {
+                string destination = SafeCombine(sourceRoot, path);
+                if (existed.Contains(path)) archive.GetEntry(path)!.ExtractToFile(destination, true);
+                else File.Delete(destination);
+            }
+            throw;
         }
     }
 
-    private static void ExtractPackage(
-        string sourceRoot,
-        string packagePath,
-        SyncCommitManifest incoming,
-        IReadOnlySet<string> keepLocal,
-        CancellationToken cancellationToken)
+    private static void StageVerifiedPackage(string package, string staging, SyncCommitManifest incoming, IReadOnlySet<string> changedPaths, CancellationToken token)
     {
-        using ZipArchive archive = ZipFile.OpenRead(packagePath);
-        HashSet<string> incomingPaths = incoming.Files.Select(item => item.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (SyncCommitFile existing in ScanAsync(sourceRoot, cancellationToken).GetAwaiter().GetResult())
-        {
-            if (!incomingPaths.Contains(existing.Path) && !keepLocal.Contains(existing.Path))
-                File.Delete(SafeCombine(sourceRoot, existing.Path));
-        }
+        using ZipArchive archive = ZipFile.OpenRead(package);
+        if (archive.Entries.Select(entry => entry.FullName).Distinct(StringComparer.OrdinalIgnoreCase).Count() != archive.Entries.Count)
+            throw new InvalidDataException("The package contains duplicate entries.");
+        using Stream manifestStream = (archive.GetEntry(ManifestEntryName) ?? throw new InvalidDataException("Missing manifest.")).Open();
+        SyncCommitManifest actual = JsonSerializer.Deserialize<SyncCommitManifest>(manifestStream, JsonOptions)
+            ?? throw new InvalidDataException("Invalid manifest.");
+        ValidateManifest(actual);
+        if (JsonSerializer.Serialize(actual, JsonOptions) != JsonSerializer.Serialize(incoming, JsonOptions))
+            throw new InvalidDataException("The package manifest changed since it was selected.");
+        Directory.CreateDirectory(staging);
         foreach (SyncCommitFile file in incoming.Files)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (keepLocal.Contains(file.Path)) continue;
-            ZipArchiveEntry entry = archive.GetEntry("files/" + file.Path)
-                ?? throw new InvalidDataException($"Package entry '{file.Path}' is missing.");
-            string destination = SafeCombine(sourceRoot, file.Path);
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            entry.ExtractToFile(destination, true);
+            token.ThrowIfCancellationRequested();
+            ZipArchiveEntry entry = archive.GetEntry("files/" + file.Path) ?? throw new InvalidDataException($"Missing entry '{file.Path}'.");
+            if (entry.Length != file.Length) throw new InvalidDataException($"Invalid size for '{file.Path}'.");
+            string destination = SafeCombine(staging, file.Path);
+            using Stream input = entry.Open();
+            if (changedPaths.Contains(file.Path)) Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            using Stream output = changedPaths.Contains(file.Path) ? File.Create(destination) : Stream.Null;
+            CopyVerified(input, output, file, token);
         }
+    }
+
+    private static void CopyVerified(Stream input, Stream output, SyncCommitFile file, CancellationToken token)
+    {
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = new byte[65536];
+        long length = 0;
+        int count;
+        while ((count = input.Read(buffer)) != 0)
+        {
+            token.ThrowIfCancellationRequested();
+            length += count;
+            if (length > file.Length) throw new InvalidDataException($"File '{file.Path}' changed size.");
+            hash.AppendData(buffer, 0, count);
+            output.Write(buffer, 0, count);
+        }
+        if (length != file.Length || !Convert.ToHexString(hash.GetHashAndReset()).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"SHA-256 verification failed for '{file.Path}'. No revision was published or applied.");
+    }
+
+    private static void ValidateManifest(SyncCommitManifest manifest)
+    {
+        if (manifest.ProjectId == Guid.Empty || manifest.Files is null || manifest.Files.Any(file =>
+            file.Length < 0 || file.Sha256 is null || file.Sha256.Length != 64 || !file.Sha256.All(char.IsAsciiHexDigit)))
+            throw new InvalidDataException("Invalid commit manifest.");
+        HashSet<string> paths = new(StringComparer.OrdinalIgnoreCase);
+        foreach (SyncCommitFile file in manifest.Files)
+        {
+            string[] parts = file.Path.Split('/');
+            if (parts.Any(part => string.IsNullOrWhiteSpace(part) || part is "." or ".." || ExcludedDirectoryNames.Contains(part) ||
+                    part.EndsWith('.') || part.EndsWith(' ') || part.IndexOfAny(['\\', ':']) >= 0) || !paths.Add(file.Path))
+                throw new InvalidDataException($"Unsafe or duplicate commit path '{file.Path}'.");
+        }
+        if (paths.Any(path => path.Split('/').SkipLast(1).Aggregate(new List<string>(), (parents, part) =>
+            { parents.Add(parents.Count == 0 ? part : parents[^1] + "/" + part); return parents; }).Any(paths.Contains)))
+            throw new InvalidDataException("A commit path cannot be both a file and a directory.");
+        if (ComputeCommitId(manifest.ProjectId, manifest.ParentCommitId, manifest.Message, manifest.Author, manifest.CreatedAt, manifest.Files) != manifest.CommitId)
+            throw new InvalidDataException("Invalid commit identity.");
+    }
+
+    private static void RejectLink(string path)
+    {
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException($"Sync + Commit does not follow symbolic links or junctions: {path}");
     }
 
     private static string? FindPackage(string exchangeDirectory, string commitId) =>
@@ -295,6 +439,21 @@ public sealed class SyncCommitService
     {
         string path = Path.Combine(stateDirectory, "HEAD");
         return File.Exists(path) ? (await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false)).Trim() : null;
+    }
+
+    private static IReadOnlyList<string> Ancestors(string head, IReadOnlyDictionary<string, SyncCommitManifest> commits)
+    {
+        List<string> result = [];
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        for (string? id = head; id is not null;)
+        {
+            if (!seen.Add(id) || !commits.TryGetValue(id, out SyncCommitManifest? commit))
+                throw new InvalidDataException("The Sync commit ancestry is incomplete or cyclic. Wait for all parent packages.");
+            ValidateManifest(commit);
+            result.Add(id);
+            id = commit.ParentCommitId;
+        }
+        return result;
     }
 
     private static string ComputeCommitId(Guid projectId, string? parent, string message, string author, DateTimeOffset createdAt, IReadOnlyList<SyncCommitFile> files)
@@ -310,6 +469,8 @@ public sealed class SyncCommitService
         string fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         string full = Path.GetFullPath(Path.Combine(fullRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
         if (!IsInside(full, fullRoot)) throw new InvalidDataException($"Unsafe package path '{relativePath}'.");
+        for (string? component = full; component is not null && IsInside(component, fullRoot); component = Path.GetDirectoryName(component))
+            if (File.Exists(component) || Directory.Exists(component)) RejectLink(component);
         return full;
     }
 

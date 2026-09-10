@@ -254,7 +254,7 @@ public sealed class FileSystemBackupService : IBackupService
             keep = [manifests[0].Snapshot.SnapshotId];
         }
 
-        if (retention.Mode == RetentionMode.LimitedVersions && retention.MaxVersionsPerFile is { } maxVersions)
+        if (retention.Mode is RetentionMode.LimitedVersions or RetentionMode.Timeline && retention.MaxVersionsPerFile is { } maxVersions)
         {
             keep.IntersectWith(manifests.Take(maxVersions).Select(manifest => manifest.Snapshot.SnapshotId));
         }

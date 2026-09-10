@@ -20,6 +20,8 @@ public sealed class ProjectPresetTests
 
         Assert.True(preset.Features.GitEnabled);
         Assert.False(preset.Features.PeerSyncEnabled);
+        Assert.Equal(FeatureMaturity.Beta, preset.Maturity);
+        Assert.Equal("BETA", preset.MaturityLabel);
     }
 
     [Fact]
@@ -30,6 +32,7 @@ public sealed class ProjectPresetTests
         Assert.True(preset.Features.PeerSyncEnabled);
         Assert.False(preset.Features.GitEnabled);
         Assert.False(preset.Features.LfsEnabled);
+        Assert.Equal(FeatureMaturity.Alpha, preset.Maturity);
     }
 
     [Fact]
@@ -41,6 +44,17 @@ public sealed class ProjectPresetTests
         Assert.True(preset.Features.BackupEnabled);
         Assert.False(preset.Features.GitEnabled);
         Assert.Equal(RetentionMode.Timeline, preset.Retention.Mode);
+        Assert.Equal(FeatureMaturity.Alpha, preset.Maturity);
+    }
+
+    [Fact]
+    public void EveryNonGitOnlyBuiltInModeIsAlpha()
+    {
+        foreach (ProjectPreset preset in ProjectPresets.All.Where(item => item.Kind != ProjectPresetKind.GitOnly))
+        {
+            Assert.Equal(FeatureMaturity.Alpha, preset.Maturity);
+            Assert.True(preset.IsAlpha);
+        }
     }
 
     [Fact]

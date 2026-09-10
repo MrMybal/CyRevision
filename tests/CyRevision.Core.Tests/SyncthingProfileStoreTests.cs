@@ -32,10 +32,12 @@ public sealed class SyncthingProfileStoreTests : IDisposable
             CompressedBackupEnabled = true,
             ConflictBackupRetentionDays = 45
         });
-        updated = await store.CreateOrUpdateAsync(projectId, executable, exchange);
+        string newExchange = Path.Combine(_root, "commit-exchange");
+        updated = await store.CreateOrUpdateAsync(projectId, executable, newExchange);
         SyncthingProfile? loaded = await store.GetAsync(projectId);
 
         Assert.NotNull(loaded);
+        Assert.Equal(newExchange, loaded.ExchangeDirectory);
         Assert.Equal(created.ApiEndpoint, updated.ApiEndpoint);
         Assert.Equal(created.ApiKey, updated.ApiKey);
         Assert.Equal(created.ListenPort, updated.ListenPort);

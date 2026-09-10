@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CyRevision.Security;
 
 namespace CyRevision.Git;
@@ -11,7 +12,12 @@ public sealed record GitPeerBundleManifest(
     DateTimeOffset CreatedAt,
     string BundleFileName,
     string BundleHash,
-    IReadOnlyDictionary<string, string> Branches);
+    IReadOnlyDictionary<string, string> Branches)
+{
+    // Omitted for legacy signatures; new publications are ordered per author.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public long Sequence { get; init; }
+}
 
 public sealed record SignedGitPeerBundle(GitPeerBundleManifest Manifest, string Signature);
 
@@ -159,6 +165,40 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
                 .ToArray(),
             cancellationToken);
 
+        // Keep the publication checkpoint in this repository, never in the shared folder.
+        ProcessResult stateLocation = await RunGitAsync(repositoryRoot,
+            ["rev-parse", "--git-path", "cyrevision-peer-publications"], cancellationToken);
+        EnsureSucceeded(stateLocation, "Unable to locate Git publication state");
+        string publicationRoot = Path.GetFullPath(stateLocation.StandardOutput.Trim(), repositoryRoot);
+        Directory.CreateDirectory(publicationRoot);
+        string publicationPath = Path.Combine(publicationRoot, $"{projectId:N}-{identity.Identity.DeviceId:N}.json");
+        using FileStream publicationLock = new(publicationPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        GitPeerBundleManifest? previous = File.Exists(publicationPath)
+            ? JsonSerializer.Deserialize<GitPeerBundleManifest>(await File.ReadAllBytesAsync(publicationPath, cancellationToken), JsonOptions)
+            : null;
+        if (previous is null)
+        {
+            // Recover monotonically after an upgrade or a lost local checkpoint.
+            foreach (string directory in Directory.EnumerateDirectories(transactionsRoot))
+            {
+                string path = Path.Combine(directory, "transaction.json");
+                if (!File.Exists(path)) continue;
+                SignedGitPeerBundle? item = JsonSerializer.Deserialize<SignedGitPeerBundle>(
+                    await File.ReadAllBytesAsync(path, cancellationToken), JsonOptions);
+                if (item?.Manifest.ProjectId == projectId && item.Manifest.Author.DeviceId == identity.Identity.DeviceId &&
+                    PeerExchangeCodec.VerifySignature(identity.Identity, CanonicalBytes(item.Manifest), item.Signature) &&
+                    (previous is null || ComparePublication(item.Manifest, previous) > 0))
+                    previous = item.Manifest;
+            }
+        }
+        IReadOnlyDictionary<string, string> currentBranches = await ReadBranchesAsync(repositoryRoot, cancellationToken);
+        int fulfilledRequests = requests.Count(request => publishedOids.Contains(request.Request.OidSha256));
+        if (previous is not null && SameBranches(previous.Branches, currentBranches) &&
+            File.Exists(Path.Combine(transactionsRoot, previous.TransactionId.ToString("N"), "transaction.json")) &&
+            File.Exists(Path.Combine(transactionsRoot, previous.TransactionId.ToString("N"), previous.BundleFileName)))
+            return new GitPeerExportResult(null, publish.CopiedObjects, publish.ResumedObjects, publish.DeferredObjects,
+                publish.CopiedBytes, fulfilledRequests, localObjects.Count);
+
         Guid transactionId = Guid.NewGuid();
         string stagingTransaction = Path.Combine(stagingRoot, transactionId.ToString("N"));
         string publishedTransaction = Path.Combine(transactionsRoot, transactionId.ToString("N"));
@@ -173,19 +213,20 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
                 cancellationToken);
             EnsureSucceeded(bundle, "Git bundle creation failed");
 
-            IReadOnlyDictionary<string, string> branches = await ReadBranchesAsync(repositoryRoot, cancellationToken);
+            IReadOnlyDictionary<string, string> branches = await ReadBundleBranchesAsync(repositoryRoot, bundlePath, cancellationToken);
             string bundleHash = await ComputeFileHashAsync(bundlePath, cancellationToken);
             GitPeerBundleManifest manifest = new(
                 transactionId,
                 projectId,
                 identity.Identity,
-                DateTimeOffset.UtcNow,
+                previous is not null && previous.CreatedAt >= DateTimeOffset.UtcNow ? previous.CreatedAt.AddTicks(1) : DateTimeOffset.UtcNow,
                 bundleFileName,
                 bundleHash,
-                branches);
+                branches) { Sequence = checked((previous?.Sequence ?? 0) + 1) };
             SignedGitPeerBundle signed = new(manifest, identity.Sign(CanonicalBytes(manifest)));
             await WriteJsonAtomicallyAsync(Path.Combine(stagingTransaction, "transaction.json"), signed, cancellationToken);
             Directory.Move(stagingTransaction, publishedTransaction);
+            await WriteJsonAtomicallyAsync(publicationPath, manifest, cancellationToken);
         }
         finally
         {
@@ -195,7 +236,6 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
             }
         }
 
-        int fulfilledRequests = requests.Count(request => publishedOids.Contains(request.Request.OidSha256));
         return new GitPeerExportResult(
             transactionId,
             publish.CopiedObjects,
@@ -239,6 +279,12 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
         string exchangeRoot = Path.GetFullPath(exchangePath);
         string stateRoot = Path.GetFullPath(localStatePath);
         Directory.CreateDirectory(stateRoot);
+        using FileStream importLock = new(Path.Combine(stateRoot, "git-import.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        string headsPath = Path.Combine(stateRoot, "git-peer-heads.json");
+        Dictionary<Guid, GitPeerBundleManifest> latest = File.Exists(headsPath)
+            ? JsonSerializer.Deserialize<Dictionary<Guid, GitPeerBundleManifest>>(await File.ReadAllBytesAsync(headsPath, cancellationToken), JsonOptions)
+                ?? throw new InvalidDataException("Invalid peer publication state.")
+            : [];
         HashSet<Guid> processed = await ReadProcessedTransactionsAsync(stateRoot, cancellationToken);
         Dictionary<Guid, DeviceIdentity> authorized = CreateAuthorizedDeviceMap(authorizedDevices);
         List<string> updatedBranches = [];
@@ -269,11 +315,6 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
 
                 GitPeerBundleManifest manifest = signed?.Manifest
                     ?? throw new InvalidDataException($"Invalid Git transaction: {transactionPath}");
-                if (processed.Contains(manifest.TransactionId))
-                {
-                    continue;
-                }
-
                 if (localDeviceId is not null && manifest.Author.DeviceId == localDeviceId)
                 {
                     processed.Add(manifest.TransactionId);
@@ -290,6 +331,12 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
                     throw new CryptographicException($"Git transaction {manifest.TransactionId} has an invalid signature.");
                 }
 
+                if (latest.TryGetValue(manifest.Author.DeviceId, out GitPeerBundleManifest? last) &&
+                    ComparePublication(manifest, last) <= 0)
+                {
+                    processed.Add(manifest.TransactionId);
+                    continue;
+                }
                 string bundlePath = ResolveContainedPath(transactionDirectory, manifest.BundleFileName);
                 if (!File.Exists(bundlePath) ||
                     !string.Equals(await ComputeFileHashAsync(bundlePath, cancellationToken), manifest.BundleHash, StringComparison.OrdinalIgnoreCase))
@@ -299,14 +346,19 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
 
                 ProcessResult verify = await RunGitAsync(repositoryRoot, ["bundle", "verify", bundlePath], cancellationToken);
                 EnsureSucceeded(verify, "Git bundle verification failed");
+                if (!SameBranches(manifest.Branches, await ReadBundleBranchesAsync(repositoryRoot, bundlePath, cancellationToken)))
+                    throw new InvalidDataException("The bundle branches differ from the signed manifest.");
                 string authorRef = SanitizeRefComponent(manifest.Author.DeviceId.ToString("N")[..12]);
                 ProcessResult fetch = await RunGitAsync(
                     repositoryRoot,
-                    ["fetch", bundlePath, $"+refs/heads/*:refs/remotes/cyrevision/{authorRef}/*"],
+                    ["fetch", "--atomic", "--prune", "--no-tags", bundlePath, $"+refs/heads/*:refs/remotes/cyrevision/{authorRef}/*"],
                     cancellationToken);
                 EnsureSucceeded(fetch, "Git bundle import failed");
                 updatedBranches.AddRange(manifest.Branches.Keys.Select(branch => $"cyrevision/{authorRef}/{branch}"));
                 processed.Add(manifest.TransactionId);
+                latest[manifest.Author.DeviceId] = manifest;
+                // Persist before processing more publications (including LFS failures/cancellation).
+                await WriteJsonAtomicallyAsync(headsPath, latest, CancellationToken.None);
                 importedTransactions++;
             }
         }
@@ -424,6 +476,30 @@ public sealed class GitPeerExchangeService : IGitPeerExchangeService
             }
         }
 
+        return branches;
+    }
+
+    private static bool SameBranches(IReadOnlyDictionary<string, string> left, IReadOnlyDictionary<string, string> right) =>
+        left.Count == right.Count && left.All(pair => right.TryGetValue(pair.Key, out string? hash) && hash == pair.Value);
+
+    private static int ComparePublication(GitPeerBundleManifest left, GitPeerBundleManifest right)
+    {
+        int order = left.Sequence.CompareTo(right.Sequence);
+        if (order == 0) order = left.CreatedAt.CompareTo(right.CreatedAt);
+        return order == 0 ? left.TransactionId.CompareTo(right.TransactionId) : order;
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> ReadBundleBranchesAsync(string repository, string bundle, CancellationToken token)
+    {
+        ProcessResult result = await RunGitAsync(repository, ["bundle", "list-heads", bundle], token);
+        EnsureSucceeded(result, "Unable to read bundle references");
+        Dictionary<string, string> branches = new(StringComparer.Ordinal);
+        foreach (string line in result.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] fields = line.Split(' ', 2);
+            if (fields.Length == 2 && fields[1].StartsWith("refs/heads/", StringComparison.Ordinal))
+                branches.Add(fields[1]["refs/heads/".Length..], fields[0]);
+        }
         return branches;
     }
 

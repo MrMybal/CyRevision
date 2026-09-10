@@ -28,8 +28,12 @@ public sealed record ProjectDefinition(
     bool StartVpnAutomatically = false,
     bool ProjectNotificationsEnabled = true,
     string? SidebarGroup = null,
-    string? PullRequestTaskUpdateMode = null)
+    string? PullRequestTaskUpdateMode = null,
+    Guid? SharedSyncProjectId = null)
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Guid SyncProjectId => SharedSyncProjectId ?? Id;
+
     public void Validate()
     {
         if (Id == Guid.Empty)
@@ -49,6 +53,8 @@ public sealed record ProjectDefinition(
 
         Features.Validate();
         Retention.Validate();
+        if (SharedSyncProjectId == Guid.Empty)
+            throw new InvalidOperationException("The shared Sync project ID must not be empty.");
 
         if (StandardRemoteUrl is not null &&
             !Uri.TryCreate(StandardRemoteUrl, UriKind.Absolute, out _))

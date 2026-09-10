@@ -137,6 +137,18 @@ internal sealed class WorkspaceTabVisibilityItem : INotifyPropertyChanged
     public event EventHandler? VisibilityChanged;
 }
 
+internal sealed class ApplicationUpdateInstallRequestedEventArgs(string packagePath) : EventArgs
+{
+    public string PackagePath { get; } = packagePath;
+}
+
+internal enum ApplicationUpdatePromptChoice
+{
+    Later,
+    ViewRelease,
+    Install
+}
+
 public partial class MainWindow : Window
 {
     private MainWindowViewModel _viewModel = null!;
@@ -183,10 +195,13 @@ public partial class MainWindow : Window
     private ApplicationPreferences _applicationPreferences = ApplicationPreferences.Default;
     private string _activeCacheDirectory = ApplicationPaths.CreateDefault().CacheDirectory;
     private string _configurationDirectory = ApplicationPaths.CreateDefault().ConfigurationDirectory;
+    private bool _updatePromptActive;
 
     public bool StartHidden { get; set; }
 
     public event EventHandler? ExitRequested;
+
+    internal event EventHandler<ApplicationUpdateInstallRequestedEventArgs>? UpdateInstallRequested;
 
     public MainWindow()
     {
@@ -237,6 +252,7 @@ public partial class MainWindow : Window
         ApplyChangeColumnVisibility();
         ConsoleAndLogsTabs.SelectionChanged += OnConsoleAndLogsTabSelectionChanged;
         _viewModel.PropertyChanged += OnMainViewModelPropertyChanged;
+        _viewModel.UpdateAvailable += OnUpdateAvailable;
         _codeRefreshTimer.Tick += OnCodeRefreshTimerTick;
         _codeRefreshTimer.Start();
         ApplyWorkspaceCategory(WorkspaceCategory.Overview, selectDefault: true);
@@ -318,6 +334,7 @@ public partial class MainWindow : Window
         foreach (AiChatMessageViewModel message in _viewModel.AiChatMessages)
             message.PropertyChanged -= OnAiChatMessagePropertyChanged;
         _viewModel.PropertyChanged -= OnMainViewModelPropertyChanged;
+        _viewModel.UpdateAvailable -= OnUpdateAvailable;
         _focusedDiffWindow?.Close();
         _focusedDiffWindow = null;
         _changesDiffWindow?.Close();
@@ -436,6 +453,9 @@ public partial class MainWindow : Window
             RefreshWorkspaceModeNavigation(selectPrimary: false);
         }
     }
+
+    private void OnUpdateAvailable(object? sender, EventArgs e) =>
+        Dispatcher.UIThread.Post(async () => await ShowAvailableUpdateDialogAsync());
 
     private void ConfigureRepositoryChangeMonitor()
     {
@@ -1919,7 +1939,7 @@ public partial class MainWindow : Window
         }
 
         CyRevision.Core.Configuration.ProjectFeatures? features = _viewModel?.SelectedProject?.Definition.Features;
-        SyncCategoryToggle.Content = _viewModel?.IsSyncCommitMode == true
+        SyncCategoryLabel.Text = _viewModel?.IsSyncCommitMode == true
             ? "Sync + Commit"
             : features switch
             {
@@ -4130,22 +4150,112 @@ public partial class MainWindow : Window
     private async void OnCheckForUpdatesClick(object? sender, RoutedEventArgs e) =>
         await _viewModel.CheckForUpdatesAsync();
 
-    private async void OnInstallUpdateClick(object? sender, RoutedEventArgs e)
+    private async void OnInstallUpdateClick(object? sender, RoutedEventArgs e) =>
+        await DownloadAndRequestUpdateInstallationAsync();
+
+    private async Task DownloadAndRequestUpdateInstallationAsync()
     {
-        string? packagePath = await _viewModel.DownloadAvailableUpdateAsync();
+        string? packagePath = await DownloadUpdateWithProgressDialogAsync();
         if (packagePath is null)
         {
+            await ShowMessageAsync(
+                Translate("Update installation failed"),
+                _viewModel.UpdateStatus);
             return;
         }
 
-        Process.Start(new ProcessStartInfo
+        if (UpdateInstallRequested is null)
         {
-            FileName = packagePath,
-            UseShellExecute = true
-        });
+            await ShowMessageAsync(
+                Translate("Update installation failed"),
+                Translate("The application update coordinator is unavailable."));
+            return;
+        }
+
+        UpdateInstallRequested.Invoke(this, new ApplicationUpdateInstallRequestedEventArgs(packagePath));
     }
 
-    private void OnOpenUpdateReleaseClick(object? sender, RoutedEventArgs e)
+    private async Task<string?> DownloadUpdateWithProgressDialogAsync()
+    {
+        TextBlock status = new()
+        {
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#DFE1E5"))
+        };
+        ProgressBar progress = new()
+        {
+            Minimum = 0,
+            Maximum = 100,
+            Height = 8
+        };
+        Window dialog = new()
+        {
+            Title = Translate("Downloading CyRevision update"),
+            Width = 520,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#1E1F22")),
+            Content = new StackPanel
+            {
+                Margin = new Avalonia.Thickness(24),
+                Spacing = 14,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = Translate("Downloading and verifying the signed release package…"),
+                        FontSize = 18,
+                        FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                        Foreground = Avalonia.Media.Brushes.White
+                    },
+                    status,
+                    progress,
+                    new TextBlock
+                    {
+                        Text = Translate("CyRevision will close automatically when the verified package is ready."),
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                        Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#AEB4C0"))
+                    }
+                }
+            }
+        };
+        bool allowClose = false;
+        dialog.Closing += (_, e) => e.Cancel = !allowClose;
+
+        void RefreshProgress()
+        {
+            status.Text = _viewModel.UpdateStatus;
+            progress.Value = _viewModel.UpdateProgress;
+        }
+
+        void OnProgressChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(MainWindowViewModel.UpdateStatus) or nameof(MainWindowViewModel.UpdateProgress))
+            {
+                Dispatcher.UIThread.Post(RefreshProgress);
+            }
+        }
+
+        _viewModel.PropertyChanged += OnProgressChanged;
+        RefreshProgress();
+        Task dialogTask = dialog.ShowDialog(this);
+        try
+        {
+            return await _viewModel.DownloadAvailableUpdateAsync();
+        }
+        finally
+        {
+            _viewModel.PropertyChanged -= OnProgressChanged;
+            allowClose = true;
+            dialog.Close();
+            await dialogTask;
+        }
+    }
+
+    private void OnOpenUpdateReleaseClick(object? sender, RoutedEventArgs e) => OpenUpdateReleasePage();
+
+    private void OpenUpdateReleasePage()
     {
         if (!Uri.TryCreate(_viewModel.UpdateReleasePageUrl, UriKind.Absolute, out Uri? releaseUri) ||
             !releaseUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
@@ -4159,6 +4269,142 @@ public partial class MainWindow : Window
             FileName = releaseUri.AbsoluteUri,
             UseShellExecute = true
         });
+    }
+
+    private async Task ShowAvailableUpdateDialogAsync()
+    {
+        if (_updatePromptActive || !_viewModel.HasUpdateAvailable)
+        {
+            return;
+        }
+
+        _updatePromptActive = true;
+        try
+        {
+            if (!IsVisible)
+            {
+                ShowInTaskbar = true;
+                Show();
+            }
+            Activate();
+
+            Button later = new()
+            {
+                Content = Translate("Later"),
+                Padding = new Avalonia.Thickness(18, 8),
+                Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#33363D")),
+                Foreground = Avalonia.Media.Brushes.White
+            };
+            Button viewRelease = new()
+            {
+                Content = Translate("View release"),
+                Padding = new Avalonia.Thickness(18, 8),
+                Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#33363D")),
+                Foreground = Avalonia.Media.Brushes.White
+            };
+            Button install = new()
+            {
+                Content = Translate("Download and install"),
+                Padding = new Avalonia.Thickness(18, 8),
+                IsEnabled = _viewModel.CanInstallUpdate,
+                Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#3574F0")),
+                Foreground = Avalonia.Media.Brushes.White
+            };
+            string releaseNotes = string.IsNullOrWhiteSpace(_viewModel.UpdateReleaseNotes)
+                ? Translate("No release notes were published for this version.")
+                : _viewModel.UpdateReleaseNotes;
+            Window dialog = new()
+            {
+                Title = Translate("CyRevision update available"),
+                Width = 640,
+                SizeToContent = SizeToContent.Height,
+                MaxHeight = 720,
+                CanResize = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#1E1F22")),
+                Content = new StackPanel
+                {
+                    Margin = new Avalonia.Thickness(24),
+                    Spacing = 14,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = string.Format(
+                                System.Globalization.CultureInfo.CurrentCulture,
+                                Translate("Version {0} is available"),
+                                _viewModel.LatestApplicationVersion),
+                            FontSize = 22,
+                            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                            Foreground = Avalonia.Media.Brushes.White
+                        },
+                        new TextBlock
+                        {
+                            Text = _viewModel.UpdateStatus,
+                            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#AEB4C0"))
+                        },
+                        new Border
+                        {
+                            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#111722")),
+                            BorderBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#343B4A")),
+                            BorderThickness = new Avalonia.Thickness(1),
+                            CornerRadius = new Avalonia.CornerRadius(6),
+                            Padding = new Avalonia.Thickness(12),
+                            Child = new ScrollViewer
+                            {
+                                MaxHeight = 240,
+                                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                                Content = new TextBlock
+                                {
+                                    Text = releaseNotes,
+                                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                                    Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#DFE1E5"))
+                                }
+                            }
+                        },
+                        new TextBlock
+                        {
+                            Text = Translate("After the verified download, CyRevision will close completely. The installer will start only after the application and its background services have stopped."),
+                            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#FFD479"))
+                        },
+                        new StackPanel
+                        {
+                            Orientation = Avalonia.Layout.Orientation.Horizontal,
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                            Spacing = 8,
+                            Children = { later, viewRelease, install }
+                        }
+                    }
+                }
+            };
+            later.Click += (_, _) => dialog.Close(ApplicationUpdatePromptChoice.Later);
+            viewRelease.Click += (_, _) => dialog.Close(ApplicationUpdatePromptChoice.ViewRelease);
+            install.Click += (_, _) => dialog.Close(ApplicationUpdatePromptChoice.Install);
+
+            ApplicationUpdatePromptChoice? choice = await dialog.ShowDialog<ApplicationUpdatePromptChoice?>(this);
+            switch (choice)
+            {
+                case ApplicationUpdatePromptChoice.ViewRelease:
+                    OpenUpdateReleasePage();
+                    break;
+                case ApplicationUpdatePromptChoice.Install:
+                    await DownloadAndRequestUpdateInstallationAsync();
+                    break;
+            }
+        }
+        finally
+        {
+            _updatePromptActive = false;
+        }
+    }
+
+    internal async Task ShowUpdateLaunchErrorAsync(string details)
+    {
+        await ShowMessageAsync(
+            Translate("Update installation failed"),
+            Translate("CyRevision could not start the external installer.") + Environment.NewLine + details);
     }
 
     private async Task ShowAboutAsync()

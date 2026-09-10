@@ -166,6 +166,7 @@ public partial class App : Application
             };
             _mainWindow = mainWindow;
             mainWindow.ExitRequested += OnExitRequested;
+            mainWindow.UpdateInstallRequested += OnUpdateInstallRequested;
             mainWindow.Closing += OnMainWindowClosing;
             mainWindow.ConfigureDesktopBehavior(
                 _desktopPreferences,
@@ -186,6 +187,7 @@ public partial class App : Application
                 _mainTrayIcon.Dispose();
                 localization.LanguageChanged -= OnLanguageChanged;
                 viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+                mainWindow.UpdateInstallRequested -= OnUpdateInstallRequested;
                 if (!_viewModelDisposalStarted)
                 {
                     _viewModelDisposalStarted = true;
@@ -393,6 +395,38 @@ public partial class App : Application
     }
 
     private void OnExitRequested(object? sender, EventArgs e) => RequestExit();
+
+    private async void OnUpdateInstallRequested(
+        object? sender,
+        ApplicationUpdateInstallRequestedEventArgs e)
+    {
+        if (_shutdownStarted)
+        {
+            return;
+        }
+
+        try
+        {
+            ApplicationUpdateLauncher.LaunchAfterExit(e.PackagePath, Environment.ProcessId);
+            _applicationLogService?.Information(
+                "Application",
+                "Verified update downloaded. CyRevision will shut down before the external installer starts.");
+            await ShutdownApplicationAsync();
+        }
+        catch (Exception exception)
+        {
+            _applicationLogService?.Error(
+                "Application",
+                "The external update installer could not be scheduled.",
+                exception);
+            if (_mainWindow is not null)
+            {
+                _mainWindow.IsEnabled = true;
+                ShowMainWindow();
+                await _mainWindow.ShowUpdateLaunchErrorAsync(exception.Message);
+            }
+        }
+    }
 
     private void OnTrayIconClicked(object? sender, EventArgs e)
     {

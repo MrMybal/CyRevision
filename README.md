@@ -45,7 +45,7 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 - Compact Rider-style project navigation plus freely resizable detached History, Code, Multi Restore, and Cherry-pick workspaces for multi-monitor review.
 - Optional AI Workspace plugin for Codex CLI, OpenAI Responses API, compatible APIs, Ollama, and LM Studio, with explicit read/edit/network/stage/commit permissions and no automatic push.
 - Project-scoped MCP manager for STDIO and Streamable HTTP servers, local-only profiles, environment-based secrets, server/tool allow and deny lists, approval modes, timeouts, unmanaged-server isolation, and an emergency block switch.
-- Built-in stable-release updater with platform package selection and mandatory SHA-256 verification; commits, drafts, and prereleases are ignored.
+- Built-in stable-release updater with an availability prompt, release notes, platform package selection, mandatory SHA-256 verification, graceful application shutdown, and installer launch after every background service has stopped; commits, drafts, and prereleases are ignored.
 
 ## Open in Rider
 
@@ -78,7 +78,7 @@ Publish on Windows:
 Build a self-contained Windows installer and portable release locally:
 
 ```powershell
-./scripts/build-release.cmd 0.1.23
+./scripts/build-release.cmd 0.1.24
 ```
 
 Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).

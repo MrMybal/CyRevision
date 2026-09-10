@@ -45,6 +45,7 @@
     <ProjectReference Include="..\..\src\CyRevision.RemoteBuild\CyRevision.RemoteBuild.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Security\CyRevision.Security.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Sync\CyRevision.Sync.csproj" />
+    <ProjectReference Include="..\..\src\CyRevision.Server\CyRevision.Server.csproj" />
     <ProjectReference Include="..\..\src\CyRevision.Vpn\CyRevision.Vpn.csproj" />
   </ItemGroup>
 
