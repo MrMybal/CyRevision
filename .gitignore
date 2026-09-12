@@ -31,3 +31,14 @@ AvaloniaUI/
 !.env.example
 appsettings.Local.json
 secrets/
+
+# Private local data and diagnostic outputs
+.codex/
+/.openai/hosting.json
+*.pfx
+*.p12
+*.key
+*.pem
+*.dmp
+*.etl
+*.binlog

@@ -33,7 +33,7 @@ Commande :
 
     dotnet test tests/CyRevision.Core.Tests/CyRevision.Core.Tests.csproj -c ModeAudit --no-restore --nologo --logger "trx;LogFileName=mode-fixes-verified.trx"
 
-Dernière passe sur le code final : **285 tests réussis, 0 échec, 0 ignoré**, en 1 min 57 s. [Résultat TRX](../tests/CyRevision.Core.Tests/TestResults/mode-fixes-verified.trx).
+Dernière passe sur le code final : **285 tests réussis, 0 échec, 0 ignoré**, en 1 min 57 s. `mode-fixes-verified.trx` (résultat local non publié).
 
 Les tests couvrent notamment Git/Git LFS et le nettoyage protégé, les conflits et restaurations, les diffs et aperçus, les profils des modes, les sauvegardes, les plugins et leur isolation, CI/PR et tâches, les préférences/cache/mise à jour, la sécurité des pairs, VPN/chat/remote build. Pour les fournisseurs externes, il s'agit de tests de logique ou de services simulés, pas de connexions aux comptes réels.
 
@@ -59,7 +59,7 @@ Résultats :
 5. Transmission d'un bundle Git signé via Syncthing puis import de la référence de pair sans checkout du destinataire — réussis.
 6. Arrêt des deux moteurs et de leurs API — réussi.
 
-Banc d'essai local execute hors du depot (non publie).
+Banc d’essai local exécuté hors du dépôt (non publié).
 
 ## Limites et livraison
 
@@ -69,4 +69,4 @@ Banc d'essai local execute hors du depot (non publie).
 - Les sauvegardes de récupération réduisent le risque d'échec d'application ; elles ne rendent pas un ensemble de fichiers atomique face à une coupure de courant.
 - Ces résultats ne constituent pas une garantie d'absence de tout autre bug.
 
-Binaire de vérification : [CyRevision.Desktop.exe](../src/CyRevision.Desktop/bin/ModeAudit/net8.0/CyRevision.Desktop.exe). L'instance déjà ouverte n'a pas été fermée ni relancée.
+Binaire de vérification : `CyRevision.Desktop.exe` (binaire local non publié). L'instance déjà ouverte n'a pas été fermée ni relancée.
