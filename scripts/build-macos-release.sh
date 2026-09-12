@@ -137,7 +137,9 @@ if [[ ! -x "$main_executable" || ! -x "$packaged_executable" ]]; then
 fi
 while IFS= read -r -d '' candidate; do
   if file -b "$candidate" | grep -q 'Mach-O'; then
-    codesign --force --sign - "$candidate"
+    if ! codesign --verify --strict "$candidate" >/dev/null 2>&1; then
+      codesign --force --sign - "$candidate"
+    fi
   fi
 done < <(find "$app_root" -type f -print0)
 

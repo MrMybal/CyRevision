@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-## 0.1.26 Alpha — 2026-09-13
+## 0.1.27 Alpha — 2026-09-13
 
 - updated Windows, Linux and macOS application packages;
+- updated the bundled macOS .NET runtime to 8.0.31 and retained valid signatures on native dependencies;
 - reduced distribution size by excluding debugging symbols from packaged builds;
 - improved package generation and checksum verification across supported platforms;
 - prevented accidental replacement of existing release downloads.

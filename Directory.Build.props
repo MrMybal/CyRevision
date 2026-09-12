@@ -4,7 +4,8 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <Deterministic>true</Deterministic>
-    <VersionPrefix>0.1.26</VersionPrefix>
+    <VersionPrefix>0.1.27</VersionPrefix>
+    <RuntimeFrameworkVersion Condition="'$(RuntimeIdentifier)' == 'osx-x64' Or '$(RuntimeIdentifier)' == 'osx-arm64'">8.0.31</RuntimeFrameworkVersion>
     <Product>CyRevision</Product>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
     <NuGetAudit Condition="'$(CI)' != 'true'">false</NuGetAudit>

@@ -20,6 +20,7 @@ privacy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(privacy)
 MANIFEST = ROOT / 'scripts/release-unreal-sha256.json'
 PUBLIC_VENDOR_RECORDS = json.loads((ROOT / 'scripts/public-vendor-debug-records.json').read_text(encoding='utf-8'))
+PUBLIC_MACOS_RECORDS = json.loads((ROOT / 'scripts/public-macos-runtime-records.json').read_text(encoding='utf-8'))['files']
 EXTRACTOR_URL = 'https://github.com/UserUnknownFactor/innoextract_win/releases/download/670/innoextract670.zip'
 EXTRACTOR_SHA = '79b69b9b1fcd98f42ccd4b245efdf6a03bcfb674ba6af482f5a46891c9ed4d14'
 MAX_MEMBER = 512 * 1024 * 1024
@@ -67,7 +68,9 @@ def issues_for(name, data):
         if any(pattern.search(text) for text in texts):
             issues.append(label)
     vendor = PUBLIC_VENDOR_RECORDS.get(PurePosixPath(name).name)
-    if vendor and sha(data) == vendor['sha256']:
+    digest = sha(data)
+    mac_vendor = PUBLIC_MACOS_RECORDS.get(digest)
+    if (vendor and digest == vendor['sha256']) or (mac_vendor and mac_vendor[0] == PurePosixPath(name).name):
         # These exact upstream NuGet DLLs contain public upstream build records.
         # Do not patch signed third-party binaries. No other rule is exempted,
         # and any rebuild/replacement invalidates this narrow hash-bound review.
@@ -95,7 +98,7 @@ class Audit:
         for reason in issues_for(name, data):
             # Names can themselves contain a secret: identify by ordinal only.
             self.failures.append(f'file #{self.files}: {reason}')
-        if name.endswith('UnrealEditor-CyRevisionEditor.dll'):
+        if PurePosixPath(name).name == 'UnrealEditor-CyRevisionEditor.dll':
             match = re.search(r'Variants/(UE5\.[2-8])/Win64/', name)
             if not match or sha(data) != self.expected.get(match.group(1)):
                 self.failures.append(f'file #{self.files}: Unreal DLL is not an approved privacy-reviewed build')

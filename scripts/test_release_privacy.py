@@ -97,6 +97,21 @@ class ReleasePrivacyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 receipts.verify(root, version)
 
+    def test_macos_vendor_approval_requires_exact_bytes_and_name(self):
+        data = b'/' + b'Users/' + b'upstream/build/example'
+        with patch.object(audit, 'PUBLIC_MACOS_RECORDS', {audit.sha(data): ['PublicRuntime.dylib', 0]}):
+            self.assertNotIn('home directory', audit.issues_for('PublicRuntime.dylib', data))
+            self.assertIn('home directory', audit.issues_for('PublicRuntime.dylib', data + b'changed'))
+            self.assertIn('home directory', audit.issues_for('Other.dylib', data))
+
+    def test_appledouble_metadata_is_not_an_unreal_binary(self):
+        result = audit.Audit()
+        result.consume('__MACOSX/._UnrealEditor-CyRevisionEditor.dll', b'metadata')
+        self.assertEqual([], result.failures)
+        self.assertEqual(set(), result.unreal)
+        with self.assertRaises(ValueError):
+            result.finish()
+
     def test_failed_extractor_never_approves_package(self):
         with patch.object(audit.subprocess, 'run') as process:
             process.return_value.returncode = 1
