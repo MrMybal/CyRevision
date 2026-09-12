@@ -31,6 +31,8 @@ portable_archive="$release_root/CyRevision-$version-$rid-portable.tar.gz"
 deb_package="$release_root/CyRevision-$version-$rid.deb"
 checksum_file="$release_root/SHA256SUMS-$rid.txt"
 
+python3 "$repository_root/scripts/check-repository-privacy.py"
+
 rm -rf -- "$publish_directory" "$package_root"
 mkdir -p "$publish_directory"
 
@@ -77,6 +79,8 @@ cp "$repository_root/README.md" "$publish_directory/"
 chmod +x "$publish_directory/CyRevision.Desktop"
 chmod +x "$publish_directory/Agent/CyRevision.Discord.Agent"
 chmod +x "$publish_directory/BuildAgent/CyRevision.Build.Agent"
+find "$publish_directory" -type f -name '*.pdb' -delete
+python3 "$repository_root/scripts/audit-release-privacy.py" --tree "$publish_directory"
 tar -C "$publish_directory" -czf "$portable_archive" .
 
 install -d \
@@ -109,6 +113,9 @@ sed \
   "$repository_root/installer/linux/control.in" > "$package_root/DEBIAN/control"
 
 dpkg-deb --build --root-owner-group "$package_root" "$deb_package"
+for package in "$portable_archive" "$deb_package"; do
+  python3 "$repository_root/scripts/audit-release-privacy.py" --package "$package" --report "$package.privacy.json"
+done
 (
   cd "$release_root"
   sha256sum "$(basename "$portable_archive")" "$(basename "$deb_package")" > "$(basename "$checksum_file")"

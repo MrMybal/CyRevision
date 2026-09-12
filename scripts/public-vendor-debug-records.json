@@ -1,0 +1,12 @@
+{
+  "Avalonia.Controls.DataGrid.dll": {
+    "sha256": "b69111a093c70898e266338ef7d4d5f2287c7c7861d8abdf0a4a3be2e0fbd772",
+    "package": "Avalonia.Controls.DataGrid/12.1.0",
+    "source": "https://api.nuget.org/v3-flatcontainer/avalonia.controls.datagrid/12.1.0/avalonia.controls.datagrid.12.1.0.nupkg"
+  },
+  "MicroCom.Runtime.dll": {
+    "sha256": "2538ec6f3c24e901a90e33c37788b9a4e4b6ae8158cab7328a00a00bb28eab9e",
+    "package": "MicroCom.Runtime/0.11.6",
+    "source": "https://api.nuget.org/v3-flatcontainer/microcom.runtime/0.11.6/microcom.runtime.0.11.6.nupkg"
+  }
+}

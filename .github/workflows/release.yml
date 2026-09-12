@@ -9,7 +9,7 @@ on:
       version:
         description: "Release version without the v prefix"
         required: true
-        default: "0.1.24"
+        default: "0.1.25"
       publish_release:
         description: "Create or update the GitHub Release"
         type: boolean
@@ -26,6 +26,11 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Require the privacy-cleaned ancestry
+        run: git merge-base --is-ancestor c044eb30fc31c83a30171bff967ee1a51fcc94ed HEAD
       - name: Resolve release version
         id: release
         shell: bash
@@ -45,6 +50,8 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          declared=$(sed -n 's/.*<VersionPrefix>\(.*\)<\/VersionPrefix>.*/\1/p' Directory.Build.props)
+          test "$version" = "$declared"
 
   validate:
     needs: prepare
@@ -52,6 +59,12 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Privacy checks and audit regression tests
+        run: |
+          python3 scripts/check-repository-privacy.py
+          python3 -m unittest discover -s scripts -p 'test_*privacy.py'
       - name: Install .NET 9 SDK
         uses: actions/setup-dotnet@v5
         with:
@@ -69,6 +82,11 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install .NET 9 SDK
         uses: actions/setup-dotnet@v5
         with:
@@ -89,6 +107,7 @@ jobs:
             artifacts/release/${{ needs.prepare.outputs.version }}/*.exe
             artifacts/release/${{ needs.prepare.outputs.version }}/*.zip
             artifacts/release/${{ needs.prepare.outputs.version }}/SHA256SUMS-win-x64.txt
+            artifacts/release/${{ needs.prepare.outputs.version }}/*.privacy.json
           if-no-files-found: error
 
   linux:
@@ -101,6 +120,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Install .NET 9 SDK
         uses: actions/setup-dotnet@v5
         with:
@@ -119,6 +140,7 @@ jobs:
             artifacts/release/${{ needs.prepare.outputs.version }}/*.deb
             artifacts/release/${{ needs.prepare.outputs.version }}/*.tar.gz
             artifacts/release/${{ needs.prepare.outputs.version }}/SHA256SUMS-${{ matrix.rid }}.txt
+            artifacts/release/${{ needs.prepare.outputs.version }}/*.privacy.json
           if-no-files-found: error
 
   macos:
@@ -131,6 +153,11 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install .NET 9 SDK
         uses: actions/setup-dotnet@v5
         with:
@@ -149,6 +176,7 @@ jobs:
             artifacts/release/${{ needs.prepare.outputs.version }}/*.dmg
             artifacts/release/${{ needs.prepare.outputs.version }}/*.zip
             artifacts/release/${{ needs.prepare.outputs.version }}/SHA256SUMS-${{ matrix.rid }}.txt
+            artifacts/release/${{ needs.prepare.outputs.version }}/*.privacy.json
           if-no-files-found: error
 
   publish:
@@ -156,19 +184,22 @@ jobs:
     if: github.ref_type == 'tag' || inputs.publish_release == true
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
       - name: Download all platform artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: CyRevision-${{ needs.prepare.outputs.version }}-*
           path: release-assets
           merge-multiple: true
+      - name: Verify final package privacy receipts
+        run: python3 scripts/verify-release-audits.py release-assets '${{ needs.prepare.outputs.version }}'
       - name: Create unified checksums
         shell: bash
         run: |
           cd release-assets
           rm -f SHA256SUMS-*.txt
-          sha256sum -- *.exe *.zip *.deb *.tar.gz *.dmg | sort -k2 > SHA256SUMS.txt
-      - name: Create or update GitHub Release
+          sha256sum -- *.exe *.zip *.deb *.tar.gz *.dmg *.privacy.json | sort -k2 > SHA256SUMS.txt
+      - name: Create a new release only (never overwrite or revive drafts)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -177,9 +208,9 @@ jobs:
         run: |
           mapfile -t files < <(find release-assets -maxdepth 1 -type f -print | sort)
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
-          else
-            gh release create "$RELEASE_TAG" "${files[@]}" \
-              --title "CyRevision $RELEASE_TAG — Alpha" \
-              --generate-notes
+            echo 'An existing release or draft must never be overwritten.' >&2
+            exit 1
           fi
+          gh release create "$RELEASE_TAG" "${files[@]}" --verify-tag \
+            --title "CyRevision $RELEASE_TAG — Alpha" \
+            --notes-file "docs/release-${RELEASE_TAG#v}.md"

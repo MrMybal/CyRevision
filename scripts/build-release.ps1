@@ -67,6 +67,8 @@ $agentPublishDirectory = Join-Path $publishDirectory 'Agent'
 $buildAgentPublishDirectory = Join-Path $publishDirectory 'BuildAgent'
 $portableArchive = Join-Path $releaseRoot "CyRevision-$Version-win-x64-portable.zip"
 
+Invoke-NativeCommand 'python' @((Join-Path $repositoryRoot 'scripts/check-repository-privacy.py'))
+
 if (Test-Path -LiteralPath $releaseRoot)
 {
     $resolvedReleaseRoot = [IO.Path]::GetFullPath($releaseRoot)
@@ -132,6 +134,10 @@ Invoke-NativeCommand 'dotnet' @(
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination $publishDirectory
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination $publishDirectory
 
+# Symbols from third-party NuGet dependencies are not part of a release payload.
+Get-ChildItem -LiteralPath $publishDirectory -Filter '*.pdb' -File -Recurse | Remove-Item -Force
+Invoke-NativeCommand 'python' @((Join-Path $repositoryRoot 'scripts/audit-release-privacy.py'), '--tree', $publishDirectory)
+
 Compress-Archive -Path (Join-Path $publishDirectory '*') -DestinationPath $portableArchive -CompressionLevel Optimal
 
 $innoCompilerCandidates = @(
@@ -164,6 +170,10 @@ $releaseFiles = Get-ChildItem -LiteralPath $releaseRoot -File |
     Where-Object { $_.Extension -in '.exe', '.zip' } |
     Sort-Object Name
 $checksumPath = Join-Path $releaseRoot 'SHA256SUMS-win-x64.txt'
+foreach ($package in $releaseFiles)
+{
+    Invoke-NativeCommand 'python' @((Join-Path $repositoryRoot 'scripts/audit-release-privacy.py'), '--package', $package.FullName, '--report', ($package.FullName + '.privacy.json'))
+}
 $checksumLines = foreach ($file in $releaseFiles)
 {
     $hash = Get-Sha256Hex -Path $file.FullName

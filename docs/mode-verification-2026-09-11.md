@@ -1,6 +1,6 @@
 # Corrections et vérification des modes — 11 septembre 2026
 
-Code de départ : 64de457, v0.1.23, avec les modifications locales préexistantes de mise à jour et de badges Alpha/Beta. Ces modifications ont été conservées. Aucun commit, push ni publication de release n'a été effectué pendant cette intervention.
+Code de départ : v0.1.23, avec les modifications locales préexistantes de mise à jour et de badges Alpha/Beta. Ces modifications ont été conservées. Aucun commit, push ni publication de release n'a été effectué pendant cette intervention. Les références de commits antérieures au nettoyage de confidentialité ne sont pas réutilisées ici.
 
 ## Corrections
 

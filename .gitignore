@@ -42,3 +42,5 @@ secrets/
 *.dmp
 *.etl
 *.binlog
+__pycache__/
+*.pyc

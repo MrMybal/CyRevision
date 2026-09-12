@@ -35,6 +35,8 @@ main_executable="$bundle_root/Contents/MacOS/CyRevision.Desktop"
 packaged_executable="$app_root/CyRevision.Desktop"
 launcher_source="$repository_root/installer/macos/CyRevisionLauncher.c"
 
+python3 "$repository_root/scripts/check-repository-privacy.py"
+
 rm -rf -- "$publish_directory" "$bundle_root" "$dmg_stage" "$iconset"
 mkdir -p "$publish_directory" "$bundle_root/Contents/MacOS" "$app_root" "$iconset"
 
@@ -77,6 +79,7 @@ dotnet publish "$build_agent_project" \
   /p:DebugSymbols=false
 
 cp -a "$publish_directory/." "$app_root/"
+find "$app_root" -type f -name '*.pdb' -delete
 chmod +x "$packaged_executable"
 chmod +x "$app_root/Agent/CyRevision.Discord.Agent"
 chmod +x "$app_root/BuildAgent/CyRevision.Build.Agent"
@@ -97,6 +100,7 @@ xcrun --sdk macosx clang \
   -Wall \
   -Wextra \
   -Werror \
+  "-ffile-prefix-map=$repository_root=/_" \
   "$launcher_source" \
   -o "$main_executable"
 chmod +x "$main_executable"
@@ -158,6 +162,10 @@ hdiutil create \
   -ov \
   -format UDZO \
   "$dmg_path"
+
+for package in "$portable_archive" "$dmg_path"; do
+  python3 "$repository_root/scripts/audit-release-privacy.py" --package "$package" --report "$package.privacy.json"
+done
 
 (
   cd "$release_root"

@@ -28,3 +28,42 @@ labels. It refuses signed files and executable/writable string sections. It does
 not rebuild the plugin and does not change executable sections, offsets, imports,
 exports or relocations. Run it on release copies, then validate those copies before
 packaging. Source-location messages will contain a neutral build root.
+
+## Release privacy gates
+
+Release builds map compiler source locations to `/_/` and omit PDB files, including
+PDB files copied by dependencies. `scripts/audit-release-privacy.py` scans published
+files and final decompressed ZIP/TAR/DEB/DMG/Inno installer payloads. ASCII and
+UTF-16 in both byte orders/alignment offsets are checked. Windows installers are
+extracted with a checksum-pinned tool, never run on the user's installed profile;
+DMGs are mounted read-only. Tool failures block publication.
+
+Checks cover user/project paths, private-key markers, common token formats,
+personal-mailbox patterns, runtime/configuration files and symbols. Release
+contents must not contain real peer identities/certificates, WireGuard private
+keys, Syncthing profiles, local databases, backups, journals or app preferences.
+Do not treat filename checks as a complete secret detector: manual review and the
+repository's redacted Gitleaks history check remain necessary.
+
+`scripts/release-unreal-sha256.json` pins all seven cleaned native DLLs. After an
+Unreal rebuild, review strings and symbols again, validate executable-section
+integrity if using the sanitizer, and test the rebuilt plugin in its target engine
+before approving new hashes. Never automatically refresh the manifest to silence
+a failed check. The manifest currently identifies sanitized precompiled DLLs,
+not freshly rebuilt or newly runtime-certified versions.
+
+`scripts/public-vendor-debug-records.json` identifies two unmodified public NuGet
+DLLs by exact content hash. Their upstream home-directory debug records are not
+user data from this project. Only that one rule is exempted for those exact bytes;
+modified DLLs and all credential rules remain blocking. No symbol files ship.
+
+Each package produces a `.privacy.json` receipt with its hash, inspected file count
+and approved Unreal variants. The publication job requires exactly the ten expected
+packages and matching receipts. Existing releases (including drafts) cannot be
+overwritten or revived. The release must descend from the privacy-cleaned base.
+
+Run the release checker tests with:
+
+```sh
+python -m unittest discover -s scripts -p 'test_*privacy.py'
+```

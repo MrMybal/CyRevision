@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.25 Alpha — 2026-09-13
+
+- rebuilt application binaries from the privacy-cleaned history using neutral compiler source paths and no distributed debug-symbol files;
+- added blocking privacy inspection of final ZIP, TAR, DEB, DMG and Windows installer payloads before uploading them, with package-bound audit reports and SHA-256 verification;
+- pinned the seven privacy-reviewed Unreal DLL variants to checked SHA-256 values; rebuilt/replaced variants must pass a new privacy review before packaging. These existing DLLs were not recompiled or runtime-tested in each Unreal version for this release;
+- prevented release publication from overwriting an existing release or reviving an old draft, and validated GitHub noreply commit/tag identities before packaging.
+
 ## 0.1.24 Alpha — 2026-09-11
 
 - added the in-app stable-release update prompt, verified package downloads, and installer handoff after background services and the application have stopped;
