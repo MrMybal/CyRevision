@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -24,7 +25,8 @@ def verify(root, version):
                 or report.get('files_inspected', 0) < 100
                 or report.get('unreal_variants') != [f'UE5.{v}' for v in range(2, 9)]):
             raise ValueError('Invalid or stale package privacy receipt')
-    print('All ten release packages have matching privacy receipts.')
+    if not os.environ.get('CI'):
+        print('All ten release packages have matching privacy receipts.')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
@@ -34,5 +36,5 @@ if __name__ == '__main__':
     try:
         verify(args.directory, args.version)
     except Exception:
-        print('Release privacy receipts missing, invalid or stale; publication refused.', file=sys.stderr)
+        print('Package validation failed; publication stopped.' if os.environ.get('CI') else 'Release privacy receipts missing, invalid or stale; publication refused.', file=sys.stderr)
         sys.exit(1)

@@ -1,4 +1,4 @@
-name: Repository privacy
+name: Repository validation
 on:
   push:
     branches: [main]
@@ -14,9 +14,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Check local files, paths and commit identities
+      - name: Validate source
         run: python3 scripts/check-repository-privacy.py
-      - name: Scan history for credentials
+      - name: Validate history
         shell: bash
         run: |
           set -euo pipefail
@@ -30,4 +30,7 @@ jobs:
           grep "  $archive$" checksums.txt | sha256sum --check --strict -
           tar -xzf "$archive" gitleaks
           cd "$GITHUB_WORKSPACE"
-          "$scanner_dir/gitleaks" git . --log-opts="--all --full-history --root -m" --redact --ignore-gitleaks-allow --no-banner
+          if ! "$scanner_dir/gitleaks" git . --log-opts="--all --full-history --root -m" --redact --ignore-gitleaks-allow --no-banner > "$scanner_dir/result.txt" 2>&1; then
+            echo 'History validation failed; publication stopped.' >&2
+            exit 1
+          fi

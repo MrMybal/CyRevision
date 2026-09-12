@@ -246,10 +246,13 @@ def main():
                       'files_inspected': audit.files, 'unreal_variants': sorted(audit.unreal), 'result': 'passed',
                       'scope': 'Decompressed payload, binary strings and debug-symbol files; not an Unreal runtime test.'}
             args.report.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
-        print(f'Privacy audit passed: {audit.files} files, seven approved Unreal variants.')
+        if not os.environ.get('CI'):
+            print(f'Privacy audit passed: {audit.files} files, seven approved Unreal variants.')
         return 0
     except Exception as error:
-        if isinstance(error, ValueError):
+        if os.environ.get('CI'):
+            print('Package validation failed; publication stopped.', file=sys.stderr)
+        elif isinstance(error, ValueError):
             print(str(error), file=sys.stderr)
         else:
             print(f'Privacy inspection failed ({type(error).__name__}); no package approved.', file=sys.stderr)

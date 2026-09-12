@@ -1,5 +1,6 @@
 """Check tracked/staged files without printing credential values or personal paths."""
 import argparse
+import os
 import pathlib
 import re
 import subprocess
@@ -64,9 +65,10 @@ def main():
     bad_emails=[e for e in emails if e and not (e.endswith(b'@users.noreply.github.com') or e==b'noreply@github.com')]
     if bad_emails:issues.append('Commit/tag identity must use a GitHub noreply email address.')
     if issues:
-        print('\n'.join(issues),file=sys.stderr)
+        print('Source validation failed.' if os.environ.get('CI') else '\n'.join(issues),file=sys.stderr)
         return 1
-    print(f'Privacy checks passed for {len(files)} files and commit/tag identities.')
+    if not os.environ.get('CI'):
+        print(f'Privacy checks passed for {len(files)} files and commit/tag identities.')
     return 0
 
 if __name__=='__main__':sys.exit(main())
