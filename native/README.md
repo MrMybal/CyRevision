@@ -20,6 +20,8 @@ Run CTest through the build script for headless input regression coverage.
 tests the real frontend/engine pair using temporary repositories and profiles,
 including detached-window visibility while the main window is minimized.
 
-The native frontend currently targets Windows x64. Classic Avalonia is retained
-on all supported platforms; native tray/start-hidden integration is not yet
-implemented.
+The native frontend currently targets Windows x64. Closing its window hides the
+main and auxiliary views in the system tray without stopping the engine or its
+services. The tray menu restores the UI or explicitly quits through the normal
+confirmation flow. Desktop preferences control tray residence and hidden startup;
+Classic Avalonia remains available on all supported platforms.

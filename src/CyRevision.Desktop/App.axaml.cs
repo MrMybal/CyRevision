@@ -105,7 +105,10 @@ public partial class App : Application
                     CloseToTray = false
                 };
             }
-            _startupRegistration = new StartupRegistrationService();
+            string nativeExecutable = Path.Combine(AppContext.BaseDirectory, "CyRevision.Native.exe");
+            _startupRegistration = new StartupRegistrationService(
+                OperatingSystem.IsWindows() && NativeBackendHost.IsRequested(desktop.Args) && File.Exists(nativeExecutable)
+                    ? nativeExecutable : null);
             ApplyStartupRegistrationAtLaunch();
             OfflineDocumentationService documentation = new(
                 Path.Combine(AppContext.BaseDirectory, "Documentation"));
@@ -165,7 +168,7 @@ public partial class App : Application
             {
                 _mainTrayIcon.IsVisible = false;
                 NativeBackendHost host = new(viewModel, desktop, applicationLog,paths.ConfigurationDirectory);
-                host.Preferences=new NativePreferencesActions(viewModel,defaultPaths,paths,_applicationPreferences,_desktopPreferences,SetApplicationPreferencesAsync,SetDesktopBehaviorPreferencesAsync);
+                host.Preferences=new NativePreferencesActions(viewModel,defaultPaths,paths,_applicationPreferences,_desktopPreferences,SetApplicationPreferencesAsync,SetDesktopBehaviorPreferencesAsync,nativeTraySupported:OperatingSystem.IsWindows());
                 desktop.Exit += (_, _) =>
                 {
                     _mainTrayIcon.Dispose();
@@ -260,7 +263,7 @@ public partial class App : Application
 
     private void ApplyStartupRegistrationAtLaunch()
     {
-        if (_startupRegistration is null || _desktopPreferencesStore is null)
+        if (_startupRegistration is null || _desktopPreferencesStore is null || NativeBackendHost.IsIsolatedProfile(_desktop?.Args))
         {
             return;
         }
@@ -309,7 +312,7 @@ public partial class App : Application
 
         try
         {
-            if (updated.LaunchAtLogin || previous.LaunchAtLogin)
+            if (!NativeBackendHost.IsIsolatedProfile(_desktop?.Args) && (updated.LaunchAtLogin || previous.LaunchAtLogin))
                 _startupRegistration.SetEnabled(updated.LaunchAtLogin, updated.StartHiddenAtLogin);
 
             _desktopPreferencesStore.Save(updated);
@@ -322,6 +325,7 @@ public partial class App : Application
             ApplyDesktopPreferencesToUi();
             if (_mainWindow is not null)
                 await _mainWindow.ShowSystemIntegrationErrorAsync(exception.Message);
+            if (NativeBackendHost.IsRequested(_desktop?.Args)) throw;
         }
     }
 
@@ -337,7 +341,7 @@ public partial class App : Application
 
     private void ApplyDesktopPreferencesToUi()
     {
-        _mainTrayIcon.IsVisible = _desktopPreferences.ShowTrayIcon;
+        _mainTrayIcon.IsVisible = _desktopPreferences.ShowTrayIcon && !NativeBackendHost.IsRequested(_desktop?.Args);
         _trayLaunchAtLoginItem.IsChecked = _desktopPreferences.LaunchAtLogin;
         _trayStartHiddenItem.IsChecked = _desktopPreferences.StartHiddenAtLogin;
         _trayCloseToTrayItem.IsChecked = _desktopPreferences.CloseToTray;

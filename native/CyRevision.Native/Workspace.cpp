@@ -66,7 +66,7 @@ void Workspace::invoke(const Json& item){
 }
 void Workspace::menu(){
     if(!ImGui::BeginMainMenuBar())return;
-    if(ImGui::BeginMenu("File")){if(ImGui::MenuItem("Open repository...","Ctrl+O",false,!busy()))invoke(action("AddExistingRepositoryAsync"));if(ImGui::MenuItem("Clone repository...",nullptr,false,!busy()))invoke(action("CloneGitRepositoryAsync"));ImGui::Separator();if(ImGui::MenuItem("Quit CyRevision","Alt+F4"))requestClose=true;ImGui::EndMenu();}
+    if(ImGui::BeginMenu("File")){if(ImGui::MenuItem("Open repository...","Ctrl+O",false,!busy()))invoke(action("AddExistingRepositoryAsync"));if(ImGui::MenuItem("Clone repository...",nullptr,false,!busy()))invoke(action("CloneGitRepositoryAsync"));ImGui::Separator();if(ImGui::MenuItem("Hide to tray","Alt+F4"))requestHide=true;if(ImGui::MenuItem("Quit CyRevision"))requestClose=true;ImGui::EndMenu();}
     if(ImGui::BeginMenu("Edit")){if(ImGui::MenuItem("Preferences"))showSettings_=true;ImGui::EndMenu();}
     if(ImGui::BeginMenu("View")){
         if(ImGui::MenuItem("Detach current tab",nullptr,false,ready()))openDetached(workspace_);
@@ -112,7 +112,7 @@ void Workspace::sidebar(){
     }cyui::endSidebar();
 }
 void Workspace::defaultLayout(ImGuiID id){ImGui::DockBuilderRemoveNode(id);ImGui::DockBuilderAddNode(id,ImGuiDockNodeFlags_DockSpace);ImGui::DockBuilderSetNodeSize(id,ImGui::GetMainViewport()->WorkSize);ImGuiID centre=id;if(showOperations_){auto bottom=ImGui::DockBuilderSplitNode(centre,ImGuiDir_Down,.15f,nullptr,&centre);ImGui::DockBuilderDockWindow("Operations",bottom);}ImGui::DockBuilderDockWindow("Workspace",centre);ImGui::DockBuilderFinish(id);layoutChecked_=true;resetLayout_=false;}
-void Workspace::frame(){
+void Workspace::tick(bool background){
     for(auto& response:client_.take()){
         auto id=response.value("id",0ULL);auto found=pending_.find(id);auto command=found==pending_.end()?"":found->second;if(found!=pending_.end())pending_.erase(found);pendingRequests_.erase(id);
         if(command=="state")requestingState_=false;
@@ -122,7 +122,7 @@ void Workspace::frame(){
         if(submitted!=submittedDrafts_.end()){for(const auto& entry:submitted->second.items()){if(draftValues_.contains(entry.key()) && draftValues_[entry.key()]==entry.value())draftValues_.erase(entry.key());auto draft=edits_.find(entry.key());if(draft!=edits_.end() && draft->second==display(entry.value()))edits_.erase(draft);}submittedDrafts_.erase(submitted);}
         const auto result=response.value("result",Json::object());if(command=="catalog")catalog_=result;
         else if(command=="state"){
-            if(text(result,"workspaceId")!=workspace_)continue;state_=result;projectId_=text(state_,"projectId");
+            if(text(result,"workspaceId")!=workspace_)continue;state_=result;++stateGeneration_;projectId_=text(state_,"projectId");
             if(projectId_==openingProject_)openingProject_.clear();
             if(projectId_!=lastProject_){lastProject_=projectId_;edits_.clear();draftValues_=Json::object();tableViews_.clear();requestedTables_=Json::object();requestedFields_.clear();detail_.clear();
                 for(auto& pane:detachedPanes_)pane.needsLoad=true;
@@ -148,13 +148,16 @@ void Workspace::frame(){
         auto entry=queuedRefreshes_.begin();auto request=entry->second;queuedRefreshes_.erase(entry);
         if(text(request,"projectId")==projectId_)send(std::move(request));
     }
-    auto now=GetTickCount64();auto interval=loading("") || busy()?250ULL:800ULL;if(!requestingState_ && now-lastPoll_>=interval && client_.alive()){
+    auto now=GetTickCount64();auto interval=background?2000ULL:loading("") || busy()?250ULL:800ULL;if(!requestingState_ && now-lastPoll_>=interval && client_.alive()){
         Json tables=Json::array(),fields=Json::array();for(const auto& name:requestedFields_)fields.push_back(name);for(const auto& item:requestedTables_.items())tables.push_back(item.value());
         Json views=Json::array();for(const auto& pane:detachedPanes_)if(pane.open && workspaceAvailable(pane.workspace) && std::find(views.begin(),views.end(),Json(pane.workspace))==views.end())views.push_back(pane.workspace);
         send({{"command","state"},{"workspace",workspace_},{"workspaces",views},{"table",table_},{"fields",fields},{"tables",tables}});requestingState_=true;lastPoll_=now;
     }
     if(openWorkspace_ && ready() && !busy()){pendingAction_=true;send({{"command","workspace"},{"workspace",workspace_}});openWorkspace_=false;}
     loadDetachedWorkspaces();
+}
+void Workspace::frame(){
+    tick();
     // Scoped semantic colours keep all nested selected tabs readable in every theme.
     cyui::ScopedColor selectedTab(ImGuiCol_TabSelected,cyui::palette().accent);
     cyui::ScopedColor selectedDimmedTab(ImGuiCol_TabDimmedSelected,cyui::palette().accentDim);

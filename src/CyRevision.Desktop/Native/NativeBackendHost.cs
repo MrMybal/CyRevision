@@ -35,6 +35,7 @@ public sealed class NativeBackendHost
     }
 
     public static bool IsRequested(string[]? args) => args?.Contains("--native-backend",StringComparer.Ordinal) == true;
+    public static bool IsIsolatedProfile(string[]? args) => IsRequested(args) && args?.Contains("--profile-dir",StringComparer.Ordinal)==true;
 
     public static ApplicationPaths ResolvePaths(string[]? args)
     {

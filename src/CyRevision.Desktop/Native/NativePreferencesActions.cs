@@ -207,7 +207,7 @@ public sealed class NativePreferencesActions
         bool hidden = Boolean(supplied, "startHiddenAtLogin", _desktop.StartHiddenAtLogin);
         bool close = Boolean(supplied, "closeToTray", _desktop.CloseToTray);
         if (!_nativeTraySupported && (tray && !_desktop.ShowTrayIcon || hidden && !_desktop.StartHiddenAtLogin || close && !_desktop.CloseToTray))
-            throw new InvalidOperationException("The native shell does not implement tray residence or hidden startup yet. These options cannot be enabled here.");
+            throw new InvalidOperationException("Tray residence is unavailable in this frontend. These options cannot be enabled here.");
         return new(launch, tray && launch && hidden, tray && close, tray);
     }
 

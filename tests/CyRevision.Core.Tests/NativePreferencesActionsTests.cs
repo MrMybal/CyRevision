@@ -59,6 +59,22 @@ public sealed class NativePreferencesActionsTests : IDisposable
     }
 
     [Fact]
+    public async Task SupportedNativeTrayOptionsAreSavedAndAdvertised()
+    {
+        DesktopBehaviorPreferences? saved = null;
+        NativePreferencesActions service = new(null, _paths, _paths, _saved, new(false, false, false, false),
+            _ => Task.CompletedTask, desktop => { saved = desktop; return Task.CompletedTask; }, nativeTraySupported: true);
+        await Execute(service, new { command = "prefs.save", desktop = new {
+            launchAtLogin = true, showTrayIcon = true, closeToTray = true, startHiddenAtLogin = true } });
+        Assert.Equal(new(true, true, true, true), saved);
+        using JsonDocument snapshot = JsonDocument.Parse(JsonSerializer.Serialize(service.Snapshot()));
+        Assert.True(snapshot.RootElement.GetProperty("capabilities").GetProperty("nativeTray").GetBoolean());
+        await Execute(service, new { command = "prefs.save", desktop = new { showTrayIcon = false } });
+        Assert.False(saved!.CloseToTray);
+        Assert.False(saved.StartHiddenAtLogin);
+    }
+
+    [Fact]
     public async Task ChangingCacheLocationDoesNotMoveOrDeleteTheCurrentCache()
     {
         string oldFile = CacheFile();

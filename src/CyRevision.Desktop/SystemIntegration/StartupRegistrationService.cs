@@ -13,10 +13,13 @@ internal sealed class StartupRegistrationService
     private const string MacLabel = "com.cyrevision.desktop";
     private readonly StartupLaunchTarget _target;
 
-    public StartupRegistrationService()
+    public StartupRegistrationService(string? executablePath = null)
     {
-        _target = StartupLaunchTarget.ForCurrentProcess();
+        _target = executablePath is null ? StartupLaunchTarget.ForCurrentProcess()
+            : new StartupLaunchTarget(Path.GetFullPath(executablePath), []);
     }
+
+    internal string GetWindowsCommandLine(bool startHidden) => _target.WithBackground(startHidden).ToWindowsCommandLine();
 
     public void SetEnabled(bool enabled, bool startHidden)
     {
@@ -57,7 +60,7 @@ internal sealed class StartupRegistrationService
 
         key.SetValue(
             ApplicationName,
-            _target.WithBackground(startHidden).ToWindowsCommandLine(),
+            GetWindowsCommandLine(startHidden),
             RegistryValueKind.String);
     }
 

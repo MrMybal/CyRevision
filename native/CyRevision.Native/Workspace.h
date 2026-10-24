@@ -116,8 +116,12 @@ class Workspace {
     void gitConflictEditor();
 public:
     bool requestClose=false;
+    bool requestHide=false;
     explicit Workspace(EngineConnection& client,std::wstring backend);
+    void tick(bool background=false);
     void frame();
+    Json desktopPreferences()const{return state_.value("preferences",Json::object()).value("desktop",Json::object());}
+    unsigned long long stateGeneration()const{return stateGeneration_;}
     bool done() const { return done_; }
     bool ready() const { return state_.value("ready",false); }
     bool settled() const {return ready() && !busy() && !openWorkspace_;}
@@ -128,5 +132,7 @@ public:
     void restoreWindowLayout(const Json& layout);
     bool hasAuxiliaryWindows()const;
     size_t detachedPlatformWindowCount()const;
+private:
+    unsigned long long stateGeneration_=0;
 };
 }

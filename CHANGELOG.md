@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.31 Alpha — 2026-10-24
+
+- restored native Windows tray residence: closing the window hides the main and detached views while services continue; the tray reopens the UI or explicitly quits with confirmation;
+- enabled native tray/hidden-start preferences, corrected native startup registration and kept isolated test profiles from changing system startup settings.
+
 ## 0.1.30 Alpha — 2026-10-24
 
 - delivered the Windows V2 workspace and detachable multi-window interface with the Classic fallback;

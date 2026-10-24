@@ -78,7 +78,7 @@ Publish on Windows:
 Build a self-contained Windows installer and portable release locally:
 
 ```powershell
-./scripts/build-release.cmd 0.1.30
+./scripts/build-release.cmd 0.1.31
 ```
 
 Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).
@@ -88,7 +88,7 @@ For Windows V2 development, install the Visual Studio C++ desktop tools and run
 included under `native/vendor`; the script downloads a checksum-pinned JSON
 header. Start `artifacts/native-v2/CyRevision.Native.exe`. The packaged installer
 also retains a **CyRevision (Classic)** shortcut. V2 currently requires Direct3D 11
-and does not yet implement native tray/start-hidden behavior.
+and supports close-to-tray, reopening from the tray and hidden startup.
 
 Publish on Linux:
 

@@ -186,12 +186,17 @@ def run(executable, capture_native=None, capture_output=None):
             assert process.returncode == 0
             if capture_native:
                 capture_started=time.time()
-                capture = subprocess.run([str(capture_native), "--backend", str(executable), "--profile-dir", str(root / "profile"), "--open-window", "history", "--open-window", "code", "--verify-multi-window", "--capture", str(capture_output)], timeout=45, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                capture = subprocess.run([str(capture_native), "--backend", str(executable), "--profile-dir", str(root / "profile"), "--open-window", "history", "--open-window", "code", "--verify-multi-window", "--verify-tray", "--capture", str(capture_output)], timeout=45, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                 assert capture.returncode == 0 and capture_output.exists(), "Native render did not produce its capture"
                 report=Path(str(capture_output)+".windows.json")
                 assert report.stat().st_mtime>=capture_started, "The multi-window result is from an earlier run"
                 result=json.loads(report.read_text(encoding="utf-8"))
                 assert result["nativeWindows"]>=2 and result["minimizedFrames"]>=8 and result["restored"], "Multi-window/minimized rendering was not verified"
+                tray_report=Path(str(capture_output)+".tray.json")
+                assert tray_report.stat().st_mtime>=capture_started, "The tray result is from an earlier run"
+                tray=json.loads(tray_report.read_text(encoding="utf-8"))
+                assert all(tray[key] for key in ("closeHidWindow", "backgroundResponsive", "restored", "quitConfirmed", "engineStopped")), "Tray close/restore/quit was not verified"
+                assert tray["hiddenFrames"]>=8 and tray["auxiliaryWindows"]>=2
             print("Native engine integration passed: independent history/comparison selections, rapid revision changes, actual file diffs, project switching and cancellation, context isolation, Git status, file history, folder browsing, validation and shutdown.")
         finally:
             if process.poll() is None:

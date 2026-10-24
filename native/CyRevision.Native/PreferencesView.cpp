@@ -77,7 +77,7 @@ void Workspace::preferences() {
                     check(desktop,"showTrayIcon","Show system tray icon",capabilities.value("nativeTray",false));
                     check(desktop,"startHiddenAtLogin","Start hidden at login",capabilities.value("startHidden",false));
                     check(desktop,"closeToTray","Close main window to tray",capabilities.value("closeToTray",false));
-                    if(!capabilities.value("nativeTray",false))cyui::callout(cyui::Tone::info,"The native window currently exits with its engine and services. Tray residence and hidden startup are not enabled here; existing classic-interface preferences are preserved.");
+                    if(capabilities.value("nativeTray",false))cyui::callout(cyui::Tone::info,"Closing the main window keeps CyRevision and its services running in the tray. Use the tray menu to reopen the window or quit completely.");
                     ImGui::EndChild();ImGui::EndTabItem();
                 }
                 if(ImGui::BeginTabItem("Project defaults")) {
