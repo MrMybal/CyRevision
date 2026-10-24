@@ -12,7 +12,7 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 
 ## Current capabilities
 
-- Native Avalonia desktop application for Windows, Linux, and macOS, with a system tray, close-to-tray behavior, and per-user launch-at-login integration.
+- Windows V2 Alpha interface using Dear ImGui/CyUI, with detachable multi-window workspaces. The Classic Avalonia interface remains available on Windows, Linux and macOS, including its system tray and launch-at-login integration.
 - Core project modes for **Git**, **Git + Sync**, **Sync**, **Sync + Versions**, and **Backup**, plus optional project-scoped modes contributed by plugins.
 - Integrated GitHub pull request manager with repository detection, colored ownership/state/CI indicators, request creation, files and patches, conversations, reviews, CI logs and reruns, non-destructive conflict inspection, safe local checkout, confirmed merge operations, and safe local branch cleanup. Provider adapters keep the module open to other forges.
 - Local Git workflows: status, staging, commits, branches, merges, remotes, Git LFS, an interactive history explorer, A ↔ B comparisons, and per-file history.
@@ -78,10 +78,17 @@ Publish on Windows:
 Build a self-contained Windows installer and portable release locally:
 
 ```powershell
-./scripts/build-release.cmd 0.1.27
+./scripts/build-release.cmd 0.1.28
 ```
 
 Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).
+
+For Windows V2 development, install the Visual Studio C++ desktop tools and run
+`./scripts/build-native-v2.ps1`. CyUI and Dear ImGui sources and licenses are
+included under `native/vendor`; the script downloads a checksum-pinned JSON
+header. Start `artifacts/native-v2/CyRevision.Native.exe`. The packaged installer
+also retains a **CyRevision (Classic)** shortcut. V2 currently requires Direct3D 11
+and does not yet implement native tray/start-hidden behavior.
 
 Publish on Linux:
 

@@ -8,7 +8,7 @@ public sealed class WorkspaceLoadCoordinator
 {
     private readonly object _gate = new();
     private readonly HashSet<WorkspaceLoadKey> _loaded = [];
-    private readonly HashSet<WorkspaceLoadKey> _loading = [];
+    private readonly Dictionary<WorkspaceLoadKey, object> _loading = [];
 
     public WorkspaceLoadLease? TryBegin(Guid projectId, string workspaceName)
     {
@@ -17,11 +17,12 @@ public sealed class WorkspaceLoadCoordinator
             throw new ArgumentException("A workspace name is required.", nameof(workspaceName));
 
         WorkspaceLoadKey key = new(projectId, workspaceName.Trim());
+        object identity = new();
         lock (_gate)
         {
-            if (_loaded.Contains(key) || !_loading.Add(key)) return null;
+            if (_loaded.Contains(key) || !_loading.TryAdd(key, identity)) return null;
         }
-        return new WorkspaceLoadLease(this, key);
+        return new WorkspaceLoadLease(this, key, identity);
     }
 
     public bool IsLoaded(Guid projectId, string workspaceName)
@@ -35,20 +36,26 @@ public sealed class WorkspaceLoadCoordinator
         lock (_gate)
         {
             _loaded.RemoveWhere(key => key.ProjectId == projectId);
-            _loading.RemoveWhere(key => key.ProjectId == projectId);
+            foreach (WorkspaceLoadKey key in _loading.Keys.Where(key => key.ProjectId == projectId).ToArray())
+                _loading.Remove(key);
         }
     }
 
     public void Invalidate(Guid projectId, string workspaceName)
     {
         WorkspaceLoadKey key = new(projectId, workspaceName.Trim());
-        lock (_gate) _loaded.Remove(key);
+        lock (_gate)
+        {
+            _loaded.Remove(key);
+            _loading.Remove(key);
+        }
     }
 
-    private void End(WorkspaceLoadKey key, bool completed)
+    private void End(WorkspaceLoadKey key, object identity, bool completed)
     {
         lock (_gate)
         {
+            if (!_loading.TryGetValue(key, out object? active) || !ReferenceEquals(active, identity)) return;
             _loading.Remove(key);
             if (completed) _loaded.Add(key);
         }
@@ -60,12 +67,14 @@ public sealed class WorkspaceLoadCoordinator
     {
         private WorkspaceLoadCoordinator? _owner;
         private readonly WorkspaceLoadKey _key;
+        private readonly object _identity;
         private bool _completed;
 
-        internal WorkspaceLoadLease(WorkspaceLoadCoordinator owner, WorkspaceLoadKey key)
+        internal WorkspaceLoadLease(WorkspaceLoadCoordinator owner, WorkspaceLoadKey key, object identity)
         {
             _owner = owner;
             _key = key;
+            _identity = identity;
         }
 
         public void Complete() => _completed = true;
@@ -73,7 +82,7 @@ public sealed class WorkspaceLoadCoordinator
         public void Dispose()
         {
             WorkspaceLoadCoordinator? owner = Interlocked.Exchange(ref _owner, null);
-            owner?.End(_key, _completed);
+            owner?.End(_key, _identity, _completed);
         }
     }
 }

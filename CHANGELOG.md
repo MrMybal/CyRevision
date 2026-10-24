@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.28 Alpha — 2026-10-24
+
+- introduced the Windows Dear ImGui/CyUI V2 interface, with project-only navigation, project-scoped workspaces and clear active-tab colors;
+- added independent windows for workspaces, lists, previews and diffs, saved layouts and dock/return controls sharing the active project;
+- repaired project switching, history/comparison selection, stale results and refresh scheduling;
+- made loading, queued actions and cancellation visible without disabling unrelated operations;
+- ported Git/LFS, PR/CI, code/assets, team services, plugins and preference workflows to the native shell;
+- improved Git child-process cleanup, atomic exports, workspace reloads and code-search resilience;
+- retained the Classic Windows interface and existing Linux/macOS interface as alternatives.
+
 ## 0.1.27 Alpha — 2026-09-13
 
 - updated Windows, Linux and macOS application packages;

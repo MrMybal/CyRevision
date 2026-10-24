@@ -37,6 +37,7 @@ def inspect(path,data):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--staged',action='store_true')
+    parser.add_argument('--ref', help='Check only the selected release revision and its reachable identities')
     args=parser.parse_args()
     if args.staged:
         changed=set(git('diff','--cached','--name-only','--diff-filter=ACMR','-z').split(b'\0'))
@@ -49,12 +50,15 @@ def main():
         emails=[git('config','user.email').strip().lower()]
     else:
         files=[]
-        for entry in git('ls-tree','-rz','HEAD').split(b'\0'):
+        revision = args.ref or 'HEAD'
+        git('rev-parse', '--verify', revision + '^{commit}')
+        for entry in git('ls-tree','-rz',revision).split(b'\0'):
             if not entry:continue
             meta,path=entry.split(b'\t',1)
             if meta.split()[1]==b'blob':files.append((meta.split()[2],path.decode('utf8')))
-        emails=set(git('log','--all','--format=%ae%n%ce').lower().splitlines())
-        emails.update(git('for-each-ref','--format=%(taggeremail)','refs/tags').lower().replace(b'<',b'').replace(b'>',b'').splitlines())
+        emails=set(git('log',revision if args.ref else '--all','--format=%ae%n%ce').lower().splitlines())
+        tags = [revision] if args.ref else ['refs/tags']
+        emails.update(git('for-each-ref','--format=%(taggeremail)',*tags).lower().replace(b'<',b'').replace(b'>',b'').splitlines())
     issues=[]
     proc=subprocess.Popen(['git','cat-file','--batch'],stdin=subprocess.PIPE,stdout=subprocess.PIPE)
     for oid,path in files:

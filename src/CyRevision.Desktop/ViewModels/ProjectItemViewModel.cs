@@ -16,6 +16,10 @@ public sealed class ProjectItemViewModel : ObservableObject
     private bool _isSyncPaused;
     private bool _isVpnRunning;
     private int _unreadNotificationCount;
+    private int? _changeCount;
+    private int _aheadCount;
+    private int _behindCount;
+    private bool _hasRemote;
 
     public ProjectItemViewModel(ProjectDefinition definition)
     {
@@ -121,6 +125,17 @@ public sealed class ProjectItemViewModel : ObservableObject
     }
 
     public bool HasUnreadNotifications => UnreadNotificationCount > 0;
+    public int? ChangeCount => _changeCount;
+    public int AheadCount => _aheadCount;
+    public int BehindCount => _behindCount;
+    public bool HasRemote => _hasRemote;
+    public void SetGitSummary(int changes,int ahead,int behind,bool hasRemote)
+    {
+        SetProperty(ref _changeCount,Math.Max(0,changes),nameof(ChangeCount));
+        SetProperty(ref _aheadCount,Math.Max(0,ahead),nameof(AheadCount));
+        SetProperty(ref _behindCount,Math.Max(0,behind),nameof(BehindCount));
+        SetProperty(ref _hasRemote,hasRemote,nameof(HasRemote));
+    }
     public string NotificationBadgeText => UnreadNotificationCount > 99 ? "99+" : UnreadNotificationCount.ToString();
 
     public bool IsSyncRunning

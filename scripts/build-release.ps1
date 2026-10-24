@@ -67,7 +67,7 @@ $agentPublishDirectory = Join-Path $publishDirectory 'Agent'
 $buildAgentPublishDirectory = Join-Path $publishDirectory 'BuildAgent'
 $portableArchive = Join-Path $releaseRoot "CyRevision-$Version-win-x64-portable.zip"
 
-Invoke-NativeCommand 'python' @((Join-Path $repositoryRoot 'scripts/check-repository-privacy.py'))
+Invoke-NativeCommand 'python' @((Join-Path $repositoryRoot 'scripts/check-repository-privacy.py'), '--ref', 'HEAD')
 
 if (Test-Path -LiteralPath $releaseRoot)
 {
@@ -130,6 +130,8 @@ Invoke-NativeCommand 'dotnet' @(
     '/p:DebugType=None',
     '/p:DebugSymbols=false'
 )
+
+& (Join-Path $PSScriptRoot 'build-native-v2.ps1') -SkipManagedBuild -OutputDirectory $publishDirectory
 
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination $publishDirectory
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination $publishDirectory

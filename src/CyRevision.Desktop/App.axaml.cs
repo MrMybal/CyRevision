@@ -15,6 +15,7 @@ using CyRevision.Desktop.Plugins;
 using CyRevision.Desktop.SystemIntegration;
 using CyRevision.Desktop.ViewModels;
 using CyRevision.Desktop.Workspace;
+using CyRevision.Desktop.Native;
 using CyRevision.Diff;
 using CyRevision.Discord;
 using CyRevision.Discord.Control;
@@ -64,7 +65,7 @@ public partial class App : Application
             ResolveTrayControls();
             _desktop = desktop;
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            ApplicationPaths defaultPaths = ApplicationPaths.CreateDefault();
+            ApplicationPaths defaultPaths = NativeBackendHost.ResolvePaths(desktop.Args);
             _applicationPreferencesStore = new ApplicationPreferencesStore(defaultPaths.ConfigurationDirectory);
             _applicationPreferences = _applicationPreferencesStore.Load();
             string pendingCacheMove = _applicationPreferences.PendingCacheMoveSource;
@@ -159,6 +160,24 @@ public partial class App : Application
                 localization, documentation, updates, discordStore, discordAgent, discordConnections,
                 pluginManager, new CodeWorkspaceService(), pullRequests, ciWorkflows, applicationLog, repositoryConsole, initialProjectPath);
             _viewModel = viewModel;
+
+            if (NativeBackendHost.IsRequested(desktop.Args))
+            {
+                _mainTrayIcon.IsVisible = false;
+                NativeBackendHost host = new(viewModel, desktop, applicationLog,paths.ConfigurationDirectory);
+                host.Preferences=new NativePreferencesActions(viewModel,defaultPaths,paths,_applicationPreferences,_desktopPreferences,SetApplicationPreferencesAsync,SetDesktopBehaviorPreferencesAsync);
+                desktop.Exit += (_, _) =>
+                {
+                    _mainTrayIcon.Dispose();
+                    catalog.Dispose();
+                    AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
+                    TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
+                    applicationLog.Dispose();
+                };
+                host.Start();
+                base.OnFrameworkInitializationCompleted();
+                return;
+            }
 
             MainWindow mainWindow = new(viewModel, localization, paths.ConfigurationDirectory)
             {

@@ -11,7 +11,7 @@
 #endif
 
 #define RepositoryRoot "..\.."
-#define AppExecutable "CyRevision.Desktop.exe"
+#define AppExecutable "CyRevision.Native.exe"
 
 [Setup]
 AppId={{7E79EA0B-3AB0-45D7-A1A2-A7585A0604D5}
@@ -57,6 +57,7 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 
 [Icons]
 Name: "{autoprograms}\CyRevision"; Filename: "{app}\{#AppExecutable}"
+Name: "{autoprograms}\CyRevision (Classic)"; Filename: "{app}\CyRevision.Desktop.exe"; Parameters: "--classic"
 Name: "{autodesktop}\CyRevision"; Filename: "{app}\{#AppExecutable}"; Tasks: desktopicon
 
 [Run]

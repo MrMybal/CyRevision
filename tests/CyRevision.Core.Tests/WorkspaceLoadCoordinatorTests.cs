@@ -4,6 +4,27 @@ namespace CyRevision.Core.Tests;
 
 public sealed class WorkspaceLoadCoordinatorTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void InvalidatedLeaseCannotCacheStaleDataOrReleaseNewLoad(bool wholeProject)
+    {
+        WorkspaceLoadCoordinator coordinator = new();
+        Guid project = Guid.NewGuid();
+        using var old = coordinator.TryBegin(project, "History")!;
+        if (wholeProject) coordinator.InvalidateProject(project);
+        else coordinator.Invalidate(project, "History");
+        using var current = coordinator.TryBegin(project, "History")!;
+        Assert.NotNull(current);
+        old.Complete();
+        old.Dispose();
+        Assert.False(coordinator.IsLoaded(project, "History"));
+        Assert.Null(coordinator.TryBegin(project, "History"));
+        current.Complete();
+        current.Dispose();
+        Assert.True(coordinator.IsLoaded(project, "History"));
+    }
+
     [Fact]
     public void CompletedWorkspaceIsCachedPerProject()
     {

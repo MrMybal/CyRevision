@@ -82,7 +82,7 @@ internal sealed class ProcessRunner
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = standardInput is not null
+            RedirectStandardInput = true
         };
 
         startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
@@ -122,21 +122,17 @@ internal sealed class ProcessRunner
         {
             await inputTask.ConfigureAwait(false);
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            return new ProcessResult(
+                process.ExitCode,
+                await outputTask.ConfigureAwait(false),
+                await errorTask.ConfigureAwait(false));
         }
-        catch (OperationCanceledException)
+        catch
         {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-
+            await StopProcessAsync(process).ConfigureAwait(false);
+            await ObserveReadersAsync(outputTask, errorTask).ConfigureAwait(false);
             throw;
         }
-
-        return new ProcessResult(
-            process.ExitCode,
-            await outputTask.ConfigureAwait(false),
-            await errorTask.ConfigureAwait(false));
     }
 
     private static async Task WriteStandardInputAsync(
@@ -144,9 +140,31 @@ internal sealed class ProcessRunner
         string? standardInput,
         CancellationToken cancellationToken)
     {
-        if (standardInput is null) return;
-        await process.StandardInput.WriteAsync(standardInput.AsMemory(), cancellationToken).ConfigureAwait(false);
+        if (standardInput is not null)
+            await process.StandardInput.WriteAsync(standardInput.AsMemory(), cancellationToken).ConfigureAwait(false);
         process.StandardInput.Close();
+    }
+
+    private static async Task StopProcessAsync(Process process)
+    {
+        try
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception or TimeoutException) { }
+    }
+
+    private static async Task ObserveReadersAsync(params Task<string>[] readers)
+    {
+        try { await Task.WhenAll(readers).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false); }
+        catch
+        {
+            foreach (Task reader in readers)
+                _ = reader.ContinueWith(task => { _ = task.Exception; },
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+        }
     }
 
     private static string? FindGitDirectory(string? workingDirectory)
@@ -353,7 +371,8 @@ internal sealed class ProcessRunner
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
+            RedirectStandardInput = true
         };
         startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
         startInfo.Environment["GCM_INTERACTIVE"] = "Never";
@@ -362,7 +381,10 @@ internal sealed class ProcessRunner
             startInfo.ArgumentList.Add(argument);
         }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destinationPath))!);
+        string destination = Path.GetFullPath(destinationPath);
+        string directory = Path.GetDirectoryName(destination)!;
+        Directory.CreateDirectory(directory);
+        string staging = Path.Combine(directory, $".{Path.GetFileName(destination)}.{Guid.NewGuid():N}.partial");
         using Process process = new() { StartInfo = startInfo };
         if (!process.Start())
         {
@@ -372,26 +394,30 @@ internal sealed class ProcessRunner
         Task<string> errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
         try
         {
-            await using (FileStream output = new(destinationPath, FileMode.Create, FileAccess.Write, FileShare.Read, 1024 * 128, true))
+            process.StandardInput.Close();
+            await using (FileStream output = new(staging, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 128, true))
             {
                 await process.StandardOutput.BaseStream.CopyToAsync(output, cancellationToken);
                 await output.FlushAsync(cancellationToken);
             }
 
             await process.WaitForExitAsync(cancellationToken);
+            string error = await errorTask.ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (process.ExitCode == 0) File.Move(staging, destination, overwrite: true);
+            return new ProcessResult(process.ExitCode, string.Empty, error);
         }
-        catch (OperationCanceledException)
+        catch
         {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-
-            File.Delete(destinationPath);
+            await StopProcessAsync(process).ConfigureAwait(false);
+            await ObserveReadersAsync(errorTask).ConfigureAwait(false);
             throw;
         }
-
-        return new ProcessResult(process.ExitCode, string.Empty, await errorTask);
+        finally
+        {
+            try { File.Delete(staging); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+        }
     }
 }
 

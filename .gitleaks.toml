@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Dear ImGui named-key range comparison"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^native/vendor/CyUI/third_party/imgui/imgui\.cpp$''']
+regexTarget = "line"
+regexes = ['''^\s*if \(\(key >= ImGuiKey_0 && key <= ImGuiKey_9\) \|\| \(key >= ImGuiKey_A && key <= ImGuiKey_Z\) \|\| \(key >= ImGuiKey_Keypad0 && key <= ImGuiKey_Keypad9\)\s*$''']

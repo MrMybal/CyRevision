@@ -1,0 +1,6 @@
+Dear ImGui 1.93.0 WIP, docking branch
+Source: copied from CyDAW_Project/third_party/imgui (ocornut/imgui commit 64944b4520b30772de8dbf0b37d0311746477a32,
+2026-09-25, "Merge remote-tracking branch 'origin/master' into docking").
+Files kept: core sources and the Win32 + DX11 backends, used by the CyUI demo.
+Apps that already have Dear ImGui (>= 1.92) use their own copy instead.
+License: MIT (LICENSE.txt).

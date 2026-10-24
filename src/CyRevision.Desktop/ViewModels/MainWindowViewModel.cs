@@ -8593,7 +8593,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         }
     }
 
-    public async Task<string?> DownloadAvailableUpdateAsync()
+    public async Task<string?> DownloadAvailableUpdateAsync(CancellationToken cancellationToken=default)
     {
         if (!CanInstallUpdate || _availableUpdate is null)
         {
@@ -8612,7 +8612,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             string path = await _updateService.DownloadAsync(
                 _availableUpdate,
                 Path.Combine(_applicationPaths.CacheDirectory, "updates"),
-                progress);
+                progress,cancellationToken);
             UpdateProgress = 100;
             UpdateStatus = "Mise à jour téléchargée et vérifiée par SHA-256. L'installateur va s'ouvrir.";
             return path;
@@ -9114,7 +9114,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public Task RefreshAsync() => RunOperationAsync("Refreshing tracked and untracked files…", async () =>
     {
-        await RefreshCoreAsync(includeUntrackedFiles: true);
+        await RefreshCoreAsync(includeUntrackedFiles: true,preserveExplorerSelection: true);
         await LoadAdvisoryReservationsCoreAsync();
     }, "Repository, untracked files and reservations refreshed");
 
@@ -14946,6 +14946,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         _explorerRevisionCancellation = cancellation;
         _comparisonFromHash = null;
         _comparisonToHash = null;
+        _explorerFileCancellation?.Cancel();
+        Interlocked.Increment(ref _explorerFileLoadVersion);
+        SelectedExplorerFile = null;
+        IsExplorerDiffLoading = false;
+        ExplorerFiles.Clear();
+        ExplorerFileHistory.Clear();
         IsExplorerLoading = true;
         ExplorerSummary = $"Loading {revision.ShortHash} · {revision.Subject}…";
         ExplorerDiff = "Loading committed files…";
@@ -15045,10 +15051,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         string diffCacheKey = $"commit:{project.Id}:{comparisonKey}:{file.Path}";
         string historyCacheKey = $"history:{project.Id}:{file.Path}";
         IsExplorerDiffLoading = true;
+        ExplorerFileHistory.Clear();
         if (_diffCache.TryGetValue(diffCacheKey, out string? cachedDiff))
         {
             ExplorerDiff = cachedDiff;
-            IsExplorerDiffLoading = false;
         }
         else
         {
@@ -15077,7 +15083,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                     : diff;
                 StoreDiffCache(diffCacheKey, cachedDiff);
                 ExplorerDiff = cachedDiff;
-                IsExplorerDiffLoading = false;
             }
 
             FilePresentationResult? presentation = await TryCreateRevisionPresentationAsync(
@@ -15305,7 +15310,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         ProjectItemViewModel? expectedProject = null,
         int? expectedLoadVersion = null,
         CancellationToken cancellationToken = default,
-        bool includeUntrackedFiles = false)
+        bool includeUntrackedFiles = false,
+        bool preserveExplorerSelection = false)
     {
         ProjectItemViewModel? project = expectedProject ?? SelectedProject;
         if (project is null || !IsRefreshContextCurrent(project, expectedLoadVersion))
@@ -15401,11 +15407,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         UpdateGitOverviewHead(_allExplorerRevisions.FirstOrDefault());
         ApplyExplorerFilter();
         ReplaceCollection(LfsPatterns, await lfsTask);
-        GitRevision? firstRevision = History.FirstOrDefault();
+        GitRevision? firstRevision = (preserveExplorerSelection || expectedLoadVersion.HasValue
+            ? History.FirstOrDefault(revision=>revision.Hash==SelectedExplorerRevision?.Hash) : null) ?? History.FirstOrDefault();
         if (firstRevision is not null && SelectedExplorerRevision?.Hash == firstRevision.Hash)
         {
-            int loadVersion = Interlocked.Increment(ref _explorerRevisionLoadVersion);
-            _ = LoadExplorerRevisionAsync(firstRevision, loadVersion);
+            if(!IsExplorerLoading && ExplorerFiles.Count==0)
+            {
+                int loadVersion = Interlocked.Increment(ref _explorerRevisionLoadVersion);
+                _ = LoadExplorerRevisionAsync(firstRevision, loadVersion);
+            }
         }
         else
         {
@@ -15446,6 +15456,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         if (rebuildChanges)
             RebuildChangePreparation(status.Changes, SelectedChange?.Path);
         project.SetGitState(CurrentBranch, $"{status.Changes.Count:N0} change(s)");
+        project.SetGitSummary(status.Changes.Count,status.AheadBy,status.BehindBy,status.HasRemote);
     }
 
     private void RebuildChangePreparation(
@@ -17889,7 +17900,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         ProjectItemViewModel project = SelectedProject;
         await RunOperationAsync(progressMessage, async () =>
         {
-            await operation(project.RootPath, CancellationToken.None);
+            using CancellationTokenSource cancellation = new();
+            _nativeNetworkCancellation = cancellation;
+            try { await operation(project.RootPath, cancellation.Token); }
+            finally { if (ReferenceEquals(_nativeNetworkCancellation, cancellation)) _nativeNetworkCancellation = null; }
             if (SelectedProject?.Id != project.Id)
             {
                 return;

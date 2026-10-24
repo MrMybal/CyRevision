@@ -423,8 +423,10 @@ public sealed class CodeWorkspaceService
                 int lineNumber = 0;
                 while (reader.ReadLine() is { } line)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     lineNumber++;
                     Match? regexMatch = regex?.Match(line);
+                    if (regex is not null && regexMatch?.Success != true) continue;
                     int index = regexMatch?.Success == true ? regexMatch.Index : line.IndexOf(query, comparison);
                     if (index < 0 || (options.WholeWord && !IsWholeWord(line, index, regexMatch?.Length ?? query.Length))) continue;
                     string relative = Path.GetRelativePath(root, path).Replace('\\', '/');
@@ -446,7 +448,10 @@ public sealed class CodeWorkspaceService
         string[] parsedPatterns = ParsePatterns(patterns).ToArray();
         foreach (string path in EnumerateWorkspaceFiles(root, includeHidden))
         {
-            if (new FileInfo(path).Length > MaximumPreviewBytes) continue;
+            long length;
+            try { length = new FileInfo(path).Length; }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { continue; }
+            if (length > MaximumPreviewBytes) continue;
             if (parsedPatterns.Length > 0 && !parsedPatterns.Any(pattern =>
                     FileSystemName.MatchesSimpleExpression(pattern, Path.GetFileName(path), ignoreCase: true))) continue;
             yield return path;
@@ -462,7 +467,7 @@ public sealed class CodeWorkspaceService
             string directory = pending.Pop();
             IEnumerable<string> entries;
             try { entries = Directory.EnumerateFileSystemEntries(directory).ToArray(); }
-            catch (UnauthorizedAccessException) { continue; }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { continue; }
             foreach (string path in entries)
             {
                 FileAttributes attributes;

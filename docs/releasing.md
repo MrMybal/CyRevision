@@ -23,6 +23,7 @@ Every build also produces a SHA-256 checksum file. The GitHub Release combines t
 Requirements:
 
 - .NET SDK 8 or newer;
+- Visual Studio C++ desktop tools and CMake for the Windows V2 interface;
 - Inno Setup 6 (`choco install innosetup -y`);
 - PowerShell 7 or Windows PowerShell 5.1.
 
@@ -33,6 +34,12 @@ Run from the repository root:
 ```
 
 The output is written to `artifacts/release/0.1.0/`.
+
+Windows packages contain both `CyRevision.Native.exe` (V2 Alpha) and
+`CyRevision.Desktop.exe` (Classic and the managed engine). The default installer
+shortcut starts V2; a separate Classic shortcut remains available. The native
+build uses the checked-in CyUI/ImGui sources and installs their license notices.
+Linux and macOS retain the Avalonia interface.
 
 To test a current-user installation without prompts:
 
