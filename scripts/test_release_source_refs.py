@@ -16,6 +16,12 @@ class SourceRevisionTests(unittest.TestCase):
             restores = [line for line in lines if 'restore' in line and '--runtime' in line]
             self.assertEqual(3, len(restores), name)
             self.assertTrue(all('/p:SelfContained=true' in line for line in restores), name)
+            if name.endswith('.sh'):
+                for block in '\n'.join(lines).split('dotnet publish ')[1:]:
+                    self.assertNotIn('--no-restore', block.split('/p:DebugSymbols=false')[0], name)
+            else:
+                for block in '\n'.join(lines).split("'publish',")[1:]:
+                    self.assertNotIn("'--no-restore'", block.split("'/p:DebugSymbols=false'")[0], name)
 
     def test_release_ref_checks_its_ancestry_without_other_branches(self):
         with tempfile.TemporaryDirectory(prefix='release-refs-') as folder:

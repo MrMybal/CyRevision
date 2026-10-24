@@ -54,7 +54,6 @@ dotnet publish "$desktop_project" \
   -c Release \
   --runtime "$rid" \
   --self-contained true \
-  --no-restore \
   -o "$publish_directory" \
   "/p:Version=$version" \
   /p:DebugType=None \
@@ -63,7 +62,6 @@ dotnet publish "$agent_project" \
   -c Release \
   --runtime "$rid" \
   --self-contained true \
-  --no-restore \
   -o "$publish_directory/Agent" \
   "/p:Version=$version" \
   /p:DebugType=None \
@@ -72,7 +70,6 @@ dotnet publish "$build_agent_project" \
   -c Release \
   --runtime "$rid" \
   --self-contained true \
-  --no-restore \
   -o "$publish_directory/BuildAgent" \
   "/p:Version=$version" \
   /p:DebugType=None \
