@@ -9,6 +9,14 @@ CHECK = Path(__file__).with_name('check-repository-privacy.py').resolve()
 
 
 class SourceRevisionTests(unittest.TestCase):
+    def test_restore_and_publish_use_matching_self_contained_mode(self):
+        scripts = Path(__file__).parent
+        for name in ('build-release.ps1', 'build-linux-release.sh', 'build-macos-release.sh'):
+            lines = (scripts / name).read_text(encoding='utf-8').splitlines()
+            restores = [line for line in lines if 'restore' in line and '--runtime' in line]
+            self.assertEqual(3, len(restores), name)
+            self.assertTrue(all('/p:SelfContained=true' in line for line in restores), name)
+
     def test_release_ref_checks_its_ancestry_without_other_branches(self):
         with tempfile.TemporaryDirectory(prefix='release-refs-') as folder:
             root = Path(folder)

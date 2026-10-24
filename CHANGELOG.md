@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.29 Alpha — 2026-10-24
+
+- restored self-contained runtime packs explicitly for desktop and agent packages, fixing macOS release generation;
+- included the Windows V2 interface, multi-window workspaces and navigation/loading fixes introduced in 0.1.28.
+
 ## 0.1.28 Alpha — 2026-10-24
 
 - introduced the Windows Dear ImGui/CyUI V2 interface, with project-only navigation, project-scoped workspaces and clear active-tab colors;

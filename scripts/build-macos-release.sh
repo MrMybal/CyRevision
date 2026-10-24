@@ -43,9 +43,9 @@ mkdir -p "$publish_directory" "$bundle_root/Contents/MacOS" "$app_root" "$iconse
 bash "$repository_root/scripts/prepare-syncthing-runtime.sh" "$rid"
 
 dotnet restore "$solution"
-dotnet restore "$desktop_project" --runtime "$rid"
-dotnet restore "$agent_project" --runtime "$rid"
-dotnet restore "$build_agent_project" --runtime "$rid"
+dotnet restore "$desktop_project" --runtime "$rid" /p:SelfContained=true
+dotnet restore "$agent_project" --runtime "$rid" /p:SelfContained=true
+dotnet restore "$build_agent_project" --runtime "$rid" /p:SelfContained=true
 dotnet build "$solution" -c Release --no-restore "/p:Version=$version"
 if [[ "${CYREVISION_SKIP_TESTS:-0}" != "1" ]]; then
   dotnet test "$solution" -c Release --no-build --no-restore "/p:Version=$version"
