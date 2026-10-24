@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.30 Alpha — 2026-10-24
+
+- delivered the Windows V2 workspace and detachable multi-window interface with the Classic fallback;
+- refreshed runtime assets for every self-contained desktop/agent publish, fixing cross-platform package generation after solution builds;
+- retained the project-switching, history-selection and visible-loading improvements introduced during the V2 port.
+
 ## 0.1.29 Alpha — 2026-10-24
 
 - restored self-contained runtime packs explicitly for desktop and agent packages, fixing macOS release generation;
