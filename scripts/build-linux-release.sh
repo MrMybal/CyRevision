@@ -31,7 +31,7 @@ portable_archive="$release_root/CyRevision-$version-$rid-portable.tar.gz"
 deb_package="$release_root/CyRevision-$version-$rid.deb"
 checksum_file="$release_root/SHA256SUMS-$rid.txt"
 
-python3 "$repository_root/scripts/check-repository-privacy.py"
+python3 "$repository_root/scripts/check-repository-privacy.py" --ref HEAD
 
 rm -rf -- "$publish_directory" "$package_root"
 mkdir -p "$publish_directory"

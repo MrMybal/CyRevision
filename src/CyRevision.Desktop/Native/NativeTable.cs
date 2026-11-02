@@ -67,7 +67,9 @@ public static class NativeTable
             object? item = list[index];
             Dictionary<string, object?> values = columns.Length == 0
                 ? new() { ["Value"] = Value(item) }
-                : columns.ToDictionary(column => column.Name, column => Value(Read(column, item!),name.Contains("LogLines",StringComparison.Ordinal) || column.Name is "Body" or "Message"?262144:4096));
+                : columns.ToDictionary(column => column.Name, column => Value(Read(column, item!),
+                    name is "AiChatMessages" or "TeamChatMessages" or "PullRequestComments" ? 65536 :
+                    name.Contains("LogLines",StringComparison.Ordinal) || column.Name is "Body" or "Message"?262144:4096));
             if(name.Contains("LogLines",StringComparison.Ordinal) && item is CyRevision.PullRequests.CiLogLine line){values["IsError"]=line.IsError;values["IsWarning"]=line.IsWarning;}
             return new { index, key = Key(item), values };
         }).ToArray();

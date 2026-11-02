@@ -175,6 +175,8 @@ public static class NativeGitActions
         BranchFileExplorerViewModel? branch = session.Branch;
         var fields = new Dictionary<string, object?>
         {
+            ["NativeWorkingDiffPath"] = model.SelectedChange?.Path ?? "",
+            ["NativeExplorerDiffPath"] = model.SelectedExplorerFile?.Path ?? "",
             ["BranchInspectorOpen"] = branch is not null,
             ["BranchInspectorTitle"] = branch?.WindowTitle ?? "Branch files",
             ["BranchInspectorSummary"] = branch?.Summary ?? "Choose a branch and browse its files without switching the working branch.",

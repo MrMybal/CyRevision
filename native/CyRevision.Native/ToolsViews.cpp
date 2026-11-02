@@ -36,23 +36,16 @@ bool toolColumns(const char* id,float left=0.44f) {
     ImGui::TableSetupColumn("Details",ImGuiTableColumnFlags_WidthStretch,1.0f-left);
     ImGui::TableNextRow();ImGui::TableNextColumn();return true;
 }
-void toolImage(const std::string& path,const char* empty) {
-    auto image=nativeTexture(path);
-    if(!image || image->width<=0 || image->height<=0) {
-        cyui::emptyState(empty,"Choose an image, or use the active asset provider for a rendered preview.",cyui::icon::photo);
-        return;
-    }
-    auto available=ImGui::GetContentRegionAvail();
-    float scale=std::min(available.x/static_cast<float>(image->width),available.y/static_cast<float>(image->height));
-    scale=std::min(1.0f,std::max(0.01f,scale));
-    ImGui::Image(ImTextureRef(image->id),ImVec2(image->width*scale,image->height*scale));
-}
 }
 
 bool Workspace::toolsView() {
     static const std::unordered_set<std::string> handled={"code","search","console","assets","ai","mcp","sync","syncconflicts","backups","sharedsync","vpn","swarm","vpnfiles","teamchat","builds","discord","wip","plugins","unreal","unity","godot","lore","perforce","cystore","unrealbuilds","diagnostics","help"};
     if(!handled.count(workspace_)) return false;
     cyui::ScopedID scope(workspace_.c_str());
+    auto toolImage=[&](const std::string& path,const char* empty){
+        if(path.empty())cyui::emptyState(empty,"Choose an image or an asset with a rendered preview.",cyui::icon::photo);
+        else imageView(path,"##tool-image");
+    };
     auto fields=[&](std::initializer_list<ToolField> entries) { for(const auto& entry:entries) field(entry.name,entry.label,entry.multiline); };
     auto summary=[&](const char* property) {
         auto content=value(property);
@@ -100,15 +93,10 @@ bool Workspace::toolsView() {
         if(edits_["tools.code.selectionPath"]!=path){edits_["tools.code.selectionPath"]=path;edits_["tools.code.selectionStart"]="0";edits_["tools.code.selectionEnd"]="0";}
         parameterButton("History of selected lines","LoadCodeSelectionHistoryAsync",codeSelection());ImGui::SameLine();
         if(cyui::ghostButton("Copy file preview"))ImGui::SetClipboardText(content.c_str());summary("CodeSelectionSummary");
-        cyui::ScopedFont font(cyui::monoFont());
-        ImGuiID editorId=ImGui::GetID("##selectableCode");
-        ImGui::InputTextMultiline("##selectableCode",&content,ImVec2(-1,std::max(cyui::dp(100),ImGui::GetContentRegionAvail().y)),ImGuiInputTextFlags_ReadOnly);
-        if(auto selection=ImGui::GetInputTextState(editorId)) {
-            size_t begin=static_cast<size_t>(std::max(0,selection->GetSelectionStart()));size_t end=static_cast<size_t>(std::max(0,selection->GetSelectionEnd()));
-            begin=std::min(begin,content.size());end=std::min(end,content.size());
-            edits_["tools.code.selectionStart"]=std::to_string(wide(content.substr(0,begin)).size());
-            edits_["tools.code.selectionEnd"]=std::to_string(wide(content.substr(0,end)).size());
-        }
+        auto& view=sourceEditor(id);view.prepare(path,content,path,true);
+        view.draw("##selectableCode",ImVec2(-1,std::max(cyui::dp(100),ImGui::GetContentRegionAvail().y)));
+        const auto selection=view.selectionUtf16();
+        edits_["tools.code.selectionStart"]=std::to_string(selection.first);edits_["tools.code.selectionEnd"]=std::to_string(selection.second);
     };
 
     if(workspace_=="code") {
@@ -188,7 +176,7 @@ bool Workspace::toolsView() {
                 }
                 if(ImGui::BeginTabItem("Symbols")) {list("CodeSymbols");ImGui::EndTabItem();}
                 if(ImGui::BeginTabItem("History",nullptr,edits_["tools.code.historySelected"]=="1" ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)) {edits_["tools.code.historySelected"]="0";fileHistoryWindow();ImGui::EndTabItem();}
-                if(ImGui::BeginTabItem("AI summary")) {command("ClearAiCodeSummary","Clear");textPanel("CodeAiSummary","##aiSummary");ImGui::EndTabItem();}
+                if(ImGui::BeginTabItem("AI summary")) {command("ClearAiCodeSummary","Clear");documentPanel("CodeAiSummary","##aiSummary");ImGui::EndTabItem();}
                 ImGui::EndTabBar();
             }
             ImGui::EndChild();ImGui::EndTable();
@@ -293,7 +281,8 @@ bool Workspace::toolsView() {
             }
             ImGui::EndChild();ImGui::TableNextColumn();scrollBegin("##aiConversation");
             summary("SelectedAiConversation.Title");summary("CodexChatThreadId");
-            list("AiChatMessages",ImVec2(0,std::max(cyui::dp(160),ImGui::GetContentRegionAvail().y-cyui::dp(150))));
+            if(flag("AiRenderMarkdown",true))transcriptPanel("AiChatMessages","##aiTranscript",ImVec2(0,std::max(cyui::dp(160),ImGui::GetContentRegionAvail().y-cyui::dp(178))));
+            else list("AiChatMessages",ImVec2(0,std::max(cyui::dp(160),ImGui::GetContentRegionAvail().y-cyui::dp(150))));
             field("AiPrompt","Message",true);
             command("SendCodexChatMessageAsync","Send",true);ImGui::SameLine();command("CancelAiChat","Cancel turn");
             ImGui::EndChild();ImGui::EndTable();
@@ -505,7 +494,12 @@ bool Workspace::toolsView() {
                     fields({{"TeamChatNewChannelName","New channel"},{"TeamChatNewChannelTopic","Topic"}});command("CreateTeamChatChannelAsync","Create channel");
                     cyui::sectionTitle("Participants");list("TeamChatParticipants");ImGui::EndChild();ImGui::TableNextColumn();scrollBegin("##chatMessages");
                     summary("SelectedTeamChatChannelTitle");summary("SelectedTeamChatChannelTopic");command("RefreshTeamChatAsync","Refresh messages");
-                    list("TeamChatMessages",ImVec2(0,std::max(cyui::dp(160),ImGui::GetContentRegionAvail().y-cyui::dp(205))));
+                    const float messageHeight=std::max(cyui::dp(160),ImGui::GetContentRegionAvail().y-cyui::dp(236));
+                    if(ImGui::BeginTabBar("##chat-presentation")){
+                        if(ImGui::BeginTabItem(cyui::trLabel("Conversation").c_str())){transcriptPanel("TeamChatMessages","##teamTranscript",ImVec2(0,messageHeight));ImGui::EndTabItem();}
+                        if(ImGui::BeginTabItem(cyui::trLabel("Message details / attachments").c_str())){list("TeamChatMessages",ImVec2(0,messageHeight));ImGui::EndTabItem();}
+                        ImGui::EndTabBar();
+                    }
                     field("TeamChatMessageText","Message",true);field("TeamChatAttachmentPath","Attachment");choose("Attach file...","SetTeamChatAttachment","path",ToolPicker::file);ImGui::SameLine();
                     {cyui::ScopedDisabled disabled(busy());if(cyui::button("Open selected attachment")) {pendingAction_=true;send({{"command","tools.openChatAttachment"}});}}
                     ImGui::SameLine();command("SendTeamChatMessageAsync","Send",true);ImGui::EndChild();ImGui::EndTable();
@@ -631,7 +625,7 @@ bool Workspace::toolsView() {
         cyui::callout(cyui::Tone::info,"CyStore Alpha is a separate segmented cache. Git commits, branches, remotes and standard LFS pointers remain authoritative and are never rewritten by enabling this plugin.");
         summary("CyStoreStatusSummary");summary("CyStoreStorePath");
         command("InitializeCyStoreAsync","Initialize segmented store",true);commands({{"RefreshCyStoreAsync","Refresh"},{"CaptureCyStoreLfsAsync","Capture hydrated Git LFS"},{"CancelCyStoreOperation","Cancel"}});
-        summary("CyStoreProgressText");if(flag("IsCyStoreBusy")) cyui::progressBar(-1.0f,cyui::dp(-1,6),"Processing chunks",cyui::Tone::accent);
+        summary("CyStoreProgressText");activityStatus(flag("IsCyStoreBusy")?"Processing chunks":"Segmented store ready",flag("IsCyStoreBusy"));
         if(toolColumns("##cystore",0.65f)) {
             scrollBegin("##cystoreVersions");commands({{"VerifySelectedCyStoreVersionAsync","Verify selected"},{"ReconstructSelectedCyStoreVersionAsync","Reconstruct safely..."}});list("CyStoreVersions");ImGui::EndChild();
             ImGui::TableNextColumn();scrollBegin("##cystoreStatistics");cyui::sectionTitle("Storage and reconstruction");summary("CyStoreLogicalSize");summary("CyStoreStoredSize");summary("CyStoreDeduplicationSummary");summary("CyStoreLastResult");summary("CyStoreWarnings");ImGui::EndChild();ImGui::EndTable();
@@ -665,7 +659,7 @@ bool Workspace::toolsView() {
                 summary("CurrentApplicationVersion");summary("UpdateStatus");command("CheckForUpdatesAsync","Check for updates");ImGui::SameLine();command("DownloadAvailableUpdateAsync","Download available update");
                 summary("UpdateReleaseNotes");cyui::endSection();
             }
-            summary("SelectedDocumentationTopic.Category");summary("SelectedDocumentationTopic.Title");summary("SelectedDocumentationTopic.Summary");textPanel("SelectedDocumentationTopic.Body","##topicBody");ImGui::EndChild();ImGui::EndTable();
+            summary("SelectedDocumentationTopic.Category");summary("SelectedDocumentationTopic.Title");summary("SelectedDocumentationTopic.Summary");documentPanel("SelectedDocumentationTopic.Body","##topicBody");ImGui::EndChild();ImGui::EndTable();
         }return true;
     }
     return false;

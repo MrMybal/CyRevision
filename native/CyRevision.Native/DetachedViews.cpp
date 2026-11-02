@@ -44,7 +44,6 @@ void Workspace::loadDetachedWorkspaces(){
     }
 }
 void Workspace::workspaceBody(){
-    auto activity=loadingLabel(workspace_);if(!activity.empty()){loadingIndicator(activity);ImGui::SameLine();if(cyui::ghostButton("Cancel loading###workspaceCancel"))send({{"command","cancel"}});cyui::progressBar(-1,cyui::dp(-1,3),"",cyui::Tone::accent);}
     if(!overviewView() && !gitView() && !pullRequestView() && !ciView() && !toolsView())cyui::emptyState("Select a project workspace","Choose a tab above.",cyui::icon::folder);
 }
 void Workspace::detachedWindows(){
@@ -77,8 +76,8 @@ void Workspace::detachedWindows(){
             else if(pane.open){
                 const auto savedWorkspace=workspace_,savedPane=activePane_;
                 workspace_=pane.workspace;activePane_="view-"+std::to_string(pane.id);
+                {auto activity=loadingLabel(workspace_);activityStatus(activity.empty()?"Ready":activity,!activity.empty());}
                 ImGui::BeginChild("##detachedBody");
-                if(pane.kind!="workspace"){auto activity=loadingLabel(workspace_);if(!activity.empty())loadingIndicator(activity);}
                 if(pane.kind=="workspace")workspaceBody();
                 else if(pane.kind=="list")list(pane.target.c_str());
                 else if(pane.kind=="diff")diffPanel(pane.target.c_str(),"detached-diff");
@@ -94,7 +93,8 @@ void Workspace::detachedWindows(){
         auto scope="view-"+std::to_string(it->id);releaseGitViewState(this,scope);releaseLfsViewState(this,scope);releaseWidgetViewState(prefix);
         for(auto entry=tableViews_.begin();entry!=tableViews_.end();)if(entry->first.rfind(prefix,0)==0)entry=tableViews_.erase(entry);else++entry;
         for(auto entry=textViews_.begin();entry!=textViews_.end();)if(entry->first.rfind(prefix,0)==0)entry=textViews_.erase(entry);else++entry;
-        for(auto entry=textSearch_.begin();entry!=textSearch_.end();)if(entry->first.rfind(prefix,0)==0)entry=textSearch_.erase(entry);else++entry;
+        auto release=[&](auto& views){for(auto entry=views.begin();entry!=views.end();)if(entry->first.rfind(prefix,0)==0)entry=views.erase(entry);else++entry;};
+        release(sourceEditors_);release(propertyViews_);release(documents_);release(transcripts_);release(imageViews_);
         it=detachedPanes_.erase(it);
     }else++it;
     if(!reattachWorkspace_.empty()){auto workspace=reattachWorkspace_;reattachWorkspace_.clear();auto drafts=draftValues_;auto edits=edits_;navigate(workspace);draftValues_=std::move(drafts);edits_=std::move(edits);selectTable_=true;}

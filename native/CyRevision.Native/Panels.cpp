@@ -7,11 +7,9 @@ void Workspace::workspacePanel(){
     ImGui::SetNextWindowDockID(mainDock_,ImGuiCond_FirstUseEver);
     if(ImGui::Begin("Workspace")){
         cyui::heading(value("ChangeSummaryBase",text(state_,"project")).c_str(),2);ImGui::SameLine();cyui::textDim("%s %s",value("GitAheadSummary").c_str(),value("GitBehindSummary").c_str());
-        command("RefreshAsync","Refresh");ImGui::SameLine();command("FetchAsync","Fetch remotes");ImGui::SameLine();command("PullAsync","Pull");ImGui::SameLine();command("PushAsync","Push");
-        ImGui::SameLine();cyui::alignRight(cyui::buttonWidth("Detach current tab ↗"));{cyui::ScopedDisabled disabled(!ready());if(cyui::button("Detach current tab ↗"))openDetached(workspace_);}cyui::tooltip("Open the active project tab in a separate window.");
-        cyui::textFaint("%s",value("ToolStatus").c_str());
+        cyui::tooltip(value("ToolStatus").c_str());
         if(!error_.empty()){cyui::callout(cyui::Tone::error,error_.c_str());if(cyui::ghostButton("Dismiss"))error_.clear();}
-        if(!ready())cyui::progressBar(-1,cyui::dp(-1,6),"Starting engine",cyui::Tone::accent);
+        if(!ready())activityStatus("Starting engine…",true);
         else{
             Json tabs=state_.contains("navigation")?state_["navigation"].value("tabs",Json::array()):catalog_.value("workspaces",Json::array());
             auto rememberedTabs=state_.contains("navigation")?state_["navigation"].value("categoryTabs",Json::object()):Json::object();
@@ -29,11 +27,20 @@ void Workspace::workspacePanel(){
                     if(ImGui::BeginTabItem(text(tab,"label").c_str(),nullptr,forceWorkspace && id==requestedWorkspace?ImGuiTabItemFlags_SetSelected:0)){if((!forceWorkspace || id==requestedWorkspace) && id!=workspace_)navigate(id);ImGui::EndTabItem();}tabDetachMenu(id);
                 }ImGui::EndTabBar();
             }
-            selectTable_=false;ImGui::Separator();ImGui::BeginChild("##workspaceBody");
+            selectTable_=false;cyui::space(3);workspaceToolbar();cyui::space(4);ImGui::BeginChild("##workspaceBody");
             workspaceBody();
             ImGui::EndChild();
         }
     }ImGui::End();
+}
+void Workspace::workspaceToolbar(){
+    if(cyui::beginToolbar("##project-actions")){
+        command("RefreshAsync","Refresh");ImGui::SameLine();command("FetchAsync","Fetch");ImGui::SameLine();command("PullAsync","Pull");ImGui::SameLine();command("PushAsync","Push");ImGui::SameLine();
+        auto activity=loadingLabel("");bool active=!activity.empty() || busy();float endWidth=cyui::buttonWidth("Detach")+ImGui::GetFrameHeight()+3*ImGui::GetStyle().ItemSpacing.x;
+        activityStatus(activity.empty()?(active?"Operation in progress…":"Ready"):activity,active,std::max(cyui::dp(20),ImGui::GetContentRegionAvail().x-endWidth));
+        ImGui::SameLine();{cyui::ScopedDisabled disabled(!active);if(cyui::iconButton(cyui::iconsAvailable()?cyui::icon::close:"X","Cancel the current operation"))send({{"command","cancel"}});}
+        ImGui::SameLine();if(cyui::button("Detach"))openDetached(workspace_);cyui::tooltip("Open the active project workspace in a separate window.");
+    }cyui::endToolbar();
 }
 void Workspace::operations(){
     if(!showOperations_)return;

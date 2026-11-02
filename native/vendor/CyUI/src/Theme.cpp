@@ -3,17 +3,24 @@
 #endif
 
 #include "cyui/Theme.h"
+#include "cyui/Locale.h"
+
+#include <imgui_internal.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <atomic>
 #include <cstring>
+#include <mutex>
+#include <unordered_map>
 
 namespace cyui {
 namespace {
 
-// CyDAW 2 default: Bitwig's mid greys, dark seams between panels, orange.
+// Mid greys, dark seams between panels and an orange accent.
 const Palette kMidGrey {
     rgb(0x262626), rgb(0x2e2e2e), rgb(0x373737), rgb(0x414141), rgb(0x4b4b4b), rgb(0x565656),
     rgb(0x1f1f1f), rgb(0x181818), rgb(0x2d2d2d), rgb(0x383838),
@@ -22,7 +29,7 @@ const Palette kMidGrey {
     rgb(0x5cd26e), rgb(0xf5a623), rgb(0xee5149), rgb(0x5cb4ef),
 };
 
-// CyDAW 2: Ableton Live's light greys, dark text, orange, blue selections.
+// Light greys, dark text, an orange accent and blue selections.
 const Palette kLightGrey {
     rgb(0xb3b3b3), rgb(0xc2c2c2), rgb(0xcbcbcb), rgb(0xd6d6d6), rgb(0xe0e0e0), rgb(0xebebeb),
     rgb(0x9c9c9c), rgb(0x7f7f7f), rgb(0xa9a9a9), rgb(0x969696),
@@ -31,7 +38,7 @@ const Palette kLightGrey {
     rgb(0x15a34e), rgb(0xd98200), rgb(0xe0302b), rgb(0x2a86d1),
 };
 
-// CyDAW 2's first dark one: deep blue-greys, an amber accent.
+// Deep blue-greys and an amber accent.
 const Palette kAmberNight {
     rgb(0x111317), rgb(0x16181d), rgb(0x1c1f25), rgb(0x24282f), rgb(0x2c313a), rgb(0x363c47),
     rgb(0x262a31), rgb(0x363b45), rgb(0x1f2228), rgb(0x2b2f37),
@@ -40,7 +47,7 @@ const Palette kAmberNight {
     rgb(0x3dd68c), rgb(0xf5a623), rgb(0xe5484d), rgb(0x5ab0f0),
 };
 
-// Shaderixel: dark slate, a violet accent, cyan for information.
+// Dark slate, a violet accent and cyan for information.
 const Palette kViolet {
     rgb(0x16171b), rgb(0x1b1c21), rgb(0x222329), rgb(0x282a32), rgb(0x343640), rgb(0x40424e),
     rgb(0x30323a), rgb(0x3a3c46), rgb(0xffffff, 0.04f), rgb(0xffffff, 0.09f),
@@ -49,7 +56,7 @@ const Palette kViolet {
     rgb(0x4cd4a0), rgb(0xf5a623), rgb(0xf0505a), rgb(0x2ec4d6),
 };
 
-// CyEngineHub: a very dark navy, flat, a blue accent.
+// Deep navy surfaces and a blue accent.
 const Palette kNavy {
     rgb(0x0a0e13), rgb(0x0d1218), rgb(0x111820), rgb(0x18212c), rgb(0x1f2a37), rgb(0x263343),
     rgb(0x1c2632), rgb(0x283748), rgb(0x111820), rgb(0x1c2632),
@@ -68,18 +75,200 @@ const Metrics kComfortable {
     16.0f, 11.0f, 10.0f, 6.0f, 8.0f, 4.0f, 14.0f, 16.0f,
 };
 
-Palette gPalette = kMidGrey;
-std::string gThemeKey = defaultThemeKey;
-bool gLight = false;
-Density gDensity = Density::compact;
-Metrics gMetrics = kCompact;
-Config gConfig {};
-float gDpi = 1.0f;
-bool gIcons = false;
+// Everything a theme call changes, one per ImGui context (plug-in windows,
+// Unreal panels), so contexts never mix themes or fonts. Calls made with no
+// current context change the defaults and every live context.
+struct ThemeState {
+    Palette palette = kMidGrey;
+    std::string themeKey = defaultThemeKey;
+    std::string locale = "en";
+    std::vector<std::string> localizedImGui;
+    Density density = Density::compact;
+    Metrics metrics = kCompact;
+    bool squareWindows = false;
+    float dpi = 1.0f;
+    // What loadFonts added, in which atlas.
+    ImFontAtlas* atlas {};
+    ImFont* fonts[3] {};
+    bool icons = false;
+    // What the ImGui style was last built from (applyDpi skips a no-op).
+    bool styled = false;
+    float styledDpi = 0.0f;
+    Density styledDensity = Density::compact;
+    bool hooked = false;  // released with its context
+};
+void applyLocale(ThemeState& state);
 
-void applyColours(ImGuiStyle& style)
+// Contexts may live on different threads: the map is locked, and each thread
+// caches its last lookup, valid while no context was released since.
+bool gThemesAlive = false;  // false again once static destruction removed the map
+struct ThemeRegistry {
+    std::mutex mutex;
+    std::unordered_map<ImGuiContext*, ThemeState> states;
+    std::atomic<unsigned> generation { 0 };
+    ThemeRegistry() { gThemesAlive = true; }
+    ~ThemeRegistry() { gThemesAlive = false; }
+};
+ThemeState gDefaults;
+ThemeRegistry gThemes;
+thread_local ImGuiContext* tCachedContext {};
+thread_local ThemeState* tCached {};
+thread_local unsigned tCachedGeneration {};
+
+void releaseTheme(ImGuiContext* closing, ImGuiContextHook*)
 {
-    const auto& p = gPalette;
+    if (!gThemesAlive)
+        return;
+    std::lock_guard<std::mutex> lock(gThemes.mutex);
+    gThemes.states.erase(closing);
+    ++gThemes.generation;
+}
+
+// Adds a shutdown hook, unless ImGui may be walking the hook list right now
+// (CyUI first used from another hook) and adding would reallocate it: then
+// the caller tries again later.
+bool hookShutdown(ImGuiContext* context, const ImGuiContextHookCallback callback)
+{
+    auto& hooks = context->Hooks;
+    if (hooks.Size == 0)
+        hooks.reserve(8);
+    else if (hooks.Size == hooks.Capacity)
+        return false;
+    ImGuiContextHook hook;
+    hook.Type = ImGuiContextHookType_Shutdown;
+    hook.Callback = callback;
+    ImGui::AddContextHook(context, &hook);
+    return true;
+}
+
+ThemeState& themeState()
+{
+    auto* context = ImGui::GetCurrentContext();
+    if (context == nullptr)
+        return gDefaults;
+    if (context == tCachedContext && tCachedGeneration == gThemes.generation.load())
+        return *tCached;
+    std::lock_guard<std::mutex> lock(gThemes.mutex);
+    auto [entry, inserted] = gThemes.states.try_emplace(context);
+    auto& state = entry->second;
+    if (inserted) {
+        state.palette = gDefaults.palette;
+        state.themeKey = gDefaults.themeKey;
+        state.locale = gDefaults.locale;
+        state.density = gDefaults.density;
+        state.metrics = gDefaults.metrics;
+        state.squareWindows = gDefaults.squareWindows;
+        state.dpi = gDefaults.dpi;
+    }
+    if (!state.hooked)
+        state.hooked = hookShutdown(context, releaseTheme);
+    // Not hooked yet: no caching, so the next call tries again.
+    tCachedContext = state.hooked ? context : nullptr;
+    tCached = &state;
+    tCachedGeneration = gThemes.generation.load();
+    if (inserted)
+        applyLocale(state);
+    return state;
+}
+
+// A theme change: the current context's or, with no context current, the
+// defaults and every live context (their style too; no other thread may be
+// drawing with them meanwhile).
+template <class F>
+void change(F&& apply)
+{
+    if (ImGui::GetCurrentContext() != nullptr) {
+        apply(themeState());
+        return;
+    }
+    std::vector<ImGuiContext*> contexts;
+    {
+        std::lock_guard<std::mutex> lock(gThemes.mutex);
+        apply(gDefaults);
+        for (const auto& entry : gThemes.states)
+            contexts.push_back(entry.first);
+    }
+    for (auto* context : contexts) {
+        ImGui::SetCurrentContext(context);
+        apply(themeState());
+    }
+    ImGui::SetCurrentContext(nullptr);
+}
+
+struct LocaleRegistry {
+    std::mutex mutex;
+    std::unordered_map<std::string, TranslationCatalog> catalogs{{"en", {}}, {"fr", {
+#define CYUI_TRANSLATION(key, value) {key, value},
+#include "cyui/detail/LocaleFrench.inc"
+#undef CYUI_TRANSLATION
+    }}};
+    std::unordered_map<std::string, std::string> names{{"en", "English"}, {"fr", "Français"}};
+};
+LocaleRegistry& localeRegistry() { static LocaleRegistry registry; return registry; }
+std::string translateForLocale(const std::string& language, const char* key, const char* englishFallback = nullptr)
+{
+    auto& registry = localeRegistry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    const auto catalog = registry.catalogs.find(language);
+    if (catalog != registry.catalogs.end()) {
+        const auto item = catalog->second.find(key);
+        if (item != catalog->second.end()) return item->second;
+    }
+    const auto base = registry.catalogs.find(language.substr(0, language.find('-')));
+    if (base != registry.catalogs.end()) {
+        const auto item = base->second.find(key);
+        if (item != base->second.end()) return item->second;
+    }
+    const auto& english = registry.catalogs.at("en");
+    const auto fallback = english.find(key);
+    return fallback != english.end() ? fallback->second : englishFallback ? englishFallback : key;
+}
+void applyLocale(ThemeState& state)
+{
+    const std::pair<ImGuiLocKey, const char*> entries[]{
+        {ImGuiLocKey_TableSizeOne, "Size column to fit###SizeOne"},
+        {ImGuiLocKey_TableSizeAllFit, "Size all columns to fit###SizeAll"},
+        {ImGuiLocKey_TableSizeAllDefault, "Size all columns to default###SizeAll"},
+        {ImGuiLocKey_TableReset, "Reset"},
+        {ImGuiLocKey_TableResetOrder, "Reset order###ResetOrder"},
+        {ImGuiLocKey_TableResetVisibility, "Reset visibility###ResetVisibility"}};
+    state.localizedImGui.clear();
+    for (const auto& entry : entries) {
+        const std::string key(entry.second);
+        const auto marker = key.find("###");
+        const auto visible = key.substr(0, marker);
+        state.localizedImGui.push_back(translateForLocale(state.locale, visible.c_str()) + "###" +
+                                      (marker == std::string::npos ? key : key.substr(marker + 3)));
+    }
+    for (std::size_t i = 0; i < state.localizedImGui.size(); ++i) {
+        ImGuiLocEntry entry{entries[i].first, state.localizedImGui[i].c_str()};
+        ImGui::LocalizeRegisterEntries(&entry, 1);
+    }
+}
+std::string normalizeLocale(const char* code)
+{
+    std::string result;
+    if (!code) return result;
+    for (const unsigned char c : std::string(code)) {
+        if (result.size() >= 35 || !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                                    (c >= '0' && c <= '9') || c == '-' || c == '_')) return {};
+        result += c == '_' ? '-' : char(std::tolower(c));
+    }
+    return result;
+}
+
+float luminance(const ImU32 colour)
+{
+    return 0.2126f * static_cast<float>(colour & 0xffu) / 255.0f + 0.7152f * static_cast<float>((colour >> 8) & 0xffu) / 255.0f
+           + 0.0722f * static_cast<float>((colour >> 16) & 0xffu) / 255.0f;
+}
+
+void applyColours(ImGuiStyle& style, const ThemeState& state)
+{
+    const auto& p = state.palette;
+    // Dimming behind modals: the darkest of text and deepest ground.
+    const auto shade = luminance(p.text) < luminance(p.bg0) ? p.text : p.bg0;
+    const auto light = luminance(p.bg1) > 0.5f;
     auto* c = style.Colors;
     c[ImGuiCol_Text] = vec(p.text);
     c[ImGuiCol_TextDisabled] = vec(p.textFaint);
@@ -139,8 +328,8 @@ void applyColours(ImGuiStyle& style)
     c[ImGuiCol_DragDropTarget] = vec(p.accent);
     c[ImGuiCol_NavCursor] = vec(p.accent);
     c[ImGuiCol_NavWindowingHighlight] = vec(alpha(p.accent, 0.7f));
-    c[ImGuiCol_NavWindowingDimBg] = vec(rgb(0x000000, 0.35f));
-    c[ImGuiCol_ModalWindowDimBg] = vec(rgb(0x000000, gLight ? 0.25f : 0.45f));
+    c[ImGuiCol_NavWindowingDimBg] = vec(alpha(shade, 0.35f));
+    c[ImGuiCol_ModalWindowDimBg] = vec(alpha(shade, light ? 0.25f : 0.45f));
 #if IMGUI_VERSION_NUM >= 19200
     c[ImGuiCol_InputTextCursor] = vec(p.accent);
     c[ImGuiCol_TreeLines] = vec(p.line);
@@ -152,15 +341,15 @@ void applyColours(ImGuiStyle& style)
 #if IMGUI_VERSION_NUM >= 19297
     c[ImGuiCol_CheckboxSelectedBg] = vec(p.bg4);
 #endif
-    if (gConfig.squareWindows)
+    if (state.squareWindows)
         c[ImGuiCol_WindowBg].w = 1.0f;
 }
 
-void applyStyle()
+void applyStyle(ThemeState& state)
 {
     auto& style = ImGui::GetStyle();
     style = ImGuiStyle();
-    const auto& m = gMetrics;
+    const auto& m = state.metrics;
     style.FontSizeBase = m.fontSize;
     style.WindowPadding = m.windowPadding;
     style.FramePadding = m.framePadding;
@@ -204,12 +393,15 @@ void applyStyle()
     style.HoverDelayNormal = 0.55f;
     style.AntiAliasedLines = true;
     style.AntiAliasedFill = true;
-    applyColours(style);
+    applyColours(style, state);
 
-    style.ScaleAllSizes(gDpi);
-    if (gConfig.squareWindows)
+    style.ScaleAllSizes(state.dpi);
+    if (state.squareWindows)
         style.WindowRounding = 0.0f;
-    style.FontScaleDpi = gDpi;
+    style.FontScaleDpi = state.dpi;
+    state.styled = true;
+    state.styledDpi = state.dpi;
+    state.styledDensity = state.density;
 }
 
 unsigned int hexDigit(const char c)
@@ -255,16 +447,35 @@ std::string inFolder(const char* folder, const char* name)
     return out + name;
 }
 
-// The fonts in the order loadFonts adds them; looked up in the current
-// context's atlas, so several contexts (plug-in windows) each find theirs.
-ImFont* fontAt(const int index)
+struct FontSet {
+    ImFont* fonts[3] {};
+    bool icons = false;
+};
+
+// What loadFonts put in the current atlas: in this context, or in another
+// sharing the atlas. Empty when unknown or the atlas was cleared since.
+FontSet fontSet()
 {
     if (ImGui::GetCurrentContext() == nullptr)
-        return nullptr;
-    const auto& fonts = ImGui::GetIO().Fonts->Fonts;
-    if (fonts.Size == 0)
-        return nullptr;
-    return index < fonts.Size ? fonts[index] : fonts[0];
+        return {};
+    auto* atlas = ImGui::GetIO().Fonts;
+    const auto owns = [atlas](const ThemeState& state) {
+        return state.atlas == atlas && state.fonts[0] != nullptr && atlas->Fonts.contains(state.fonts[0]);
+    };
+    const auto set = [](const ThemeState& state) { return FontSet { { state.fonts[0], state.fonts[1], state.fonts[2] }, state.icons }; };
+    if (const auto& own = themeState(); owns(own))
+        return set(own);
+    std::lock_guard<std::mutex> lock(gThemes.mutex);
+    for (const auto& entry : gThemes.states)
+        if (owns(entry.second))
+            return set(entry.second);
+    return {};
+}
+
+ImFont* fontAt(const int index)
+{
+    auto* font = fontSet().fonts[index];
+    return font != nullptr && ImGui::GetIO().Fonts->Fonts.contains(font) ? font : nullptr;
 }
 
 ImFont* addFont(const std::vector<std::string>& candidates, const float size)
@@ -273,7 +484,6 @@ ImFont* addFont(const std::vector<std::string>& candidates, const float size)
     ImFontConfig config;
     config.OversampleH = 2;
     config.OversampleV = 2;
-    config.PixelSnapH = true;
     for (const auto& path : candidates)
         if (fileExists(path))
             if (auto* font = io.Fonts->AddFontFromFileTTF(path.c_str(), size, &config))
@@ -281,7 +491,7 @@ ImFont* addFont(const std::vector<std::string>& candidates, const float size)
     return io.Fonts->AddFontDefault();
 }
 
-void mergeIcons(const float size, const bool wanted)
+void mergeIcons(ThemeState& state, const float size, const bool wanted)
 {
     if (!wanted)
         return;
@@ -294,52 +504,128 @@ void mergeIcons(const float size, const bool wanted)
     config.GlyphOffset = ImVec2(0.0f, 2.0f);
     config.GlyphMinAdvanceX = size;
     if (ImGui::GetIO().Fonts->AddFontFromFileTTF(icons.c_str(), size * 0.95f, &config) != nullptr)
-        gIcons = true;
+        state.icons = true;
 }
 
 }  // namespace
 
 // ---- Palette -----------------------------------------------------------------
 
+bool setLocale(const char* code)
+{
+    auto wanted = normalizeLocale(code);
+    auto& registry = localeRegistry();
+    {
+        std::lock_guard<std::mutex> lock(registry.mutex);
+        if (!registry.catalogs.count(wanted)) wanted = wanted.substr(0, wanted.find('-'));
+        if (!registry.catalogs.count(wanted)) return false;
+    }
+    change([&](ThemeState& state) {
+        state.locale = wanted;
+        if (!ImGui::GetCurrentContext()) return;
+        applyLocale(state);
+    });
+    return true;
+}
+const std::string& locale() { return themeState().locale; }
+std::vector<LocaleInfo> availableLocales()
+{
+    auto& registry = localeRegistry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    std::vector<LocaleInfo> result{{"en", registry.names.at("en")}, {"fr", registry.names.at("fr")}};
+    for (const auto& item : registry.names)
+        if (item.first != "en" && item.first != "fr") result.push_back({item.first, item.second});
+    std::sort(result.begin() + 2, result.end(), [](const LocaleInfo& a, const LocaleInfo& b) { return a.code < b.code; });
+    return result;
+}
+bool registerTranslations(const char* code, const TranslationCatalog& translations, const char* name)
+{
+    const auto normalized = normalizeLocale(code);
+    if (normalized.empty()) return false;
+    auto& registry = localeRegistry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    auto& catalog = registry.catalogs[normalized];
+    for (const auto& item : translations) catalog[item.first] = item.second;
+    if (name) registry.names[normalized] = name;
+    else if (!registry.names.count(normalized)) registry.names[normalized] = normalized;
+    return true;
+}
+std::string tr(const char* key, const char* englishFallback)
+{
+    if (!key) return {};
+    return translateForLocale(locale(), key, englishFallback);
+}
+std::string trLabel(const char* key, const char* englishFallback)
+{
+    if (!key) return {};
+    const std::string label(key);
+    const auto marker = label.find("##");
+    const auto visible = label.substr(0, marker);
+    const auto explicitId = label.find("###");
+    return tr(visible.c_str(), englishFallback) + "###" +
+           (explicitId == std::string::npos ? label : label.substr(explicitId + 3));
+}
+
 const Palette& palette()
 {
-    return gPalette;
+    return themeState().palette;
 }
+
+namespace {
+void usePalette(ThemeState& state, const Palette& value)
+{
+    state.palette = value;
+    if (ImGui::GetCurrentContext() != nullptr)
+        applyColours(ImGui::GetStyle(), state);
+}
+
+bool useTheme(ThemeState& state, const char* key)
+{
+    for (const auto& theme : builtInThemes())
+        if (key != nullptr && theme.key == key) {
+            state.themeKey = theme.key;
+            usePalette(state, theme.palette);
+            return true;
+        }
+    return false;
+}
+
+void useDensity(ThemeState& state, const Density value)
+{
+    state.density = value;
+    state.metrics = value == Density::compact ? kCompact : kComfortable;
+}
+}  // namespace
 
 void setPalette(const Palette& value)
 {
-    gPalette = value;
-    if (ImGui::GetCurrentContext() != nullptr)
-        applyColours(ImGui::GetStyle());
+    change([&](ThemeState& state) { usePalette(state, value); });
 }
 
 const std::vector<Theme>& builtInThemes()
 {
     static const std::vector<Theme> themes {
-        { "mid-grey", "Mid grey (CyDAW)", kMidGrey, false },
-        { "light-grey", "Light grey (CyDAW)", kLightGrey, true },
-        { "amber-night", "Amber night (CyDAW)", kAmberNight, false },
-        { "violet", "Violet (Shaderixel)", kViolet, false },
-        { "navy", "Navy (CyEngineHub)", kNavy, false },
+        { "mid-grey", "Mid grey", kMidGrey, false },
+        { "light-grey", "Light grey", kLightGrey, true },
+        { "amber-night", "Amber night", kAmberNight, false },
+        { "violet", "Violet", kViolet, false },
+        { "navy", "Navy", kNavy, false },
     };
     return themes;
 }
 
 bool setTheme(const char* key)
 {
-    for (const auto& theme : builtInThemes())
-        if (key != nullptr && theme.key == key) {
-            gThemeKey = theme.key;
-            gLight = theme.light;
-            setPalette(theme.palette);
-            return true;
-        }
-    return false;
+    const auto known = std::any_of(builtInThemes().begin(), builtInThemes().end(),
+                                   [key](const Theme& theme) { return key != nullptr && theme.key == key; });
+    if (known)
+        change([key](ThemeState& state) { useTheme(state, key); });
+    return known;
 }
 
 const std::string& currentThemeKey()
 {
-    return gThemeKey;
+    return themeState().themeKey;
 }
 
 const std::vector<PaletteField>& paletteFields()
@@ -491,56 +777,81 @@ ImVec4 vec(const ImU32 colour)
 
 ImU32 categorical(const int index)
 {
-    static constexpr unsigned int colours[] = { 0xf0a43a, 0x5ab0f0, 0x52d1a2, 0xc792ea, 0xe8765a, 0x7fd1e8,
-                                                0xe8c547, 0x9ccc65, 0xf06292, 0x8c9eff, 0x4dd0b5, 0xffb74d };
-    constexpr auto count = static_cast<int>(sizeof(colours) / sizeof(colours[0]));
-    return rgb(colours[((index % count) + count) % count]);
+    // Twelve hues spread by the golden ratio from the accent's; saturation and
+    // brightness follow the grounds, so the set reads on light and dark themes.
+    const auto& p = palette();
+    const auto accent = vec(p.accent);
+    auto h = 0.0f, s = 0.0f, v = 0.0f;
+    ImGui::ColorConvertRGBtoHSV(accent.x, accent.y, accent.z, h, s, v);
+    const auto n = ((index % 12) + 12) % 12;
+    const auto light = luminance(p.bg1) > 0.5f;
+    const auto hue = std::fmod(h + static_cast<float>(n) * 0.618034f, 1.0f);
+    const auto odd = (n & 1) != 0 ? 1.0f : 0.0f;
+    auto r = 0.0f, g = 0.0f, b = 0.0f;
+    ImGui::ColorConvertHSVtoRGB(hue, (light ? 0.72f : 0.52f) + 0.08f * odd, (light ? 0.66f : 0.92f) - 0.08f * odd, r, g, b);
+    return ImGui::ColorConvertFloat4ToU32(ImVec4(r, g, b, 1.0f));
 }
 
 // ---- Metrics -----------------------------------------------------------------
 
 const Metrics& metrics()
 {
-    return gMetrics;
+    return themeState().metrics;
 }
 
 void setDensity(const Density value)
 {
-    gDensity = value;
-    gMetrics = value == Density::compact ? kCompact : kComfortable;
-    gConfig.density = value;
-    if (ImGui::GetCurrentContext() != nullptr)
-        applyStyle();
+    change([value](ThemeState& state) {
+        useDensity(state, value);
+        if (ImGui::GetCurrentContext() != nullptr && (!state.styled || state.styledDensity != value))
+            applyStyle(state);
+    });
 }
 
 Density density()
 {
-    return gDensity;
+    return themeState().density;
 }
 
 // ---- Applying ----------------------------------------------------------------
 
 void apply(const Config& config)
 {
-    gConfig = config;
-    gDpi = std::max(0.5f, config.dpiScale);
-    gDensity = config.density;
-    gMetrics = config.density == Density::compact ? kCompact : kComfortable;
-    if (!setTheme(config.themeKey))
-        setTheme(defaultThemeKey);
-    applyStyle();
+    const auto set = [&config](ThemeState& state) {
+        state.squareWindows = config.squareWindows;
+        state.dpi = std::max(0.5f, config.dpiScale);
+        useDensity(state, config.density);
+        if (!useTheme(state, config.themeKey))
+            useTheme(state, defaultThemeKey);
+        if (ImGui::GetCurrentContext() != nullptr)
+            applyStyle(state);
+    };
+    // With no context current: the defaults only (DPI is each window's own).
+    if (ImGui::GetCurrentContext() != nullptr) {
+        set(themeState());
+    } else {
+        std::lock_guard<std::mutex> lock(gThemes.mutex);
+        set(gDefaults);
+    }
 }
 
 void applyDpi(const float dpiScale)
 {
-    gConfig.dpiScale = dpiScale;
-    gDpi = std::max(0.5f, dpiScale);
-    applyStyle();
+    if (ImGui::GetCurrentContext() == nullptr) {
+        std::lock_guard<std::mutex> lock(gThemes.mutex);
+        gDefaults.dpi = std::max(0.5f, dpiScale);
+        return;
+    }
+    auto& state = themeState();
+    state.dpi = std::max(0.5f, dpiScale);
+    // Rebuilding resets ImGui's style: only when something changed.
+    if (!state.styled || state.styledDpi != state.dpi || state.styledDensity != state.density)
+        applyStyle(state);
 }
 
 float dpi()
 {
-    return gDpi;
+    return themeState().dpi;
 }
 
 // ---- Fonts -------------------------------------------------------------------
@@ -548,21 +859,24 @@ float dpi()
 void loadFonts(const FontConfig& config)
 {
     auto& io = ImGui::GetIO();
+    auto& state = themeState();
     io.Fonts->Clear();
-    gIcons = false;
-    const auto size = config.size > 0.0f ? config.size : gMetrics.fontSize;
+    state.icons = false;
+    state.atlas = io.Fonts;
+    const auto size = config.size > 0.0f ? config.size : state.metrics.fontSize;
     const auto* folder = config.fallbackFolder;
-    addFont({ windowsFont("segoeui.ttf"), inFolder(folder, "Inter-Regular.ttf"), inFolder(folder, "Roboto-Regular.ttf"),
-              inFolder(folder, "Roboto-Medium.ttf") },
-            size);
-    mergeIcons(size, config.icons);
-    addFont({ windowsFont("seguisb.ttf"), inFolder(folder, "Inter-SemiBold.ttf"), inFolder(folder, "Roboto-Bold.ttf"),
-              inFolder(folder, "Roboto-Medium.ttf") },
-            size);
-    mergeIcons(size, config.icons);
-    addFont({ windowsFont("consola.ttf"), inFolder(folder, "JetBrainsMono-Regular.ttf"), inFolder(folder, "Cousine-Regular.ttf") },
-            size - 1.0f);
-    io.FontDefault = fontAt(0);
+    state.fonts[0] = addFont({ windowsFont("segoeui.ttf"), inFolder(folder, "Inter-Regular.ttf"),
+                               inFolder(folder, "Roboto-Regular.ttf"), inFolder(folder, "Roboto-Medium.ttf") },
+                             size);
+    mergeIcons(state, size, config.icons);
+    state.fonts[1] = addFont({ windowsFont("seguisb.ttf"), inFolder(folder, "Inter-SemiBold.ttf"),
+                               inFolder(folder, "Roboto-Bold.ttf"), inFolder(folder, "Roboto-Medium.ttf") },
+                             size);
+    mergeIcons(state, size, config.icons);
+    state.fonts[2] = addFont({ windowsFont("consola.ttf"), inFolder(folder, "JetBrainsMono-Regular.ttf"),
+                               inFolder(folder, "Cousine-Regular.ttf") },
+                             size - 1.0f);
+    io.FontDefault = state.fonts[0];
 }
 
 ImFont* uiFont()
@@ -582,7 +896,7 @@ ImFont* monoFont()
 
 bool iconsAvailable()
 {
-    return gIcons;
+    return fontSet().icons;
 }
 
 }  // namespace cyui

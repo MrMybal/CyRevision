@@ -128,3 +128,8 @@ Detailed documentation is currently available in French while its English transl
 ## License
 
 CyRevision is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+
+The Windows V2 interface uses [CyUI](https://github.com/MrMybal/CyUI), licensed
+under the [MIT License](https://github.com/MrMybal/CyUI/blob/main/LICENSE).
+CyUI's repository currently requires access permission; its full license and
+third-party notices are also included in the Windows package's `Licenses` folder.

@@ -10,7 +10,7 @@ bool Workspace::ciView() {
     auto& ui=reviewUi(projectId_);
     cyui::panelHeader("Continuous integration",value("CiStatus").c_str());
     command("RefreshCiAsync","Refresh workflows and runs",true);
-    if(flag("IsCiLoading")) {ImGui::SameLine();cyui::spinner("##ciLoading");cyui::textDim("Loading workflow data...");}
+    ImGui::SameLine();activityStatus(flag("IsCiLoading")?"Loading workflow data…":"",flag("IsCiLoading"));
     cyui::divider();
     ImVec2 available=ImGui::GetContentRegionAvail();
     float left=std::min(cyui::dp(260),std::max(cyui::dp(180),available.x*.22f));

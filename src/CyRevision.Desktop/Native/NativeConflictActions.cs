@@ -106,6 +106,15 @@ public static class NativeConflictActions
             return new { message = resolver.Status };
         }
         ValidateSelection(resolver.SelectedConflict, Text(request, "key"), Text(request, "path"));
+        // An editor transaction and its subsequent action travel together. The UI must not
+        // race two requests or apply an action to an older server-side draft.
+        if (TryValue(request, "draftResult", out JsonElement draft) && draft.ValueKind == JsonValueKind.String)
+        {
+            if (operation == "resolve") RequireConfirmed(request);
+            string proposed = draft.GetString() ?? "";
+            ValidateManualResult(resolver.SelectedConflict!, resolver.ResultText, proposed);
+            resolver.ResultText = proposed;
+        }
         switch (operation)
         {
             case "setResult":

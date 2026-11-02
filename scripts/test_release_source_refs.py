@@ -9,6 +9,14 @@ CHECK = Path(__file__).with_name('check-repository-privacy.py').resolve()
 
 
 class SourceRevisionTests(unittest.TestCase):
+    def test_each_release_builder_selects_only_its_target_revision(self):
+        scripts = Path(__file__).parent
+        for name in ('build-release.ps1', 'build-linux-release.sh', 'build-macos-release.sh'):
+            lines = (scripts / name).read_text(encoding='utf-8').splitlines()
+            checks = [line for line in lines if 'check-repository-privacy.py' in line]
+            self.assertEqual(1, len(checks), name)
+            self.assertTrue('--ref' in checks[0] and 'HEAD' in checks[0], name)
+
     def test_restore_and_publish_use_matching_self_contained_mode(self):
         scripts = Path(__file__).parent
         for name in ('build-release.ps1', 'build-linux-release.sh', 'build-macos-release.sh'):

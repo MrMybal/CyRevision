@@ -1,0 +1,17 @@
+{
+  "lexilla": {
+    "url": "https://codeload.github.com/ScintillaOrg/lexilla/tar.gz/e67537693bfb1ae4e6f643dcab725a38ffeac3e3",
+    "revision": "e67537693bfb1ae4e6f643dcab725a38ffeac3e3",
+    "sha256": "efca3217b64cd453324e5fd17bc71151c90585a3506e8da771bcb95aaf530999"
+  },
+  "scintilla": {
+    "url": "https://codeload.github.com/mirror/scintilla/tar.gz/c4f161912f4afff81b0697f52f78ad7f0620ac25",
+    "revision": "c4f161912f4afff81b0697f52f78ad7f0620ac25",
+    "sha256": "a2c29f976062f3431efeed8c5b9ee49a0ee5a0fca328a9da272f3ec48e539b84"
+  },
+  "scite": {
+    "url": "https://codeload.github.com/mirror/scite/tar.gz/d166c05a44a7177c2771805267345d37adc1211f",
+    "revision": "d166c05a44a7177c2771805267345d37adc1211f",
+    "sha256": "94aa97de3caf26b5a3aaeaa9f89dfe417798600c1b16b7881720995a09ed07e5"
+  }
+}

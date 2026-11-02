@@ -15754,48 +15754,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         string relativePath,
         CancellationToken cancellationToken)
     {
-        string root = Path.GetFullPath(repositoryRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        string fullPath = Path.GetFullPath(Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
-        StringComparison comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-        if (!fullPath.StartsWith(root + Path.DirectorySeparatorChar, comparison) || !File.Exists(fullPath))
-        {
-            return "The untracked file is no longer available.";
-        }
-
-        FileInfo file = new(fullPath);
-        if (file.Length > 2 * 1024 * 1024)
-        {
-            return $"Untracked file · {file.Length / 1024d / 1024d:0.##} MB · text preview limited to 2 MB.";
-        }
-
-        byte[] bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken);
-        if (bytes.Contains((byte)0))
-        {
-            return $"Untracked binary file · {file.Length / 1024d:0.#} KB · no textual diff available.";
-        }
-
-        string[] lines = Encoding.UTF8.GetString(bytes)
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n')
-            .Split('\n');
-        int visibleLineCount = Math.Min(lines.Length, 5000);
-        StringBuilder diff = new();
-        diff.AppendLine($"diff --git a/{relativePath} b/{relativePath}");
-        diff.AppendLine("new file mode 100644");
-        diff.AppendLine("--- /dev/null");
-        diff.AppendLine($"+++ b/{relativePath}");
-        diff.AppendLine($"@@ -0,0 +1,{lines.Length} @@");
-        for (int index = 0; index < visibleLineCount; index++)
-        {
-            diff.Append('+').AppendLine(lines[index]);
-        }
-        if (visibleLineCount < lines.Length)
-        {
-            diff.AppendLine($"+… {lines.Length - visibleLineCount} additional line(s) hidden …");
-        }
-        return diff.ToString();
+        return await WorkingTreeTextPreview.BuildDiffAsync(repositoryRoot, relativePath, cancellationToken);
     }
 
     private static string NormalizeChangePath(string path) => path.Trim().Replace('\\', '/').TrimStart('/');

@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <thread>
 #include <chrono>
+#include <cmath>
 
 using namespace cyrevision;
 
@@ -21,6 +22,12 @@ struct WorkspaceTestAccess {
     static void openList(Workspace& workspace){workspace.openDetached("history","list","History","Commit list");}
     static void setDraft(Workspace& workspace){workspace.draftValues_["CommitMessage"]="Unfinished message";workspace.edits_["CommitMessage"]="Unfinished message";}
     static bool draftPreserved(const Workspace& workspace){return workspace.draftValues_.value("CommitMessage","")=="Unfinished message" && workspace.edits_.at("CommitMessage")=="Unfinished message";}
+    static void fieldFixture(Workspace& workspace){workspace.field("ModuleText","Display name");}
+    static void documentFixture(Workspace& workspace){workspace.documentPanel("ModuleDocument","module-document");}
+    static void transcriptFixture(Workspace& workspace){workspace.transcriptPanel("AiChatMessages","module-transcript",cyui::dp(0,160));}
+    static void link(Workspace& workspace,const std::string& link){workspace.documentLink(link);}
+    static bool pendingLink(const Workspace& workspace){return !workspace.pendingDocumentLink_.empty();}
+    static void clearLink(Workspace& workspace){workspace.pendingDocumentLink_.clear();}
 };
 }
 
@@ -34,11 +41,13 @@ public:
     int projectSwitches=0;
     std::string activeProject="fixture-one";
     bool projectLoading=false,operationBusy=false;
+    bool diffLoading=false;
     std::string selectedRevision="revision-one",comparisonRevision="revision-two";
     std::vector<Json> selections;
     bool holdInvocations=false;
     std::vector<Json> held;
     Json lastState=Json::object();
+    std::string propertyText="baseline";std::vector<Json> propertySets;
     void complete(){for(auto& response:held)responses_.push_back(std::move(response));held.clear();}
     unsigned long long send(Json request) override {
         auto id=next_++;
@@ -83,6 +92,14 @@ public:
                 result["tables"][key]["filter"]=text(table,"filter");
                 if(!text(table,"filter").empty() && source=="History"){Json rows=Json::array();for(const auto& row:result["tables"][key]["rows"])if(text(row["values"],"Subject").find(text(table,"filter"))!=std::string::npos)rows.push_back(row);result["tables"][key]["rows"]=rows;result["tables"][key]["total"]=rows.size();}
             }
+            result["fields"]["DiffText"]={{"value","--- a/Config/DefaultEngine.ini\n+++ b/Config/DefaultEngine.ini\n@@ -1,2 +1,2 @@\n [Engine]\n-Enabled=False\n+Enabled=True\n"}};
+            result["fields"]["NativeWorkingDiffPath"]={{"value","Config/DefaultEngine.ini"}};
+            result["fields"]["IsWorkingTreeDiffLoading"]={{"value",diffLoading}};
+            result["fields"]["IsChangesDiffPreviewEnabled"]={{"value",true}};
+            result["fields"]["ModuleText"]={{"value",propertyText},{"editable",true},{"kind","text"}};
+            result["fields"]["ModuleDocument"]={{"value","# Module document\n\nA **formatted** paragraph and [a link](https://example.invalid/document).\n\n```json\n{\"enabled\":true}\n```\n\n| A | B |\n|---|---|\n| one | two |"}};
+        } else if(command=="set"){
+            propertySets.push_back(request);if(text(request,"property")=="ModuleText")propertyText=text(request,"value");
         } else if(command=="invoke") ++mutations;
         else if(command=="project") {activeProject=text(request,"targetProjectId");++projectSwitches;}
         else if(command=="select"){selections.push_back(request);if(text(request,"source")=="History"){
@@ -98,6 +115,10 @@ public:
 
 void require(bool condition,const char* message) {
     if(!condition) throw std::runtime_error(message);
+}
+float contrast(ImU32 first,ImU32 second){
+    auto light=[](ImU32 colour){auto c=[](unsigned v){float s=v/255.0f;return s<=.04045f?s/12.92f:std::pow((s+.055f)/1.055f,2.4f);};return .2126f*c((colour>>IM_COL32_R_SHIFT)&255)+.7152f*c((colour>>IM_COL32_G_SHIFT)&255)+.0722f*c((colour>>IM_COL32_B_SHIFT)&255);};
+    float a=light(first),b=light(second);return (std::max(a,b)+.05f)/(std::min(a,b)+.05f);
 }
 void frame(Workspace& workspace) {
     ImGui::GetIO().DeltaTime=1.0f/60.0f;
@@ -168,6 +189,27 @@ void clickRefresh(Workspace& workspace){
     auto rect=refreshButtonFrame(workspace);auto& io=ImGui::GetIO();io.AddMousePosEvent(rect.GetCenter().x,rect.GetCenter().y);refreshButtonFrame(workspace);
     io.AddMouseButtonEvent(0,true);refreshButtonFrame(workspace);io.AddMouseButtonEvent(0,false);refreshButtonFrame(workspace);
 }
+ImVec2 childPosition(const char* fragment){
+    for(auto* window:ImGui::GetCurrentContext()->Windows)if(window->WasActive && std::string(window->Name).find(fragment)!=std::string::npos)return window->Pos;
+    throw std::runtime_error("The layout fixture child was not rendered.");
+}
+void viewerFrame(Workspace& workspace,TextViewer& viewer,bool split=false,bool focusSearch=false){
+    ImGui::NewFrame();workspace.frame();ImGui::SetNextWindowPos(ImVec2(300,260),ImGuiCond_Always);ImGui::SetNextWindowSize(ImVec2(800,500),ImGuiCond_Always);
+    ImGui::Begin("Text preview fixture");if(focusSearch)ImGui::SetKeyboardFocusHere();viewer.drawPrepared("fixture-reader",split);ImGui::End();ImGui::Render();require(uiError.empty(),"Text preview produced an invalid layout.");
+}
+ImRect propertyFrame(Workspace& workspace){
+    ImGui::NewFrame();workspace.frame();ImGui::SetNextWindowPos(ImVec2(300,250),ImGuiCond_Always);ImGui::SetNextWindowSize(ImVec2(700,220),ImGuiCond_Always);
+    ImGui::Begin("Module property fixture");WorkspaceTestAccess::fieldFixture(workspace);ImRect bounds(ImGui::GetItemRectMin(),ImGui::GetItemRectMax());cyui::button("Outside the property");ImGui::End();ImGui::Render();require(uiError.empty(),"Inspector adapter produced an invalid frame.");return bounds;
+}
+void selectProperty(Workspace& workspace){
+    auto bounds=propertyFrame(workspace);auto& io=ImGui::GetIO();io.AddMousePosEvent(bounds.Max.x-70,(bounds.Min.y+bounds.Max.y)*.5f);propertyFrame(workspace);
+    io.AddMouseButtonEvent(0,true);propertyFrame(workspace);io.AddMouseButtonEvent(0,false);propertyFrame(workspace);
+    io.AddKeyEvent(ImGuiMod_Ctrl,true);io.AddKeyEvent(ImGuiKey_A,true);propertyFrame(workspace);io.AddKeyEvent(ImGuiKey_A,false);io.AddKeyEvent(ImGuiMod_Ctrl,false);propertyFrame(workspace);
+}
+void documentFrame(Workspace& workspace){
+    ImGui::NewFrame();workspace.frame();ImGui::SetNextWindowPos(ImVec2(300,250),ImGuiCond_Always);ImGui::SetNextWindowSize(ImVec2(850,550),ImGuiCond_Always);
+    ImGui::Begin("Module document fixture");WorkspaceTestAccess::documentFixture(workspace);ImGui::End();ImGui::Render();require(uiError.empty(),"Document adapter produced an invalid frame.");
+}
 }
 
 int main() {
@@ -194,6 +236,11 @@ int main() {
         requireTabs("##projectTabs",{"Project","Members"});
         clickTab(workspace,"##categories","Git");
         requireTabs("##projectTabs",{"Changes","History"});
+        auto editorBefore=childPosition("##commit-editor");
+        engine.projectLoading=true;engine.diffLoading=true;refreshSnapshot(workspace);
+        auto editorDuring=childPosition("##commit-editor");
+        require(std::abs(editorBefore.x-editorDuring.x)<.5f && std::abs(editorBefore.y-editorDuring.y)<.5f,"Loading displaced the change editor instead of staying in its reserved toolbar slot.");
+        engine.projectLoading=false;engine.diffLoading=false;refreshSnapshot(workspace);
         require(engine.projectSwitches==0,"Opening a project tool switched to another project.");
         require(ImGui::GetTopMostPopupModal()==nullptr,"Changing project tabs created a blocking modal.");
         clickTab(workspace,"##projectTabs","History");refreshSnapshot(workspace);
@@ -294,7 +341,30 @@ int main() {
         require(WorkspaceTestAccess::workspace(workspace)=="history" && workspace.windowLayout().size()==1,"Returning to the main tab lost the workspace or failed to close its detached copy.");
         require(WorkspaceTestAccess::draftPreserved(workspace),"Returning from a detached view discarded an unfinished form.");
         WorkspaceTestAccess::closeWindows(workspace);settle(workspace);
-        for(auto theme:{"mid-grey","light-grey","amber-night","violet","navy"}){cyui::setTheme(theme);settle(workspace);require(uiError.empty(),"A theme produced an invalid interface layout.");}
+        selectProperty(workspace);io.AddInputCharactersUTF8("cancelled draft");propertyFrame(workspace);
+        require(engine.propertySets.empty(),"An Inspector preview wrote the backend before commit.");
+        io.AddKeyEvent(ImGuiKey_Escape,true);propertyFrame(workspace);io.AddKeyEvent(ImGuiKey_Escape,false);propertyFrame(workspace);
+        require(engine.propertySets.empty(),"Escape committed a cancelled Inspector draft.");
+        selectProperty(workspace);io.AddInputCharactersUTF8("committed draft");propertyFrame(workspace);
+        cyui::setLocale("fr");propertyFrame(workspace);require(engine.propertySets.empty(),"Changing language committed an active draft.");
+        auto fieldBounds=propertyFrame(workspace);io.AddMousePosEvent(fieldBounds.Min.x+40,fieldBounds.Max.y+ImGui::GetFrameHeight());propertyFrame(workspace);
+        io.AddMouseButtonEvent(0,true);propertyFrame(workspace);io.AddMouseButtonEvent(0,false);propertyFrame(workspace);
+        if(engine.propertySets.size()!=1 || engine.propertyText!="committed draft")throw std::runtime_error("Inspector did not commit exactly one complete edit: "+std::to_string(engine.propertySets.size())+" / "+engine.propertyText);
+        cyui::setLocale("en");
+        WorkspaceTestAccess::link(workspace,"javascript:alert(1)");require(!WorkspaceTestAccess::pendingLink(workspace),"A document opened an unsafe URL scheme.");
+        WorkspaceTestAccess::link(workspace,"https://example.invalid/document");require(WorkspaceTestAccess::pendingLink(workspace),"A document link bypassed or lost its confirmation.");WorkspaceTestAccess::clearLink(workspace);
+        for(auto density:{cyui::Density::compact,cyui::Density::comfortable}){cyui::setDensity(density);for(auto locale:{"en","fr"}){cyui::setLocale(locale);for(auto theme:{"mid-grey","light-grey","amber-night","violet","navy"}){cyui::setTheme(theme);documentFrame(workspace);}}}
+        cyui::setLocale("en");cyui::setDensity(cyui::Density::compact);
+        TextViewer viewer;viewer.prepare("--- a/sample.ini\n+++ b/sample.ini\n@@ -1,2 +1,2 @@\n [Engine]\n-Enabled=False\n+Enabled=True\n");
+        viewer.search("enabled");require(viewer.matchCount()==2,"Find did not search both sides of the diff.");viewer.nextMatch(1);require(viewer.matchNumber()==2,"Find-next did not move to the second match.");
+        auto lines=viewer.diffDocument().rows().size();viewer.nextHunk(1);require(viewer.diffDocument().rows().size()==lines,"Hunk navigation truncated the displayed file.");
+        for(auto theme:{"mid-grey","light-grey","amber-night","violet","navy"}){cyui::setTheme(theme);settle(workspace);viewerFrame(workspace,viewer);viewerFrame(workspace,viewer,true);require(uiError.empty(),"A theme produced an invalid interface layout.");
+            const auto& p=cyui::palette();for(auto background:{p.bg0,cyui::mix(p.bg0,p.success,.14f),cyui::mix(p.bg0,p.error,.14f)})for(auto role:{cyui::TokenRole::keyword,cyui::TokenRole::number,cyui::TokenRole::string,cyui::TokenRole::comment})require(contrast(cyui::tokenColor(role,background),background)>=4.45f,"Shared syntax colours are unreadable against the current diff/theme background.");}
+        viewer.prepare("{\"data\":\""+std::string(1024*1024,'x')+"\"}","large.json");viewer.search("");viewerFrame(workspace,viewer);
+        auto* preview=ImGui::FindWindowByName("Text preview fixture");require(preview && ImGui::GetDrawData()->TotalVtxCount<100000,"A long JSON line was rendered in full instead of horizontally clipped.");
+        viewer.prepare("Alpha\nBeta\nAlpha\n","sample.txt");viewerFrame(workspace,viewer,false,true);viewerFrame(workspace,viewer);
+        io.AddInputCharactersUTF8("alpha");viewerFrame(workspace,viewer);require(viewer.matchCount()==2 && viewer.matchNumber()==1,"Typing into the shared search lost the host match index.");
+        io.AddKeyEvent(ImGuiKey_Enter,true);viewerFrame(workspace,viewer);io.AddKeyEvent(ImGuiKey_Enter,false);viewerFrame(workspace,viewer);require(viewer.matchNumber()==2,"Enter did not advance the shared source search.");
         ImGui::DestroyContext();
         std::cout<<"PASS: project selection, loading/queue protection, 150% DPI, tabs, detached views, independent filters, docking, layout restoration, preserved drafts, five themes and confirmations.\n";
         return 0;

@@ -1,0 +1,1207 @@
+[
+  {
+    "id": "plain",
+    "name": "Plain text",
+    "lexer": "null",
+    "sample": "sample.txt",
+    "extensions": [
+      "txt"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "cpp",
+    "name": "C++",
+    "lexer": "cpp",
+    "sample": "sample.cpp",
+    "extensions": [
+      "cpp",
+      "cc",
+      "cxx",
+      "h",
+      "hpp",
+      "hh",
+      "hxx",
+      "inl",
+      "ipp"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "csharp",
+    "name": "C#",
+    "lexer": "cpp",
+    "sample": "sample.cs",
+    "extensions": [
+      "cs"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "python",
+    "name": "Python",
+    "lexer": "python",
+    "sample": "sample.py",
+    "extensions": [
+      "py",
+      "pyw",
+      "pyi"
+    ],
+    "filenames": [
+      "SConstruct",
+      "SConscript"
+    ]
+  },
+  {
+    "id": "javascript",
+    "name": "JavaScript",
+    "lexer": "cpp",
+    "sample": "sample.js",
+    "extensions": [
+      "js",
+      "mjs",
+      "cjs",
+      "jsx"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "typescript",
+    "name": "TypeScript",
+    "lexer": "cpp",
+    "sample": "sample.ts",
+    "extensions": [
+      "ts",
+      "mts",
+      "cts"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "rust",
+    "name": "Rust",
+    "lexer": "rust",
+    "sample": "sample.rs",
+    "extensions": [
+      "rs"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "glsl",
+    "name": "GLSL",
+    "lexer": "cpp",
+    "sample": "sample.glsl",
+    "extensions": [
+      "glsl",
+      "vert",
+      "frag",
+      "geom",
+      "tesc",
+      "tese",
+      "comp",
+      "mesh",
+      "task",
+      "rgen",
+      "rchit",
+      "rmiss",
+      "rahit",
+      "rint",
+      "rcall"
+    ],
+    "filenames": [],
+    "wordLists": {
+      "0": "break case const continue default do else false for if return static struct switch true typedef void while attribute varying layout location binding set std140 std430 uniform buffer shared coherent volatile restrict readonly writeonly precision highp mediump lowp in out inout flat smooth noperspective centroid patch sample invariant precise discard subroutine",
+      "1": "void bool int uint float double atomic_uint vec2 vec3 vec4 bvec2 bvec3 bvec4 ivec2 ivec3 ivec4 uvec2 uvec3 uvec4 dvec2 dvec3 dvec4 mat2 mat2x3 mat2x4 mat3x2 mat3 mat3x4 mat4x2 mat4x3 mat4 dmat2 dmat2x3 dmat2x4 dmat3x2 dmat3 dmat3x4 dmat4x2 dmat4x3 dmat4 sampler1D sampler2D sampler3D samplerCube sampler2DRect sampler1DArray sampler2DArray samplerCubeArray samplerBuffer sampler2DMS sampler2DMSArray isampler1D isampler2D isampler3D isamplerCube isampler2DRect isampler1DArray isampler2DArray isamplerCubeArray isamplerBuffer isampler2DMS isampler2DMSArray usampler1D usampler2D usampler3D usamplerCube usampler2DRect usampler1DArray usampler2DArray usamplerCubeArray usamplerBuffer usampler2DMS usampler2DMSArray image1D image2D image3D imageCube image2DRect image1DArray image2DArray imageCubeArray imageBuffer image2DMS image2DMSArray iimage1D iimage2D iimage3D iimageCube iimage2DRect iimage1DArray iimage2DArray iimageCubeArray iimageBuffer iimage2DMS iimage2DMSArray uimage1D uimage2D uimage3D uimageCube uimage2DRect uimage1DArray uimage2DArray uimageCubeArray uimageBuffer uimage2DMS uimage2DMSArray gl_Position gl_PointSize gl_VertexID gl_InstanceID gl_FragCoord gl_FrontFacing gl_FragDepth gl_GlobalInvocationID gl_LocalInvocationID gl_WorkGroupID gl_WorkGroupSize gl_NumWorkGroups"
+    },
+    "functions": "abs acos all any asin atan atan2 ceil clamp cos cosh cross degrees determinant distance dot exp exp2 floor fma fmod frac frexp fwidth isfinite isinf isnan ldexp length lerp log log2 log10 max min modf mul normalize pow radians rcp reflect refract round rsqrt saturate sign sin sincos sinh smoothstep sqrt step tan tanh transpose trunc mix fract inversesqrt texture textureLod textureGrad texelFetch dFdx dFdy fwidthEmitVertex EmitVertex EndPrimitive"
+  },
+  {
+    "id": "hlsl",
+    "name": "HLSL",
+    "lexer": "cpp",
+    "sample": "sample.hlsl",
+    "extensions": [
+      "hlsl",
+      "hlsli",
+      "fx",
+      "fxh",
+      "usf",
+      "ush"
+    ],
+    "filenames": [],
+    "wordLists": {
+      "0": "break case const continue default do else false for if return static struct switch true typedef void while cbuffer tbuffer register packoffset groupshared inline in out inout linear centroid nointerpolation sample noperspective row_major column_major uniform volatile unorm snorm precise discard technique technique10 technique11 pass compile export namespace class interface",
+      "1": "void vector matrix SamplerState SamplerComparisonState Texture1D Texture2D Texture3D TextureCube Texture2DArray TextureCubeArray Texture2DMS Texture2DMSArray RWTexture1D RWTexture2D RWTexture3D RWTexture2DArray Buffer RWBuffer StructuredBuffer RWStructuredBuffer AppendStructuredBuffer ConsumeStructuredBuffer ByteAddressBuffer RWByteAddressBuffer InputPatch OutputPatch PointStream LineStream TriangleStream RayDesc RaytracingAccelerationStructure bool int uint float double half min16float min10float min16int min12int min16uint bool2 bool3 bool4 int2 int3 int4 uint2 uint3 uint4 float2 float3 float4 double2 double3 double4 half2 half3 half4 min16float2 min16float3 min16float4 min10float2 min10float3 min10float4 min16int2 min16int3 min16int4 min12int2 min12int3 min12int4 min16uint2 min16uint3 min16uint4 bool2x2 bool2x3 bool2x4 bool3x2 bool3x3 bool3x4 bool4x2 bool4x3 bool4x4 int2x2 int2x3 int2x4 int3x2 int3x3 int3x4 int4x2 int4x3 int4x4 uint2x2 uint2x3 uint2x4 uint3x2 uint3x3 uint3x4 uint4x2 uint4x3 uint4x4 float2x2 float2x3 float2x4 float3x2 float3x3 float3x4 float4x2 float4x3 float4x4 double2x2 double2x3 double2x4 double3x2 double3x3 double3x4 double4x2 double4x3 double4x4 half2x2 half2x3 half2x4 half3x2 half3x3 half3x4 half4x2 half4x3 half4x4 min16float2x2 min16float2x3 min16float2x4 min16float3x2 min16float3x3 min16float3x4 min16float4x2 min16float4x3 min16float4x4 min10float2x2 min10float2x3 min10float2x4 min10float3x2 min10float3x3 min10float3x4 min10float4x2 min10float4x3 min10float4x4 min16int2x2 min16int2x3 min16int2x4 min16int3x2 min16int3x3 min16int3x4 min16int4x2 min16int4x3 min16int4x4 min12int2x2 min12int2x3 min12int2x4 min12int3x2 min12int3x3 min12int3x4 min12int4x2 min12int4x3 min12int4x4 min16uint2x2 min16uint2x3 min16uint2x4 min16uint3x2 min16uint3x3 min16uint3x4 min16uint4x2 min16uint4x3 min16uint4x4 SV_Position SV_Target SV_VertexID SV_InstanceID SV_DispatchThreadID SV_GroupID SV_GroupIndex SV_GroupThreadID SV_Depth"
+    },
+    "functions": "abs acos all any asin atan atan2 ceil clamp cos cosh cross degrees determinant distance dot exp exp2 floor fma fmod frac frexp fwidth isfinite isinf isnan ldexp length lerp log log2 log10 max min modf mul normalize pow radians rcp reflect refract round rsqrt saturate sign sin sincos sinh smoothstep sqrt step tan tanh transpose trunc ddx ddx_coarse ddx_fine ddy ddy_coarse ddy_fine tex2D Sample SampleLevel SampleGrad InterlockedAdd"
+  },
+  {
+    "id": "json",
+    "name": "JSON",
+    "lexer": "json",
+    "sample": "sample.json",
+    "extensions": [
+      "json",
+      "jsonc",
+      "uplugin",
+      "uproject"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "ini",
+    "name": "INI",
+    "lexer": "props",
+    "sample": "sample.ini",
+    "extensions": [
+      "ini",
+      "cfg",
+      "conf",
+      "cnf",
+      "inf",
+      "url",
+      "editorconfig"
+    ],
+    "filenames": [
+      ".editorconfig"
+    ]
+  },
+  {
+    "id": "sql",
+    "name": "SQL",
+    "lexer": "sql",
+    "sample": "sample.sql",
+    "extensions": [
+      "sql"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "lua",
+    "name": "Lua",
+    "lexer": "lua",
+    "sample": "sample.lua",
+    "extensions": [
+      "lua"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "markdown",
+    "name": "Markdown",
+    "lexer": "markdown",
+    "sample": "sample.md",
+    "extensions": [
+      "md",
+      "markdown",
+      "mdwn"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "c",
+    "name": "C",
+    "lexer": "cpp",
+    "sample": "sample.c",
+    "extensions": [
+      "c"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "actionscript",
+    "name": "ActionScript",
+    "lexer": "cpp",
+    "sample": "sample.as",
+    "extensions": [
+      "as",
+      "asc",
+      "jsfl"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "ada",
+    "name": "Ada",
+    "lexer": "ada",
+    "sample": "sample.ads",
+    "extensions": [
+      "ada",
+      "ads",
+      "adb"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "asn1",
+    "name": "ASN.1",
+    "lexer": "asn1",
+    "sample": "sample.asn",
+    "extensions": [
+      "asn",
+      "asn1"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "asp",
+    "name": "ASP",
+    "lexer": "hypertext",
+    "sample": "sample.asp",
+    "extensions": [
+      "asp",
+      "asa"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "assembly",
+    "name": "Assembly",
+    "lexer": "asm",
+    "sample": "sample.asm",
+    "extensions": [
+      "asm",
+      "s",
+      "inc"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "autoit",
+    "name": "AutoIt",
+    "lexer": "au3",
+    "sample": "sample.au3",
+    "extensions": [
+      "au3"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "avisynth",
+    "name": "AviSynth",
+    "lexer": "avs",
+    "sample": "sample.avs",
+    "extensions": [
+      "avs",
+      "avsi"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "baan",
+    "name": "BaanC",
+    "lexer": "baan",
+    "sample": "sample.bc",
+    "extensions": [
+      "bc",
+      "cln"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "batch",
+    "name": "Batch",
+    "lexer": "batch",
+    "sample": "sample.bat",
+    "extensions": [
+      "bat",
+      "cmd",
+      "nt"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "blitzbasic",
+    "name": "BlitzBasic",
+    "lexer": "blitzbasic",
+    "sample": "sample.bb",
+    "extensions": [
+      "bb"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "caml",
+    "name": "CAML",
+    "lexer": "caml",
+    "sample": "sample.ml",
+    "extensions": [
+      "ml",
+      "mli"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "cmake",
+    "name": "CMake",
+    "lexer": "cmake",
+    "sample": "sample.cmake",
+    "extensions": [
+      "cmake"
+    ],
+    "filenames": [
+      "CMakeLists.txt"
+    ]
+  },
+  {
+    "id": "cobol",
+    "name": "COBOL",
+    "lexer": "COBOL",
+    "sample": "sample.cob",
+    "extensions": [
+      "cob",
+      "cbl",
+      "cpy"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "coffeescript",
+    "name": "CoffeeScript",
+    "lexer": "coffeescript",
+    "sample": "sample.coffee",
+    "extensions": [
+      "coffee",
+      "litcoffee"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "csound",
+    "name": "Csound",
+    "lexer": "csound",
+    "sample": "sample.orc",
+    "extensions": [
+      "orc",
+      "sco",
+      "csd"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "css",
+    "name": "CSS",
+    "lexer": "css",
+    "sample": "sample.css",
+    "extensions": [
+      "css"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "d",
+    "name": "D",
+    "lexer": "d",
+    "sample": "sample.d",
+    "extensions": [
+      "d",
+      "di"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "diff",
+    "name": "Diff",
+    "lexer": "diff",
+    "sample": "sample.diff",
+    "extensions": [
+      "diff",
+      "patch"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "erlang",
+    "name": "Erlang",
+    "lexer": "erlang",
+    "sample": "sample.erl",
+    "extensions": [
+      "erl",
+      "hrl"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "errorlist",
+    "name": "ErrorList",
+    "lexer": "errorlist",
+    "sample": "sample.err",
+    "extensions": [
+      "err"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "escapeSequence",
+    "name": "EscapeSequence (ANSI)",
+    "lexer": "escseq",
+    "sample": "sample.ansi",
+    "extensions": [
+      "ansi",
+      "ans"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "escript",
+    "name": "ESCRIPT",
+    "lexer": "escript",
+    "sample": "sample.em",
+    "extensions": [
+      "em",
+      "src"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "forth",
+    "name": "Forth",
+    "lexer": "forth",
+    "sample": "sample.forth",
+    "extensions": [
+      "forth",
+      "fth",
+      "fs"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "fortranFixed",
+    "name": "Fortran fixed form",
+    "lexer": "f77",
+    "sample": "sample.f",
+    "extensions": [
+      "f",
+      "for",
+      "f77"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "fortran",
+    "name": "Fortran free form",
+    "lexer": "fortran",
+    "sample": "sample.f90",
+    "extensions": [
+      "f90",
+      "f95",
+      "f03",
+      "f08",
+      "f18"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "freebasic",
+    "name": "FreeBasic",
+    "lexer": "freebasic",
+    "sample": "sample.bas",
+    "extensions": [
+      "bas",
+      "bi"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "gdscript",
+    "name": "GDScript",
+    "lexer": "gdscript",
+    "sample": "sample.gd",
+    "extensions": [
+      "gd"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "go",
+    "name": "Go",
+    "lexer": "cpp",
+    "sample": "sample.go",
+    "extensions": [
+      "go"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "gui4cli",
+    "name": "Gui4Cli",
+    "lexer": "gui4cli",
+    "sample": "sample.gc",
+    "extensions": [
+      "gc",
+      "gui"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "haskell",
+    "name": "Haskell",
+    "lexer": "haskell",
+    "sample": "sample.hs",
+    "extensions": [
+      "hs",
+      "lhs"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "hollywood",
+    "name": "Hollywood",
+    "lexer": "hollywood",
+    "sample": "sample.hws",
+    "extensions": [
+      "hws"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "html",
+    "name": "HTML",
+    "lexer": "hypertext",
+    "sample": "sample.html",
+    "extensions": [
+      "html",
+      "htm",
+      "shtml",
+      "xhtml"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "innoSetup",
+    "name": "Inno Setup",
+    "lexer": "inno",
+    "sample": "sample.iss",
+    "extensions": [
+      "iss"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "intelHex",
+    "name": "Intel HEX",
+    "lexer": "ihex",
+    "sample": "sample.hex",
+    "extensions": [
+      "hex",
+      "ihex"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "internalSearch",
+    "name": "Internal Search",
+    "lexer": "errorlist",
+    "sample": "sample.search-results",
+    "extensions": [
+      "search-results"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "java",
+    "name": "Java",
+    "lexer": "cpp",
+    "sample": "sample.java",
+    "extensions": [
+      "java",
+      "jad"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "json5",
+    "name": "JSON5",
+    "lexer": "cpp",
+    "sample": "sample.json5",
+    "extensions": [
+      "json5"
+    ],
+    "filenames": [],
+    "wordLists": {
+      "0": "true false null Infinity NaN"
+    }
+  },
+  {
+    "id": "jsp",
+    "name": "JSP",
+    "lexer": "hypertext",
+    "sample": "sample.jsp",
+    "extensions": [
+      "jsp",
+      "jspf"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "kixtart",
+    "name": "KiXtart",
+    "lexer": "kix",
+    "sample": "sample.kix",
+    "extensions": [
+      "kix"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "latex",
+    "name": "LaTeX",
+    "lexer": "latex",
+    "sample": "sample.tex",
+    "extensions": [
+      "tex",
+      "ltx",
+      "latex"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "lisp",
+    "name": "Lisp",
+    "lexer": "lisp",
+    "sample": "sample.lisp",
+    "extensions": [
+      "lisp",
+      "lsp",
+      "cl",
+      "el"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "makefile",
+    "name": "Makefile",
+    "lexer": "makefile",
+    "sample": "Makefile",
+    "extensions": [
+      "mak",
+      "mk"
+    ],
+    "filenames": [
+      "Makefile",
+      "makefile",
+      "GNUmakefile",
+      "BSDmakefile"
+    ]
+  },
+  {
+    "id": "matlab",
+    "name": "MATLAB",
+    "lexer": "matlab",
+    "sample": "sample.m",
+    "extensions": [
+      "m"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "mmixal",
+    "name": "MMIXAL",
+    "lexer": "mmixal",
+    "sample": "sample.mms",
+    "extensions": [
+      "mms"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "mssql",
+    "name": "MSSQL",
+    "lexer": "mssql",
+    "sample": "sample.mssql",
+    "extensions": [
+      "mssql"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "nfo",
+    "name": "NFO",
+    "lexer": "null",
+    "sample": "sample.nfo",
+    "extensions": [
+      "nfo",
+      "diz"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "nim",
+    "name": "Nim",
+    "lexer": "nim",
+    "sample": "sample.nim",
+    "extensions": [
+      "nim",
+      "nims",
+      "nimble"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "nncrontab",
+    "name": "Nncrontab",
+    "lexer": "nncrontab",
+    "sample": "sample.tab",
+    "extensions": [
+      "tab"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "nsis",
+    "name": "NSIS",
+    "lexer": "nsis",
+    "sample": "sample.nsi",
+    "extensions": [
+      "nsi",
+      "nsh"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "objectiveC",
+    "name": "Objective-C",
+    "lexer": "cpp",
+    "sample": "sample.mm",
+    "extensions": [
+      "mm"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "oscript",
+    "name": "OScript",
+    "lexer": "oscript",
+    "sample": "sample.os",
+    "extensions": [
+      "os"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "pascal",
+    "name": "Pascal",
+    "lexer": "pascal",
+    "sample": "sample.pas",
+    "extensions": [
+      "pas",
+      "pp",
+      "dpr",
+      "lpr"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "perl",
+    "name": "Perl",
+    "lexer": "perl",
+    "sample": "sample.pl",
+    "extensions": [
+      "pl",
+      "pm",
+      "pod"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "php",
+    "name": "PHP",
+    "lexer": "phpscript",
+    "sample": "sample.php",
+    "extensions": [
+      "php",
+      "php3",
+      "php4",
+      "php5",
+      "phtml"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "postscript",
+    "name": "PostScript",
+    "lexer": "ps",
+    "sample": "sample.ps",
+    "extensions": [
+      "ps",
+      "eps"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "powershell",
+    "name": "PowerShell",
+    "lexer": "powershell",
+    "sample": "sample.ps1",
+    "extensions": [
+      "ps1",
+      "psm1",
+      "psd1"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "properties",
+    "name": "Properties",
+    "lexer": "props",
+    "sample": "sample.properties",
+    "extensions": [
+      "properties",
+      "session"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "purebasic",
+    "name": "PureBasic",
+    "lexer": "purebasic",
+    "sample": "sample.pb",
+    "extensions": [
+      "pb",
+      "pbi"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "r",
+    "name": "R",
+    "lexer": "r",
+    "sample": "sample.r",
+    "extensions": [
+      "r",
+      "rmd"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "raku",
+    "name": "Raku",
+    "lexer": "raku",
+    "sample": "sample.raku",
+    "extensions": [
+      "raku",
+      "rakumod",
+      "rakutest",
+      "p6",
+      "pm6"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "rc",
+    "name": "RC",
+    "lexer": "cpp",
+    "sample": "sample.rc",
+    "extensions": [
+      "rc",
+      "rc2",
+      "dlg"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "rebol",
+    "name": "REBOL",
+    "lexer": "rebol",
+    "sample": "sample.reb",
+    "extensions": [
+      "reb",
+      "r3"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "registry",
+    "name": "Registry",
+    "lexer": "registry",
+    "sample": "sample.reg",
+    "extensions": [
+      "reg"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "ruby",
+    "name": "Ruby",
+    "lexer": "ruby",
+    "sample": "sample.rb",
+    "extensions": [
+      "rb",
+      "rbw",
+      "rake",
+      "gemspec"
+    ],
+    "filenames": [
+      "Rakefile",
+      "Gemfile"
+    ]
+  },
+  {
+    "id": "sas",
+    "name": "SAS",
+    "lexer": "sas",
+    "sample": "sample.sas",
+    "extensions": [
+      "sas"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "scheme",
+    "name": "Scheme",
+    "lexer": "lisp",
+    "sample": "sample.scm",
+    "extensions": [
+      "scm",
+      "ss",
+      "sld"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "shell",
+    "name": "Shell",
+    "lexer": "bash",
+    "sample": "sample.sh",
+    "extensions": [
+      "sh",
+      "bash",
+      "zsh",
+      "ksh"
+    ],
+    "filenames": [
+      ".bashrc",
+      ".bash_profile",
+      ".zshrc",
+      ".profile",
+      "crontab"
+    ]
+  },
+  {
+    "id": "smalltalk",
+    "name": "Smalltalk",
+    "lexer": "smalltalk",
+    "sample": "sample.st",
+    "extensions": [
+      "st"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "spice",
+    "name": "SPICE",
+    "lexer": "spice",
+    "sample": "sample.cir",
+    "extensions": [
+      "cir",
+      "spice",
+      "sp"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "srecord",
+    "name": "S-Record",
+    "lexer": "srec",
+    "sample": "sample.srec",
+    "extensions": [
+      "srec",
+      "s19",
+      "s28",
+      "s37",
+      "mot"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "structuredText",
+    "name": "Structured Text",
+    "lexer": "fcST",
+    "sample": "sample.sttxt",
+    "extensions": [
+      "sttxt",
+      "scl",
+      "exp"
+    ],
+    "filenames": [],
+    "wordLists": {
+      "0": "PROGRAM END_PROGRAM FUNCTION END_FUNCTION FUNCTION_BLOCK END_FUNCTION_BLOCK VAR END_VAR VAR_INPUT VAR_OUTPUT VAR_IN_OUT IF THEN ELSIF ELSE END_IF CASE OF END_CASE FOR TO BY DO END_FOR WHILE END_WHILE REPEAT UNTIL END_REPEAT RETURN EXIT TRUE FALSE AND OR XOR NOT MOD",
+      "1": "BOOL BYTE WORD DWORD LWORD SINT INT DINT LINT USINT UINT UDINT ULINT REAL LREAL TIME DATE STRING ARRAY STRUCT END_STRUCT"
+    }
+  },
+  {
+    "id": "swift",
+    "name": "Swift",
+    "lexer": "cpp",
+    "sample": "sample.swift",
+    "extensions": [
+      "swift"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "tcl",
+    "name": "TCL",
+    "lexer": "tcl",
+    "sample": "sample.tcl",
+    "extensions": [
+      "tcl",
+      "tk"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "tektronixHex",
+    "name": "Tektronix extended HEX",
+    "lexer": "tehex",
+    "sample": "sample.tek",
+    "extensions": [
+      "tek",
+      "tehex"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "tex",
+    "name": "TeX",
+    "lexer": "tex",
+    "sample": "sample.ctx",
+    "extensions": [
+      "ctx",
+      "sty",
+      "cls"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "toml",
+    "name": "TOML",
+    "lexer": "toml",
+    "sample": "sample.toml",
+    "extensions": [
+      "toml"
+    ],
+    "filenames": [
+      "Cargo.lock"
+    ]
+  },
+  {
+    "id": "txt2tags",
+    "name": "txt2tags",
+    "lexer": "txt2tags",
+    "sample": "sample.t2t",
+    "extensions": [
+      "t2t"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "verilog",
+    "name": "Verilog",
+    "lexer": "verilog",
+    "sample": "sample.v",
+    "extensions": [
+      "v",
+      "vh",
+      "sv",
+      "svh"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "vhdl",
+    "name": "VHDL",
+    "lexer": "vhdl",
+    "sample": "sample.vhd",
+    "extensions": [
+      "vhd",
+      "vhdl"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "visualBasic",
+    "name": "Visual Basic",
+    "lexer": "vb",
+    "sample": "sample.vb",
+    "extensions": [
+      "vb",
+      "vbs"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "visualProlog",
+    "name": "Visual Prolog",
+    "lexer": "visualprolog",
+    "sample": "sample.pro",
+    "extensions": [
+      "pro"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "xml",
+    "name": "XML",
+    "lexer": "xml",
+    "sample": "sample.xml",
+    "extensions": [
+      "xml",
+      "xsd",
+      "xsl",
+      "xslt",
+      "svg",
+      "plist",
+      "resx",
+      "csproj",
+      "props",
+      "targets"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "yaml",
+    "name": "YAML",
+    "lexer": "yaml",
+    "sample": "sample.yaml",
+    "extensions": [
+      "yaml",
+      "yml"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "tsx",
+    "name": "TypeScript / TSX",
+    "lexer": "cpp",
+    "sample": "sample.tsx",
+    "extensions": [
+      "tsx"
+    ],
+    "filenames": []
+  },
+  {
+    "id": "unreal",
+    "name": "C++ / Unreal",
+    "lexer": "cpp",
+    "sample": "sample.cpp",
+    "extensions": [],
+    "filenames": [],
+    "wordLists": {
+      "1": "UCLASS USTRUCT UENUM UFUNCTION UPROPERTY GENERATED_BODY UObject AActor UActorComponent FVector FRotator FTransform FString FName FText TArray TMap TSet TObjectPtr TSubclassOf BlueprintCallable BlueprintPure EditAnywhere Category meta DisplayName",
+      "0": "break case const continue default do else false for if return static struct switch true typedef void while public private protected class virtual override constexpr template typename using namespace new delete nullptr"
+    }
+  },
+  {
+    "id": "log",
+    "name": "Logs",
+    "lexer": "errorlist",
+    "sample": "sample.log",
+    "extensions": [
+      "log",
+      "logs"
+    ],
+    "filenames": []
+  }
+]

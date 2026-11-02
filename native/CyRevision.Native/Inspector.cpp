@@ -1,6 +1,7 @@
 #include "Workspace.h"
 #include "StringInput.h"
 #include <shobjidl.h>
+#include <shellapi.h>
 #include <wrl/client.h>
 #include <algorithm>
 
@@ -59,45 +60,10 @@ void Workspace::inspector() {
             }
             if(ImGui::BeginTabItem("Configuration")) {
                 ImGui::BeginChild("##configuration");
-                if(cyui::beginProperties("##properties",155.0f)) {
-                    if(state_.contains("properties")) for(const auto& property:state_["properties"]) {
-                        auto name=text(property,"name");
-                        if(name=="CommitMessage" && workspace_=="changes") continue;
-                        auto value=property.value("value",Json());
-                        bool editable=property.value("editable",false);
-                        if(!editable && (value.is_null() || display(value).empty())) continue;
-                        cyui::ScopedID scope(name.c_str());
-                        cyui::property(text(property,"label").c_str());
-                        if(!editable) {
-                            auto content=display(value);
-                            ImGui::TextWrapped("%s",content.c_str());
-                            continue;
-                        }
-                        cyui::ScopedDisabled disabled(busy());
-                        if(text(property,"kind")=="bool") {
-                            bool checked=value.is_boolean() && value.get<bool>();
-                            if(cyui::toggleSwitch("##value",&checked)) send({{"command","set"},{"property",name},{"value",checked}});
-                        } else if(text(property,"kind")=="enum") {
-                            auto selected=display(value);
-                            if(ImGui::BeginCombo("##value",selected.c_str())) {
-                                for(const auto& option:property.value("options",Json::array())) {
-                                    auto choice=option.get<std::string>();
-                                    if(ImGui::Selectable(choice.c_str(),choice==selected))
-                                        send({{"command","set"},{"property",name},{"value",choice}});
-                                }
-                                ImGui::EndCombo();
-                            }
-                        } else {
-                            auto found=edits_.find(name);
-                            if(found==edits_.end()) found=edits_.emplace(name,display(value)).first;
-                            auto& draft=found->second;
-                            auto flags=property.value("secret",false) ? ImGuiInputTextFlags_Password : ImGuiInputTextFlags_None;
-                            ImGui::InputText("##value",&draft,flags);
-                            if(draft!=display(value) && cyui::ghostButton("Apply"))
-                                send({{"command","set"},{"property",name},{"value",draft}});
-                        }
-                    }
-                    cyui::endProperties();
+                if(state_.contains("properties"))for(const auto& property:state_["properties"]){
+                    auto name=text(property,"name");if(name=="CommitMessage" && workspace_=="changes")continue;
+                    auto current=property.value("value",Json());if(!property.value("editable",false) && (current.is_null() || display(current).empty()))continue;
+                    field(name.c_str(),text(property,"label").c_str());
                 }
                 ImGui::EndChild();
                 ImGui::EndTabItem();
@@ -112,6 +78,16 @@ void Workspace::inspector() {
     ImGui::End();
 }
 void Workspace::modals() {
+    if(requestClose)pendingDocumentLink_.clear();
+    bool linkOpen=!pendingDocumentLink_.empty() && action_.empty() && !requestClose;
+    if(linkOpen && cyui::beginModal(cyui::trLabel("Open external link?").c_str(),&linkOpen,540)){
+        ImGui::TextWrapped("%s",pendingDocumentLink_.c_str());
+        auto result=cyui::modalButtons(cyui::trLabel("Open in browser").c_str(),cyui::trLabel("Cancel").c_str());
+        if(result==1){ShellExecuteW(nullptr,L"open",wide(pendingDocumentLink_).c_str(),nullptr,nullptr,SW_SHOWNORMAL);pendingDocumentLink_.clear();}
+        else if(result==2)pendingDocumentLink_.clear();
+        cyui::endModal();
+    }
+    if(!linkOpen && action_.empty())pendingDocumentLink_.clear();
     if(requestClose && state_.contains("preferences") && state_["preferences"].is_object() && !state_["preferences"].value("application",Json::object()).value("confirmBeforeExit",true)){done_=true;requestClose=false;return;}
     // CyUI opens a modal whenever its flag is true. Derive it from an actual
     // request: unconditional flags create competing, invisible input blockers.

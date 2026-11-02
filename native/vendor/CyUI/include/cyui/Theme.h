@@ -6,8 +6,17 @@
 // takes its colours from cyui::palette() and its sizes from cyui::metrics(),
 // never from hard-coded values. Changing theme is then one call.
 //
+// Every setting here (palette, theme key, density, metrics, DPI, fonts) belongs
+// to the current ImGui context: several contexts (plug-in windows, editor
+// panels) each keep their own, and a call changes the current context only.
+// With NO context current, setPalette / setTheme / setDensity change every
+// live context (and the defaults new contexts start from): one call themes
+// all panels. Do that while no other thread draws with those contexts.
+// apply / applyDpi with no context current change the defaults only.
+//
 // Requires Dear ImGui 1.92 or newer (dynamic font sizes, FontScaleDpi).
 
+#include "cyui/Export.h"
 #include <imgui.h>
 
 #include <string>
@@ -69,9 +78,9 @@ struct Theme {
     bool light {};     // a light theme (shadows, overlays adapt)
 };
 
-[[nodiscard]] const Palette& palette();
+[[nodiscard]] CYUI_API const Palette& palette();
 // The palette drawn with from now on; ImGui's own colours follow.
-void setPalette(const Palette& palette);
+CYUI_API void setPalette(const Palette& palette);
 
 // Built-in themes, extracted from CyDAW 2, Shaderixel and CyEngineHub:
 //   "mid-grey"     CyDAW 2 default: Bitwig-like mid greys, orange accent
@@ -79,11 +88,11 @@ void setPalette(const Palette& palette);
 //   "amber-night"  CyDAW 2 first dark: deep blue-greys, amber accent
 //   "violet"       Shaderixel: dark slate, violet accent, cyan secondary
 //   "navy"         CyEngineHub: very dark navy, blue accent
-[[nodiscard]] const std::vector<Theme>& builtInThemes();
+[[nodiscard]] CYUI_API const std::vector<Theme>& builtInThemes();
 inline constexpr const char* defaultThemeKey = "mid-grey";
 // Applies a built-in theme by key; false when unknown.
-bool setTheme(const char* key);
-[[nodiscard]] const std::string& currentThemeKey();
+CYUI_API bool setTheme(const char* key);
+[[nodiscard]] CYUI_API const std::string& currentThemeKey();
 
 // The palette's fields by name, for editors and theme files.
 struct PaletteField {
@@ -92,24 +101,26 @@ struct PaletteField {
     int group;  // 0 grounds, 1 lines, 2 text, 3 accent, 4 meaning
     ImU32 Palette::*member;
 };
-[[nodiscard]] const std::vector<PaletteField>& paletteFields();
+[[nodiscard]] CYUI_API const std::vector<PaletteField>& paletteFields();
 
 // Theme files (.cytheme): lines `key = #RRGGBB` or `#RRGGBBAA`. A JSON
 // object `{ "key": "#RRGGBB", ... }` (CyDAW 2's .cytheme) is read as well.
 // What the text lacks keeps `base`'s colour.
-[[nodiscard]] std::string paletteToText(const Palette& palette);
-[[nodiscard]] Palette paletteFromText(const std::string& text, const Palette& base);
-bool savePalette(const char* path, const Palette& palette);
-bool loadPalette(const char* path, Palette& palette);
+[[nodiscard]] CYUI_API std::string paletteToText(const Palette& palette);
+[[nodiscard]] CYUI_API Palette paletteFromText(const std::string& text, const Palette& base);
+CYUI_API bool savePalette(const char* path, const Palette& palette);
+CYUI_API bool loadPalette(const char* path, Palette& palette);
 
 // Colour helpers (all keep ImGui's ABGR packing).
-[[nodiscard]] ImU32 alpha(ImU32 colour, float alphaFactor);  // multiplies the alpha
-[[nodiscard]] ImU32 mix(ImU32 a, ImU32 b, float t);
-[[nodiscard]] ImU32 brighter(ImU32 colour, float amount);  // towards white
-[[nodiscard]] ImU32 darker(ImU32 colour, float amount);    // towards black
-[[nodiscard]] ImVec4 vec(ImU32 colour);
-// The n-th colour of a pleasant categorical set (tracks, layers, tags, series).
-[[nodiscard]] ImU32 categorical(int index);
+[[nodiscard]] CYUI_API ImU32 alpha(ImU32 colour, float alphaFactor);  // multiplies the alpha
+[[nodiscard]] CYUI_API ImU32 mix(ImU32 a, ImU32 b, float t);
+[[nodiscard]] CYUI_API ImU32 brighter(ImU32 colour, float amount);  // towards white
+[[nodiscard]] CYUI_API ImU32 darker(ImU32 colour, float amount);    // towards black
+[[nodiscard]] CYUI_API ImVec4 vec(ImU32 colour);
+// The n-th colour of a categorical set (tracks, layers, tags, series): 12 hues
+// derived from the palette (spread from the accent's hue, toned for a light
+// or a dark ground).
+[[nodiscard]] CYUI_API ImU32 categorical(int index);
 
 // ---- Metrics ---------------------------------------------------------------
 
@@ -135,9 +146,9 @@ struct Metrics {
     float toolbarHeight;    // extra height around a frame for top bars
 };
 
-[[nodiscard]] const Metrics& metrics();
-void setDensity(Density density);
-[[nodiscard]] Density density();
+[[nodiscard]] CYUI_API const Metrics& metrics();
+CYUI_API void setDensity(Density density);
+[[nodiscard]] CYUI_API Density density();
 
 // ---- Applying --------------------------------------------------------------
 
@@ -151,11 +162,13 @@ struct Config {
 };
 
 // Sets ImGui's style (sizes, roundings, colours) from the theme, scaled.
-// Call after ImGui::CreateContext(), and again when the DPI changes.
-void apply(const Config& config = {});
-// Re-applies with the current settings and a new DPI scale.
-void applyDpi(float dpiScale);
-[[nodiscard]] float dpi();
+// Call after ImGui::CreateContext(), and again when the DPI changes. It
+// replaces the whole ImGuiStyle: make style tweaks after it.
+CYUI_API void apply(const Config& config = {});
+// Re-applies with the current settings and a new DPI scale; nothing when the
+// scale (and density) did not change, so calling it every frame is harmless.
+CYUI_API void applyDpi(float dpiScale);
+[[nodiscard]] CYUI_API float dpi();
 
 // Scales a design value (in 96-dpi pixels) to the screen: use for every
 // hard-coded size in custom drawing.
@@ -181,12 +194,15 @@ struct FontConfig {
 
 // Loads the interface font (Segoe UI), semibold (Segoe UI Semibold), mono
 // (Consolas), each with the icon glyphs merged; falls back to ImGui's own
-// font. Call before the first frame (the backend builds the atlas).
-void loadFonts(const FontConfig& config = {});
-[[nodiscard]] ImFont* uiFont();
-[[nodiscard]] ImFont* boldFont();
-[[nodiscard]] ImFont* monoFont();
+// font. Call before the first frame (the backend builds the atlas). It clears
+// the atlas first. uiFont / boldFont / monoFont return those fonts (for a
+// context that shares the atlas too), or null when loadFonts did not fill
+// this atlas: PushFont(null) and ScopedFont(null) keep the current font.
+CYUI_API void loadFonts(const FontConfig& config = {});
+[[nodiscard]] CYUI_API ImFont* uiFont();
+[[nodiscard]] CYUI_API ImFont* boldFont();
+[[nodiscard]] CYUI_API ImFont* monoFont();
 // Whether the icon font was found (icon glyphs render as boxes otherwise).
-[[nodiscard]] bool iconsAvailable();
+[[nodiscard]] CYUI_API bool iconsAvailable();
 
 }  // namespace cyui

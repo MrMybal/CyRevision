@@ -10,6 +10,7 @@
 namespace cyrevision {
 namespace {
 struct GitUiState {
+    struct Relations {cyui::CanvasState canvas;bool fit=true;std::string selected;} relations,unrealRelations;
     std::string project;
     int changesMode=0, changesSkip=0, changeAnchor=-1, branchSkip=0, branchAnchor=-1;
     std::set<std::string> changes, branchFiles;
@@ -85,30 +86,30 @@ std::string dayLabel(long day) {
     std::tm date{};gmtime_s(&date,&stamp);char output[16]{};
     std::strftime(output,sizeof(output),"%Y-%m-%d",&date);return output;
 }
-std::string relationGraph(const Json& relations,const char* id,float height) {
+std::string relationGraph(const Json& relations,const char* id,float height,GitUiState::Relations& view) {
     if(!relations.is_array() || relations.empty()) return {};
-    struct View {ImVec2 pan;float zoom=1;std::string selected;};static std::map<std::string,View> views;
-    auto& view=views[id];cyui::ScopedID scope(id);
-    if(cyui::ghostButton("−"))view.zoom=std::max(0.4f,view.zoom-0.1f);ImGui::SameLine();
-    if(cyui::ghostButton("+"))view.zoom=std::min(2.5f,view.zoom+0.1f);ImGui::SameLine();
-    if(cyui::ghostButton("Fit relations")){view.zoom=1;view.pan=ImVec2();}ImGui::SameLine();cyui::textFaint("Drag to pan · click a node to filter its file list");
+    cyui::ScopedID scope(id);
+    ImVec2 size(std::max(cyui::dp(100),ImGui::GetContentRegionAvail().x),height);
+    auto zoom=[&](double factor){auto top=ImGui::GetCursorScreenPos();view.canvas.view.zoomAt(ImVec2(top.x+size.x*.5f,top.y+size.y*.5f),std::clamp(view.canvas.view.zoom*factor,.1,8.0),top);};
+    if(cyui::ghostButton("−"))zoom(1/1.2);ImGui::SameLine();
+    if(cyui::ghostButton("+"))zoom(1.2);ImGui::SameLine();
+    if(cyui::ghostButton("Fit relations"))view.fit=true;ImGui::SameLine();cyui::textFaint("Middle drag / Space+drag pans · wheel zooms · click filters the file list");
     std::map<std::string,int> degree;
     for(const auto& relation:relations) {
         auto source=text(relation,"sourcePath"),target=text(relation,"targetPath");
         if(degree.size()<150 || degree.count(source))degree[source]+=relation.value("coChangeCount",1);
         if(degree.size()<150 || degree.count(target))degree[target]+=relation.value("coChangeCount",1);
     }
-    ImVec2 size=ImVec2(std::max(cyui::dp(100),ImGui::GetContentRegionAvail().x),height),origin=ImGui::GetCursorScreenPos();
-    ImGui::InvisibleButton("##relation-canvas",size,ImGuiButtonFlags_MouseButtonLeft);
-    bool hovered=ImGui::IsItemHovered();if(ImGui::IsItemActive() && ImGui::IsMouseDragging(0)){view.pan.x+=ImGui::GetIO().MouseDelta.x;view.pan.y+=ImGui::GetIO().MouseDelta.y;}
+    const float radius=std::max(cyui::dp(35),std::min(size.x,size.y)*0.36f);
+    if(view.fit){view.canvas.view.fit({-radius,-radius},{radius,radius},size,cyui::dp(30));view.fit=false;}
+    cyui::CanvasOptions options;options.grid=false;options.minZoom=.1f;options.maxZoom=8;
+    cyui::CanvasScope canvas("##relation-canvas",view.canvas,size,options);
+    auto origin=canvas.frame().bounds.min;bool hovered=canvas.frame().hovered;
     auto* draw=ImGui::GetWindowDrawList();const auto& palette=cyui::palette();
-    draw->AddRectFilled(origin,ImVec2(origin.x+size.x,origin.y+size.y),palette.bg0);
-    draw->PushClipRect(origin,ImVec2(origin.x+size.x,origin.y+size.y),true);
     std::map<std::string,ImVec2> positions;std::map<std::string,int> series;int at=0;
-    const float radius=std::max(cyui::dp(35),std::min(size.x,size.y)*0.36f)*view.zoom;
     for(const auto& node:degree) {
         float angle=static_cast<float>(at)*6.28318530718f/static_cast<float>(degree.size());
-        positions[node.first]=ImVec2(origin.x+size.x*0.5f+view.pan.x+std::cos(angle)*radius,origin.y+size.y*0.5f+view.pan.y+std::sin(angle)*radius);
+        positions[node.first]=view.canvas.view.screen({std::cos(angle)*radius,std::sin(angle)*radius},origin);
         series[node.first]=at++;
     }
     for(const auto& relation:relations) {
@@ -130,7 +131,7 @@ std::string relationGraph(const Json& relations,const char* id,float height) {
             if(ImGui::IsMouseReleased(0) && !ImGui::IsMouseDragging(0)) {view.selected=node.first;clicked=node.first;}
         }
     }
-    draw->PopClipRect();return clicked;
+    return clicked;
 }
 }
 
@@ -218,7 +219,7 @@ void Workspace::gitGraphsPanel() {
         ImGui::EndTabItem();
     }
     if(ImGui::BeginTabItem("File relations")) {
-        auto selectedPath=relationGraph(fieldJson(state_,"NativeGraphRelations"),"file-relation-graph",cyui::dp(280));
+        auto selectedPath=relationGraph(fieldJson(state_,"NativeGraphRelations"),"file-relation-graph",cyui::dp(280),ui.relations);
         if(!selectedPath.empty()){tableViews_[tableKey("GitFileActivities")].filter=selectedPath;tableViews_[tableKey("GitFileActivities")].skip=0;lastPoll_=0;}
         if(splitBegin("##git-file-relations",0.56f)) {
             cyui::heading("Frequently changed files",3);list("GitFileActivities");
@@ -263,7 +264,7 @@ void Workspace::gitGraphsPanel() {
     }
     if(flag("IsUnrealIntegrationEnabled") && ImGui::BeginTabItem("Unreal dependencies")) {
         cyui::textDim("%s",value("UnrealDependencySummary").c_str());
-        auto selectedPath=relationGraph(fieldJson(state_,"NativeUnrealRelations"),"unreal-relation-graph",cyui::dp(280));
+        auto selectedPath=relationGraph(fieldJson(state_,"NativeUnrealRelations"),"unreal-relation-graph",cyui::dp(280),ui.unrealRelations);
         if(!selectedPath.empty()){tableViews_[tableKey("UnrealAssets")].filter=selectedPath;tableViews_[tableKey("UnrealAssets")].skip=0;lastPoll_=0;}
         if(splitBegin("##unreal-dependencies",0.55f)) {
             list("UnrealAssets");ImGui::TableNextColumn();list("UnrealDependencyRelations");ImGui::EndTable();
@@ -363,10 +364,10 @@ void Workspace::gitChangesPanel() {
                 if(included.is_null()) ImGui::PopItemFlag();
                 ImGui::SameLine(0,cyui::dp(5));
             }
-            cyui::textColoured(v.value("IsLocalOnly",false) ? cyui::palette().textFaint : directory ? cyui::palette().accent : statusColour(text(v,"State")),"%s",text(v,"Name").c_str());
+            cyui::textColoured(v.value("IsLocalOnly",false)?cyui::palette().textFaint:directory?cyui::palette().textDim:cyui::palette().text,"%s",text(v,"Name").c_str());
             cyui::tooltip(text(v,"Path").c_str());
-            ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(text(v,"State").c_str());
-            ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(text(v,"Preparation").c_str());
+            ImGui::TableSetColumnIndex(1); cyui::textColoured(directory?cyui::palette().textFaint:statusColour(text(v,"State")),"%s",text(v,"State").c_str());
+            ImGui::TableSetColumnIndex(2); cyui::textDim("%s",text(v,"Preparation").c_str());
             ImGui::TableSetColumnIndex(3); ImGui::TextUnformatted(text(v,"Area").c_str());
             ImGui::TableSetColumnIndex(4); ImGui::TextUnformatted(text(v,"LockOwner").c_str());
             ImGui::TableSetColumnIndex(5); ImGui::TextUnformatted(text(v,"Path").c_str());
@@ -395,12 +396,9 @@ void Workspace::gitBranchInspector() {
     bool open=true;
     if(ImGui::Begin((value("BranchInspectorTitle")+"###native-branch-inspector").c_str(),&open)) {
         cyui::textDim("%s",value("BranchInspectorSummary").c_str());
-        if(flag("BranchInspectorBusy")) {
-            const auto fraction=flag("BranchInspectorIndeterminate") ? -1.0f : std::stof(value("BranchInspectorProgress","0"))/100.0f;
-            cyui::progressBar(fraction,ImVec2(-1,cyui::dp(6)),value("BranchInspectorStage").c_str());
-            cyui::textFaint("%s",value("BranchInspectorDetail").c_str());
-            if(cyui::button("Cancel Git / LFS operation")) send({{"command","gitBranchInspector"},{"operation","cancel"}});
-        }
+        activityStatus(flag("BranchInspectorBusy")?value("BranchInspectorStage"):"Branch explorer ready",flag("BranchInspectorBusy"));
+        cyui::tooltip(value("BranchInspectorDetail").c_str());
+        {cyui::ScopedDisabled disabled(!flag("BranchInspectorBusy"));if(cyui::button("Cancel Git / LFS operation"))send({{"command","gitBranchInspector"},{"operation","cancel"}});}
         {
             cyui::ScopedDisabled disabled(busy() || flag("BranchInspectorBusy"));
             if(cyui::button("Refresh branch tree")) send({{"command","gitBranchInspector"},{"operation","open"}});
@@ -502,9 +500,9 @@ bool Workspace::gitView() {
         if(splitBegin("##changes-review",0.48f)) {
             ImGui::BeginChild("##commit-editor"); gitChangesPanel(); ImGui::EndChild();
             ImGui::TableNextColumn();
-            cyui::heading("Diff preview",3);
-            field("IsChangesDiffPreviewEnabled","Load selected file diff");
-            cyui::textDim("%s",value("DiffPresentationSummary").c_str());
+            cyui::heading("File changes",3);ImGui::SameLine();cyui::alignRight(cyui::dp(34));
+            bool automatic=flag("IsChangesDiffPreviewEnabled",true);if(cyui::toggleSwitch("##automaticDiff",&automatic))send({{"command","set"},{"property","IsChangesDiffPreviewEnabled"},{"value",automatic}});
+            cyui::tooltip("Automatically load the selected file preview. Disable to pause preview loading.");
             diffPanel("DiffText","changes-diff");
             ImGui::EndTable();
         }
@@ -528,8 +526,6 @@ bool Workspace::gitView() {
             command("ExportSelectedExplorerFileAsync","Export this version...");
             cyui::sectionTitle("File history (Git / LFS)");list("ExplorerFileHistory");
             ImGui::TableNextColumn();cyui::heading("Selected file difference",3);
-            cyui::textDim("%s",value("ExplorerDiffPresentationSummary").c_str());
-            if(flag("IsExplorerAnyLoading")) cyui::progressBar(-1.0f,ImVec2(-1,cyui::dp(6)),"Reading revision and Git / LFS contents");
             diffPanel("ExplorerDiff","history-diff");
             ImGui::EndTable();
         }
@@ -718,11 +714,8 @@ bool Workspace::gitView() {
                     nextButton(); if(cyui::dangerButton("Run verified git lfs prune...")) invoke(customAction("RunNativeLfsPruneAsync","Run git lfs prune after remote verification","gitLfsPrune",{{"dryRun",false}},true));
                     nextButton(); command("AnalyzeLfsStorageAsync","Advanced analysis");
                 }
-                if(flag("IsLfsAnalysisRunning")) {
-                    if(cyui::button("Cancel analysis")) send({{"command","cancel"}});
-                    float percent=0;try {percent=std::stof(value("LfsAnalysisPercent","0"))/100.0f;} catch(...) {}
-                    cyui::progressBar(percent,ImVec2(-1,cyui::dp(7)),value("LfsAnalysisStage").c_str());
-                }
+                activityStatus(flag("IsLfsAnalysisRunning")?value("LfsAnalysisStage"):"LFS analysis ready",flag("IsLfsAnalysisRunning"));
+                {cyui::ScopedDisabled disabled(!flag("IsLfsAnalysisRunning"));if(cyui::button("Cancel analysis"))send({{"command","cancel"}});}
                 command("ArchiveLfsCandidatesAsync","Archive verified candidates");nextButton();command("ExecuteLfsCleanupAsync","Clean verified objects...");
                 if(ImGui::CollapsingHeader("Repository disk usage",ImGuiTreeNodeFlags_DefaultOpen)) {
                     cyui::textDim("%s",value("LfsRepositorySizeSummary").c_str());command("AnalyzeRepositoryStorageAsync","Quick size scan");

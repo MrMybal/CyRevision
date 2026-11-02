@@ -79,4 +79,22 @@ public sealed class NativeTableTests
         public int Reads;
         public int Number { get { Reads++; return number; } }
     }
+
+    [Theory]
+    [InlineData("AiChatMessages")]
+    [InlineData("TeamChatMessages")]
+    [InlineData("PullRequestComments")]
+    public void TranscriptPagesRetainLongMessagesAndRemainBounded(string source)
+    {
+        var items = Enumerable.Range(0, 70).Select(index => new Transcript(index, new string('x', 70_000))).ToArray();
+        var result = JsonSerializer.SerializeToElement(NativeTable.Page(items, source, 0, 50, "", "", false));
+        Assert.Equal(70, result.GetProperty("total").GetInt32());
+        var rows = result.GetProperty("rows").EnumerateArray().ToArray();
+        Assert.Equal(50, rows.Length);
+        string text = rows[0].GetProperty("values").GetProperty("Text").GetString()!;
+        Assert.StartsWith(new string('x', 65_536), text);
+        Assert.EndsWith(" …", text);
+    }
+
+    private sealed record Transcript(int Id, string Text);
 }

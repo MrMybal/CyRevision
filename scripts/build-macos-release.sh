@@ -35,7 +35,7 @@ main_executable="$bundle_root/Contents/MacOS/CyRevision.Desktop"
 packaged_executable="$app_root/CyRevision.Desktop"
 launcher_source="$repository_root/installer/macos/CyRevisionLauncher.c"
 
-python3 "$repository_root/scripts/check-repository-privacy.py"
+python3 "$repository_root/scripts/check-repository-privacy.py" --ref HEAD
 
 rm -rf -- "$publish_directory" "$bundle_root" "$dmg_stage" "$iconset"
 mkdir -p "$publish_directory" "$bundle_root/Contents/MacOS" "$app_root" "$iconset"

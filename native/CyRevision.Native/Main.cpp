@@ -184,8 +184,8 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         std::wstring capture,backend,profile;
         Json savedWindows=Json::array();std::vector<std::string> openWindows;
         std::vector<std::wstring> arguments;
-        std::string theme="mid-grey";
-        bool comfortable=false,verifyMultiWindow=false,verifyTray=false,backgroundStart=false;
+        std::string theme="mid-grey",locale="en",captureWorkspace;
+        bool comfortable=false,verifyMultiWindow=false,verifyTray=false,backgroundStart=false,captureSplit=false,captureSplitSelected=false;
         int argumentCount=0;
         auto** commandLine=CommandLineToArgvW(GetCommandLineW(),&argumentCount);
         for(int index=1;index<argumentCount;++index) {
@@ -193,7 +193,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
             auto next=[&](){return index+1<argumentCount ? std::wstring(commandLine[++index]) : std::wstring();};
             if(argument==L"--backend") backend=next();
             else if(argument==L"--capture") capture=next();
+            else if(argument==L"--capture-workspace")captureWorkspace=utf8(next());
+            else if(argument==L"--capture-side-by-side")captureSplit=true;
             else if(argument==L"--theme") theme=utf8(next());
+            else if(argument==L"--locale") locale=utf8(next());
             else if(argument==L"--comfortable") comfortable=true;
             else if(argument==L"--open-window")openWindows.push_back(utf8(next()));
             else if(argument==L"--verify-multi-window")verifyMultiWindow=true;
@@ -205,6 +208,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         }
         LocalFree(commandLine);
         captureRequested=!capture.empty();
+        bool strictWorkspaceCapture=!captureWorkspace.empty();
+        if(!captureWorkspace.empty() && (capture.empty() || profile.empty()))throw std::runtime_error("Workspace capture requires a capture and an isolated profile.");
+        if(captureSplit && (capture.empty() || profile.empty()))throw std::runtime_error("Split preview capture requires a capture and an isolated profile.");
         if(verifyMultiWindow && (capture.empty() || openWindows.empty()))throw std::runtime_error("Multi-window verification requires a capture and an auxiliary view.");
         if(verifyTray && capture.empty())throw std::runtime_error("Tray verification requires a capture and an isolated profile.");
         if(verifyTray && profile.empty())throw std::runtime_error("Tray verification requires an isolated profile.");
@@ -225,14 +231,14 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         auto layoutPath=utf8((configuration/L"native-v2.ini").wstring());
         if(std::ifstream settings{settingsPath};settings && capture.empty()) {
             auto saved=Json::parse(settings,nullptr,false);
-            if(saved.is_object()) {theme=text(saved,"theme",theme);comfortable=saved.value("comfortable",comfortable);savedWindows=saved.value("windows",Json::array());}
+            if(saved.is_object()) {theme=text(saved,"theme",theme);locale=text(saved,"locale",locale);comfortable=saved.value("comfortable",comfortable);savedWindows=saved.value("windows",Json::array());}
         }
         ImGui_ImplWin32_EnableDpiAwareness();
         IMGUI_CHECKVERSION();ImGui::CreateContext();
         ImGui::GetCurrentContext()->ErrorCallback=[](ImGuiContext*,void*,const char* message){uiError=message;fprintf(stderr,"Native UI: %s\n",message);};
         float dpi=ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT{0,0},MONITOR_DEFAULTTOPRIMARY));
         cyui::Config config;config.themeKey=theme.c_str();config.density=comfortable ? cyui::Density::comfortable : cyui::Density::compact;config.dpiScale=dpi;
-        cyui::apply(config);cyui::loadFonts();
+        cyui::apply(config);cyui::loadFonts();cyui::setLocale(locale.c_str());
         auto& io=ImGui::GetIO();
         io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard|ImGuiConfigFlags_DockingEnable|ImGuiConfigFlags_ViewportsEnable;
         io.IniFilename=capture.empty() ? layoutPath.c_str() : nullptr;
@@ -265,6 +271,8 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
                 if(message.message==WM_QUIT) done=true;
             }
             if(done || endSession) break;
+            if(strictWorkspaceCapture && GetTickCount64()-started>30000)throw std::runtime_error("The selected workspace did not finish loading before capture.");
+            if(!captureWorkspace.empty() && workspace.settled()){workspace.showWorkspace(captureWorkspace);captureWorkspace.clear();captureFrames=0;}
             if(verifyTray && GetTickCount64()-started>30000)throw std::runtime_error("Tray verification timed out.");
             if(wantClose){tray->handleMessage(WM_CLOSE,0,0);wantClose=false;}
             if(workspace.requestHide){workspace.requestHide=false;tray->handleMessage(WM_COMMAND,NativeTray::HideCommand,0);}
@@ -303,6 +311,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
             }
             ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();if(minimized)io.DisplaySize=mainDisplaySize;else mainDisplaySize=io.DisplaySize;ImGui::NewFrame();
             beginNativeTexturesFrame();workspace.frame();ImGui::Render();
+            if(captureSplit && !captureSplitSelected && workspace.captureSplitPreview()){captureSplitSelected=true;captureFrames=0;}
             if(captureRequested && !uiError.empty())throw std::runtime_error(uiError);
             auto ground=cyui::vec(cyui::palette().bg0);const float clear[]{ground.x,ground.y,ground.z,1};
             if(!minimized){gContext->OMSetRenderTargets(1,&gTarget,nullptr);gContext->ClearRenderTargetView(gTarget,clear);ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());}
@@ -319,12 +328,14 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
                 if(!didMinimize){ShowWindow(window,SW_MINIMIZE);didMinimize=true;}
                 else if(!didRestore){if(workspace.detachedPlatformWindowCount()==0)throw std::runtime_error("Auxiliary windows disappeared while the main window was minimized.");if(++minimizedFrames>=8){ShowWindow(window,SW_RESTORE);didRestore=true;}}
             }
-            if(!capture.empty() && !captured && ((workspace.settled() && ++captureFrames>=40) || GetTickCount64()-started>20000) && (!verifyTray || trayPhase>=3)) {
+            if(!capture.empty() && !captured && ((workspace.captureReady() && ++captureFrames>=40) || (!strictWorkspaceCapture && GetTickCount64()-started>20000)) && (!verifyTray || trayPhase>=3)) {
                 if(!openWindows.empty() && workspace.detachedPlatformWindowCount()==0)throw std::runtime_error("The detached view did not create a native platform window.");
                 if(verifyMultiWindow && !didRestore)throw std::runtime_error("Minimized multi-window verification did not complete.");
                 if(verifyMultiWindow)fprintf(stderr,"Native multi-window verification passed (%zu windows, minimized main window).\n",workspace.detachedPlatformWindowCount());
                 if(verifyMultiWindow){std::ofstream report(std::filesystem::path(capture+L".windows.json"));report<<Json{{"nativeWindows",workspace.detachedPlatformWindowCount()},{"minimizedFrames",minimizedFrames},{"restored",didRestore}}.dump();if(!report)throw std::runtime_error("Could not write the multi-window verification result.");}
                 if(!captureBackBuffer(capture.c_str())) throw std::runtime_error("Could not write the interface capture.");
+                if(strictWorkspaceCapture){std::ofstream report(std::filesystem::path(capture+L".workspace.json"));report<<workspace.captureSnapshot().dump();if(!report)throw std::runtime_error("Could not write the workspace capture result.");}
+                if(captureSplit && !captureSplitSelected)throw std::runtime_error("The requested split preview did not render.");
                 captured=true;
                 if(verifyTray){PostMessageW(window,WM_COMMAND,NativeTray::QuitCommand,0);trayPhase=4;}else done=true;
             }
@@ -345,7 +356,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         if(capture.empty()) {
             ImGui::SaveIniSettingsToDisk(layoutPath.c_str());
             std::ofstream settings(settingsPath);
-            settings<<Json{{"theme",cyui::currentThemeKey()},{"comfortable",cyui::density()==cyui::Density::comfortable},{"windows",workspace.windowLayout()}}.dump(2);
+            settings<<Json{{"theme",cyui::currentThemeKey()},{"locale",cyui::locale()},{"comfortable",cyui::density()==cyui::Density::comfortable},{"windows",workspace.windowLayout()}}.dump(2);
         }
     } catch(const std::exception& error) {
         if(captureRequested)fprintf(stderr,"CyRevision: %s\n",error.what());else MessageBoxW(window,wide(error.what()).c_str(),L"CyRevision",MB_ICONERROR|MB_OK);result=1;

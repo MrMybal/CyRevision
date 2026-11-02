@@ -15,3 +15,5 @@
 *.uplugin text eol=lf
 *.ini text eol=crlf
 Dockerfile text eol=lf
+# Vendored snapshots retain exact upstream bytes for the dependency lock.
+native/vendor/CyUI/** -text

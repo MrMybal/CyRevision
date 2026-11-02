@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.1.32 Alpha — 2026-11-02
+
+- migrated native code, diff, conflict editing, descriptor forms, documents, conversations and image navigation to pinned CyUI modules;
+- added persistent English/French module controls and retained editor Undo/Redo across engine echoes;
+- applied conflict-result drafts atomically with subsequent validated actions;
+- rebuilt native text/diff previews with JSON/INI/code syntax, line-number gutters, aligned side-by-side changes and in-file search;
+- opened large untracked text files with a bounded, clearly marked preview and decoded Unicode INI files;
+- separated project navigation from action toolbars and stabilized loading indicators across main and detached views;
+- improved file/status colours and syntax contrast across all five native themes.
 
 ## 0.1.31 Alpha — 2026-10-24
 

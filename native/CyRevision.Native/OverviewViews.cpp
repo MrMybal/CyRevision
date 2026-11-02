@@ -199,7 +199,7 @@ bool Workspace::overviewView() {
     else if(workspace_=="license") {
         cyui::panelHeader("Project license",value("ProjectLicenseStatus").c_str());
         reviewStatus(value("ProjectLicenseDetectedId"));ImGui::SameLine();command("RefreshProjectLicenseAsync","Refresh license");
-        if(flag("IsProjectLicenseLoading")){ImGui::SameLine();cyui::spinner("##licenseLoading");}
+        ImGui::SameLine();activityStatus("",flag("IsProjectLicenseLoading"),cyui::dp(20));
         ImGui::BeginChild("##projectLicenseScroll");
         selector("ProjectLicenseTemplates","SelectedProjectLicenseTemplate","Starter template");
         field("ProjectLicenseHolder","Copyright holder");field("ProjectLicenseYear","Year");field("ProjectLicenseFileName","Root file name");
@@ -284,7 +284,7 @@ void Workspace::gitInitializationWizard() {
         cyui::textDim("Installed: %s",value("CurrentApplicationVersion").c_str());
         cyui::textDim("%s",value("UpdateStatus").c_str());
         ImGui::BeginChild("##nativeUpdateNotes",ImVec2(0,cyui::dp(265)),ImGuiChildFlags_Borders);
-        textPanel("UpdateReleaseNotes","##nativeUpdateNotesText");ImGui::EndChild();
+        documentPanel("UpdateReleaseNotes","##nativeUpdateNotesText");ImGui::EndChild();
         cyui::callout(cyui::Tone::info,"The package is downloaded and verified before installation. CyRevision and its engine close before the external installer starts. Save active work first.");
         {cyui::ScopedDisabled disabled(busy() || !flag("CanInstallUpdate"));
         if(cyui::primaryButton("Download, close and install")) {

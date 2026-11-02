@@ -62,7 +62,7 @@ void Workspace::preferences() {
         cyui::heading("Application preferences",2);
         cyui::textDim("Application behavior, project defaults, cache, colors and keyboard shortcuts are saved for this computer.");
         if(snapshot.empty()) {
-            cyui::progressBar(-1.0f,cyui::dp(-1,6),"Loading preferences",cyui::Tone::accent);
+            activityStatus("Loading preferences…",true);
             if(edits_["prefs.requested"]!="1") {send({{"command","prefs.get"}});edits_["prefs.requested"]="1";lastPoll_=0;}
         } else {
             float footer=cyui::dp(48);
@@ -110,15 +110,14 @@ void Workspace::preferences() {
                     auto active=text(snapshot,"activeCacheDirectory");ImGui::TextWrapped("%s",active.c_str());
                     auto usage=snapshot.value("cacheUsage",Json());if(usage.is_object())cyui::heading(text(usage,"summary").c_str(),3);
                     auto cacheStatus=text(snapshot,"cacheStatus");if(!cacheStatus.empty())ImGui::TextWrapped("%s",cacheStatus.c_str());
-                    if(cacheBusy) {
-                        cyui::progressBar(-1.0f,cyui::dp(-1,6),"Working on cache",cyui::Tone::accent);
-                        if(cyui::button("Cancel cache operation"))send({{"command","prefs.cancel"}});
-                    } else {
-                        cyui::ScopedDisabled disabled(busy());
+                    activityStatus(cacheBusy?"Working on cache":"Cache ready",cacheBusy);
+                    {
+                        cyui::ScopedDisabled disabled(busy() || cacheBusy);
                         if(cyui::button("Measure cache")) {pendingAction_=true;send({{"command","prefs.measureCache"}});}
                         ImGui::SameLine();
                         if(cyui::dangerButton("Purge active cache..."))invoke({{"name","prefs.purgeCache"},{"rpc","prefs.purgeCache"},{"label","Purge the active CyRevision cache?"},{"description","Generated previews, inspections and temporary downloads under this exact folder will be removed:\n\n"+active+"\n\nRepository files and persistent application data are not part of this operation."},{"confirmation",true},{"parameters",Json::array()},{"context",{{"expectedRoot",active}}}});
                     }
+                    ImGui::SameLine();{cyui::ScopedDisabled disabled(!cacheBusy);if(cyui::button("Cancel cache operation"))send({{"command","prefs.cancel"}});}
                     cyui::sectionTitle("Cache location");input(app,"cacheDirectory","Cache directory (blank = default)");
                     {cyui::ScopedDisabled disabled(busy());if(cyui::button("Browse...")){auto path=choosePreferencesFolder();if(!path.empty())app["cacheDirectory"]=path;}ImGui::SameLine();if(cyui::button("Use default"))app["cacheDirectory"]="";}
                     cyui::textDim("Default: %s",text(snapshot,"defaultCacheDirectory").c_str());

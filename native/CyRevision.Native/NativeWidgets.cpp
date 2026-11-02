@@ -1,6 +1,7 @@
 #include "Workspace.h"
 #include "StringInput.h"
 #include "Assets.h"
+#include "UiIdentity.h"
 #include <algorithm>
 #include <cctype>
 #include <sstream>
@@ -8,9 +9,8 @@
 namespace cyrevision {
 namespace {
 const Json empty=Json::object();
-std::unordered_map<std::string,int> diffModes,diffHunks;
+std::unordered_map<std::string,int> diffModes;
 std::string words(const std::string& name){std::string out;for(size_t i=0;i<name.size();++i){if(i && std::isupper(static_cast<unsigned char>(name[i])) && std::islower(static_cast<unsigned char>(name[i-1])))out+=' ';out+=name[i];}return out;}
-bool matches(std::string input,std::string query){std::transform(input.begin(),input.end(),input.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});std::transform(query.begin(),query.end(),query.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});return input.find(query)!=std::string::npos;}
 }
 std::string Workspace::value(const std::string& name,const std::string& fallback)const{
     requestedFields_.insert(name);
@@ -29,24 +29,21 @@ void Workspace::field(const char* name,const char* label,bool multiline){
     requestedFields_.insert(name);cyui::ScopedID id(name);
     const auto& fields=state_.contains("fields")?state_["fields"]:empty;
     const auto& item=fields.contains(name)?fields[name]:empty;
-    if(!cyui::beginProperties("##field",190.0f))return;
-    cyui::property(label?label:words(name).c_str());
-    if(item.empty()){cyui::textFaint("Loading…");cyui::endProperties();return;}
-    auto current=item.value("value",Json());bool editable=item.value("editable",false);
-    cyui::ScopedDisabled disabled(busy() || !editable);
-    if(text(item,"kind")=="bool"){
-        bool checked=flag(name);if(cyui::toggleSwitch("##value",&checked)){draftValues_[name]=checked;send({{"command","set"},{"property",name},{"value",checked}});lastPoll_=0;}
-    }else if(text(item,"kind")=="enum"){
-        auto selected=value(name);if(ImGui::BeginCombo("##value",selected.c_str())){for(auto& option:item.value("options",Json::array())){auto choice=display(option);if(ImGui::Selectable(choice.c_str(),choice==selected)){draftValues_[name]=choice;send({{"command","set"},{"property",name},{"value",choice}});lastPoll_=0;}}ImGui::EndCombo();}
-    }else if(!editable){ImGui::TextWrapped("%s",display(current).c_str());}
-    else{
-        auto found=edits_.find(name);if(found==edits_.end())found=edits_.emplace(name,display(current)).first;
-        auto flags=item.value("secret",false)?ImGuiInputTextFlags_Password:ImGuiInputTextFlags_None;
-        bool changed=multiline?ImGui::InputTextMultiline("##value",&found->second,ImVec2(-1,cyui::dp(84)),flags):ImGui::InputText("##value",&found->second,flags);
-        if(changed)draftValues_[name]=found->second;
-        if(ImGui::IsItemDeactivatedAfterEdit()){send({{"command","set"},{"property",name},{"value",found->second}});lastPoll_=0;}
+    if(item.empty()){activityStatus(std::string(label?label:name)+" — "+cyui::tr("Loading…"),true);return;}
+    auto& view=propertyViews_[tableKey(name)];auto current=item.value("value",Json());
+    if(view.server!=current){view.server=current;++view.revision;}
+    cyui::Property property;property.id=uiIdentity(name);property.label=label?label:words(name);
+    property.readOnly=!item.value("editable",false);property.password=item.value("secret",false);property.multiline=multiline;
+    // String-backed numeric settings keep their server validation and exact serialization.
+    property.value=current.is_boolean()?cyui::PropertyValue(current.get<bool>()):cyui::PropertyValue(display(current));
+    if(text(item,"kind")=="enum")for(const auto& option:item.value("options",Json::array()))property.choices.push_back(display(option));
+    cyui::ScopedDisabled disabled(busy());
+    for(const auto& proposal:cyui::inspector("##field",view.state,{&property,1},view.revision)){
+        auto proposed=std::visit([](const auto& value){return Json(value);},proposal.edit.value);
+        if(proposal.edit.phase==cyui::EditPhase::cancel)draftValues_.erase(name);
+        else if(proposal.edit.phase==cyui::EditPhase::update)draftValues_[name]=proposed;
+        else if(proposal.edit.committed()){draftValues_[name]=proposed;send({{"command","set"},{"property",name},{"value",proposed}});lastPoll_=0;}
     }
-    cyui::tooltip(label?label:words(name).c_str());cyui::endProperties();
 }
 void Workspace::requestTable(const char* source,int take,int skip,const std::string& filter,const std::string& slot){
     auto key=slot.empty()?tableKey(source):slot;auto& view=tableViews_[key];
@@ -75,6 +72,9 @@ void Workspace::selector(const char* source,const char* selection,const char* la
     }cyui::endProperties();
 }
 bool Workspace::activityButton(const char* label,bool running,bool primary){
+    cyui::ScopedVar border(ImGuiStyleVar_FrameBorderSize,cyui::dp(1));
+    cyui::ScopedColor outline(ImGuiCol_Border,cyui::palette().lineStrong);
+    cyui::ScopedColor ground(ImGuiCol_Button,cyui::palette().bg0);
     std::string caption=(running?"    ":"")+std::string(label)+"###command";
     bool clicked=cyui::button(caption.c_str(),primary?cyui::Variant::primary:cyui::Variant::secondary,ImVec2(cyui::buttonWidth(label)+cyui::dp(18),0));
     if(running){auto min=ImGui::GetItemRectMin(),max=ImGui::GetItemRectMax();auto* draw=ImGui::GetWindowDrawList();float radius=cyui::dp(4),angle=static_cast<float>(ImGui::GetTime())*6;
@@ -82,7 +82,17 @@ bool Workspace::activityButton(const char* label,bool running,bool primary){
     return clicked;
 }
 void Workspace::loadingIndicator(const std::string& label){
-    cyui::spinner("##loading",5);ImGui::SameLine();cyui::textColoured(cyui::palette().accent,"%s",label.c_str());
+    activityStatus(label,true);
+}
+void Workspace::activityStatus(const std::string& label,bool running,float width){
+    auto origin=ImGui::GetCursorScreenPos();float height=ImGui::GetFrameHeight();
+    width=width<0?ImGui::GetContentRegionAvail().x:width;width=std::max(cyui::dp(18),width);
+    ImGui::Dummy(ImVec2(width,height));auto* draw=ImGui::GetWindowDrawList();auto& p=cyui::palette();
+    ImVec2 center(origin.x+cyui::dp(8),origin.y+height*.5f);
+    if(running){float angle=static_cast<float>(ImGui::GetTime())*6;draw->PathArcTo(center,cyui::dp(4),angle,angle+4.5f,16);draw->PathStroke(p.accent,0,cyui::dp(1.5f));}
+    else draw->AddCircleFilled(center,cyui::dp(2),p.textFaint);
+    if(width>cyui::dp(30))cyui::clippedText(draw,ImVec2(origin.x+cyui::dp(20),origin.y+(height-ImGui::GetTextLineHeight())*.5f),width-cyui::dp(24),p.textDim,label.c_str());
+    cyui::tooltip(label.c_str());
 }
 void Workspace::command(const char* name,const char* label,bool primary){
     auto item=action(name);cyui::ScopedID id(name);bool available=!item.value("missing",false);
@@ -96,7 +106,7 @@ void Workspace::command(const char* name,const char* label,bool primary){
     bool scanBlocked=!cancel && state_.value("projectLoading",false) && item.value("requiresProjectReady",false);
     bool canQueue=method.rfind("Refresh",0)==0;
     cyui::ScopedDisabled disabled(!available || (!cancel && ((busy() && !canQueue) || running || scanBlocked)));
-    std::string title=label?label:text(item,"label",name);
+    std::string title=cyui::tr(label?label:text(item,"label",name).c_str());
     bool clicked=activityButton(title.c_str(),running,primary);
     cyui::tooltip(queuedRefreshes_.count(name)?"Refresh queued for this project until the current operation finishes.":running?"This action is already running. Use Cancel to stop a cancellable operation.":scanBlocked?"Available when the project scan finishes.":!available?"This command is unavailable in the current context.":!cancel && busy()?canQueue?"Queue this refresh after the current operation.":"Another operation is in progress. Its activity is shown above.":text(item,"description",text(item,"label",name)).c_str());
     if(clicked){if(cancel)send({{"command","cancel"}});else invoke(item);}
@@ -122,7 +132,7 @@ void Workspace::list(const char* source,ImVec2 size){
     ImGui::SameLine();cyui::textFaint("%d–%d / %d",total?view.skip+1:0,std::min(view.skip+view.take,total),total);
     ImGui::SameLine();if(cyui::ghostButton("↗###openList"))openDetached(workspace_,"list",source,words(source));cyui::tooltip("Open this list in a separate window. Filters and columns are independent.");
     if(!table.contains("rows") || !table.contains("columns")){if(state_.contains("tables") && state_["tables"].contains(tableKey(source)) && state_["tables"][tableKey(source)].is_null())cyui::textDim("This list is not available in the current view.");else loadingIndicator("Loading list…");return;}
-    if(table.value("filter",view.filter)!=view.filter || table.value("sort",view.sort)!=view.sort || table.value("descending",view.descending)!=view.descending || table.value("skip",view.skip)!=view.skip){ImGui::SameLine();loadingIndicator("Updating list…");}
+    if(table.value("filter",view.filter)!=view.filter || table.value("sort",view.sort)!=view.sort || table.value("descending",view.descending)!=view.descending || table.value("skip",view.skip)!=view.skip){ImGui::SameLine();activityStatus("Updating list…",true,cyui::dp(20));}
     const auto& rows=table["rows"];const auto& columns=table["columns"];
     if(columns.empty()){cyui::textDim("No items.");return;}
     if(logs)ImGui::PushFont(cyui::monoFont());
@@ -172,32 +182,47 @@ void Workspace::list(const char* source,ImVec2 size){
         }}ImGui::EndTable();
     }if(logs)ImGui::PopFont();
 }
+void Workspace::textToolbar(TextViewer& viewer,const std::string& content,const char* property,bool diff){
+    if(cyui::beginToolbar("##reader-actions")){
+        {cyui::ScopedDisabled disabled(viewer.matchCount()==0);if(cyui::iconButton("<",cyui::tr("Previous match (Shift+Enter)").c_str()))viewer.nextMatch(-1);ImGui::SameLine();if(cyui::iconButton(">",cyui::tr("Next match (Enter)").c_str()))viewer.nextMatch(1);}
+        ImGui::SameLine();auto start=ImGui::GetCursorScreenPos();ImGui::Dummy(ImVec2(cyui::dp(58),ImGui::GetFrameHeight()));
+        std::string count=viewer.query().empty()?cyui::tr("Find"):std::to_string(viewer.matchNumber())+"/"+std::to_string(viewer.matchCount());cyui::centredText(ImGui::GetWindowDrawList(),start,ImGui::GetItemRectMax(),cyui::palette().textDim,count.c_str());
+        if(diff){ImGui::SameLine();cyui::ScopedDisabled disabled(viewer.diffDocument().hunks().empty());if(cyui::iconButton("[<]",cyui::tr("Previous change block").c_str()))viewer.nextHunk(-1);ImGui::SameLine();if(cyui::iconButton("[>]",cyui::tr("Next change block").c_str()))viewer.nextHunk(1);}
+        ImGui::SameLine();if(cyui::iconButton(cyui::iconsAvailable()?cyui::icon::copy:"C",cyui::tr("Copy complete displayed text / patch").c_str()))ImGui::SetClipboardText(content.c_str());
+        ImGui::SameLine();if(cyui::iconButton(cyui::iconsAvailable()?cyui::icon::document:"W",cyui::tr("Open this view in a separate window").c_str()))openDetached(workspace_,diff?"diff":"text",property,words(property));
+    }cyui::endToolbar();
+}
 void Workspace::textPanel(const char* property,const char* id){
-    cyui::ScopedID scope(id);
-    if(std::string(property)=="ExplorerDiff" && (selectionPending("History") || selectionPending("ExplorerFiles") || flag("IsExplorerLoading"))){loadingIndicator("Loading selected revision / file…");return;}
-    auto content=value(property);auto key=tableKey(id);auto& query=textSearch_[key];
-    ImGui::SetNextItemWidth(cyui::dp(260));ImGui::InputTextWithHint("##find","Search text…",&query);ImGui::SameLine();if(cyui::ghostButton("Copy"))ImGui::SetClipboardText(content.c_str());ImGui::SameLine();if(cyui::ghostButton("Enlarge ↗"))openDetached(workspace_,"text",property,words(property));
-    if(!query.empty()){std::istringstream stream(content);std::string line,filtered;int number=0;while(std::getline(stream,line)){++number;if(matches(line,query))filtered+=std::to_string(number)+"  "+line+"\n";}content=std::move(filtered);}
-    textViews_[key].draw("##content",content);
+    cyui::ScopedID scope(id);auto key=tableKey(id);auto& viewer=textViews_[key];auto content=value(property);
+    const auto path=std::string(property).rfind("GitConflictEditor",0)==0?value("GitConflictEditorPath"):std::string(property).find("Log")!=std::string::npos?"output.log":"";
+    viewer.prepare(content,path);textToolbar(viewer,content,property,false);viewer.drawPrepared("##content");
 }
 void Workspace::diffPanel(const char* property,const char* id){
-    cyui::ScopedID scope(id);
-    if(std::string(property)=="ExplorerDiff" && (selectionPending("History") || selectionPending("ExplorerFiles") || flag("IsExplorerLoading"))){loadingIndicator("Loading selected revision / file…");return;}
-    if(cyui::ghostButton("Open diff in window ↗"))openDetached(workspace_,"diff",property,"Diff · "+words(property));
-    auto key=tableKey(id);int& mode=diffModes[key];const char* options[]={"Unified","Side by side","Images / heatmap"};cyui::segmented("##diffMode",options,3,&mode);
-    if(mode==2){auto imageKey=std::string(property);if(state_.contains("images") && state_["images"].contains(imageKey)){const auto& images=state_["images"][imageKey];for(const auto& path:images){auto texture=nativeTexture(display(path));if(texture){float width=ImGui::GetContentRegionAvail().x;float ratio=std::min(1.0f,width/texture->width);ImGui::Image(ImTextureRef(texture->id),ImVec2(texture->width*ratio,texture->height*ratio));}}}else cyui::textDim("No rendered binary image is available for this comparison.");return;}
-    auto content=value(property);int count=0;for(size_t at=0;(at=content.find("\n@@",at))!=std::string::npos;at+=3)++count;
-    int& hunk=diffHunks[key];if(cyui::ghostButton("‹ Hunk"))hunk=std::max(0,hunk-1);ImGui::SameLine();if(cyui::ghostButton("Hunk ›"))hunk=std::min(count,hunk+1);ImGui::SameLine();cyui::textDim("%d / %d",hunk,count);
-    if(hunk>0){size_t start=0;for(int n=0;n<hunk && start!=std::string::npos;++n){start=content.find("\n@@",start+1);}if(start!=std::string::npos)content=content.substr(start+1);}
-    if(mode==0 && hunk==0){textPanel(property,id);return;}
-    if(mode==0){textViews_[key].draw("##hunk",content);return;}
-    std::string before,after,line;std::istringstream stream(content);while(std::getline(stream,line)){if(line.empty() || line[0]!='+')before+=line+"\n";if(line.empty() || line[0]!='-')after+=line+"\n";}
-    if(ImGui::BeginTable("##sideBySide",2,ImGuiTableFlags_Resizable|ImGuiTableFlags_BordersInnerV)){ImGui::TableSetupColumn("Before");ImGui::TableSetupColumn("After");ImGui::TableHeadersRow();ImGui::TableNextRow();ImGui::TableNextColumn();textViews_[key+"-before"].draw("##before",before);ImGui::TableNextColumn();textViews_[key+"-after"].draw("##after",after);ImGui::EndTable();}
+    cyui::ScopedID scope(id);auto key=tableKey(id);auto& viewer=textViews_[key];auto content=value(property);
+    std::string propertyName=property;
+    bool pending=propertyName=="ExplorerDiff"?(selectionPending("History") || selectionPending("ExplorerFiles") || flag("IsExplorerLoading") || flag("IsExplorerDiffLoading")):propertyName=="DiffText"?flag("IsWorkingTreeDiffLoading"):false;
+    std::string hint=propertyName=="DiffText"?value("NativeWorkingDiffPath"):propertyName=="ExplorerDiff"?value("NativeExplorerDiffPath"):"";
+    viewer.prepare(pending?"Loading selected file…":content,hint);
+    const auto& document=viewer.document();
+    auto path=document.path.empty()?cyui::tr("File preview"):document.path;
+    if(document.diff)path+="  ·  +"+std::to_string(document.added)+"  −"+std::to_string(document.removed);
+    if(document.truncated)path+="  ·  "+cyui::tr("Preview truncated");
+    activityStatus(path,pending);
+    int& mode=diffModes[key];bool images=state_.contains("images") && state_["images"].contains(propertyName) && !state_["images"][propertyName].empty();
+    if(!images)mode=0;
+    if(images && ImGui::BeginTabBar("##diffViews")){
+        if(ImGui::BeginTabItem(cyui::trLabel("Diff").c_str())){mode=0;ImGui::EndTabItem();}
+        if(ImGui::BeginTabItem("Images / heatmap")){mode=2;ImGui::EndTabItem();}
+        ImGui::EndTabBar();
+    }
+    textToolbar(viewer,content,property,true);
+    if(mode==2){int index=0;for(const auto& image:state_["images"][propertyName]){cyui::ScopedID imageId(index++);imageView(display(image),"##diff-image");}}
+    else viewer.drawPrepared("##content");
 }
 void Workspace::imagePanel(const char* property,const char* id){
     cyui::ScopedID scope(id);auto key=std::string(property);bool shown=false;
     if(cyui::ghostButton("Open preview in window ↗"))openDetached(workspace_,"image",property,"Preview · "+words(property));
-    if(state_.contains("images") && state_["images"].contains(key))for(const auto& path:state_["images"][key]){auto image=nativeTexture(display(path));if(image){auto available=ImGui::GetContentRegionAvail();float scale=std::min(1.0f,std::min(available.x/image->width,available.y/image->height));ImGui::Image(ImTextureRef(image->id),ImVec2(image->width*scale,image->height*scale));shown=true;}}
+    if(state_.contains("images") && state_["images"].contains(key)){int index=0;for(const auto& path:state_["images"][key]){if(nativeTexture(display(path))){cyui::ScopedID imageId(index++);imageView(display(path),"##preview");shown=true;}}}
     if(!shown)cyui::textDim("No image preview is available for the selected file.");
 }
 void Workspace::navigate(const std::string& id){
@@ -205,5 +230,5 @@ void Workspace::navigate(const std::string& id){
     if(workspace_==id)return;workspace_=id;openWorkspace_=true;selectTable_=true;lastPoll_=0;edits_.clear();draftValues_=Json::object();requestedFields_.clear();requestedTables_=Json::object();
     if(state_.contains("navigation"))for(const auto& tab:state_["navigation"].value("tabs",Json::array()))if(text(tab,"id")==id){category_=text(tab,"category");break;}
 }
-void releaseWidgetViewState(const std::string& prefix){for(auto it=diffModes.begin();it!=diffModes.end();)if(it->first.rfind(prefix,0)==0)it=diffModes.erase(it);else++it;for(auto it=diffHunks.begin();it!=diffHunks.end();)if(it->first.rfind(prefix,0)==0)it=diffHunks.erase(it);else++it;}
+void releaseWidgetViewState(const std::string& prefix){for(auto it=diffModes.begin();it!=diffModes.end();)if(it->first.rfind(prefix,0)==0)it=diffModes.erase(it);else++it;}
 }

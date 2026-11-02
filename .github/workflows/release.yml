@@ -9,7 +9,7 @@ on:
       version:
         description: "Release version without the v prefix"
         required: true
-        default: "0.1.31"
+        default: "0.1.32"
       publish_release:
         description: "Create or update the GitHub Release"
         type: boolean
@@ -63,7 +63,7 @@ jobs:
           fetch-depth: 0
       - name: Validate source and packaging tests
         run: |
-          python3 scripts/check-repository-privacy.py
+          python3 scripts/check-repository-privacy.py --ref HEAD
           python3 -m unittest discover -s scripts -p 'test_release_*.py'
       - name: Install .NET 9 SDK
         uses: actions/setup-dotnet@v5

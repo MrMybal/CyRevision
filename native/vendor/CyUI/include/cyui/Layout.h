@@ -20,22 +20,23 @@
 // Every begin* here must be paired with its end*, whatever it returned
 // (except beginModal: end only when it returned true).
 
-#include "cyui/Widgets.h"
+#include "cyui/CoreWidgets.h"
 
 #include <imgui.h>
 
 namespace cyui {
+class TextFilter;
 
 // A bar along the top of the main viewport, under the menu bar.
 // height 0: a frame plus metrics().toolbarHeight.
-bool beginTopBar(const char* id, float height = 0.0f);
-void endTopBar();
+CYUI_API bool beginTopBar(const char* id, float height = 0.0f);
+CYUI_API void endTopBar();
 
 // A thin bar along the bottom (status text, progress, frame rate).
-bool beginStatusBar(const char* id);
-void endStatusBar();
+CYUI_API bool beginStatusBar(const char* id);
+CYUI_API void endStatusBar();
 // Status text in the small font: tone neutral = faint, error = red...
-void statusText(Tone tone, const char* fmt, ...) IM_FMTARGS(2);
+CYUI_API void statusText(Tone tone, const char* fmt, ...) IM_FMTARGS(2);
 
 // A navigation column on the left of the main viewport (CyEngineHub).
 //   cyui::beginSidebar("##nav");
@@ -43,20 +44,23 @@ void statusText(Tone tone, const char* fmt, ...) IM_FMTARGS(2);
 //   cyui::sidebarGroup("ENVIRONMENT");
 //   if (cyui::sidebarItem(icon::home, "Home", page == 0)) page = 0;
 //   cyui::endSidebar();
-bool beginSidebar(const char* id, float width = 190.0f);
-void endSidebar();
-void sidebarHeader(const char* title, const char* badgeText = nullptr);
-void sidebarGroup(const char* label);
-bool sidebarItem(const char* icon, const char* label, bool active, const char* badgeText = nullptr);
+CYUI_API bool beginSidebar(const char* id, float width = 190.0f);
+CYUI_API void endSidebar();
+CYUI_API void sidebarHeader(const char* title, const char* badgeText = nullptr);
+CYUI_API void sidebarGroup(const char* label);
+CYUI_API bool sidebarItem(const char* icon, const char* label, bool active, const char* badgeText = nullptr);
 
 // A strip at the top of a panel: a title, an optional subtitle, and room on
 // the right for buttons (call ImGui::SameLine after, or alignRight).
-void panelHeader(const char* title, const char* subtitle = nullptr);
+CYUI_API void panelHeader(const char* title, const char* subtitle = nullptr);
+// Optional quick filter below the panel heading. The host decides which rows
+// match with TextFilter::matches; stock ImGui calls are never intercepted.
+CYUI_API void panelHeader(const char* title, const char* subtitle, TextFilter* filter);
 
 // A toolbar row inside a window: raised ground, a line under it. Put
 // iconButton / toolbarSeparator / segmented... on one line inside.
-bool beginToolbar(const char* id);
-void endToolbar();
+CYUI_API bool beginToolbar(const char* id);
+CYUI_API void endToolbar();
 
 // A centred modal dialog with a title and a close cross.
 //   if (cyui::beginModal("Delete layer?", &showDelete)) {
@@ -65,21 +69,21 @@ void endToolbar();
 //       cyui::endModal();
 //   }
 // Set *open = true to show it; it sets *open = false when closed.
-bool beginModal(const char* title, bool* open, float width = 460.0f);
-void endModal();
+CYUI_API bool beginModal(const char* title, bool* open, float width = 460.0f);
+CYUI_API void endModal();
 // Right-aligned buttons at the foot of a modal: 0 nothing, 1 confirm,
 // 2 cancel (the modal closes on both). Enter confirms, Escape cancels.
-int modalButtons(const char* confirm, const char* cancel = "Cancel", bool danger = false);
+CYUI_API int modalButtons(const char* confirm, const char* cancel = "Cancel", bool danger = false);
 
 // Puts the cursor so an item `width` wide ends at the right edge of the
 // content region, on the current line.
-void alignRight(float width);
+CYUI_API void alignRight(float width);
 // The width a button with this label will take.
-[[nodiscard]] float buttonWidth(const char* label);
+[[nodiscard]] CYUI_API float buttonWidth(const char* label);
 
 #ifdef IMGUI_HAS_DOCK
 // The dock space over the rest of the main viewport, after the bars.
-ImGuiID dockSpace(const char* id = "CyUIDockSpace", ImGuiDockNodeFlags flags = 0);
+CYUI_API ImGuiID dockSpace(const char* id = "CyUIDockSpace", ImGuiDockNodeFlags flags = 0);
 #endif
 
 }  // namespace cyui

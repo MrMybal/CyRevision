@@ -1,0 +1,20 @@
+{
+  "upstream": "https://github.com/goossens/ImGuiColorTextEdit",
+  "license": "MIT",
+  "snapshot": "Pinned source snapshot with the documented text serialization fix.",
+  "upstream_files": {
+    "LICENSE": "214dc907ae8db1e78574aca034360192a5bf6d7385bd62b85bd0d404e2d86b68",
+    "TextEditor.cpp": "53fb7bde047c351d9e1d2cb707d67057ca7777d5bf7a30e1c7a86988c065f03a",
+    "TextEditor.h": "5318fd69072d49f4290314cfbf575331b7f59a98c2cd44556419ead4e64cc046"
+  },
+  "patches": [
+    "TextEditor.h: serialize newlines only between document lines, preserving an absent final newline.",
+    "TextEditor.h/.cpp: host-supplied shared syntax roles and validated glyph spans, independent of lexical/completion state.",
+    "TextEditor.h: expose a monotonic text revision; reset advances the revision to invalidate cached syntax."
+  ],
+  "files": {
+    "LICENSE": "214dc907ae8db1e78574aca034360192a5bf6d7385bd62b85bd0d404e2d86b68",
+    "TextEditor.cpp": "7cc6359d4c6dc19b6613378300af0a5775f122c17ecd87059f4497493ca92ed5",
+    "TextEditor.h": "b1b37e1d7b53f465d3528cd935d0e682e931100de19a1eecd5bd912d5a6ec246"
+  }
+}

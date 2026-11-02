@@ -14,7 +14,7 @@ bool Workspace::pullRequestView() {
     field("PullRequestStateFilter","State");
     command("ResolvePullRequestRepositoryAsync","Detect remote"); ImGui::SameLine();
     command("RefreshPullRequestsAsync","Refresh",true);
-    if(flag("IsPullRequestLoading")) { ImGui::SameLine();cyui::spinner("##prLoading");cyui::textDim("Loading pull requests..."); }
+    ImGui::SameLine();activityStatus(flag("IsPullRequestLoading")?"Loading pull requests…":"",flag("IsPullRequestLoading"));
     if(cyui::beginSection("Connection and authentication",false)) {
         field("PullRequestApiBaseUrl","API / GitHub Enterprise URL");
         field("PullRequestTokenEnvironmentVariable","Token environment variable");
@@ -79,7 +79,7 @@ bool Workspace::pullRequestView() {
                     }
                     cyui::endProperties();
                 }
-                textPanel("PullRequestBody","##prBody");ImGui::EndTabItem();
+                documentPanel("PullRequestBody","##prBody");ImGui::EndTabItem();
             }
             if(ImGui::BeginTabItem("Files")) {
                 field("IsPullRequestDiffPreviewEnabled","Show diff preview");
@@ -96,7 +96,8 @@ bool Workspace::pullRequestView() {
                 float height=std::max(cyui::dp(120),ImGui::GetContentRegionAvail().y-cyui::dp(132));
                 ImGui::BeginChild("##conversation",ImVec2(0,height));
                 if(ImGui::BeginTabBar("##conversationKinds")) {
-                    if(ImGui::BeginTabItem("Comments")){list("PullRequestComments");ImGui::EndTabItem();}
+                    if(ImGui::BeginTabItem("Comments")){transcriptPanel("PullRequestComments","##prComments");ImGui::EndTabItem();}
+                    if(ImGui::BeginTabItem("Comment details")){list("PullRequestComments");ImGui::EndTabItem();}
                     if(ImGui::BeginTabItem("Reviews")){list("PullRequestReviews");ImGui::EndTabItem();}
                     ImGui::EndTabBar();
                 }
@@ -114,7 +115,7 @@ bool Workspace::pullRequestView() {
                     command("DispatchSelectedPullRequestCiWorkflowAsync","Run workflow");
                 }
                 ImGui::SameLine();command("RefreshSelectedPullRequestCiAsync","Refresh CI");
-                if(flag("IsPullRequestCiLoading")) {ImGui::SameLine();cyui::spinner("##prCiLoading");}
+                ImGui::SameLine();activityStatus("",flag("IsPullRequestCiLoading"),cyui::dp(20));
                 ImVec2 region=ImGui::GetContentRegionAvail();
                 float runs=reviewSplitWidth("##prCiSplit",ui.ciRunsSplit,region.x,170);
                 ImGui::BeginChild("##prCiRuns",ImVec2(runs,0),ImGuiChildFlags_Borders);

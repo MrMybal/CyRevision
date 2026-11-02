@@ -1,12 +1,20 @@
 param(
     [string]$CyUiPath = '',
     [switch]$SkipManagedBuild,
-    [string]$OutputDirectory = 'artifacts/native-v2'
+    [string]$OutputDirectory = 'artifacts/native-v2',
+    [string]$BuildDirectory = 'artifacts/native-v2-modular-build'
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($CyUiPath)) {
     $CyUiPath = Join-Path $repositoryRoot 'native/vendor/CyUI'
+    $cyuiLock = Get-Content -LiteralPath (Join-Path $repositoryRoot 'native/cyui.lock.json') -Raw | ConvertFrom-Json
+    foreach ($file in $cyuiLock.files.PSObject.Properties) {
+        $filePath = Join-Path $CyUiPath $file.Name
+        if (-not (Test-Path -LiteralPath $filePath) -or (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.Value) {
+            throw "CyUI snapshot mismatch: $($file.Name)"
+        }
+    }
 }
 $CyUiPath = (Resolve-Path -LiteralPath $CyUiPath).ProviderPath
 $dependencyDirectory = Join-Path $repositoryRoot '.tools/native-json'
@@ -27,7 +35,7 @@ else {
     $cmake = Join-Path $installation 'Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe'
 }
 if (-not (Test-Path -LiteralPath $cmake)) { throw 'CMake with Visual Studio C++ tools is required.' }
-$nativeBuild = Join-Path $repositoryRoot 'artifacts/native-v2-build'
+$nativeBuild = if ([IO.Path]::IsPathRooted($BuildDirectory)) { $BuildDirectory } else { Join-Path $repositoryRoot $BuildDirectory }
 $output = if ([IO.Path]::IsPathRooted($OutputDirectory)) {
     [IO.Path]::GetFullPath($OutputDirectory)
 } else {

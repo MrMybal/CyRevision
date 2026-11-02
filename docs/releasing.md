@@ -38,7 +38,9 @@ The output is written to `artifacts/release/0.1.0/`.
 Windows packages contain both `CyRevision.Native.exe` (V2 Alpha) and
 `CyRevision.Desktop.exe` (Classic and the managed engine). The default installer
 shortcut starts V2; a separate Classic shortcut remains available. The native
-build uses the checked-in CyUI/ImGui sources and installs their license notices.
+build verifies the checked-in CyUI snapshot, selects explicit module targets and
+installs their license notices (including editor and syntax dependencies). See
+[CyUI modular integration](cyui-modular-migration.md) for update and verification commands.
 Linux and macOS retain the Avalonia interface.
 
 To test a current-user installation without prompts:

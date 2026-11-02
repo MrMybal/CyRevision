@@ -2,19 +2,20 @@
 #include "StringInput.h"
 #include <algorithm>
 #include <map>
+#include <TextEditor.h>
 
 namespace cyrevision {
 void Workspace::gitConflictEditor() {
     if(!flag("GitConflictEditorOpen")) return;
-    struct Editor {std::string key,server,result,retention="30";int skip=0;};
-    static std::map<const Workspace*,Editor> editors;
-    auto& editor=editors[this];
+    auto& editor=conflictDraft_;
     std::string key=value("GitConflictEditorSelectedKey"),path=value("GitConflictEditorPath"),server=value("GitConflictEditorResult");
-    if(editor.key!=key){editor.key=key;editor.server=server;editor.result=server;}
+    if(editor.project!=projectId_ || editor.key!=key || editor.server!=server){editor.project=projectId_;editor.key=key;editor.server=server;editor.result=server;editor.dirty=false;editor.pending.clear();}
     Json context={{"key",key},{"path",path}};
-    auto operation=[&](const char* name){Json request=context;request["command"]="gitConflict";request["operation"]=name;send(request);lastPoll_=0;};
+    auto flush=[&](){if(editor.dirty && editor.pending!=editor.result){Json request=context;request["command"]="gitConflict";request["operation"]="setResult";request["result"]=editor.result;send(request);editor.pending=editor.result;lastPoll_=0;}};
+    auto operation=[&](const char* name){Json request=context;request["command"]="gitConflict";request["operation"]=name;if(editor.dirty)request["draftResult"]=editor.result;send(request);lastPoll_=0;};
     auto confirmed=[&](const char* name,const char* title){
         Json input=context;input["operation"]=name;
+        if(editor.dirty)input["draftResult"]=editor.result;
         invoke({{"name",std::string("GitConflict-")+name},{"label",title},{"rpc","gitConflict"},{"context",input},{"confirmation",true},{"parameters",Json::array()}});
     };
     ImGui::SetNextWindowSize(cyui::dp(1320,840),ImGuiCond_FirstUseEver);
@@ -34,7 +35,7 @@ void Workspace::gitConflictEditor() {
                 if(cyui::dangerButton("Abort Git operation...")) confirmed("abort","Abort the active Git operation and restore its previous state");
             }
         }
-        if(flag("GitConflictEditorBusy")) cyui::progressBar(-1.0f,ImVec2(-1,cyui::dp(6)),"Git conflict operation in progress");
+        activityStatus(flag("GitConflictEditorBusy")?"Git conflict operation in progress":"Conflict editor ready",flag("GitConflictEditorBusy"));
         requestTable("NativeGitConflicts",200,editor.skip);
         static const Json empty=Json::object();
         const auto& table=state_.contains("tables") && state_["tables"].contains("NativeGitConflicts") && state_["tables"]["NativeGitConflicts"].is_object()?state_["tables"]["NativeGitConflicts"]:empty;
@@ -86,12 +87,13 @@ void Workspace::gitConflictEditor() {
                     if(flag("GitConflictEditorReadOnly")) {
                         ImGui::BeginChild("##read-only-conflict-result",ImVec2(0,height));textPanel("GitConflictEditorResult","git-conflict-readonly-result");ImGui::EndChild();
                     } else {
-                    ImGui::PushFont(cyui::monoFont());
-                    ImGui::InputTextMultiline("##conflict-result",&editor.result,ImVec2(-1,height),ImGuiInputTextFlags_AllowTabInput);
-                    bool editing=ImGui::IsItemActive();bool changed=ImGui::IsItemDeactivatedAfterEdit();
-                    ImGui::PopFont();
-                    if(changed){Json request=context;request["command"]="gitConflict";request["operation"]="setResult";request["result"]=editor.result;send(request);editor.server=editor.result;lastPoll_=0;}
-                    else if(!editing && editor.server!=server){editor.server=server;editor.result=server;}
+                    auto& view=sourceEditor("git-conflict-result");view.prepare(projectId_+":"+key,editor.result,path,false);
+                    {cyui::ScopedDisabled unavailable(!view.editor().native().CanUndo());if(cyui::button(cyui::trLabel("Undo").c_str())){view.editor().native().Undo();editor.result=view.editor().text();editor.dirty=editor.result!=editor.server;}}
+                    ImGui::SameLine();{cyui::ScopedDisabled unavailable(!view.editor().native().CanRedo());if(cyui::button(cyui::trLabel("Redo").c_str())){view.editor().native().Redo();editor.result=view.editor().text();editor.dirty=editor.result!=editor.server;}}
+                    ImGui::SameLine();{cyui::ScopedDisabled unavailable(!editor.dirty);if(cyui::button(cyui::trLabel("Apply text draft").c_str()))flush();ImGui::SameLine();if(cyui::ghostButton(cyui::trLabel("Discard text draft").c_str())){editor.result=editor.server;editor.dirty=false;editor.pending.clear();view.prepare(projectId_+":"+key,editor.result,path,false);}}
+                    ImGui::BeginChild("##conflict-editor-region",ImVec2(0,std::max(cyui::dp(50),height-ImGui::GetFrameHeightWithSpacing())));
+                    if(view.draw("##conflict-result")){editor.result=view.editor().text();editor.dirty=editor.result!=editor.server;}
+                    bool focused=ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);if(editor.focused && !focused)flush();editor.focused=focused;ImGui::EndChild();
                     }
                 }
                 cyui::textFaint("%s",value("GitConflictEditorResolutionHint").c_str());
