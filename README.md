@@ -10,6 +10,31 @@ CyRevision is a revision control, synchronization, and backup client designed fo
 
 > **Alpha software:** CyRevision is under active development. The core workflows are functional, but APIs, storage formats, and user interfaces may still change. Keep independent backups and validate recovery before production use.
 
+## Interface preview
+
+Windows V2 Alpha, version 0.1.32, with the AuroraFlight sample project: grouped project navigation, change preparation and syntax-highlighted file differences.
+
+![CyRevision Windows V2: project sidebar, changed files and a syntax-highlighted C++ diff](docs/images/workspace-v2.png)
+
+<details>
+<summary>Explore Git history and side-by-side comparisons</summary>
+
+### Git history
+
+Browse revisions, inspect changed files and compare the selected file with its previous version.
+
+![CyRevision Git history: revisions, files in the selected commit and file differences](docs/images/history-v2.png)
+
+### Side-by-side comparison
+
+Compare configuration changes with aligned lines and highlighted additions and removals. The light theme is shown here.
+
+![CyRevision light theme: side-by-side comparison of an INI configuration file](docs/images/split-diff-v2.png)
+
+</details>
+
+These screenshots show the Windows V2 interface; Classic Avalonia remains available on Windows, Linux and macOS.
+
 ## Current capabilities
 
 - Windows V2 Alpha interface using Dear ImGui/CyUI, with detachable multi-window workspaces. The Classic Avalonia interface remains available on Windows, Linux and macOS, including its system tray and launch-at-login integration.
@@ -78,7 +103,7 @@ Publish on Windows:
 Build a self-contained Windows installer and portable release locally:
 
 ```powershell
-./scripts/build-release.cmd 0.1.31
+./scripts/build-release.cmd 0.1.32
 ```
 
 Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).

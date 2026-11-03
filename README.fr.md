@@ -10,9 +10,34 @@ CyRevision est un client de révision, synchronisation et sauvegarde pensé pour
 
 > **Logiciel Alpha :** CyRevision est en développement actif. Les fonctions principales sont opérationnelles, mais les API, formats de stockage et interfaces peuvent encore évoluer. Conservez des sauvegardes indépendantes et validez la restauration avant tout usage en production.
 
+## Aperçu de l'interface
+
+Windows V2 Alpha, version 0.1.32, avec le projet d'exemple AuroraFlight : projets regroupés, préparation des changements et différences de fichiers avec coloration syntaxique.
+
+![CyRevision Windows V2 : liste des projets, fichiers modifiés et diff C++ avec coloration syntaxique](docs/images/workspace-v2.png)
+
+<details>
+<summary>Voir l'historique Git et les comparaisons côte à côte</summary>
+
+### Historique Git
+
+Parcourez les révisions, inspectez les fichiers modifiés et comparez le fichier sélectionné à sa version précédente.
+
+![Historique Git de CyRevision : révisions, fichiers du commit sélectionné et différences du fichier](docs/images/history-v2.png)
+
+### Comparaison côte à côte
+
+Comparez les changements de configuration avec des lignes alignées et des ajouts et suppressions mis en évidence. Cette capture présente le thème clair.
+
+![Thème clair de CyRevision : comparaison côte à côte d'un fichier de configuration INI](docs/images/split-diff-v2.png)
+
+</details>
+
+Ces captures présentent l'interface Windows V2 ; l'interface Classic Avalonia reste disponible sur Windows, Linux et macOS.
+
 ## Fonctionnalités actuelles
 
-- Application desktop native Windows, Linux et macOS avec Avalonia.
+- Interface Windows V2 Alpha avec Dear ImGui/CyUI et espaces de travail détachables ; interface Classic Avalonia disponible sur Windows, Linux et macOS.
 - Cinq modes de projet : **Git**, **Git + Sync**, **Sync**, **Sync + versions** et **Backup**.
 - Git local : statut, index, commits, branches, fusion, remotes, Git LFS, explorateur interactif, comparaison A ↔ B et historique par fichier.
 - Time Machine LFS : chronologie des objets, emplacements local/pair/archive, demandes signées à la demande, reprise des transferts, aperçu des textures, export et restauration confirmée.
@@ -64,7 +89,7 @@ Publication Windows :
 Création locale d'un installateur Windows autonome et d'une archive portable :
 
 ```powershell
-./scripts/build-release.cmd 0.1.23
+./scripts/build-release.cmd 0.1.32
 ```
 
 Les paquets Linux (`.deb`) et macOS (`.dmg`) natifs sont construits par le workflow GitHub Actions multiplateforme. Ils peuvent aussi être créés sur leur système natif avec `scripts/build-linux-release.sh` et `scripts/build-macos-release.sh`. Consultez [Créer une release](docs/releasing.md).
