@@ -28,6 +28,10 @@ struct WorkspaceTestAccess {
     static void link(Workspace& workspace,const std::string& link){workspace.documentLink(link);}
     static bool pendingLink(const Workspace& workspace){return !workspace.pendingDocumentLink_.empty();}
     static void clearLink(Workspace& workspace){workspace.pendingDocumentLink_.clear();}
+    static void poll(Workspace& workspace){workspace.lastPoll_=0;}
+    static void checkUpdates(Workspace& workspace){workspace.checkForUpdates();}
+    static bool busy(const Workspace& workspace){return workspace.busy();}
+    static void showUpdate(Workspace& workspace){workspace.updateOpen_=true;}
 };
 }
 
@@ -41,6 +45,10 @@ public:
     int projectSwitches=0;
     std::string activeProject="fixture-one";
     bool projectLoading=false,operationBusy=false;
+    bool applicationReady=true,hasProjects=true,checkingUpdates=false,updateAvailable=false,updateFailed=false,holdUpdateCheck=false;
+    int updateRevision=1,updateChecks=0,updateInstalls=0;
+    bool installConfirmed=false;
+    std::string latestVersion="0.1.32";
     bool diffLoading=false;
     std::string selectedRevision="revision-one",comparisonRevision="revision-two";
     std::vector<Json> selections;
@@ -69,7 +77,7 @@ public:
             result["actions"].push_back({{"name","RefreshAsync"},{"label","Refresh"},{"confirmation",false},{"parameters",Json::array()}});
         } else if(command=="state") {
             lastState=request;
-            result={{"workspaceId",text(request,"workspace")},{"ready",true},{"busy",projectLoading || operationBusy},{"projectLoading",projectLoading},{"operationBusy",operationBusy},{"status","Ready"},
+            result={{"workspaceId",text(request,"workspace")},{"ready",applicationReady},{"busy",projectLoading || operationBusy},{"projectLoading",projectLoading},{"operationBusy",operationBusy},{"status","Ready"},
                 {"projectId",activeProject},{"project","Fixture"},{"branch","main"},{"mode","Git - BETA"},
                 {"projects",Json::array({
                     {{"id","fixture-one"},{"name","Project One"},{"rootPath","fixture/one"},{"branchName","main"},{"sidebarGroup","General"},{"git",true},{"changeCount",12},{"aheadCount",2},{"unreadNotificationCount",1},{"notificationBadgeText","1"}},
@@ -98,6 +106,18 @@ public:
             result["fields"]["IsChangesDiffPreviewEnabled"]={{"value",true}};
             result["fields"]["ModuleText"]={{"value",propertyText},{"editable",true},{"kind","text"}};
             result["fields"]["ModuleDocument"]={{"value","# Module document\n\nA **formatted** paragraph and [a link](https://example.invalid/document).\n\n```json\n{\"enabled\":true}\n```\n\n| A | B |\n|---|---|\n| one | two |"}};
+            if(!hasProjects)result["projects"]=Json::array();
+            const Json updateFields={{"CurrentApplicationVersion","0.1.32"},{"LatestApplicationVersion",latestVersion},
+                {"HasUpdateAvailable",updateAvailable},{"IsCheckingForUpdates",checkingUpdates},{"IsDownloadingUpdate",false},
+                {"HasCheckedForUpdates",updateRevision>0},{"HasUpdateCheckFailed",updateFailed},{"UpdateCheckRevision",updateRevision},
+                {"CanCheckForUpdates",!checkingUpdates},{"CanInstallUpdate",updateAvailable && !checkingUpdates},
+                {"UpdateStatus",updateFailed?"Network unavailable":checkingUpdates?"Checking":"Check complete"},
+                {"UpdateReleaseNotes","# Updates\n\nImproved application startup."}};
+            for(const auto& field:updateFields.items())result["fields"][field.key()]={{"value",field.value()}};
+        } else if(command=="updates.check"){
+            ++updateChecks;if(holdUpdateCheck)checkingUpdates=true;else ++updateRevision;
+        } else if(command=="overview.installUpdate"){
+            ++updateInstalls;installConfirmed=request.value("confirmed",false);
         } else if(command=="set"){
             propertySets.push_back(request);if(text(request,"property")=="ModuleText")propertyText=text(request,"value");
         } else if(command=="invoke") ++mutations;
@@ -106,7 +126,7 @@ public:
             if(text(request,"selection")=="SelectedComparisonRevision")comparisonRevision=text(request,"key");
             else selectedRevision=text(request,"key");}}
         Json response={{"id",id},{"ok",true},{"result",std::move(result)}};
-        if(command=="invoke" && holdInvocations)held.push_back(std::move(response));else responses_.push_back(std::move(response));
+        if((command=="invoke" && holdInvocations) || (command=="updates.check" && holdUpdateCheck))held.push_back(std::move(response));else responses_.push_back(std::move(response));
         return id;
     }
     std::vector<Json> take() override { std::vector<Json> result;result.swap(responses_);return result; }
@@ -162,6 +182,57 @@ void clickTab(Workspace& workspace,const char* id,const char* name) {
     throw std::runtime_error("The requested project tab was not found.");
 }
 void refreshSnapshot(Workspace& workspace){std::this_thread::sleep_for(std::chrono::milliseconds(810));settle(workspace);}
+void updateSnapshot(Workspace& workspace){WorkspaceTestAccess::poll(workspace);settle(workspace);}
+void dismissUpdate(Workspace& workspace){
+    auto* modal=ImGui::GetTopMostPopupModal();
+    require(modal && std::string(modal->Name).find("###applicationUpdate")!=std::string::npos,"The update offer did not appear.");
+    // Last row contains the install action followed by Not now. Use actual layout.
+    auto x=modal->DC.CursorStartPos.x+cyui::buttonWidth(cyui::trLabel("Download, close and install").c_str())+ImGui::GetStyle().ItemSpacing.x+cyui::buttonWidth(cyui::trLabel("Not now").c_str())*.5f;
+    auto y=modal->DC.CursorMaxPos.y-ImGui::GetFrameHeight()*.5f;
+    auto& io=ImGui::GetIO();io.AddMousePosEvent(x,y);frame(workspace);io.AddMouseButtonEvent(0,true);frame(workspace);io.AddMouseButtonEvent(0,false);settle(workspace);
+    require(ImGui::GetTopMostPopupModal()==nullptr,"Not now did not dismiss the update offer.");
+}
+void testUpdates(){
+    FakeEngine engine;engine.activeProject="";engine.hasProjects=false;engine.applicationReady=false;
+    engine.checkingUpdates=true;engine.updateRevision=0;
+    Workspace workspace(engine,L"not-used.exe");settle(workspace);
+    auto* status=ImGui::FindWindowByName("##status");require(status!=nullptr,"Application update status is missing.");
+    auto statusSize=status->Size;
+    require(ImGui::GetTopMostPopupModal()==nullptr,"Checking for updates opened an empty offer.");
+    engine.checkingUpdates=false;engine.updateRevision=1;updateSnapshot(workspace);
+    require(ImGui::GetTopMostPopupModal()==nullptr,"An up-to-date application showed an update offer.");
+    engine.updateFailed=true;engine.updateRevision=2;updateSnapshot(workspace);
+    require(ImGui::GetTopMostPopupModal()==nullptr,"An offline update check blocked startup.");
+    engine.updateFailed=false;engine.latestVersion="0.1.33";engine.updateAvailable=true;engine.updateRevision=3;
+    updateSnapshot(workspace);
+    require(!workspace.ready(),"The fixture should still be initializing without a project.");
+    require(engine.updateInstalls==0,"An update installed without confirmation.");
+    dismissUpdate(workspace);updateSnapshot(workspace);
+    require(ImGui::GetTopMostPopupModal()==nullptr,"The dismissed startup offer reopened on polling.");
+    engine.applicationReady=true;engine.hasProjects=true;engine.activeProject="fixture-one";updateSnapshot(workspace);
+    require(ImGui::GetTopMostPopupModal()==nullptr,"Selecting the initial project reopened the declined update.");
+    require(status->Size.x==statusSize.x && status->Size.y==statusSize.y,"Update activity changed the status bar layout.");
+    engine.holdUpdateCheck=true;
+    WorkspaceTestAccess::checkUpdates(workspace);WorkspaceTestAccess::checkUpdates(workspace);settle(workspace);
+    require(engine.updateChecks==1 && !WorkspaceTestAccess::busy(workspace),"Update checking duplicated requests or locked project actions.");
+    // State can arrive before the delayed RPC acknowledgement. It must not
+    // rearm the same offer after the user has already dismissed it.
+    engine.checkingUpdates=false;engine.holdUpdateCheck=false;++engine.updateRevision;updateSnapshot(workspace);
+    dismissUpdate(workspace);
+    engine.complete();updateSnapshot(workspace);
+    require(ImGui::GetTopMostPopupModal()==nullptr,"A late update acknowledgement reopened the declined offer.");
+    openAction(workspace);engine.latestVersion="0.1.34";++engine.updateRevision;updateSnapshot(workspace);
+    require(std::string(ImGui::GetTopMostPopupModal()->Name)=="Action","An update stole input from an active confirmation.");
+    key(workspace,ImGuiKey_Escape);settle(workspace);dismissUpdate(workspace);
+    for(auto locale:{"fr","en"}){cyui::setLocale(locale);WorkspaceTestAccess::showUpdate(workspace);settle(workspace);dismissUpdate(workspace);}
+    require(engine.updateInstalls==0 && engine.mutations==0,"Update offers changed repository data or started installation without consent.");
+    WorkspaceTestAccess::showUpdate(workspace);settle(workspace);
+    auto* modal=ImGui::GetTopMostPopupModal();require(modal!=nullptr,"The install confirmation is missing.");
+    auto& io=ImGui::GetIO();
+    io.AddMousePosEvent(modal->DC.CursorStartPos.x+cyui::buttonWidth(cyui::trLabel("Download, close and install").c_str())*.5f,modal->DC.CursorMaxPos.y-ImGui::GetFrameHeight()*.5f);frame(workspace);
+    io.AddMouseButtonEvent(0,true);frame(workspace);io.AddMouseButtonEvent(0,false);settle(workspace);
+    require(engine.updateInstalls==1 && engine.installConfirmed && engine.mutations==0,"Explicit update consent did not dispatch the confirmed installer request.");
+}
 void clickProject(Workspace& workspace,int row){
     ImGuiWindow* projects=nullptr;for(auto* window:ImGui::GetCurrentContext()->Windows)if(std::string(window->Name).find("##sidebar/##projects_")==0)projects=window;
     require(projects!=nullptr,"The projects list is missing.");
@@ -365,6 +436,7 @@ int main() {
         viewer.prepare("Alpha\nBeta\nAlpha\n","sample.txt");viewerFrame(workspace,viewer,false,true);viewerFrame(workspace,viewer);
         io.AddInputCharactersUTF8("alpha");viewerFrame(workspace,viewer);require(viewer.matchCount()==2 && viewer.matchNumber()==1,"Typing into the shared search lost the host match index.");
         io.AddKeyEvent(ImGuiKey_Enter,true);viewerFrame(workspace,viewer);io.AddKeyEvent(ImGuiKey_Enter,false);viewerFrame(workspace,viewer);require(viewer.matchNumber()==2,"Enter did not advance the shared source search.");
+        testUpdates();
         ImGui::DestroyContext();
         std::cout<<"PASS: project selection, loading/queue protection, 150% DPI, tabs, detached views, independent filters, docking, layout restoration, preserved drafts, five themes and confirmations.\n";
         return 0;

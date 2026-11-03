@@ -656,7 +656,8 @@ bool Workspace::toolsView() {
             scrollBegin("##documentationIndex");cyui::heading("Offline documentation",3);field("DocumentationSearch","Search documentation");list("DocumentationTopics");ImGui::EndChild();
             ImGui::TableNextColumn();scrollBegin("##documentationTopic");
             if(cyui::beginSection("CyRevision updates",false)) {
-                summary("CurrentApplicationVersion");summary("UpdateStatus");command("CheckForUpdatesAsync","Check for updates");ImGui::SameLine();command("DownloadAvailableUpdateAsync","Download available update");
+                summary("CurrentApplicationVersion");summary("UpdateStatus");command("CheckForUpdatesAsync","Check for updates");ImGui::SameLine();
+                {cyui::ScopedDisabled disabled(!flag("HasUpdateAvailable"));if(cyui::button(cyui::trLabel("View available update").c_str()))updateOpen_=true;}
                 summary("UpdateReleaseNotes");cyui::endSection();
             }
             summary("SelectedDocumentationTopic.Category");summary("SelectedDocumentationTopic.Title");summary("SelectedDocumentationTopic.Summary");documentPanel("SelectedDocumentationTopic.Body","##topicBody");ImGui::EndChild();ImGui::EndTable();

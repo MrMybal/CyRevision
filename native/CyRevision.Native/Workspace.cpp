@@ -15,7 +15,7 @@ std::string text(const Json& object,const char* key,const std::string& fallback)
 std::string display(const Json& value){if(value.is_null())return "";if(value.is_string())return value.get<std::string>();if(value.is_boolean())return value.get<bool>()?"Yes":"No";return value.dump();}
 ImU32 statusColour(const std::string& value){std::string normalized=value;std::transform(normalized.begin(),normalized.end(),normalized.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});const auto& p=cyui::palette();if(normalized=="success" || normalized=="completed" || normalized=="open" || normalized=="added")return p.success;if(normalized=="merged")return p.accent;if(normalized=="failure" || normalized=="failed" || normalized=="error" || normalized=="conflict" || normalized=="closed" || normalized=="deleted" || normalized=="removed")return p.error;if(normalized=="warning" || normalized=="queued" || normalized=="cancelled" || normalized=="untracked")return p.warning;if(normalized=="in_progress" || normalized=="running" || normalized=="modified")return p.info;return p.text;}
 Workspace::Workspace(EngineConnection& client,std::wstring backend):client_(client),backend_(std::move(backend)){registerAppTranslations();workspace_="overview";table_="";send({{"command","catalog"}});}
-unsigned long long Workspace::send(Json request){auto command=text(request,"command");bool operation=command!="state" && command!="catalog" && command!="cancel" && command!="prefs.cancel" && command!="set" && command!="select" && command!="itemSet" && command!="include" && text(request,"operation")!="cancel";
+unsigned long long Workspace::send(Json request){auto command=text(request,"command");bool operation=command!="state" && command!="catalog" && command!="updates.check" && command!="cancel" && command!="prefs.cancel" && command!="set" && command!="select" && command!="itemSet" && command!="include" && text(request,"operation")!="cancel";
     if(command=="cancel")queuedRefreshes_.clear();
     if(operation){for(const auto& pending:pending_)if(pending.second==command)return 0;pendingAction_=true;}
     if(command=="overview.installUpdate")request["nativeProcessId"]=GetCurrentProcessId();
@@ -34,7 +34,7 @@ bool Workspace::selectionPending(const std::string& source)const{
 }
 std::string Workspace::loadingLabel(const std::string& workspace)const{
     for(const auto& entry:queuedRefreshes_)if(workspace.empty() || text(entry.second,"viewWorkspace")==workspace)return "Waiting for current operation · "+text(action(entry.first),"label",entry.first);
-    for(const auto& entry:pendingRequests_){auto& request=entry.second;auto command=text(request,"command");if(command=="state" || command=="catalog" || command=="set" || command=="navigation")continue;
+    for(const auto& entry:pendingRequests_){auto& request=entry.second;auto command=text(request,"command");if(command=="state" || command=="catalog" || command=="updates.check" || command=="set" || command=="navigation")continue;
         if(workspace.empty() || text(request,"viewWorkspace")==workspace){auto name=text(request,"action",command);return "Loading · "+(command=="select"?text(request,"source","selection"):text(action(name),"label",name));}}
     if(state_.contains("activity")){const auto& activity=state_["activity"];if(!text(activity,"command").empty() && (workspace.empty() || text(activity,"workspace")==workspace)){auto name=text(activity,"action");if(name.empty())name=text(activity,"command");return "Loading · "+text(action(name),"label",name);}}
     if(state_.contains("loading"))for(const auto& item:state_["loading"])if(workspace.empty() || text(item,"workspace")==workspace || text(item,"workspace")=="project")return text(item,"label","Loading…");
@@ -70,7 +70,13 @@ void Workspace::menu(){
         if(ImGui::MenuItem("Detach current tab",nullptr,false,ready()))openDetached(workspace_);
         if(ImGui::BeginMenu("Open workspace in window",ready())){if(catalog_.contains("workspaces"))for(const auto& tab:catalog_["workspaces"]){auto id=text(tab,"id");if(!workspaceAvailable(id))continue;if(ImGui::MenuItem((text(tab,"category")+" / "+text(tab,"label")).c_str()))openDetached(id);}ImGui::EndMenu();}
         if(ImGui::BeginMenu("Open windows",!detachedPanes_.empty())){for(auto& pane:detachedPanes_)if(pane.open){cyui::ScopedID id(static_cast<int>(pane.id));if(ImGui::MenuItem((pane.title.empty()?workspaceLabel(pane.workspace):pane.title).c_str()))pane.focus=true;}ImGui::Separator();if(ImGui::MenuItem("Close auxiliary views"))for(auto& pane:detachedPanes_)pane.open=false;ImGui::EndMenu();}
-        if(ImGui::MenuItem("Reset panel layout")){layoutChecked_=false;resetLayout_=true;}ImGui::MenuItem("Advanced inspector",nullptr,&showInspector_);if(ImGui::MenuItem("Theme editor"))themeEditor_=true;if(ImGui::MenuItem("Classic interface"))ShellExecuteW(nullptr,L"open",backend_.c_str(),L"--classic",nullptr,SW_SHOWNORMAL);ImGui::EndMenu();}ImGui::EndMainMenuBar();
+        if(ImGui::MenuItem("Reset panel layout")){layoutChecked_=false;resetLayout_=true;}ImGui::MenuItem("Advanced inspector",nullptr,&showInspector_);if(ImGui::MenuItem("Theme editor"))themeEditor_=true;if(ImGui::MenuItem("Classic interface"))ShellExecuteW(nullptr,L"open",backend_.c_str(),L"--classic",nullptr,SW_SHOWNORMAL);ImGui::EndMenu();}
+    if(ImGui::BeginMenu(cyui::trLabel("Help").c_str())){
+        if(ImGui::MenuItem(cyui::trLabel("Check for updates").c_str(),nullptr,false,client_.alive() && flag("CanCheckForUpdates",true)))checkForUpdates();
+        if(ImGui::MenuItem(cyui::trLabel("View available update").c_str(),nullptr,false,flag("HasUpdateAvailable")))updateOpen_=true;
+        ImGui::EndMenu();
+    }
+    ImGui::EndMainMenuBar();
 }
 void Workspace::topBar(){
     auto actionsWidth=cyui::buttonWidth("Add folder")+cyui::buttonWidth("Open repository")+cyui::buttonWidth("Clone")+cyui::buttonWidth("Create repository")+cyui::dp(54)+3*ImGui::GetStyle().ItemSpacing.x;
@@ -114,7 +120,7 @@ void Workspace::tick(bool background){
     for(auto& response:client_.take()){
         auto id=response.value("id",0ULL);auto found=pending_.find(id);auto command=found==pending_.end()?"":found->second;if(found!=pending_.end())pending_.erase(found);pendingRequests_.erase(id);
         if(command=="state")requestingState_=false;
-        pendingAction_=false;for(const auto& pending:pending_)if(pending.second!="state" && pending.second!="catalog" && pending.second!="cancel" && pending.second!="prefs.cancel" && pending.second!="set" && pending.second!="select" && pending.second!="itemSet" && pending.second!="include")pendingAction_=true;
+        pendingAction_=false;for(const auto& pending:pending_)if(pending.second!="state" && pending.second!="catalog" && pending.second!="updates.check" && pending.second!="cancel" && pending.second!="prefs.cancel" && pending.second!="set" && pending.second!="select" && pending.second!="itemSet" && pending.second!="include")pendingAction_=true;
         auto submitted=submittedDrafts_.find(id);
         if(!response.value("ok",false)){error_=text(response,"error","Engine request failed.");if(command=="project")openingProject_.clear();if(submitted!=submittedDrafts_.end())submittedDrafts_.erase(submitted);continue;}
         if(submitted!=submittedDrafts_.end()){for(const auto& entry:submitted->second.items()){if(draftValues_.contains(entry.key()) && draftValues_[entry.key()]==entry.value())draftValues_.erase(entry.key());auto draft=edits_.find(entry.key());if(draft!=edits_.end() && draft->second==display(entry.value()))edits_.erase(draft);}submittedDrafts_.erase(submitted);}
@@ -161,7 +167,7 @@ void Workspace::frame(){
     cyui::ScopedColor selectedTab(ImGuiCol_TabSelected,cyui::palette().accent);
     cyui::ScopedColor selectedDimmedTab(ImGuiCol_TabDimmedSelected,cyui::palette().accentDim);
     cyui::ScopedColor hoveredTab(ImGuiCol_TabHovered,cyui::palette().accentHover);
-    requestedFields_.clear();menu();topBar();if(cyui::beginStatusBar("##status")){auto activity=loadingLabel("");activityStatus(!error_.empty()?error_:!activity.empty()?activity:text(state_,"status","Connecting to engine…"),!activity.empty(),std::max(cyui::dp(30),ImGui::GetContentRegionAvail().x-cyui::dp(105)));ImGui::SameLine();if(cyui::ghostButton(showOperations_?"Hide details":"Task details",cyui::dp(95,0)))showOperations_=!showOperations_;}cyui::endStatusBar();
+    requestedFields_.clear();menu();topBar();if(cyui::beginStatusBar("##status")){auto activity=loadingLabel("");activityStatus(!error_.empty()?error_:!activity.empty()?activity:text(state_,"status","Connecting to engine…"),!activity.empty(),std::max(cyui::dp(30),ImGui::GetContentRegionAvail().x-cyui::dp(345)));ImGui::SameLine();updateStatus();ImGui::SameLine();if(cyui::ghostButton(showOperations_?"Hide details":"Task details",cyui::dp(95,0)))showOperations_=!showOperations_;}cyui::endStatusBar();
     sidebar();auto dock=cyui::dockSpace();mainDock_=dock;if(!layoutChecked_){auto node=ImGui::DockBuilderGetNode(dock);if(resetLayout_ || node==nullptr)defaultLayout(dock);else layoutChecked_=true;}
     requestedTables_=Json::object();workspacePanel();detachedWindows();if(showInspector_)inspector();operations();modals();reviewLogWindows();gitInitializationWizard();gitConflictEditor();gitBranchInspector();
     for(auto& entry:enlargedText_)if(entry.second){ImGui::SetNextWindowSize(cyui::dp(1100,700),ImGuiCond_FirstUseEver);ImGuiWindowClass windowClass;windowClass.ParentViewportId=static_cast<ImGuiID>(-1);windowClass.ViewportFlagsOverrideSet=ImGuiViewportFlags_NoAutoMerge;windowClass.ViewportFlagsOverrideClear=ImGuiViewportFlags_NoTaskBarIcon;ImGui::SetNextWindowClass(&windowClass);activePane_="aux:"+entry.first;if(ImGui::Begin(entry.first.c_str(),&entry.second)){if(entry.first=="File history")fileHistoryWindow();else if(entry.first.rfind("text:",0)==0)textViews_[entry.first].draw("##fullText",value(entry.first.substr(5)));}ImGui::End();activePane_.clear();}

@@ -33,3 +33,13 @@ main and auxiliary views in the system tray without stopping the engine or its
 services. The tray menu restores the UI or explicitly quits through the normal
 confirmation flow. Desktop preferences control tray residence and hidden startup;
 Classic Avalonia remains available on all supported platforms.
+
+Release checks start automatically before plugin and project loading. A fixed
+status-bar slot shows checking, up-to-date, available and retry states without
+moving the workspace. A newer published stable release opens an offer with notes,
+an explicit install action and a Not now option. Declining it keeps the application
+running and does not repeat the offer when switching projects. Use Help > Check
+for updates to check again, or Help > View available update to reopen the offer.
+Checks also work without a project and during repository operations; network
+failures do not prevent startup. The release request times out after 20 seconds.
+Downloading and closing the application still require explicit confirmation.

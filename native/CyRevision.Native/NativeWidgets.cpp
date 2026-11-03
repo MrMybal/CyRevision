@@ -94,7 +94,31 @@ void Workspace::activityStatus(const std::string& label,bool running,float width
     if(width>cyui::dp(30))cyui::clippedText(draw,ImVec2(origin.x+cyui::dp(20),origin.y+(height-ImGui::GetTextLineHeight())*.5f),width-cyui::dp(24),p.textDim,label.c_str());
     cyui::tooltip(label.c_str());
 }
+void Workspace::checkForUpdates(){
+    if(!client_.alive() || !flag("CanCheckForUpdates",true))return;
+    for(const auto& entry:pending_)if(entry.second=="updates.check")return;
+    requestedUpdateRevision_=value("UpdateCheckRevision");
+    if(send({{"command","updates.check"}})){offerUpdateAfterCheck_=true;lastPoll_=0;}
+}
+void Workspace::updateStatus(){
+    bool running=flag("IsCheckingForUpdates"),downloading=flag("IsDownloadingUpdate");
+    bool available=flag("HasUpdateAvailable"),failed=flag("HasUpdateCheckFailed");
+    auto label=cyui::tr(downloading?"Downloading update…":running?"Checking for updates…":failed?"Update check failed — retry":available?"Update available":flag("HasCheckedForUpdates")?"CyRevision is up to date":"Check for updates");
+    if(available && !running && !failed && !downloading)label+=" · "+value("LatestApplicationVersion");
+    cyui::ScopedID scope("application-update-status");
+    activityStatus(label,running || downloading,cyui::dp(230));
+    if(ImGui::IsItemClicked()){
+        if(available && !failed)updateOpen_=true;
+        else if(!running && !downloading)checkForUpdates();
+    }
+    if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",value("UpdateStatus").c_str());
+}
 void Workspace::command(const char* name,const char* label,bool primary){
+    if(std::string(name)=="CheckForUpdatesAsync"){
+        cyui::ScopedDisabled disabled(!client_.alive() || !flag("CanCheckForUpdates",true));
+        if(activityButton(cyui::tr(label?label:"Check for updates").c_str(),flag("IsCheckingForUpdates"),primary))checkForUpdates();
+        return;
+    }
     auto item=action(name);cyui::ScopedID id(name);bool available=!item.value("missing",false);
     std::string method=name;if(method.size()>5 && method.substr(method.size()-5)=="Async")method.resize(method.size()-5);
     auto capability="Can"+method;requestedFields_.insert(capability);

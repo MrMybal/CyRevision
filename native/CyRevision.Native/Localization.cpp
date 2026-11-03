@@ -4,6 +4,13 @@ namespace cyrevision {
 void registerAppTranslations(){
     cyui::registerTranslations("fr",{
         {"Language","Langue"},{"Rendered","Rendu"},{"Source","Source"},
+        {"Help","Aide"},{"Check for updates","Rechercher des mises à jour"},
+        {"Checking for updates…","Recherche de mise à jour…"},{"Downloading update…","Téléchargement de la mise à jour…"},
+        {"Update available","Mise à jour disponible"},{"View available update","Voir la mise à jour disponible"},
+        {"Update check failed — retry","Vérification impossible — réessayer"},{"CyRevision is up to date","CyRevision est à jour"},
+        {"CyRevision update available","Mise à jour de CyRevision disponible"},{"Installed","Version installée"},
+        {"Download, close and install","Télécharger, fermer et installer"},{"Not now","Plus tard"},
+        {"The package is downloaded and verified before installation. CyRevision and its engine close before the external installer starts. Save active work first.","Le paquet est téléchargé et vérifié avant l’installation. CyRevision et son moteur se ferment avant le lancement de l’installateur externe. Enregistrez votre travail avant de continuer."},
         {"Copy Markdown source","Copier la source Markdown"},{"Open source in a separate window","Ouvrir la source dans une fenêtre séparée"},
         {"Previous messages","Messages précédents"},{"Next messages","Messages suivants"},{"Attachment","Pièce jointe"},
         {"Conversation","Conversation"},{"Message details / attachments","Détails des messages / pièces jointes"},

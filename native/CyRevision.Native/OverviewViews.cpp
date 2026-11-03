@@ -1,6 +1,7 @@
 #include "Workspace.h"
 #include "ReviewViews.h"
 #include "StringInput.h"
+#include <imgui_internal.h>
 #include <shobjidl.h>
 #include <wrl/client.h>
 #include <set>
@@ -11,8 +12,6 @@ struct OverviewUi {
     std::string project,preset;
     bool removeCaches=false,initializeOpen=false,lfsOnly=false,initialCommit=false,createIgnore=true;
     bool modeOpen=false,modeCreateIgnore=true;
-    bool updateOpen=false;
-    std::string seenUpdateVersion;
     int step=0,loadedPreparation=0,seenModeRevision=0;
     std::string path,preparedPath,ignoreText,customPatterns,userName,userEmail,remote,initialMessage="Initial commit",modeIgnore;
     std::unordered_set<std::string> patterns;
@@ -237,7 +236,7 @@ void Workspace::gitInitializationWizard() {
     const auto& mode=reviewObject(context,"mode");
     int revision=mode.value("revision",0);
     if(requestClose) {
-        ui.initializeOpen=false;ui.modeOpen=false;ui.updateOpen=false;ui.seenModeRevision=revision;
+        ui.initializeOpen=false;ui.modeOpen=false;updateOpen_=false;ui.seenModeRevision=revision;
         return;
     }
     // A single modal owns input at a time. An action confirmation or the task
@@ -275,26 +274,34 @@ void Workspace::gitInitializationWizard() {
 
     std::string updateVersion=value("LatestApplicationVersion");
     bool updateAvailable=flag("HasUpdateAvailable");
-    if(updateAvailable && !updateVersion.empty() && updateVersion!=ui.seenUpdateVersion && !ui.initializeOpen && !modeOpen) {
-        ui.seenUpdateVersion=updateVersion;ui.updateOpen=true;
+    if(!flag("IsCheckingForUpdates") && value("UpdateCheckRevision")!=requestedUpdateRevision_ && offerUpdateAfterCheck_) {
+        offerUpdateAfterCheck_=false;
+        if(updateAvailable)seenUpdateVersion_.clear();
     }
-    bool updateOpen=ui.updateOpen;
-    if(updateOpen && !ui.initializeOpen && cyui::beginModal("CyRevision update available",&updateOpen,790)) {
-        cyui::heading(("CyRevision "+updateVersion).c_str(),2);
-        cyui::textDim("Installed: %s",value("CurrentApplicationVersion").c_str());
-        cyui::textDim("%s",value("UpdateStatus").c_str());
-        ImGui::BeginChild("##nativeUpdateNotes",ImVec2(0,cyui::dp(265)),ImGuiChildFlags_Borders);
-        documentPanel("UpdateReleaseNotes","##nativeUpdateNotesText");ImGui::EndChild();
-        cyui::callout(cyui::Tone::info,"The package is downloaded and verified before installation. CyRevision and its engine close before the external installer starts. Save active work first.");
-        {cyui::ScopedDisabled disabled(busy() || !flag("CanInstallUpdate"));
-        if(cyui::primaryButton("Download, close and install")) {
-            send({{"command","overview.installUpdate"},{"confirmed",true}});
-            updateOpen=false;ImGui::CloseCurrentPopup();
-        }}
-        ImGui::SameLine();if(cyui::ghostButton("Not now")){updateOpen=false;ImGui::CloseCurrentPopup();}
-        cyui::endModal();
+    auto* otherModal=ImGui::GetTopMostPopupModal();
+    bool updateModal=otherModal && std::string(otherModal->Name).find("###applicationUpdate")!=std::string::npos;
+    if(!ui.initializeOpen && (!otherModal || updateModal)) {
+        if(updateAvailable && !updateVersion.empty() && updateVersion!=seenUpdateVersion_) {
+            seenUpdateVersion_=updateVersion;updateOpen_=true;
+        }
+        bool updateOpen=updateOpen_;
+        if(updateOpen && cyui::beginModal((cyui::tr("CyRevision update available")+"###applicationUpdate").c_str(),&updateOpen,790)) {
+            cyui::heading(("CyRevision "+updateVersion).c_str(),2);
+            cyui::textDim("%s: %s",cyui::tr("Installed").c_str(),value("CurrentApplicationVersion").c_str());
+            cyui::textDim("%s",value("UpdateStatus").c_str());
+            ImGui::BeginChild("##nativeUpdateNotes",ImVec2(0,cyui::dp(265)),ImGuiChildFlags_Borders);
+            documentPanel("UpdateReleaseNotes","##nativeUpdateNotesText");ImGui::EndChild();
+            cyui::callout(cyui::Tone::info,cyui::tr("The package is downloaded and verified before installation. CyRevision and its engine close before the external installer starts. Save active work first.").c_str());
+            {cyui::ScopedDisabled disabled(busy() || !flag("CanInstallUpdate"));
+            if(cyui::primaryButton(cyui::trLabel("Download, close and install").c_str())) {
+                send({{"command","overview.installUpdate"},{"confirmed",true}});
+                updateOpen=false;ImGui::CloseCurrentPopup();
+            }}
+            ImGui::SameLine();if(cyui::ghostButton(cyui::trLabel("Not now").c_str())){updateOpen=false;ImGui::CloseCurrentPopup();}
+            cyui::endModal();
+        }
+        updateOpen_=updateOpen;
     }
-    ui.updateOpen=updateOpen;
 
     if(!ui.initializeOpen)return;
     bool open=ui.initializeOpen;

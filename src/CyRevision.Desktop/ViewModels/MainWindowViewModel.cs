@@ -471,6 +471,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private string _updateReleaseNotes = string.Empty;
     private bool _hasUpdateAvailable;
     private bool _isCheckingForUpdates;
+    private bool _hasCheckedForUpdates;
+    private bool _hasUpdateCheckFailed;
+    private int _updateCheckRevision;
     private bool _isDownloadingUpdate;
     private double _updateProgress;
     private VpnBackendMode _selectedVpnBackendMode = VpnBackendMode.SystemInstallation;
@@ -2084,6 +2087,24 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     }
 
     public bool CanCheckForUpdates => !IsCheckingForUpdates && !IsDownloadingUpdate;
+
+    public bool HasCheckedForUpdates
+    {
+        get => _hasCheckedForUpdates;
+        private set => SetProperty(ref _hasCheckedForUpdates, value);
+    }
+
+    public bool HasUpdateCheckFailed
+    {
+        get => _hasUpdateCheckFailed;
+        private set => SetProperty(ref _hasUpdateCheckFailed, value);
+    }
+
+    public int UpdateCheckRevision
+    {
+        get => _updateCheckRevision;
+        private set => SetProperty(ref _updateCheckRevision, value);
+    }
 
     public bool CanInstallUpdate =>
         HasUpdateAvailable && _availableUpdate?.Package is not null && !IsCheckingForUpdates && !IsDownloadingUpdate;
@@ -5499,6 +5520,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public async Task InitializeAsync()
     {
+        // Updates belong to the application, not to the selected repository.
+        // Start before plugins/catalogue loading, which can be slow or fail.
+        _ = CheckForUpdatesAsync();
         await _pluginManager.InitializeAsync();
         _legacyProjectPluginIds = _pluginManager.LoadedPluginIds
             .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
@@ -5568,8 +5592,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
                 SelectedProject = Projects[0];
             }
         }, "Prêt");
-
-        _ = CheckForUpdatesAsync();
     }
 
     public async Task EnsureCodeWorkspaceLoadedAsync(bool force = false)
@@ -8549,10 +8571,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
         bool notifyUpdateAvailable = false;
         IsCheckingForUpdates = true;
+        HasUpdateCheckFailed = false;
         UpdateStatus = "Recherche de la dernière release publiée…";
         try
         {
-            ApplicationUpdateInfo update = await _updateService.CheckAsync();
+            using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
+            ApplicationUpdateInfo update = await _updateService.CheckAsync(timeout.Token);
             _availableUpdate = update;
             LatestApplicationVersion = update.LatestVersion.ToString();
             HasUpdateAvailable = update.IsUpdateAvailable;
@@ -8579,11 +8603,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         {
             _availableUpdate = null;
             HasUpdateAvailable = false;
+            HasUpdateCheckFailed = true;
             UpdateStatus = $"Vérification impossible : {exception.Message}";
             OnPropertyChanged(nameof(UpdateReleasePageUrl));
+            OnPropertyChanged(nameof(CanInstallUpdate));
         }
         finally
         {
+            HasCheckedForUpdates = true;
+            UpdateCheckRevision++;
             IsCheckingForUpdates = false;
         }
 
@@ -14771,6 +14799,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             "_selectedLanguage" or "_allDocumentationTopics" or "_selectedDocumentationTopic" or
             "_documentationSearch" or "_latestApplicationVersion" or "_updateStatus" or "_updateReleaseNotes" or
             "_hasUpdateAvailable" or "_isCheckingForUpdates" or "_isDownloadingUpdate" or "_updateProgress" or
+            "_hasCheckedForUpdates" or "_hasUpdateCheckFailed" or "_updateCheckRevision" or
             "_selectedPlugin" or "_selectedAiConversation" or "_suppressAiConversationSelection" or
             "_isUnrealIntegrationEnabled" or "_isUnityIntegrationEnabled" or "_isGodotIntegrationEnabled" or "_discordIsRunning") &&
                !name.StartsWith("_code", StringComparison.Ordinal) &&

@@ -16,6 +16,7 @@ public sealed partial class NativeModelAdapter
         if(request.TryGetProperty("fields",out var requested) && requested.ValueKind==JsonValueKind.Array)
             foreach(var item in requested.EnumerateArray().Take(512))if(item.ValueKind==JsonValueKind.String)names.Add(item.GetString()!);
         var fields=new Dictionary<string,object?>();
+        names.UnionWith(new[]{"CurrentApplicationVersion","LatestApplicationVersion","UpdateStatus","HasUpdateAvailable","IsCheckingForUpdates","IsDownloadingUpdate","HasCheckedForUpdates","HasUpdateCheckFailed","UpdateCheckRevision","CanCheckForUpdates","CanInstallUpdate"});
         foreach(string name in names)
             if(TryResolve(name,out var owner,out var property) && NativeWorkspaceCatalog.IsScalar(property.PropertyType))
                 fields[name]=Field(name,owner,property);

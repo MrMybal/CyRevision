@@ -33,6 +33,9 @@ class Workspace {
     std::string queuedProject_,openingProject_;
     bool descending_=false, openWorkspace_=false, layoutChecked_=false, resetLayout_=false, selectTable_=true, showSettings_=false, themeEditor_=false;
     bool requestingState_=false, pendingAction_=false, done_=false;
+    bool updateOpen_=false, offerUpdateAfterCheck_=false;
+    std::string requestedUpdateRevision_;
+    std::string seenUpdateVersion_;
     int skip_=0, anchor_=-1;
     unsigned long long lastPoll_=0;
     struct TableView {std::string filter,sort,selection,awaitingSelection;int skip=0,take=200,anchor=-1;bool descending=false,multiple=false;std::unordered_set<std::string> selected;Json remembered=Json::object();};
@@ -128,6 +131,8 @@ class Workspace {
     void shortcuts();
     void openGitInitialization(const std::string& path="",bool lfsOnly=false);
     void gitInitializationWizard();
+    void checkForUpdates();
+    void updateStatus();
     void gitConflictEditor();
 public:
     bool requestClose=false;
