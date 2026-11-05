@@ -51,7 +51,7 @@ public static class NativeWorkspaceCatalog
         new("perforce","Perforce","Extensions & Help","PerforceWorkspaceTab",["PerforceOpenedFiles","PerforcePendingChanges","PerforceFileHistory"],["Perforce"]),
         new("unrealbuilds","Unreal builds","Extensions & Help","UnrealBuildWorkspaceTab",["UnrealBuildEngines","UnrealBuildTargets","UnrealBuildPresets","UnrealBuildResults","UnrealBuildDiagnostics"],["UnrealBuild"]),
         new("diagnostics","Diagnostics","Extensions & Help","DiagnosticsWorkspaceTab",["PerformanceMetrics","FilteredApplicationLogEntries","RecentOperations"],["Performance","ApplicationLog","RepositoryCommand"]),
-        new("help","Help","Extensions & Help","HelpWorkspaceTab",["DocumentationPages"],["Documentation","Help"]),
+        new("help","Help","Extensions & Help","HelpWorkspaceTab",[],["Documentation","Help"]),
     ];
 
     public static NativeWorkspace Find(string id) => All.FirstOrDefault(workspace=>workspace.Id==id || workspace.LoadTab==id)
@@ -60,7 +60,7 @@ public static class NativeWorkspaceCatalog
     public static bool IsAvailable(NativeWorkspace workspace,MainWindowViewModel model)
     {
         var features=model.SelectedProject?.Definition.Features;
-        if(features is null) return workspace.Id is "overview" or "visible";
+        if(features is null) return workspace.Id is "overview" or "visible" or "help";
         return workspace.Id switch
         {
             "gitoverview"=>features.GitEnabled,

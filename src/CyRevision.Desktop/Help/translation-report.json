@@ -1,0 +1,183 @@
+{
+  "defaultLocale": "en",
+  "missing": [
+    {
+      "id": "reference-architecture-syncthing-integration",
+      "title": "Syncthing integration",
+      "locale": "fr",
+      "expectedRevision": "b1840f0704bd"
+    },
+    {
+      "id": "reference-code-explorer-and-ai",
+      "title": "Code explorer, global search, and AI workspace",
+      "locale": "fr",
+      "expectedRevision": "4bb3ffedf21c"
+    },
+    {
+      "id": "reference-cyrevisiongodot",
+      "title": "CyRevision Godot companion",
+      "locale": "fr",
+      "expectedRevision": "8c2d05e970d8"
+    },
+    {
+      "id": "reference-cyrevisionlore",
+      "title": "CyRevision Lore Companion (experimental)",
+      "locale": "fr",
+      "expectedRevision": "27a427d6651b"
+    },
+    {
+      "id": "reference-cyrevisionunity",
+      "title": "CyRevision Unity companion",
+      "locale": "fr",
+      "expectedRevision": "c448a2ec804a"
+    },
+    {
+      "id": "reference-cyrevisionunreal",
+      "title": "CyRevision Collaboration for Unreal Engine",
+      "locale": "fr",
+      "expectedRevision": "d37b967c318a"
+    },
+    {
+      "id": "reference-cystore-alpha",
+      "title": "CyStore Alpha",
+      "locale": "fr",
+      "expectedRevision": "c48f6c592d09"
+    },
+    {
+      "id": "reference-cytask-integration",
+      "title": "CyTask work-item integration",
+      "locale": "fr",
+      "expectedRevision": "e3cb5976df0d"
+    },
+    {
+      "id": "reference-cyui-modular-migration",
+      "title": "Native CyUI modular integration",
+      "locale": "fr",
+      "expectedRevision": "815e1806510b"
+    },
+    {
+      "id": "reference-historical-worktrees",
+      "title": "Historical branches without switching the main repository",
+      "locale": "fr",
+      "expectedRevision": "f3d149ac40c9"
+    },
+    {
+      "id": "reference-lfs-storage-management",
+      "title": "Safe Git LFS storage management",
+      "locale": "fr",
+      "expectedRevision": "f0fd9c230f73"
+    },
+    {
+      "id": "reference-offline-guide",
+      "title": "Local CyDoc documentation",
+      "locale": "fr",
+      "expectedRevision": "c3fc415ceed3"
+    },
+    {
+      "id": "reference-perforce-integration",
+      "title": "Perforce Helix Core integration",
+      "locale": "fr",
+      "expectedRevision": "6dbe49d3f669"
+    },
+    {
+      "id": "reference-plugin-api",
+      "title": "CyRevision plugin and app API",
+      "locale": "fr",
+      "expectedRevision": "9fc888758d2d"
+    },
+    {
+      "id": "reference-plugins-and-unreal",
+      "title": "CyRevision plugins and Unreal integration",
+      "locale": "fr",
+      "expectedRevision": "437eacf8307c"
+    },
+    {
+      "id": "reference-pull-request-manager",
+      "title": "Pull request manager",
+      "locale": "fr",
+      "expectedRevision": "ce4fea40611a"
+    },
+    {
+      "id": "reference-release-0-1-26",
+      "title": "CyRevision 0.1.26 Alpha",
+      "locale": "fr",
+      "expectedRevision": "b5c2107d2b0c"
+    },
+    {
+      "id": "reference-release-0-1-27",
+      "title": "CyRevision 0.1.27 Alpha",
+      "locale": "fr",
+      "expectedRevision": "058d74d6cac1"
+    },
+    {
+      "id": "reference-release-0-1-28",
+      "title": "CyRevision 0.1.28 Alpha",
+      "locale": "fr",
+      "expectedRevision": "9e201b1bdb33"
+    },
+    {
+      "id": "reference-release-0-1-29",
+      "title": "CyRevision 0.1.29 Alpha",
+      "locale": "fr",
+      "expectedRevision": "d053d0ebcc40"
+    },
+    {
+      "id": "reference-release-0-1-30",
+      "title": "CyRevision 0.1.30 Alpha",
+      "locale": "fr",
+      "expectedRevision": "ef1d13a5163a"
+    },
+    {
+      "id": "reference-release-0-1-31",
+      "title": "CyRevision 0.1.31 Alpha",
+      "locale": "fr",
+      "expectedRevision": "4aa6ec526bd9"
+    },
+    {
+      "id": "reference-release-0-1-32",
+      "title": "CyRevision 0.1.32 Alpha",
+      "locale": "fr",
+      "expectedRevision": "2b6f95aa9cd4"
+    },
+    {
+      "id": "reference-release-0-1-33",
+      "title": "CyRevision 0.1.33 Alpha",
+      "locale": "fr",
+      "expectedRevision": "eb7e9c2cca43"
+    },
+    {
+      "id": "reference-remote-build-agent",
+      "title": "Remote build agent",
+      "locale": "fr",
+      "expectedRevision": "083a8aff9080"
+    },
+    {
+      "id": "reference-team-chat",
+      "title": "Team chat over VPN or Sync",
+      "locale": "fr",
+      "expectedRevision": "0a798869ae65"
+    }
+  ],
+  "outdated": [],
+  "untracked": [
+    {
+      "id": "native-help-links",
+      "title": "Native contextual help",
+      "locale": "fr",
+      "expectedRevision": "15b58b0d4ca5"
+    },
+    {
+      "id": "plugin-contracts-api",
+      "title": "Plugin lifecycle contract",
+      "locale": "fr",
+      "expectedRevision": "bd1c6e3766ad"
+    },
+    {
+      "id": "plugin-file-broker-api",
+      "title": "Project file broker",
+      "locale": "fr",
+      "expectedRevision": "d7b6fe166686"
+    }
+  ],
+  "current": 49
+}

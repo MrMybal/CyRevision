@@ -34,6 +34,7 @@ void Workspace::workspacePanel(){
     }ImGui::End();
 }
 void Workspace::workspaceToolbar(){
+    if(workspace_=="help")return;
     if(cyui::beginToolbar("##project-actions")){
         command("RefreshAsync","Refresh");ImGui::SameLine();command("FetchAsync","Fetch");ImGui::SameLine();command("PullAsync","Pull");ImGui::SameLine();command("PushAsync","Push");ImGui::SameLine();
         auto activity=loadingLabel("");bool active=!activity.empty() || busy();float endWidth=cyui::buttonWidth("Detach")+ImGui::GetFrameHeight()+3*ImGui::GetStyle().ItemSpacing.x;

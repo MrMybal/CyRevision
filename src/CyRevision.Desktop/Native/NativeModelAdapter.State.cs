@@ -67,6 +67,7 @@ public sealed partial class NativeModelAdapter
             }).ToArray(),
             operations=model.ActiveOperations.Concat(model.RecentOperations.Take(30)).Select(operation=>new{operation.Id,operation.Title,operation.State,operation.Detail,operation.DurationText,operation.ProjectName,operation.IsRead}),
             navigation=_navigation.Snapshot(model),fields,selections,tableSelections,tables,table=primary,images=Images(workspaces.Select(view=>view.Id)),
+            documentation=workspaces.Any(view=>view.Id=="help") ? model.GetNativeDocumentation() : null,
             properties=fields.Values.ToArray(),actions=Actions.Values.Where(method=>NativeWorkspaceCatalog.GroupFor(method.Name)==workspace.Id).OrderBy(method=>method.Name).Select(DescribeAction).ToArray(),
             pullRequestContext=NativePullRequestActions.Snapshot(model),toolsContext=NativeToolsActions.Snapshot(model),overviewContext=NativeOverviewActions.Snapshot(model),preferences=Preferences?.Snapshot(),
             preview=workspace.Id switch{"changes"=>model.DiffText,"code"=>model.CodePreviewText,"history"=>model.ExplorerDiff,"assets"=>model.AssetDiffReport,_=>""}

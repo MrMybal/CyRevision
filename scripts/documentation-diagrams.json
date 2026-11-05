@@ -1,0 +1,249 @@
+[
+  [
+    "modes",
+    "Choose independent services",
+    "Choisir des services indépendants",
+    [
+      "Git|Commits, branches and LFS",
+      "Sync|Current files and peers",
+      "Backup|Snapshots and retention",
+      "VPN|Private network transport"
+    ],
+    [
+      "Git|Commits, branches et LFS",
+      "Sync|Fichiers courants et pairs",
+      "Backup|Instantanés et rétention",
+      "VPN|Transport réseau privé"
+    ],
+    "A project mode enables tools; permissions and service startup remain explicit.",
+    "Un mode active des outils ; droits et démarrage restent explicites."
+  ],
+  [
+    "git",
+    "From working files to a remote",
+    "Des fichiers au dépôt distant",
+    [
+      "Working tree|Edit and inspect differences",
+      "Index|Stage the intended content",
+      "Local commit|Record a coherent revision",
+      "Remote|Push after review"
+    ],
+    [
+      "Dossier de travail|Modifier et examiner le diff",
+      "Index|Préparer le contenu voulu",
+      "Commit local|Enregistrer une révision",
+      "Remote|Pousser après vérification"
+    ],
+    "Fetch reads remote references. Pull integrates. A commit alone does not publish.",
+    "Fetch lit les références. Pull intègre. Un commit seul ne publie pas."
+  ],
+  [
+    "conflicts",
+    "Resolve before continuing",
+    "Résoudre avant de continuer",
+    [
+      "Integration stops|Inspect conflicted paths",
+      "Compare versions|Base, local and incoming",
+      "Choose a result|Apply, inspect and test",
+      "Complete or abort|Finish the original operation"
+    ],
+    [
+      "Intégration arrêtée|Examiner les chemins en conflit",
+      "Comparer|Base, locale et entrante",
+      "Choisir un résultat|Appliquer, examiner et tester",
+      "Terminer ou abandonner|Clore l’opération initiale"
+    ],
+    "Binary assets need their owning tool or an explicitly chosen version.",
+    "Les assets binaires exigent leur outil ou une version choisie explicitement."
+  ],
+  [
+    "ci",
+    "Read the current CI, not an older success",
+    "Lire la CI courante, pas un ancien succès",
+    [
+      "Pull request|Head commit and branch",
+      "Workflow run|Queued, running or completed",
+      "Job and steps|Inspect the actual conclusion",
+      "Full log|All, errors, warnings + search"
+    ],
+    [
+      "Pull request|Commit courant et branche",
+      "Exécution|En attente, en cours, terminée",
+      "Job et étapes|Lire la conclusion réelle",
+      "Log complet|Tout, erreurs, alertes + recherche"
+    ],
+    "An empty error filter is not proof of success. Cancellation may affect the whole run.",
+    "Un filtre vide ne prouve pas la réussite. Annuler peut viser tout le run."
+  ],
+  [
+    "locks",
+    "Two different coordination tools",
+    "Deux outils de coordination distincts",
+    [
+      "LFS lock|Owned on the hosting server",
+      "Edit asset|Respect the shared policy",
+      "Publish work|Commit and push deliberately",
+      "Release lock|Verify the owner and target"
+    ],
+    [
+      "Verrou LFS|Propriétaire sur le serveur",
+      "Modifier l’asset|Respecter la politique d’équipe",
+      "Publier|Commit puis push volontaires",
+      "Libérer le verrou|Vérifier propriétaire et cible"
+    ],
+    "A work-in-progress reservation is advisory; it is not a server-enforced lock.",
+    "Une réservation est informative ; ce n’est pas un verrou imposé par le serveur."
+  ],
+  [
+    "sync",
+    "Authorize before exchanging",
+    "Autoriser avant d’échanger",
+    [
+      "Invitation|Check a separate-channel code",
+      "Approval|Verify the device and role",
+      "Exchange|Dedicated project instance",
+      "Reconcile|Inspect conflicts and versions"
+    ],
+    [
+      "Invitation|Vérifier le code séparément",
+      "Approbation|Vérifier appareil et rôle",
+      "Échange|Instance dédiée au projet",
+      "Réconcilier|Examiner conflits et versions"
+    ],
+    "Synchronization propagates changes. Keep an independent backup for recovery.",
+    "La synchronisation propage les changements. Gardez une sauvegarde indépendante."
+  ],
+  [
+    "backups",
+    "A recovery path you can verify",
+    "Un chemin de restauration vérifiable",
+    [
+      "Select files|Review exclusions and target",
+      "Snapshot|Content-addressed objects",
+      "Retention|Keep the required generations",
+      "Test restore|Use a separate destination"
+    ],
+    [
+      "Choisir|Vérifier exclusions et cible",
+      "Instantané|Objets adressés par contenu",
+      "Rétention|Garder les générations utiles",
+      "Tester la restauration|Destination distincte"
+    ],
+    "A cold archive is another location, not an automatic deletion of the active store.",
+    "Une archive froide est une autre destination, pas une suppression automatique."
+  ],
+  [
+    "vpn",
+    "Transport is not repository authorization",
+    "Le transport n’autorise pas le dépôt",
+    [
+      "Private tunnel|WireGuard endpoint",
+      "Network reachability|Routing and scoped firewall",
+      "Application service|Sync, chat, files or builds",
+      "Service permissions|Authorize each peer separately"
+    ],
+    [
+      "Tunnel privé|Point d’accès WireGuard",
+      "Accessibilité|Routage et pare-feu ciblé",
+      "Service applicatif|Sync, chat, fichiers ou build",
+      "Droits du service|Autoriser chaque pair séparément"
+    ],
+    "Keep service ports inside the VPN. Review administrator prompts.",
+    "Gardez les ports des services dans le VPN. Lisez les demandes administrateur."
+  ],
+  [
+    "ai",
+    "Agent permissions are separate choices",
+    "Les droits de l’agent sont distincts",
+    [
+      "Select provider|CLI, API or local model",
+      "Choose context|Project, files and instructions",
+      "Grant capabilities|Read, edit, network, stage",
+      "Review results|Diff, tests and explicit commit"
+    ],
+    [
+      "Choisir le fournisseur|CLI, API ou modèle local",
+      "Choisir le contexte|Projet, fichiers et consignes",
+      "Accorder les capacités|Lire, modifier, réseau, indexer",
+      "Examiner le résultat|Diff, tests et commit explicite"
+    ],
+    "MCP adds another permission boundary. A completed agent turn is not an approved diff.",
+    "MCP ajoute une autre limite de droits. Une réponse terminée n’est pas un diff approuvé."
+  ],
+  [
+    "updates",
+    "Update without guessing the version",
+    "Mettre à jour sans deviner la version",
+    [
+      "Startup or Help|Check published releases",
+      "Offer|Compare installed and latest",
+      "Download|Verify the package checksum",
+      "Install|Close app, install and reopen"
+    ],
+    [
+      "Démarrage ou Aide|Chercher les releases publiées",
+      "Proposition|Comparer installée et dernière",
+      "Téléchargement|Vérifier la somme du paquet",
+      "Installation|Fermer, installer et relancer"
+    ],
+    "Save work first. Source commits and published application releases are different.",
+    "Enregistrez le travail. Commit source et release de l’application sont distincts."
+  ],
+  [
+    "settings",
+    "Global preferences versus project settings",
+    "Préférences globales et réglages du projet",
+    [
+      "Global appearance|Theme, density and keyboard",
+      "Application behavior|Startup, tray and refresh",
+      "Generated cache|Choose a suitable storage root",
+      "Per-project setup|Mode, remotes and services"
+    ],
+    [
+      "Apparence globale|Thème, densité et clavier",
+      "Comportement|Démarrage, tray et actualisation",
+      "Cache généré|Choisir un stockage adapté",
+      "Réglages par projet|Mode, remotes et services"
+    ],
+    "Changing a cache root does not move repositories or authorize deleting other folders.",
+    "Changer le cache ne déplace pas les dépôts et n’autorise pas d’autres suppressions."
+  ],
+  [
+    "integrations",
+    "Enable only the integration you need",
+    "Activer uniquement l’intégration utile",
+    [
+      "Plugin provider|Enable the installed module",
+      "Project detection|Choose the matching project",
+      "External tools|Verify executable and version",
+      "Feature workspace|Configure, run and inspect"
+    ],
+    [
+      "Fournisseur du plugin|Activer le module installé",
+      "Détection du projet|Choisir le projet compatible",
+      "Outils externes|Vérifier exécutable et version",
+      "Vue de la fonction|Configurer, lancer et vérifier"
+    ],
+    "An integration being enabled does not prove that its engine or remote service is ready.",
+    "Un plugin actif ne garantit pas que le moteur ou service externe est prêt."
+  ],
+  [
+    "tasks",
+    "From a linked task to a merged PR",
+    "De la tâche liée à la PR fusionnée",
+    [
+      "Detect reference|Title, branch or description",
+      "Verify task|Correct project and identity",
+      "Choose transition|Manual or configured policy",
+      "After merge|Apply and verify the result"
+    ],
+    [
+      "Détecter la référence|Titre, branche ou description",
+      "Vérifier la tâche|Bon projet et bonne identité",
+      "Choisir la transition|Manuelle ou politique définie",
+      "Après fusion|Appliquer et vérifier le résultat"
+    ],
+    "Merging code and updating a task are separate remote operations; either can fail.",
+    "Fusion du code et changement de tâche sont distincts ; chacun peut échouer."
+  ]
+]

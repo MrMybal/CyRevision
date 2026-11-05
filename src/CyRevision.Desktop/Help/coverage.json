@@ -1,0 +1,357 @@
+{
+  "userGuideLanguages": [
+    "en",
+    "fr"
+  ],
+  "userGuideChapters": 48,
+  "technicalReferences": [
+    {
+      "source": "docs/architecture/syncthing-integration.md",
+      "id": "reference-architecture-syncthing-integration",
+      "locale": "en",
+      "historical": false,
+      "title": "Syncthing integration",
+      "revision": "b1840f0704bd",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/architecture.md",
+      "id": "reference-architecture",
+      "locale": "fr",
+      "historical": false,
+      "title": "Architecture CyRevision",
+      "revision": "e31dedd8d460",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/asset-diff.md",
+      "id": "reference-asset-diff",
+      "locale": "fr",
+      "historical": false,
+      "title": "Diff d’assets sans Unreal Editor",
+      "revision": "a092f1ea791d",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/code-explorer-and-ai.md",
+      "id": "reference-code-explorer-and-ai",
+      "locale": "en",
+      "historical": false,
+      "title": "Code explorer, global search, and AI workspace",
+      "revision": "4bb3ffedf21c",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/cystore-alpha.md",
+      "id": "reference-cystore-alpha",
+      "locale": "en",
+      "historical": false,
+      "title": "CyStore Alpha",
+      "revision": "c48f6c592d09",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/cytask-integration.md",
+      "id": "reference-cytask-integration",
+      "locale": "en",
+      "historical": false,
+      "title": "CyTask work-item integration",
+      "revision": "e3cb5976df0d",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/cyui-modular-migration.md",
+      "id": "reference-cyui-modular-migration",
+      "locale": "en",
+      "historical": false,
+      "title": "Native CyUI modular integration",
+      "revision": "815e1806510b",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/discord-agent.md",
+      "id": "reference-discord-agent",
+      "locale": "fr",
+      "historical": false,
+      "title": "Agent Discord",
+      "revision": "9755ea9d0246",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/git-explorer-lfs-time-machine.md",
+      "id": "reference-git-explorer-lfs-time-machine",
+      "locale": "fr",
+      "historical": false,
+      "title": "Explorateur Git et Time Machine LFS",
+      "revision": "97b1f5bbbe23",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/git-visualizations.md",
+      "id": "reference-git-visualizations",
+      "locale": "fr",
+      "historical": false,
+      "title": "Visualisations Git alternatives",
+      "revision": "b8d7d63f1f59",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/historical-worktrees.md",
+      "id": "reference-historical-worktrees",
+      "locale": "en",
+      "historical": false,
+      "title": "Historical branches without switching the main repository",
+      "revision": "f3d149ac40c9",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/lfs-storage-management.md",
+      "id": "reference-lfs-storage-management",
+      "locale": "en",
+      "historical": false,
+      "title": "Safe Git LFS storage management",
+      "revision": "f0fd9c230f73",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/linux-server.md",
+      "id": "reference-linux-server",
+      "locale": "fr",
+      "historical": false,
+      "title": "Serveur Linux optionnel",
+      "revision": "5bc8f678bbf2",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/localization.md",
+      "id": "reference-localization",
+      "locale": "fr",
+      "historical": false,
+      "title": "Localisation de l’interface",
+      "revision": "68dc2b475667",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/offline-guide.md",
+      "id": "reference-offline-guide",
+      "locale": "en",
+      "historical": false,
+      "title": "Local CyDoc documentation",
+      "revision": "c3fc415ceed3",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/perforce-integration.md",
+      "id": "reference-perforce-integration",
+      "locale": "en",
+      "historical": false,
+      "title": "Perforce Helix Core integration",
+      "revision": "6dbe49d3f669",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/plugin-api.md",
+      "id": "reference-plugin-api",
+      "locale": "en",
+      "historical": false,
+      "title": "CyRevision plugin and app API",
+      "revision": "9fc888758d2d",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/plugins-and-unreal.md",
+      "id": "reference-plugins-and-unreal",
+      "locale": "en",
+      "historical": false,
+      "title": "CyRevision plugins and Unreal integration",
+      "revision": "437eacf8307c",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/pull-request-manager.md",
+      "id": "reference-pull-request-manager",
+      "locale": "en",
+      "historical": false,
+      "title": "Pull request manager",
+      "revision": "ce4fea40611a",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/release-0.1.26.md",
+      "id": "reference-release-0-1-26",
+      "locale": "en",
+      "historical": true,
+      "title": "CyRevision 0.1.26 Alpha",
+      "revision": "b5c2107d2b0c",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/release-0.1.27.md",
+      "id": "reference-release-0-1-27",
+      "locale": "en",
+      "historical": true,
+      "title": "CyRevision 0.1.27 Alpha",
+      "revision": "058d74d6cac1",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/release-0.1.28.md",
+      "id": "reference-release-0-1-28",
+      "locale": "en",
+      "historical": true,
+      "title": "CyRevision 0.1.28 Alpha",
+      "revision": "9e201b1bdb33",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/release-0.1.29.md",
+      "id": "reference-release-0-1-29",
+      "locale": "en",
+      "historical": true,
+      "title": "CyRevision 0.1.29 Alpha",
+      "revision": "d053d0ebcc40",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/release-0.1.30.md",
+      "id": "reference-release-0-1-30",
+      "locale": "en",
+      "historical": true,
+      "title": "CyRevision 0.1.30 Alpha",
+      "revision": "ef1d13a5163a",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/release-0.1.31.md",
+      "id": "reference-release-0-1-31",
+      "locale": "en",
+      "historical": true,
+      "title": "CyRevision 0.1.31 Alpha",
+      "revision": "4aa6ec526bd9",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/release-0.1.32.md",
+      "id": "reference-release-0-1-32",
+      "locale": "en",
+      "historical": true,
+      "title": "CyRevision 0.1.32 Alpha",
+      "revision": "2b6f95aa9cd4",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/release-0.1.33.md",
+      "id": "reference-release-0-1-33",
+      "locale": "en",
+      "historical": true,
+      "title": "CyRevision 0.1.33 Alpha",
+      "revision": "eb7e9c2cca43",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/remote-build-agent.md",
+      "id": "reference-remote-build-agent",
+      "locale": "en",
+      "historical": false,
+      "title": "Remote build agent",
+      "revision": "083a8aff9080",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/security.md",
+      "id": "reference-security",
+      "locale": "fr",
+      "historical": false,
+      "title": "Modèle de sécurité",
+      "revision": "ff7e0d39d752",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/server-api.md",
+      "id": "reference-server-api",
+      "locale": "fr",
+      "historical": false,
+      "title": "API CyRevision Server",
+      "revision": "9af1ff061923",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/smart-sync-and-cold-archive.md",
+      "id": "reference-smart-sync-and-cold-archive",
+      "locale": "fr",
+      "historical": false,
+      "title": "Synchronisation intelligente et archive froide",
+      "revision": "49bb848ae6f2",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/team-chat.md",
+      "id": "reference-team-chat",
+      "locale": "en",
+      "historical": false,
+      "title": "Team chat over VPN or Sync",
+      "revision": "0a798869ae65",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "docs/user-guide.md",
+      "id": "reference-user-guide",
+      "locale": "fr",
+      "historical": false,
+      "title": "Guide utilisateur",
+      "revision": "328941338c08",
+      "missingLocale": "en"
+    },
+    {
+      "source": "docs/wireguard-vpn.md",
+      "id": "reference-wireguard-vpn",
+      "locale": "fr",
+      "historical": false,
+      "title": "VPN WireGuard : système ou intégré",
+      "revision": "e9bbb85262cf",
+      "missingLocale": "en"
+    },
+    {
+      "source": "plugins/CyRevisionGodot/README.md",
+      "id": "reference-cyrevisiongodot",
+      "locale": "en",
+      "title": "CyRevision Godot companion",
+      "revision": "8c2d05e970d8",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "plugins/CyRevisionLore/README.md",
+      "id": "reference-cyrevisionlore",
+      "locale": "en",
+      "title": "CyRevision Lore Companion (experimental)",
+      "revision": "27a427d6651b",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "plugins/CyRevisionUnity/README.md",
+      "id": "reference-cyrevisionunity",
+      "locale": "en",
+      "title": "CyRevision Unity companion",
+      "revision": "c448a2ec804a",
+      "missingLocale": "fr"
+    },
+    {
+      "source": "plugins/CyRevisionUnreal/README.md",
+      "id": "reference-cyrevisionunreal",
+      "locale": "en",
+      "title": "CyRevision Collaboration for Unreal Engine",
+      "revision": "d37b967c318a",
+      "missingLocale": "fr"
+    }
+  ],
+  "sourceScope": [
+    "src/CyRevision.Plugin.Abstractions/PluginContracts.cs",
+    "src/CyRevision.Plugin.Abstractions/GameEngineIntegrationPluginBase.cs",
+    "native/CyRevision.Native/DocumentationLinks.h"
+  ],
+  "repositoryOnly": {
+    "mode-verification-2026-09-11.md": "Dated verification record, retained in the repository.",
+    "repository-privacy.md": "Repository-maintenance procedure, retained in the repository.",
+    "releasing.md": "Release-engineering procedure, retained in the repository."
+  }
+}

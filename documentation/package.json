@@ -1,0 +1,19 @@
+{
+  "name": "cyrevision-documentation",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "cydoc": "file:vendor/cydoc-0.1.0-774f2a7.tgz"
+  },
+  "devDependencies": {
+    "happy-dom": "21.0.4"
+  }
+}

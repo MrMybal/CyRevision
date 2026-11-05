@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <deque>
+#include <functional>
 
 namespace cyrevision {
 std::string text(const Json& object,const char* key,const std::string& fallback="");
@@ -36,6 +37,8 @@ class Workspace {
     bool updateOpen_=false, offerUpdateAfterCheck_=false;
     std::string requestedUpdateRevision_;
     std::string seenUpdateVersion_;
+    std::string lastDocumentationLanguage_, lastDocumentationLink_;
+    std::function<bool(const std::string&)> documentationOpener_;
     int skip_=0, anchor_=-1;
     unsigned long long lastPoll_=0;
     struct TableView {std::string filter,sort,selection,awaitingSelection;int skip=0,take=200,anchor=-1;bool descending=false,multiple=false;std::unordered_set<std::string> selected;Json remembered=Json::object();};
@@ -109,6 +112,9 @@ class Workspace {
     void documentPanel(const char* propertyName,const char* id);
     void transcriptPanel(const char* source,const char* id,ImVec2 size={});
     void documentLink(const std::string& link);
+    void documentationPanel();
+    bool toolColumns(const char* id,float left=0.44f);
+    void openDocumentation(const std::string& topic="getting-started",const std::string& anchor="",const std::string& media="");
     SourceEditor& sourceEditor(const std::string& id);
     void navigate(const std::string& workspaceId);
     Json selectedRows(const std::string& source) const;
@@ -137,7 +143,7 @@ class Workspace {
 public:
     bool requestClose=false;
     bool requestHide=false;
-    explicit Workspace(EngineConnection& client,std::wstring backend);
+    explicit Workspace(EngineConnection& client,std::wstring backend,std::function<bool(const std::string&)> documentationOpener={});
     void tick(bool background=false);
     void frame();
     Json desktopPreferences()const{return state_.value("preferences",Json::object()).value("desktop",Json::object());}

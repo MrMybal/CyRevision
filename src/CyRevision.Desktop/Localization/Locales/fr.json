@@ -1,5 +1,12 @@
 {
   "$name": "Français",
+  "CyDoc documentation": "Documentation CyDoc",
+  "Open user guide": "Ouvrir le guide utilisateur",
+  "Technical references": "Références techniques",
+  "Preferences": "Préférences",
+  "CyRevision updates": "Mises à jour de CyRevision",
+  "Open the complete local guide in your browser. No server or Internet connection is required. Images enlarge inside the reader.": "Ouvrez le guide local complet dans votre navigateur. Aucun serveur ni accès Internet n’est nécessaire. Les images s’agrandissent dans le lecteur.",
+  "F1 opens help for the current view. Search, history, language and reading positions are managed by CyDoc.": "F1 ouvre l’aide de la vue active. CyDoc gère la recherche, l’historique, la langue et les positions de lecture.",
   "$patterns": {
     "^Keep the (\\d+) most recent versions$": "Conserver les $1 versions les plus récentes",
     "^Peer: (.+)$": "Pair : $1",

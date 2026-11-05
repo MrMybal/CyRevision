@@ -47,7 +47,7 @@
 
   <ItemGroup>
     <None Update="Localization\Locales\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <None Update="Documentation\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Help\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="VpnRuntime\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="SyncthingRuntime\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\plugins\CyRevision.UnrealIntegration\cyrevision-plugin.json"
@@ -124,6 +124,7 @@
       <CyTaskPluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.CyTask\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.CyTask.dll</CyTaskPluginAssembly>
       <CyStorePluginAssembly>$(MSBuildProjectDirectory)\..\CyRevision.Plugin.CyStore\bin\$(Configuration)\$(TargetFramework)\CyRevision.Plugin.CyStore.dll</CyStorePluginAssembly>
     </PropertyGroup>
+
     <MakeDir Directories="$(OutDir)Plugins\CyRevision.UnrealIntegration" />
     <Copy SourceFiles="$(UnrealPluginAssembly)"
           DestinationFolder="$(OutDir)Plugins\CyRevision.UnrealIntegration"
@@ -219,5 +220,8 @@
     <Copy SourceFiles="$(CyStorePluginAssembly)"
           DestinationFolder="$(PublishDir)Plugins\CyRevision.CyStoreIntegration"
           SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="GenerateCyDocHelp" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)/../.." Command="node documentation/build.mjs --ensure" />
   </Target>
 </Project>

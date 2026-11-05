@@ -3,6 +3,7 @@
 #include <cyui/Gallery.h>
 #include "StringInput.h"
 #include "Assets.h"
+#include "DocumentationLinks.h"
 #include <imgui_internal.h>
 #include <shellapi.h>
 #include <algorithm>
@@ -14,8 +15,8 @@ namespace cyrevision {
 std::string text(const Json& object,const char* key,const std::string& fallback){auto value=object.find(key);return value!=object.end() && value->is_string()?value->get<std::string>():fallback;}
 std::string display(const Json& value){if(value.is_null())return "";if(value.is_string())return value.get<std::string>();if(value.is_boolean())return value.get<bool>()?"Yes":"No";return value.dump();}
 ImU32 statusColour(const std::string& value){std::string normalized=value;std::transform(normalized.begin(),normalized.end(),normalized.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});const auto& p=cyui::palette();if(normalized=="success" || normalized=="completed" || normalized=="open" || normalized=="added")return p.success;if(normalized=="merged")return p.accent;if(normalized=="failure" || normalized=="failed" || normalized=="error" || normalized=="conflict" || normalized=="closed" || normalized=="deleted" || normalized=="removed")return p.error;if(normalized=="warning" || normalized=="queued" || normalized=="cancelled" || normalized=="untracked")return p.warning;if(normalized=="in_progress" || normalized=="running" || normalized=="modified")return p.info;return p.text;}
-Workspace::Workspace(EngineConnection& client,std::wstring backend):client_(client),backend_(std::move(backend)){registerAppTranslations();workspace_="overview";table_="";send({{"command","catalog"}});}
-unsigned long long Workspace::send(Json request){auto command=text(request,"command");bool operation=command!="state" && command!="catalog" && command!="updates.check" && command!="cancel" && command!="prefs.cancel" && command!="set" && command!="select" && command!="itemSet" && command!="include" && text(request,"operation")!="cancel";
+Workspace::Workspace(EngineConnection& client,std::wstring backend,std::function<bool(const std::string&)> documentationOpener):client_(client),backend_(std::move(backend)),documentationOpener_(std::move(documentationOpener)){registerAppTranslations();workspace_="overview";table_="";send({{"command","catalog"}});}
+unsigned long long Workspace::send(Json request){auto command=text(request,"command");bool operation=command.rfind("docs.",0)!=0 && command!="app.language" && command!="state" && command!="catalog" && command!="updates.check" && command!="cancel" && command!="prefs.cancel" && command!="set" && command!="select" && command!="itemSet" && command!="include" && text(request,"operation")!="cancel";
     if(command=="cancel")queuedRefreshes_.clear();
     if(operation){for(const auto& pending:pending_)if(pending.second==command)return 0;pendingAction_=true;}
     if(command=="overview.installUpdate")request["nativeProcessId"]=GetCurrentProcessId();
@@ -34,7 +35,7 @@ bool Workspace::selectionPending(const std::string& source)const{
 }
 std::string Workspace::loadingLabel(const std::string& workspace)const{
     for(const auto& entry:queuedRefreshes_)if(workspace.empty() || text(entry.second,"viewWorkspace")==workspace)return "Waiting for current operation · "+text(action(entry.first),"label",entry.first);
-    for(const auto& entry:pendingRequests_){auto& request=entry.second;auto command=text(request,"command");if(command=="state" || command=="catalog" || command=="updates.check" || command=="set" || command=="navigation")continue;
+    for(const auto& entry:pendingRequests_){auto& request=entry.second;auto command=text(request,"command");if(command.rfind("docs.",0)==0 || command=="app.language" || command=="state" || command=="catalog" || command=="updates.check" || command=="set" || command=="navigation")continue;
         if(workspace.empty() || text(request,"viewWorkspace")==workspace){auto name=text(request,"action",command);return "Loading · "+(command=="select"?text(request,"source","selection"):text(action(name),"label",name));}}
     if(state_.contains("activity")){const auto& activity=state_["activity"];if(!text(activity,"command").empty() && (workspace.empty() || text(activity,"workspace")==workspace)){auto name=text(activity,"action");if(name.empty())name=text(activity,"command");return "Loading · "+text(action(name),"label",name);}}
     if(state_.contains("loading"))for(const auto& item:state_["loading"])if(workspace.empty() || text(item,"workspace")==workspace || text(item,"workspace")=="project")return text(item,"label","Loading…");
@@ -72,6 +73,9 @@ void Workspace::menu(){
         if(ImGui::BeginMenu("Open windows",!detachedPanes_.empty())){for(auto& pane:detachedPanes_)if(pane.open){cyui::ScopedID id(static_cast<int>(pane.id));if(ImGui::MenuItem((pane.title.empty()?workspaceLabel(pane.workspace):pane.title).c_str()))pane.focus=true;}ImGui::Separator();if(ImGui::MenuItem("Close auxiliary views"))for(auto& pane:detachedPanes_)pane.open=false;ImGui::EndMenu();}
         if(ImGui::MenuItem("Reset panel layout")){layoutChecked_=false;resetLayout_=true;}ImGui::MenuItem("Advanced inspector",nullptr,&showInspector_);if(ImGui::MenuItem("Theme editor"))themeEditor_=true;if(ImGui::MenuItem("Classic interface"))ShellExecuteW(nullptr,L"open",backend_.c_str(),L"--classic",nullptr,SW_SHOWNORMAL);ImGui::EndMenu();}
     if(ImGui::BeginMenu(cyui::trLabel("Help").c_str())){
+        if(ImGui::MenuItem(cyui::trLabel("User guide").c_str(),nullptr,false,ready()))openDocumentation();
+        if(ImGui::MenuItem(cyui::trLabel("Help for this view").c_str(),"F1",false,ready()))openDocumentation(workspace_);
+        ImGui::Separator();
         if(ImGui::MenuItem(cyui::trLabel("Check for updates").c_str(),nullptr,false,client_.alive() && flag("CanCheckForUpdates",true)))checkForUpdates();
         if(ImGui::MenuItem(cyui::trLabel("View available update").c_str(),nullptr,false,flag("HasUpdateAvailable")))updateOpen_=true;
         ImGui::EndMenu();
@@ -120,11 +124,17 @@ void Workspace::tick(bool background){
     for(auto& response:client_.take()){
         auto id=response.value("id",0ULL);auto found=pending_.find(id);auto command=found==pending_.end()?"":found->second;if(found!=pending_.end())pending_.erase(found);pendingRequests_.erase(id);
         if(command=="state")requestingState_=false;
-        pendingAction_=false;for(const auto& pending:pending_)if(pending.second!="state" && pending.second!="catalog" && pending.second!="updates.check" && pending.second!="cancel" && pending.second!="prefs.cancel" && pending.second!="set" && pending.second!="select" && pending.second!="itemSet" && pending.second!="include")pendingAction_=true;
+        pendingAction_=false;for(const auto& pending:pending_)if(pending.second.rfind("docs.",0)!=0 && pending.second!="app.language" && pending.second!="state" && pending.second!="catalog" && pending.second!="updates.check" && pending.second!="cancel" && pending.second!="prefs.cancel" && pending.second!="set" && pending.second!="select" && pending.second!="itemSet" && pending.second!="include")pendingAction_=true;
         auto submitted=submittedDrafts_.find(id);
         if(!response.value("ok",false)){error_=text(response,"error","Engine request failed.");if(command=="project")openingProject_.clear();if(submitted!=submittedDrafts_.end())submittedDrafts_.erase(submitted);continue;}
         if(submitted!=submittedDrafts_.end()){for(const auto& entry:submitted->second.items()){if(draftValues_.contains(entry.key()) && draftValues_[entry.key()]==entry.value())draftValues_.erase(entry.key());auto draft=edits_.find(entry.key());if(draft!=edits_.end() && draft->second==display(entry.value()))edits_.erase(draft);}submittedDrafts_.erase(submitted);}
-        const auto result=response.value("result",Json::object());if(command=="catalog")catalog_=result;
+        const auto result=response.value("result",Json::object());
+        if(command=="docs.open"){
+            auto url=text(result,"url");
+            if(!isLocalDocumentationLink(url))error_="Invalid local documentation link.";
+            else{lastDocumentationLink_=url;if(documentationOpener_ && !documentationOpener_(url))error_="The local documentation could not be opened in your browser.";}
+        }
+        else if(command=="catalog")catalog_=result;
         else if(command=="state"){
             if(text(result,"workspaceId")!=workspace_)continue;state_=result;++stateGeneration_;projectId_=text(state_,"projectId");
             if(projectId_==openingProject_)openingProject_.clear();
@@ -163,6 +173,8 @@ void Workspace::tick(bool background){
 }
 void Workspace::frame(){
     tick();
+    if(ready() && lastDocumentationLanguage_!=cyui::locale()){lastDocumentationLanguage_=cyui::locale();send({{"command","app.language"},{"language",lastDocumentationLanguage_}});lastPoll_=0;}
+    if(ready() && ImGui::IsKeyPressed(ImGuiKey_F1,false))openDocumentation(workspace_);
     // Scoped semantic colours keep all nested selected tabs readable in every theme.
     cyui::ScopedColor selectedTab(ImGuiCol_TabSelected,cyui::palette().accent);
     cyui::ScopedColor selectedDimmedTab(ImGuiCol_TabDimmedSelected,cyui::palette().accentDim);

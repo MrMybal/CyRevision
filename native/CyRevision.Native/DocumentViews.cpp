@@ -1,6 +1,7 @@
 #include "Workspace.h"
 #include "UiIdentity.h"
 #include "Assets.h"
+#include "StringInput.h"
 #include <algorithm>
 
 namespace cyrevision {
@@ -18,6 +19,7 @@ void Workspace::imageView(const std::string& path,const char* id,ImVec2 size){
     cyui::imageViewport(id,view.state,{texture->id,texture->width,texture->height},size);
 }
 void Workspace::documentLink(const std::string& link){
+    if(link.rfind("doc:",0)==0){openDocumentation(link);return;}
     // A document can propose navigation, never invoke an arbitrary shell scheme.
     const bool scheme=link.rfind("https://",0)==0 || link.rfind("http://",0)==0;
     const auto authorityEnd=link.find('/',link.find("://")+3);
@@ -26,6 +28,22 @@ void Workspace::documentLink(const std::string& link){
         cyui::notify(cyui::tr("This link cannot be opened from a document.").c_str(),cyui::Tone::warning);return;
     }
     pendingDocumentLink_=link;
+}
+void Workspace::openDocumentation(const std::string& topic,const std::string& anchor,const std::string& media){
+    send({{"command","docs.open"},{"topicId",topic},{"anchor",anchor},{"mediaId",media}});lastPoll_=0;
+}
+void Workspace::documentationPanel(){
+    cyui::heading(cyui::tr("CyDoc documentation").c_str(),2);
+    ImGui::TextWrapped("%s",cyui::tr("Open the complete local guide in your browser. No server or Internet connection is required. Images enlarge inside the reader.").c_str());
+    cyui::space(8);
+    const auto docs=state_.value("documentation",Json::object());
+    {cyui::ScopedDisabled disabled(!docs.value("available",false));if(cyui::primaryButton(cyui::trLabel("Open user guide").c_str()))openDocumentation("getting-started");}
+    ImGui::SameLine();if(cyui::button("English"))cyui::setLocale("en");ImGui::SameLine();if(cyui::button("Français"))cyui::setLocale("fr");
+    cyui::space(8);
+    if(cyui::button("Git / LFS"))openDocumentation("git-workflow");ImGui::SameLine();if(cyui::button("PR / CI"))openDocumentation("ci-actions");
+    if(cyui::button(cyui::trLabel("Preferences").c_str()))openDocumentation("preferences");
+    ImGui::SameLine();if(cyui::button(cyui::trLabel("Technical references").c_str()))openDocumentation("technical-references");
+    cyui::space(8);ImGui::TextWrapped("%s",cyui::tr("F1 opens help for the current view. Search, history, language and reading positions are managed by CyDoc.").c_str());
 }
 void Workspace::documentPanel(const char* property,const char* id){
     cyui::ScopedID scope(id);auto content=value(property);auto& view=documents_[tableKey(id)];view.document.setMarkdown(content);

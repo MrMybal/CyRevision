@@ -2176,16 +2176,13 @@ public partial class MainWindow : Window
     private void OnShowPluginsWorkspaceClick(object? sender, RoutedEventArgs e) =>
         NavigateToWorkspace(PluginsWorkspaceTab);
 
-    private void OnShowHelpWorkspaceClick(object? sender, RoutedEventArgs e) =>
-        NavigateToWorkspace(HelpWorkspaceTab);
+    private void OnShowHelpWorkspaceClick(object? sender, RoutedEventArgs e) => OpenCyDoc("getting-started");
 
     private void OnOpenCurrentPageDocumentationClick(object? sender, RoutedEventArgs e)
     {
-        string pageName = WorkspaceTabs.SelectedItem is TabItem tab
-            ? WorkspaceTabDisplayName(tab)
-            : string.Empty;
-        _viewModel.DocumentationSearch = pageName;
-        NavigateToWorkspace(HelpWorkspaceTab);
+        string? tabName = (WorkspaceTabs.SelectedItem as TabItem)?.Name;
+        var workspace = Native.NativeWorkspaceCatalog.All.FirstOrDefault(view => view.LoadTab == tabName);
+        OpenCyDoc(workspace?.Id ?? "getting-started");
     }
 
     private void OnOpenGlobalSearchClick(object? sender, RoutedEventArgs e)

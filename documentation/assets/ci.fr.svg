@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760">
+<rect width="1280" height="760" fill="#111820"/>
+<text x="48" y="48" fill="#F29A43" font-family="sans-serif" font-size="18" font-weight="700">CYREVISION / GUIDE UTILISATEUR</text>
+<text x="48" y="110" fill="#F2F5F7" font-family="sans-serif" font-size="34" font-weight="700">Lire la CI courante, pas un ancien succès</text>
+<rect x="48" y="220" width="568" height="140" rx="14" fill="#1F2B36" stroke="#415467" stroke-width="2"/>
+<text x="70" y="253" fill="#F29A43" font-family="sans-serif" font-size="19" font-weight="700">01</text>
+<text x="120" y="259" fill="#FFFFFF" font-family="sans-serif" font-size="25" font-weight="700">Pull request</text>
+<text x="70" y="308" fill="#CAD8E2" font-family="sans-serif" font-size="23" font-weight="400">Commit courant et branche</text>
+<rect x="664" y="220" width="568" height="140" rx="14" fill="#1F2B36" stroke="#415467" stroke-width="2"/>
+<text x="686" y="253" fill="#F29A43" font-family="sans-serif" font-size="19" font-weight="700">02</text>
+<text x="736" y="259" fill="#FFFFFF" font-family="sans-serif" font-size="25" font-weight="700">Exécution</text>
+<text x="686" y="308" fill="#CAD8E2" font-family="sans-serif" font-size="23" font-weight="400">En attente, en cours, terminée</text>
+<rect x="48" y="390" width="568" height="140" rx="14" fill="#1F2B36" stroke="#415467" stroke-width="2"/>
+<text x="70" y="423" fill="#F29A43" font-family="sans-serif" font-size="19" font-weight="700">03</text>
+<text x="120" y="429" fill="#FFFFFF" font-family="sans-serif" font-size="25" font-weight="700">Job et étapes</text>
+<text x="70" y="478" fill="#CAD8E2" font-family="sans-serif" font-size="23" font-weight="400">Lire la conclusion réelle</text>
+<rect x="664" y="390" width="568" height="140" rx="14" fill="#1F2B36" stroke="#415467" stroke-width="2"/>
+<text x="686" y="423" fill="#F29A43" font-family="sans-serif" font-size="19" font-weight="700">04</text>
+<text x="736" y="429" fill="#FFFFFF" font-family="sans-serif" font-size="25" font-weight="700">Log complet</text>
+<text x="686" y="478" fill="#CAD8E2" font-family="sans-serif" font-size="23" font-weight="400">Tout, erreurs, alertes + recherche</text>
+<text x="48" y="633" fill="#AAC8C5" font-family="sans-serif" font-size="23" font-weight="400">Un filtre vide ne prouve pas la réussite. Annuler peut viser tout le run.</text>
+<text x="48" y="724" fill="#91A3B1" font-family="sans-serif" font-size="16" font-weight="400">EN / FR · Schéma conceptuel — pas un état en direct</text>
+</svg>

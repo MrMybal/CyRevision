@@ -116,6 +116,24 @@ public sealed class ApplicationUpdateStartupTests
 
     private static JsonElement Request(string command) => JsonSerializer.SerializeToElement(new { command });
 
+    [Fact]
+    public async Task CyDocLinksWorkWithoutAProjectAndDuringAnOperation()
+    {
+        await using Fixture fixture = new(Path.Combine(AppContext.BaseDirectory, "Help"));
+        Assert.True(fixture.Model.IsDocumentationAvailable);
+        Assert.True(NativeWorkspaceCatalog.IsAvailable(NativeWorkspaceCatalog.Find("help"), fixture.Model));
+        var busy = typeof(MainWindowViewModel).GetField("_isBusy", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        busy.SetValue(fixture.Model, true);
+        var result = JsonSerializer.SerializeToElement(await fixture.Adapter.ExecuteAsync(JsonSerializer.SerializeToElement(new { id = 42, command = "docs.open", topicId = "ci-actions", projectId = "stale-context" })));
+        Assert.EndsWith("#/en/ci-actions", result.GetProperty("url").GetString());
+        await fixture.Adapter.ExecuteAsync(JsonSerializer.SerializeToElement(new { command = "app.language", language = "fr" }));
+        var french = JsonSerializer.SerializeToElement(await fixture.Adapter.ExecuteAsync(JsonSerializer.SerializeToElement(new { id = 43, command = "docs.open", topicId = "git-history", anchor = "file-history-including-lfs", mediaId = "history-v2" })));
+        Assert.EndsWith("#/fr/git-history/file-history-including-lfs?media=history-v2", french.GetProperty("url").GetString());
+        var context = JsonSerializer.SerializeToElement(await fixture.Adapter.ExecuteAsync(JsonSerializer.SerializeToElement(new { command = "docs.open", topicId = "code" })));
+        Assert.EndsWith("#/fr/code-explorer", context.GetProperty("url").GetString());
+        busy.SetValue(fixture.Model, false);
+    }
+
     private sealed class UpdateHandler : HttpMessageHandler
     {
         public int Requests { get; private set; }
@@ -168,7 +186,7 @@ public sealed class ApplicationUpdateStartupTests
         public UpdateHandler Handler { get; } = new();
         public MainWindowViewModel Model { get; }
         public NativeModelAdapter Adapter { get; }
-        public Fixture()
+        public Fixture(string? documentationDirectory = null)
         {
             ApplicationPaths paths = new(Path.Combine(_root, "config"), Path.Combine(_root, "data"), Path.Combine(_root, "cache"));
             Directory.CreateDirectory(paths.ConfigurationDirectory);
@@ -189,7 +207,7 @@ public sealed class ApplicationUpdateStartupTests
                 new JsonSwarmProfileStore(paths.VpnDirectory), new SwarmSetupService(vpnNetwork), new JsonVpnFileExchangeProfileStore(paths.VpnDirectory), new VpnFileExchangeService(),
                 new JsonTeamChatProfileStore(Path.Combine(paths.ConfigurationDirectory, "team-chat")), new TeamChatService(paths.TeamChatDirectory),
                 new JsonLfsManagementProfileStore(paths.LfsManagementDirectory), new LfsStorageManager(), new JsonRemoteBuildConnectionStore(paths.RemoteBuildDirectory), new RemoteBuildSnapshotBuilder(),
-                localization, new OfflineDocumentationService(Path.Combine(_root, "docs")), updates, discordStore, discord, new DiscordControlConnectionStore(paths.DiscordControlDirectory),
+                localization, new OfflineDocumentationService(documentationDirectory ?? Path.Combine(_root, "docs")), updates, discordStore, discord, new DiscordControlConnectionStore(paths.DiscordControlDirectory),
                 new CyRevisionPluginManager(_root, paths.ConfigurationDirectory, paths.DataDirectory, "0.1.32"), new CodeWorkspaceService(),
                 new GitHubPullRequestService(), new GitHubActionsService(), _log, new RepositoryConsoleService(paths.ConfigurationDirectory));
             Adapter = new(Model, paths.ConfigurationDirectory);

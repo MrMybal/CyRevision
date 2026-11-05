@@ -21,7 +21,7 @@ internal sealed class NativeNavigationState(string? configurationDirectory)
             activeWorkspace=active.Id,activeCategory=NativeWorkspaceCatalog.CategoryFor(active,model),
             preset=state?.TabVisibilityPreset??"Full workspace",
             presets=NativeWorkspacePresets.Presets.Keys.ToArray(),
-            tabs=NativeWorkspaceCatalog.All.Select(item=>new {item.Id,item.Label,item.LoadTab,category=NativeWorkspaceCatalog.CategoryFor(item,model),available=NativeWorkspaceCatalog.IsAvailable(item,model),visible=item.Id is "overview" or "visible" || !hidden.Contains(item.LoadTab)}),
+            tabs=NativeWorkspaceCatalog.All.Select(item=>new {item.Id,item.Label,item.LoadTab,category=NativeWorkspaceCatalog.CategoryFor(item,model),available=NativeWorkspaceCatalog.IsAvailable(item,model),visible=item.Id is "overview" or "visible" or "help" || !hidden.Contains(item.LoadTab)}),
             categoryTabs=state?.CategoryTabs??new Dictionary<string,string>()
         };
     }
@@ -47,7 +47,7 @@ internal sealed class NativeNavigationState(string? configurationDirectory)
         else if(operation=="visibility")
         {
             string id=NativeRequestTargets.Workspace(request);var workspace=NativeWorkspaceCatalog.Find(id);
-            if(workspace.Id is "overview" or "visible")return;
+            if(workspace.Id is "overview" or "visible" or "help")return;
             if(request.GetProperty("visible").GetBoolean())hidden.Remove(workspace.LoadTab);else hidden.Add(workspace.LoadTab);
         }
         else throw new ArgumentException("Unknown navigation action.");

@@ -6,4 +6,8 @@ public sealed record DocumentationTopic(
     string Title,
     string Summary,
     string Body,
-    IReadOnlyList<string>? Keywords);
+    IReadOnlyList<string>? Keywords,
+    IReadOnlyList<string>? Workspaces = null)
+{
+    public string Language { get; init; } = "en";
+}

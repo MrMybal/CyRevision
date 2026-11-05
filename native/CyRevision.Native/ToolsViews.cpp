@@ -30,12 +30,12 @@ std::string pickToolPath(ToolPicker kind,const char* title) {
     PWSTR path{};if(FAILED(item->GetDisplayName(SIGDN_FILESYSPATH,&path))) return {};
     auto result=utf8(path);CoTaskMemFree(path);return result;
 }
-bool toolColumns(const char* id,float left=0.44f) {
+}
+bool Workspace::toolColumns(const char* id,float left) {
     if(!ImGui::BeginTable(id,2,ImGuiTableFlags_Resizable|ImGuiTableFlags_BordersInnerV)) return false;
     ImGui::TableSetupColumn("Navigation",ImGuiTableColumnFlags_WidthStretch,left);
     ImGui::TableSetupColumn("Details",ImGuiTableColumnFlags_WidthStretch,1.0f-left);
     ImGui::TableNextRow();ImGui::TableNextColumn();return true;
-}
 }
 
 bool Workspace::toolsView() {
@@ -652,16 +652,7 @@ bool Workspace::toolsView() {
         summary("PerformanceSummary");commands({{"RefreshPerformanceDiagnostics","Refresh metrics"},{"ClearPerformanceDiagnostics","Clear samples"}});list("PerformanceMetrics");return true;
     }
     if(workspace_=="help") {
-        if(toolColumns("##help",0.3f)) {
-            scrollBegin("##documentationIndex");cyui::heading("Offline documentation",3);field("DocumentationSearch","Search documentation");list("DocumentationTopics");ImGui::EndChild();
-            ImGui::TableNextColumn();scrollBegin("##documentationTopic");
-            if(cyui::beginSection("CyRevision updates",false)) {
-                summary("CurrentApplicationVersion");summary("UpdateStatus");command("CheckForUpdatesAsync","Check for updates");ImGui::SameLine();
-                {cyui::ScopedDisabled disabled(!flag("HasUpdateAvailable"));if(cyui::button(cyui::trLabel("View available update").c_str()))updateOpen_=true;}
-                summary("UpdateReleaseNotes");cyui::endSection();
-            }
-            summary("SelectedDocumentationTopic.Category");summary("SelectedDocumentationTopic.Title");summary("SelectedDocumentationTopic.Summary");documentPanel("SelectedDocumentationTopic.Body","##topicBody");ImGui::EndChild();ImGui::EndTable();
-        }return true;
+        documentationPanel();return true;
     }
     return false;
 }

@@ -185,7 +185,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         Json savedWindows=Json::array();std::vector<std::string> openWindows;
         std::vector<std::wstring> arguments;
         std::string theme="mid-grey",locale="en",captureWorkspace;
-        bool comfortable=false,verifyMultiWindow=false,verifyTray=false,backgroundStart=false,captureSplit=false,captureSplitSelected=false;
+        bool comfortable=false,verifyMultiWindow=false,verifyTray=false,backgroundStart=false,captureSplit=false,captureSplitSelected=false,explicitLocale=false;
         int argumentCount=0;
         auto** commandLine=CommandLineToArgvW(GetCommandLineW(),&argumentCount);
         for(int index=1;index<argumentCount;++index) {
@@ -196,7 +196,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
             else if(argument==L"--capture-workspace")captureWorkspace=utf8(next());
             else if(argument==L"--capture-side-by-side")captureSplit=true;
             else if(argument==L"--theme") theme=utf8(next());
-            else if(argument==L"--locale") locale=utf8(next());
+            else if(argument==L"--locale") {locale=utf8(next());explicitLocale=true;}
             else if(argument==L"--comfortable") comfortable=true;
             else if(argument==L"--open-window")openWindows.push_back(utf8(next()));
             else if(argument==L"--verify-multi-window")verifyMultiWindow=true;
@@ -231,8 +231,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         auto layoutPath=utf8((configuration/L"native-v2.ini").wstring());
         if(std::ifstream settings{settingsPath};settings && capture.empty()) {
             auto saved=Json::parse(settings,nullptr,false);
-            if(saved.is_object()) {theme=text(saved,"theme",theme);locale=text(saved,"locale",locale);comfortable=saved.value("comfortable",comfortable);savedWindows=saved.value("windows",Json::array());}
+            if(saved.is_object()) {theme=text(saved,"theme",theme);if(!explicitLocale)locale=text(saved,"locale",locale);comfortable=saved.value("comfortable",comfortable);savedWindows=saved.value("windows",Json::array());}
         }
+        if(!explicitLocale){std::ifstream languageFile{configuration/L"ui-language.txt"};std::string language;std::getline(languageFile,language);if(language=="en" || language=="fr")locale=language;}
         ImGui_ImplWin32_EnableDpiAwareness();
         IMGUI_CHECKVERSION();ImGui::CreateContext();
         ImGui::GetCurrentContext()->ErrorCallback=[](ImGuiContext*,void*,const char* message){uiError=message;fprintf(stderr,"Native UI: %s\n",message);};
@@ -258,7 +259,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         dxBackend=true;
         initNativeTextures(gDevice);
         client=std::make_unique<Client>(backend,arguments);
-        Workspace workspace(*client,backend);
+        Workspace workspace(*client,backend,[](const std::string& url){return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr,L"open",wide(url).c_str(),nullptr,nullptr,SW_SHOWNORMAL))>32;});
         workspace.restoreWindowLayout(savedWindows);for(const auto& id:openWindows)workspace.openWorkspaceWindow(id);
         if(backgroundStart && tray->available())tray->hide();else {ShowWindow(window,SW_SHOWDEFAULT);UpdateWindow(window);}
         bool done=false,didMinimize=false,didRestore=false;int captureFrames=0,minimizedFrames=0;auto started=GetTickCount64();ImVec2 mainDisplaySize=cyui::dp(1500,960);

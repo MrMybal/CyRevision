@@ -79,6 +79,7 @@ Open `CyRevision.sln` in JetBrains Rider. The solution currently targets **.NET 
 ### Requirements
 
 - .NET SDK 8 or newer.
+- Node.js 22+ and npm for generating/checking the bundled CyDoc manual (build time only).
 - Git.
 - Git LFS.
 - Syncthing only when a Sync mode is enabled.
@@ -129,7 +130,9 @@ In **Git + Sync** mode, the shared directory contains signed Git bundles, member
 
 ## Documentation
 
-Detailed documentation is currently available in French while its English translation is being prepared:
+The application bundles a CyDoc reader in English (default) and French: **Help > User guide** or **F1** for the current view. Its 48 bilingual chapters cover project modes, Git/LFS, PR/CI, synchronization, backups, networking, integrations, AI and troubleshooting. Screenshots and localized diagrams enlarge inside the reader. Native V2 and Classic open the same local `file://` guide in the system browser, without a web server or Internet connection. Technical references retain their maintained language; the coverage page lists missing translations and historical material.
+
+See [Maintaining the integrated guide](docs/offline-guide.md) for content, media and validation instructions. Additional technical documentation is available below; some of these developer documents are French-only:
 
 - [User guide](docs/user-guide.md)
 - [Architecture](docs/architecture.md)

@@ -14,6 +14,36 @@ public sealed record CyRevisionPluginContext(
     string DataDirectory,
     string ApplicationVersion);
 
+/**
+ * @doc plugin-contracts-api
+ * @locale en
+ * @title Plugin lifecycle contract
+ * @section API
+ * @symbol ICyRevisionPlugin
+ * A plugin exposes a descriptor, initializes against a host context and supports asynchronous disposal.
+ *
+ * ## Lifecycle {#lifecycle}
+ * `InitializeAsync` receives application/package/configuration/data paths and the application version.
+ * Project activation is a separate optional `IProjectScopedPlugin` contract. Do not infer global project access.
+ *
+ * ## Source of truth {#source}
+ * The indexed C# file contains the actual signatures. XML comments are shown as source, not inferred API declarations.
+ */
+/**
+ * @doc plugin-contracts-api
+ * @locale fr
+ * @title Contrat du cycle de vie des plugins
+ * @section API
+ * @symbol ICyRevisionPlugin
+ * Un plugin expose un descripteur, s’initialise avec le contexte de l’hôte et se libère de façon asynchrone.
+ *
+ * ## Cycle de vie {#lifecycle}
+ * `InitializeAsync` reçoit les dossiers application/paquet/configuration/données et la version de l’application.
+ * L’activation par projet est le contrat optionnel distinct `IProjectScopedPlugin`, pas un accès global implicite.
+ *
+ * ## Référence {#source}
+ * Le fichier C# indexé contient les signatures réelles. Les commentaires XML restent du code source, sans déclarations inférées.
+ */
 public interface ICyRevisionPlugin : IAsyncDisposable
 {
     CyRevisionPluginDescriptor Descriptor { get; }
@@ -154,6 +184,38 @@ public sealed record PluginProjectSandboxPolicy(
     long MaximumReadBytes = 64L * 1024 * 1024,
     long MaximumWriteBytes = 64L * 1024 * 1024);
 
+/**
+ * @doc plugin-file-broker-api
+ * @locale en
+ * @title Project file broker
+ * @section API
+ * @symbol IPluginProjectFileSandbox
+ * Enumerate, read and write project-relative files under an explicit capability policy.
+ *
+ * ## Operations {#operations}
+ * Use `EnumerateFilesAsync`, `ReadAllBytesAsync` and `WriteAllBytesAsync` with relative paths and cancellation.
+ * Read/write budgets and allowed roots are declared by `PluginProjectSandboxPolicy`.
+ *
+ * ## Boundary {#boundary}
+ * This cooperative broker is not an operating-system sandbox for an in-process .NET DLL.
+ * Review [the plugin guide](doc:plugin-api) before requesting file, network or process permissions.
+ */
+/**
+ * @doc plugin-file-broker-api
+ * @locale fr
+ * @title Courtier de fichiers du projet
+ * @section API
+ * @symbol IPluginProjectFileSandbox
+ * Énumérer, lire et écrire des fichiers relatifs au projet sous une politique explicite.
+ *
+ * ## Opérations {#operations}
+ * Utilisez `EnumerateFilesAsync`, `ReadAllBytesAsync` et `WriteAllBytesAsync` avec chemins relatifs et annulation.
+ * Les budgets et racines autorisées sont définis par `PluginProjectSandboxPolicy`.
+ *
+ * ## Limite {#boundary}
+ * Ce courtier coopératif n’est pas un sandbox système pour une DLL .NET dans le processus.
+ * Lisez [le guide des plugins](doc:plugin-api) avant de demander des droits fichiers, réseau ou processus.
+ */
 public interface IPluginProjectFileSandbox
 {
     PluginProjectSandboxPolicy Policy { get; }

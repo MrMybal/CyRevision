@@ -144,6 +144,8 @@ public sealed partial class NativeModelAdapter(MainWindowViewModel model,string?
         string command = Text(request, "command");
         if (command == "catalog") return Catalog();
         if (command == "state") return State(request);
+        if (command == "app.language") { model.SetNativeDocumentationLanguage(Text(request, "language", "en")); return new { }; }
+        if (command == "docs.open") return new { url = model.GetNativeDocumentationLink(Text(request, "topicId"), Text(request, "anchor"), Text(request, "mediaId")) };
         // Application-level, read-only check: also works before initialization,
         // without a project and while an unrelated repository operation runs.
         if (command == "updates.check")

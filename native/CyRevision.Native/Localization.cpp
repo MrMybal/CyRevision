@@ -3,6 +3,14 @@
 namespace cyrevision {
 void registerAppTranslations(){
     cyui::registerTranslations("fr",{
+        {"CyDoc documentation","Documentation CyDoc"},{"Open user guide","Ouvrir le guide utilisateur"},{"Technical references","Références techniques"},
+        {"Open the complete local guide in your browser. No server or Internet connection is required. Images enlarge inside the reader.","Ouvrez le guide local complet dans votre navigateur. Aucun serveur ni accès Internet n’est nécessaire. Les images s’agrandissent dans le lecteur."},
+        {"F1 opens help for the current view. Search, history, language and reading positions are managed by CyDoc.","F1 ouvre l’aide de la vue active. CyDoc gère la recherche, l’historique, la langue et les positions de lecture."},
+        {"User guide","Guide utilisateur"},{"Help for this view","Aide pour cette vue"},{"Loading guide…","Chargement du guide…"},
+        {"Search documentation","Rechercher dans le guide"},{"Clear search","Effacer la recherche"},{"Back","Précédent"},{"Forward","Suivant"},
+        {"Open guide in window","Ouvrir le guide dans une fenêtre"},{"No matching chapter","Aucun chapitre correspondant"},
+        {"Try another word or clear the search.","Essayez un autre mot ou effacez la recherche."},{"Illustrations","Illustrations"},
+        {"Open illustration","Ouvrir l’illustration"},{"Enlarge","Agrandir"},{"Guide illustration","Illustration du guide"},
         {"Language","Langue"},{"Rendered","Rendu"},{"Source","Source"},
         {"Help","Aide"},{"Check for updates","Rechercher des mises à jour"},
         {"Checking for updates…","Recherche de mise à jour…"},{"Downloading update…","Téléchargement de la mise à jour…"},

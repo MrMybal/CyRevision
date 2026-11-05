@@ -1,0 +1,5 @@
+[
+  "src/CyRevision.Plugin.Abstractions/PluginContracts.cs",
+  "src/CyRevision.Plugin.Abstractions/GameEngineIntegrationPluginBase.cs",
+  "native/CyRevision.Native/DocumentationLinks.h"
+]

@@ -462,9 +462,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private string _remoteBuildStatus = "Remote build agent is not configured.";
     private string _remoteBuildLog = "No remote build has run.";
     private LanguageOption? _selectedLanguage;
-    private IReadOnlyList<DocumentationTopic> _allDocumentationTopics = [];
-    private DocumentationTopic? _selectedDocumentationTopic;
-    private string _documentationSearch = string.Empty;
     private ApplicationUpdateInfo? _availableUpdate;
     private string _latestApplicationVersion = "—";
     private string _updateStatus = "Recherche de mise à jour non lancée.";
@@ -778,7 +775,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             string.Equals(language.Code, localization.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase));
         _initialProjectPath = initialProjectPath;
         Projects.CollectionChanged += (_, _) => RebuildProjectSidebarGroups();
-        ReloadDocumentation();
     }
 
     public ObservableCollection<ProjectItemViewModel> Projects { get; } = [];
@@ -941,7 +937,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public ObservableCollection<AdvisoryReservationViewModel> AdvisoryReservations { get; } = [];
 
-    public ObservableCollection<DocumentationTopic> DocumentationTopics { get; } = [];
 
     public ObservableCollection<PluginItemViewModel> Plugins { get; } = [];
 
@@ -1995,31 +1990,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             if (SetProperty(ref _selectedLanguage, value) && value is not null)
             {
                 _localization.SetLanguage(value.Code);
-                ReloadDocumentation();
                 if (_currentVpnSetupPlan is not null)
                 {
                     ApplyVpnSetupPlan(_currentVpnSetupPlan);
                 }
             }
         }
-    }
-
-    public string DocumentationSearch
-    {
-        get => _documentationSearch;
-        set
-        {
-            if (SetProperty(ref _documentationSearch, value))
-            {
-                FilterDocumentation();
-            }
-        }
-    }
-
-    public DocumentationTopic? SelectedDocumentationTopic
-    {
-        get => _selectedDocumentationTopic;
-        set => SetProperty(ref _selectedDocumentationTopic, value);
     }
 
     public string CurrentApplicationVersion => _updateService.CurrentVersion.ToString();
@@ -14796,8 +14772,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             "_selectedProject" or "_projectLoadVersion" or "_projectLoadProgress" or "_projectLoadStage" or
             "_isProjectLoading" or "_isRestoringProjectSession" or "_isBusy" or "_statusMessage" or "_isActivityCenterExpanded" or "_syncEngine" or "_syncEngineProjectId" or "_syncShutdownTask" or
             "_vpnFileExchangeHost" or "_subscribedUnrealPlugin" or "_subscribedUnityPlugin" or "_subscribedGodotPlugin" or "_currentRemoteBuildJob" or "_availableUpdate" or
-            "_selectedLanguage" or "_allDocumentationTopics" or "_selectedDocumentationTopic" or
-            "_documentationSearch" or "_latestApplicationVersion" or "_updateStatus" or "_updateReleaseNotes" or
+            "_selectedLanguage" or
+            "_latestApplicationVersion" or "_updateStatus" or "_updateReleaseNotes" or
             "_hasUpdateAvailable" or "_isCheckingForUpdates" or "_isDownloadingUpdate" or "_updateProgress" or
             "_hasCheckedForUpdates" or "_hasUpdateCheckFailed" or "_updateCheckRevision" or
             "_selectedPlugin" or "_selectedAiConversation" or "_suppressAiConversationSelection" or
@@ -14814,7 +14790,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         if (!property.PropertyType.IsGenericType ||
             property.PropertyType.GetGenericTypeDefinition() != typeof(ObservableCollection<>)) return false;
         return property.Name is not (
-            nameof(Projects) or nameof(DocumentationTopics) or nameof(Plugins) or nameof(CodeTree) or nameof(CodeFileList) or
+            nameof(Projects) or nameof(Plugins) or nameof(CodeTree) or nameof(CodeFileList) or
             nameof(CodeFileSearchResults) or nameof(AssetExplorerFiles) or nameof(CodeSearchResults) or
             nameof(CodeHistory) or nameof(CodeSymbols) or nameof(IgnoreFolderSuggestions) or
             nameof(IgnoreFileTypeSuggestions) or nameof(AiProviders) or nameof(AiConversations) or
@@ -17903,37 +17879,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             await RefreshCoreAsync(project);
         }, successMessage);
     }
-
-    private void ReloadDocumentation()
-    {
-        string? selectedId = SelectedDocumentationTopic?.Id;
-        _allDocumentationTopics = _documentationService.Load(_localization.CurrentLanguageCode);
-        FilterDocumentation(selectedId);
-    }
-
-    private void FilterDocumentation(string? preferredTopicId = null)
-    {
-        string search = DocumentationSearch.Trim();
-        IEnumerable<DocumentationTopic> filtered = _allDocumentationTopics;
-        if (search.Length > 0)
-        {
-            filtered = filtered.Where(topic =>
-                ContainsSearch(topic.Title, search) ||
-                ContainsSearch(topic.Category, search) ||
-                ContainsSearch(topic.Summary, search) ||
-                ContainsSearch(topic.Body, search) ||
-                topic.Keywords?.Any(keyword => ContainsSearch(keyword, search)) == true);
-        }
-
-        DocumentationTopic[] topics = filtered.ToArray();
-        ReplaceCollection(DocumentationTopics, topics);
-        SelectedDocumentationTopic = topics.FirstOrDefault(topic =>
-                                         string.Equals(topic.Id, preferredTopicId, StringComparison.OrdinalIgnoreCase))
-                                     ?? topics.FirstOrDefault();
-    }
-
-    private static bool ContainsSearch(string? value, string search) =>
-        value?.Contains(search, StringComparison.CurrentCultureIgnoreCase) == true;
 
     private static bool ProjectPathsEqual(string left, string right)
     {

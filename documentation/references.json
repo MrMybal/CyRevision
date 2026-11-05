@@ -1,0 +1,233 @@
+{
+  "references": [
+    {
+      "source": "docs/architecture/syncthing-integration.md",
+      "id": "reference-architecture-syncthing-integration",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/architecture.md",
+      "id": "reference-architecture",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/asset-diff.md",
+      "id": "reference-asset-diff",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/code-explorer-and-ai.md",
+      "id": "reference-code-explorer-and-ai",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/cystore-alpha.md",
+      "id": "reference-cystore-alpha",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/cytask-integration.md",
+      "id": "reference-cytask-integration",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/cyui-modular-migration.md",
+      "id": "reference-cyui-modular-migration",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/discord-agent.md",
+      "id": "reference-discord-agent",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/git-explorer-lfs-time-machine.md",
+      "id": "reference-git-explorer-lfs-time-machine",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/git-visualizations.md",
+      "id": "reference-git-visualizations",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/historical-worktrees.md",
+      "id": "reference-historical-worktrees",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/lfs-storage-management.md",
+      "id": "reference-lfs-storage-management",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/linux-server.md",
+      "id": "reference-linux-server",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/localization.md",
+      "id": "reference-localization",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/offline-guide.md",
+      "id": "reference-offline-guide",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/perforce-integration.md",
+      "id": "reference-perforce-integration",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/plugin-api.md",
+      "id": "reference-plugin-api",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/plugins-and-unreal.md",
+      "id": "reference-plugins-and-unreal",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/pull-request-manager.md",
+      "id": "reference-pull-request-manager",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/release-0.1.26.md",
+      "id": "reference-release-0-1-26",
+      "locale": "en",
+      "historical": true
+    },
+    {
+      "source": "docs/release-0.1.27.md",
+      "id": "reference-release-0-1-27",
+      "locale": "en",
+      "historical": true
+    },
+    {
+      "source": "docs/release-0.1.28.md",
+      "id": "reference-release-0-1-28",
+      "locale": "en",
+      "historical": true
+    },
+    {
+      "source": "docs/release-0.1.29.md",
+      "id": "reference-release-0-1-29",
+      "locale": "en",
+      "historical": true
+    },
+    {
+      "source": "docs/release-0.1.30.md",
+      "id": "reference-release-0-1-30",
+      "locale": "en",
+      "historical": true
+    },
+    {
+      "source": "docs/release-0.1.31.md",
+      "id": "reference-release-0-1-31",
+      "locale": "en",
+      "historical": true
+    },
+    {
+      "source": "docs/release-0.1.32.md",
+      "id": "reference-release-0-1-32",
+      "locale": "en",
+      "historical": true
+    },
+    {
+      "source": "docs/release-0.1.33.md",
+      "id": "reference-release-0-1-33",
+      "locale": "en",
+      "historical": true
+    },
+    {
+      "source": "docs/remote-build-agent.md",
+      "id": "reference-remote-build-agent",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/security.md",
+      "id": "reference-security",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/server-api.md",
+      "id": "reference-server-api",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/smart-sync-and-cold-archive.md",
+      "id": "reference-smart-sync-and-cold-archive",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/team-chat.md",
+      "id": "reference-team-chat",
+      "locale": "en",
+      "historical": false
+    },
+    {
+      "source": "docs/user-guide.md",
+      "id": "reference-user-guide",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "docs/wireguard-vpn.md",
+      "id": "reference-wireguard-vpn",
+      "locale": "fr",
+      "historical": false
+    },
+    {
+      "source": "plugins/CyRevisionGodot/README.md",
+      "id": "reference-cyrevisiongodot",
+      "locale": "en"
+    },
+    {
+      "source": "plugins/CyRevisionLore/README.md",
+      "id": "reference-cyrevisionlore",
+      "locale": "en"
+    },
+    {
+      "source": "plugins/CyRevisionUnity/README.md",
+      "id": "reference-cyrevisionunity",
+      "locale": "en"
+    },
+    {
+      "source": "plugins/CyRevisionUnreal/README.md",
+      "id": "reference-cyrevisionunreal",
+      "locale": "en"
+    }
+  ],
+  "repositoryOnly": {
+    "mode-verification-2026-09-11.md": "Dated verification record, retained in the repository.",
+    "repository-privacy.md": "Repository-maintenance procedure, retained in the repository.",
+    "releasing.md": "Release-engineering procedure, retained in the repository."
+  }
+}

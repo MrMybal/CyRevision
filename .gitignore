@@ -44,3 +44,7 @@ secrets/
 *.binlog
 __pycache__/
 *.pyc
+node_modules/
+/documentation/source-api/
+/documentation/content-build/
+/.cydoc.build.*.json

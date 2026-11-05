@@ -1,0 +1,4 @@
+CyDoc 0.1.0
+https://github.com/MrMybal/CyDoc
+Revision 774f2a7eabf7dd181a98ffc5add115b580b67f42
+Module: image

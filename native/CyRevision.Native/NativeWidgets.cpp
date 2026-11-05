@@ -251,7 +251,7 @@ void Workspace::imagePanel(const char* property,const char* id){
 }
 void Workspace::navigate(const std::string& id){
     if(!activePane_.empty()){for(auto& pane:detachedPanes_)if(activePane_=="view-"+std::to_string(pane.id)){if(pane.workspace!=id){pane.workspace=id;pane.needsLoad=true;pane.title.clear();}workspace_=id;lastPoll_=0;return;}}
-    if(workspace_==id)return;workspace_=id;openWorkspace_=true;selectTable_=true;lastPoll_=0;edits_.clear();draftValues_=Json::object();requestedFields_.clear();requestedTables_=Json::object();
+    if(workspace_==id)return;bool guideTransition=workspace_=="help" || id=="help";workspace_=id;openWorkspace_=true;selectTable_=true;lastPoll_=0;if(!guideTransition){edits_.clear();draftValues_=Json::object();}requestedFields_.clear();requestedTables_=Json::object();
     if(state_.contains("navigation"))for(const auto& tab:state_["navigation"].value("tabs",Json::array()))if(text(tab,"id")==id){category_=text(tab,"category");break;}
 }
 void releaseWidgetViewState(const std::string& prefix){for(auto it=diffModes.begin();it!=diffModes.end();)if(it->first.rfind(prefix,0)==0)it=diffModes.erase(it);else++it;}

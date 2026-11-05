@@ -1,0 +1,15 @@
+{
+  "name": "CyRevision",
+  "version": "0.1.33",
+  "defaultLocale": "en",
+  "locales": [{"code":"en","label":"English"},{"code":"fr","label":"Français"}],
+  "homePage": "getting-started",
+  "content": "documentation/manual",
+  "assets": "documentation/assets",
+  "out": "artifacts/cydoc-export",
+  "modules": ["image"],
+  "sources": ["documentation/source-api"],
+  "sourceIndex": {"enabled":true,"includeDirs":["documentation/source-api"]},
+  "translationReport": true,
+  "aliases": {"overview":"getting-started","quickstart":"getting-started","api-links":"plugin-api","writing":"reference-offline-guide"}
+}

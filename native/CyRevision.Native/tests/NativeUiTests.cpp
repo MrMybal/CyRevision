@@ -1,4 +1,5 @@
 #include "Workspace.h"
+#include "DocumentationLinks.h"
 #include <imgui_internal.h>
 #include <iostream>
 #include <stdexcept>
@@ -32,6 +33,9 @@ struct WorkspaceTestAccess {
     static void checkUpdates(Workspace& workspace){workspace.checkForUpdates();}
     static bool busy(const Workspace& workspace){return workspace.busy();}
     static void showUpdate(Workspace& workspace){workspace.updateOpen_=true;}
+    static void guideRequest(Workspace& workspace,Json request){workspace.send(std::move(request));workspace.lastPoll_=0;}
+    static void guideLink(Workspace& workspace){workspace.documentLink("doc:ci-actions");workspace.lastPoll_=0;}
+    static std::string guideUrl(const Workspace& workspace){return workspace.lastDocumentationLink_;}
 };
 }
 
@@ -55,6 +59,9 @@ public:
     bool holdInvocations=false;
     std::vector<Json> held;
     Json lastState=Json::object();
+    bool guideEnabled=false;
+    std::string guideLanguage="en",guideTopic="getting-started",guideQuery;
+    int guideOpens=0;
     std::string propertyText="baseline";std::vector<Json> propertySets;
     void complete(){for(auto& response:held)responses_.push_back(std::move(response));held.clear();}
     unsigned long long send(Json request) override {
@@ -114,7 +121,14 @@ public:
                 {"UpdateStatus",updateFailed?"Network unavailable":checkingUpdates?"Checking":"Check complete"},
                 {"UpdateReleaseNotes","# Updates\n\nImproved application startup."}};
             for(const auto& field:updateFields.items())result["fields"][field.key()]={{"value",field.value()}};
-        } else if(command=="updates.check"){
+            if(guideEnabled){
+                result["navigation"]["tabs"].push_back({{"id","help"},{"label","Help"},{"category","Extensions & Help"},{"visible",true},{"available",true}});
+                result["documentation"]={{"language",guideLanguage},{"total",94},{"available",true},{"reader","CyDoc"},{"modules",Json::array({"image"})}};
+            }
+        } else if(command=="app.language")guideLanguage=text(request,"language");
+        else if(command=="docs.open"){guideTopic=text(request,"topicId");++guideOpens;result={{"url","file:///D:/Example/Help/index.html#/"+guideLanguage+"/"+guideTopic}};}
+        else if(command=="docs.search")guideQuery=text(request,"query");
+        else if(command=="updates.check"){
             ++updateChecks;if(holdUpdateCheck)checkingUpdates=true;else ++updateRevision;
         } else if(command=="overview.installUpdate"){
             ++updateInstalls;installConfirmed=request.value("confirmed",false);
@@ -191,6 +205,24 @@ void dismissUpdate(Workspace& workspace){
     auto y=modal->DC.CursorMaxPos.y-ImGui::GetFrameHeight()*.5f;
     auto& io=ImGui::GetIO();io.AddMousePosEvent(x,y);frame(workspace);io.AddMouseButtonEvent(0,true);frame(workspace);io.AddMouseButtonEvent(0,false);settle(workspace);
     require(ImGui::GetTopMostPopupModal()==nullptr,"Not now did not dismiss the update offer.");
+}
+void testGuide(){
+    FakeEngine engine;engine.guideEnabled=true;engine.hasProjects=false;engine.activeProject="";
+    Workspace workspace(engine,L"not-used.exe");settle(workspace);
+    key(workspace,ImGuiKey_F1);updateSnapshot(workspace);
+    require(WorkspaceTestAccess::workspace(workspace)=="overview" && isLocalDocumentationLink(WorkspaceTestAccess::guideUrl(workspace)),"F1 did not request local contextual help or changed the workspace.");
+    WorkspaceTestAccess::setDraft(workspace);WorkspaceTestAccess::guideLink(workspace);
+    require(!WorkspaceTestAccess::busy(workspace),"Reading a guide link locked repository actions.");
+    updateSnapshot(workspace);
+    require(engine.guideTopic=="doc:ci-actions" && engine.guideOpens==2,"The guide target was lost to the IPC correlation ID.");
+    require(WorkspaceTestAccess::draftPreserved(workspace),"Opening documentation discarded an editing draft.");
+    for(auto locale:{"fr","en"}){cyui::setLocale(locale);updateSnapshot(workspace);updateSnapshot(workspace);require(engine.guideLanguage==locale,"The native and engine documentation languages diverged.");}
+    engine.operationBusy=true;updateSnapshot(workspace);WorkspaceTestAccess::guideLink(workspace);updateSnapshot(workspace);
+    require(engine.guideOpens==3 && engine.mutations==0,"Guide navigation during a project operation invoked a mutation or was blocked.");
+    engine.operationBusy=false;workspace.showWorkspace("help");updateSnapshot(workspace);
+    require(!isLocalDocumentationLink("https://example.invalid/Help/index.html#/en/a") && !isLocalDocumentationLink("file:///D:/other.html"),"The native help host accepted a non-CyDoc URL.");
+    for(auto density:{cyui::Density::compact,cyui::Density::comfortable}){cyui::setDensity(density);for(auto theme:{"mid-grey","light-grey","amber-night","violet","navy"}){cyui::setTheme(theme);settle(workspace);}}
+    cyui::setDensity(cyui::Density::compact);cyui::setTheme("mid-grey");cyui::setLocale("en");
 }
 void testUpdates(){
     FakeEngine engine;engine.activeProject="";engine.hasProjects=false;engine.applicationReady=false;
@@ -436,7 +468,7 @@ int main() {
         viewer.prepare("Alpha\nBeta\nAlpha\n","sample.txt");viewerFrame(workspace,viewer,false,true);viewerFrame(workspace,viewer);
         io.AddInputCharactersUTF8("alpha");viewerFrame(workspace,viewer);require(viewer.matchCount()==2 && viewer.matchNumber()==1,"Typing into the shared search lost the host match index.");
         io.AddKeyEvent(ImGuiKey_Enter,true);viewerFrame(workspace,viewer);io.AddKeyEvent(ImGuiKey_Enter,false);viewerFrame(workspace,viewer);require(viewer.matchNumber()==2,"Enter did not advance the shared source search.");
-        testUpdates();
+        testGuide();testUpdates();
         ImGui::DestroyContext();
         std::cout<<"PASS: project selection, loading/queue protection, 150% DPI, tabs, detached views, independent filters, docking, layout restoration, preserved drafts, five themes and confirmations.\n";
         return 0;
