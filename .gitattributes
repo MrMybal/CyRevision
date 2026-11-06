@@ -14,6 +14,12 @@
 *.Build.cs text eol=crlf
 *.uplugin text eol=lf
 *.ini text eol=crlf
+# Preserve the generated reader's checksums across platform checkouts.
+Documentation/**/*.js text eol=lf
+Documentation/**/*.css text eol=lf
+Documentation/**/*.svg text eol=lf
+Documentation/**/*.txt text eol=lf
+Documentation/Documentation.html text eol=lf
 Dockerfile text eol=lf
 # Vendored snapshots retain exact upstream bytes for the dependency lock.
 native/vendor/CyUI/** -text

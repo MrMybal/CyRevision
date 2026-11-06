@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Window} from 'happy-dom';
@@ -11,6 +12,14 @@ import galleryModule from 'cydoc/modules/gallery';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const output=path.join(root,'Documentation'),resources=path.join(output,'DocData');
 const data=JSON.parse(await fs.readFile(path.join(resources,'manifest.json'),'utf8')),docs=createDocumentation(data);
+
+test('implicit French revisions are independent of checkout line endings',async()=>{
+  for(const page of docs.pages('fr')){
+    const source=(await fs.readFile(path.join(root,'.CyDocBuild/.cache/manual/fr',page.id+'.md'),'utf8')).replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n');
+    const body=source.replace(/^---\n[\s\S]*?\n---\n/,'');
+    assert.equal(page.revision,createHash('sha256').update(body).digest('hex').slice(0,12),page.id);
+  }
+});
 
 test('all human pages are completely translated with shared IDs and anchors',()=>{
   assert.equal(data.pages.length,172);assert.equal(docs.pages('en').length,86);assert.equal(data.defaultLocale,'en');

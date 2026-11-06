@@ -7,6 +7,7 @@
 - Open the appropriate chapter from F1 and contextual help in both Native V2 and Classic, including when no project is selected.
 - Preserve legacy documentation links and distribute the complete local reader under Documentation/Documentation.html.
 - Separate documentation authoring tools from the packaged manual and generate the reader during application builds.
+- Generate identical documentation revisions from Windows and Unix source checkouts.
 
 Windows V2 requires Windows 10/11 x64 and Direct3D 11. Launch
 `CyRevision.Native.exe` from the portable ZIP. The **CyRevision (Classic)**

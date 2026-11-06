@@ -3964,7 +3964,7 @@
         "#/fr/tray-and-startup"
       ],
       "kind": "media",
-      "revision": "6109ac9d16cc"
+      "revision": "336baa3825d8"
     },
     {
       "id": "asset-diff",
@@ -4004,7 +4004,7 @@
         "#/fr/lfs-time-machine"
       ],
       "kind": "media",
-      "revision": "18e3d9005fdb"
+      "revision": "fc365140b34b"
     },
     {
       "id": "backups",
@@ -4048,7 +4048,7 @@
         "#/fr/sync-and-peers"
       ],
       "kind": "media",
-      "revision": "412def454e14"
+      "revision": "67df5d9f8b64"
     },
     {
       "id": "branches",
@@ -4088,7 +4088,7 @@
         "#/fr/revision-composition"
       ],
       "kind": "media",
-      "revision": "6844e049a26d"
+      "revision": "f8ae4d5b41bb"
     },
     {
       "id": "ci-actions",
@@ -4128,7 +4128,7 @@
         "#/fr/pull-request-manager"
       ],
       "kind": "media",
-      "revision": "03feb932ccf0"
+      "revision": "72fb3112f67b"
     },
     {
       "id": "code-and-ai",
@@ -4188,7 +4188,7 @@
         "#/fr/mcp-policy"
       ],
       "kind": "media",
-      "revision": "42d3e91dd277"
+      "revision": "fa11f5ec13b9"
     },
     {
       "id": "code-explorer",
@@ -4232,7 +4232,7 @@
         "#/fr/code-and-ai"
       ],
       "kind": "media",
-      "revision": "112dea3b376d"
+      "revision": "ca0e487f3a8e"
     },
     {
       "id": "console-logs",
@@ -4272,7 +4272,7 @@
         "#/fr/diagnostics"
       ],
       "kind": "media",
-      "revision": "a02ce69e57de"
+      "revision": "4d2ef03a1928"
     },
     {
       "id": "cystore-api",
@@ -4357,7 +4357,7 @@
         "#/fr/plugins"
       ],
       "kind": "media",
-      "revision": "941181e620e1"
+      "revision": "81a8fa2101c2"
     },
     {
       "id": "diagnostics",
@@ -4402,7 +4402,7 @@
         "#/fr/troubleshooting"
       ],
       "kind": "media",
-      "revision": "ed7e36b874b9"
+      "revision": "5b6daac8327f"
     },
     {
       "id": "discord-agent",
@@ -4457,7 +4457,7 @@
         "#/fr/members-security"
       ],
       "kind": "media",
-      "revision": "21e50690e2f5"
+      "revision": "601f9793b6cb"
     },
     {
       "id": "engine-integrations",
@@ -4502,7 +4502,7 @@
         "#/fr/unreal-plugin"
       ],
       "kind": "media",
-      "revision": "17b08a5dadf5"
+      "revision": "a5b3261b9309"
     },
     {
       "id": "engine-plugin-api",
@@ -4583,7 +4583,7 @@
         "#/fr/lfs-time-machine"
       ],
       "kind": "media",
-      "revision": "732f76b5c404"
+      "revision": "7c4c9afd68c1"
     },
     {
       "id": "file-presentation-api",
@@ -4682,7 +4682,7 @@
         "#/fr/navigation"
       ],
       "kind": "media",
-      "revision": "e1d4509005c6"
+      "revision": "bfc77b8f3fe4"
     },
     {
       "id": "git-annotations",
@@ -4717,7 +4717,7 @@
         "#/fr/git-history"
       ],
       "kind": "media",
-      "revision": "86d4b1789d24"
+      "revision": "b7160e10f6b3"
     },
     {
       "id": "git-graphs",
@@ -4757,7 +4757,7 @@
         "#/fr/git-history"
       ],
       "kind": "media",
-      "revision": "81bb2cb83ae1"
+      "revision": "0ff909ddc063"
     },
     {
       "id": "git-history",
@@ -4797,7 +4797,7 @@
         "#/fr/lfs-time-machine"
       ],
       "kind": "media",
-      "revision": "f69345aab074"
+      "revision": "7e4a34e6d2de"
     },
     {
       "id": "git-repository",
@@ -4842,7 +4842,7 @@
         "#/fr/git-workflow"
       ],
       "kind": "media",
-      "revision": "5b5864727947"
+      "revision": "9b8d0ed6c0a4"
     },
     {
       "id": "git-workflow",
@@ -4886,7 +4886,7 @@
         "#/fr/git-history"
       ],
       "kind": "media",
-      "revision": "da9ce0084d67"
+      "revision": "9ba8bf528f97"
     },
     {
       "id": "global-search",
@@ -4926,7 +4926,7 @@
         "#/fr/code-explorer"
       ],
       "kind": "media",
-      "revision": "5db1412ebf5b"
+      "revision": "27129b938024"
     },
     {
       "id": "ignore-lfs-rules",
@@ -4966,7 +4966,7 @@
         "#/fr/safe-lfs-storage"
       ],
       "kind": "media",
-      "revision": "223d677cefc4"
+      "revision": "a2c8b4019fce"
     },
     {
       "id": "keyboard-shortcuts",
@@ -5006,7 +5006,7 @@
         "#/fr/preferences"
       ],
       "kind": "media",
-      "revision": "1d2db8cce0cf"
+      "revision": "0cf77aeb6906"
     },
     {
       "id": "lfs-time-machine",
@@ -5051,7 +5051,7 @@
         "#/fr/safe-lfs-storage"
       ],
       "kind": "media",
-      "revision": "f7ff2f27b1a0"
+      "revision": "52a43e8c6525"
     },
     {
       "id": "mcp-policy",
@@ -5096,7 +5096,7 @@
         "#/fr/code-and-ai"
       ],
       "kind": "media",
-      "revision": "48864d36d123"
+      "revision": "ad2ef4a6874d"
     },
     {
       "id": "members-security",
@@ -5136,7 +5136,7 @@
         "#/fr/vpn"
       ],
       "kind": "media",
-      "revision": "beabb7ad5aed"
+      "revision": "94c91614dcab"
     },
     {
       "id": "merge-conflicts",
@@ -5181,7 +5181,7 @@
         "#/fr/pull-request-manager"
       ],
       "kind": "media",
-      "revision": "38dcbd738aab"
+      "revision": "f1840252de1a"
     },
     {
       "id": "native-help-links",
@@ -5254,7 +5254,7 @@
         "#/fr/getting-started"
       ],
       "kind": "media",
-      "revision": "fe76d8e77350"
+      "revision": "412df2192598"
     },
     {
       "id": "notifications-license",
@@ -5299,7 +5299,7 @@
         "#/fr/navigation"
       ],
       "kind": "media",
-      "revision": "aaaca38f316c"
+      "revision": "4524a84c6319"
     },
     {
       "id": "perforce",
@@ -5339,7 +5339,7 @@
         "#/fr/plugins"
       ],
       "kind": "media",
-      "revision": "2db343c5c308"
+      "revision": "7ab4e6456004"
     },
     {
       "id": "plugin-api",
@@ -5402,7 +5402,7 @@
         "#/fr/plugins"
       ],
       "kind": "media",
-      "revision": "cb246f9fbeba"
+      "revision": "8502df467170"
     },
     {
       "id": "plugin-contracts-api",
@@ -5534,7 +5534,7 @@
         "#/fr/plugin-api"
       ],
       "kind": "media",
-      "revision": "d18746d6a8ec"
+      "revision": "ee285c0bf877"
     },
     {
       "id": "preferences",
@@ -5579,7 +5579,7 @@
         "#/fr/keyboard-shortcuts"
       ],
       "kind": "media",
-      "revision": "bbdfceed0379"
+      "revision": "2d86e4bbb6f5"
     },
     {
       "id": "project-mode-api",
@@ -5658,7 +5658,7 @@
         "#/fr/getting-started"
       ],
       "kind": "media",
-      "revision": "0c0cc508b205"
+      "revision": "93ef7c934100"
     },
     {
       "id": "public-api-icyrevisionplugin-initializeasync-lifecycle-initialize",
@@ -7077,7 +7077,7 @@
         "#/fr/ci-actions"
       ],
       "kind": "media",
-      "revision": "ba7ea622334a"
+      "revision": "1c01b45340c5"
     },
     {
       "id": "remote-builds",
@@ -7122,7 +7122,7 @@
         "#/fr/unreal-builds"
       ],
       "kind": "media",
-      "revision": "42d81356101a"
+      "revision": "da7bb4923c3e"
     },
     {
       "id": "revision-composition",
@@ -7177,7 +7177,7 @@
         "#/fr/merge-conflicts"
       ],
       "kind": "media",
-      "revision": "47ebc93da763"
+      "revision": "cd6d783ee8a5"
     },
     {
       "id": "safe-lfs-storage",
@@ -7227,7 +7227,7 @@
         "#/fr/lfs-time-machine"
       ],
       "kind": "media",
-      "revision": "d5e89041396b"
+      "revision": "042579c21df9"
     },
     {
       "id": "server-api",
@@ -7349,7 +7349,7 @@
         "#/fr/members-security"
       ],
       "kind": "media",
-      "revision": "5ad7ebc5a7c5"
+      "revision": "2add42f8653d"
     },
     {
       "id": "swarm-and-vpn-files",
@@ -7399,7 +7399,7 @@
         "#/fr/vpn"
       ],
       "kind": "media",
-      "revision": "8a53c0abe909"
+      "revision": "db3e33174b69"
     },
     {
       "id": "sync-and-peers",
@@ -7443,7 +7443,7 @@
         "#/fr/sync-conflicts"
       ],
       "kind": "media",
-      "revision": "034b1b13a603"
+      "revision": "c65e69172260"
     },
     {
       "id": "sync-conflicts",
@@ -7483,7 +7483,7 @@
         "#/fr/sync-and-peers"
       ],
       "kind": "media",
-      "revision": "178d57ec7a6b"
+      "revision": "b62ca8c5dd4d"
     },
     {
       "id": "tasks",
@@ -7523,7 +7523,7 @@
         "#/fr/pull-request-manager"
       ],
       "kind": "media",
-      "revision": "8b447c3a1e22"
+      "revision": "121d0d39d3be"
     },
     {
       "id": "team-chat",
@@ -7573,7 +7573,7 @@
         "#/fr/members-security"
       ],
       "kind": "media",
-      "revision": "b6b89403d649"
+      "revision": "c338a8260397"
     },
     {
       "id": "tray-and-startup",
@@ -7618,7 +7618,7 @@
         "#/fr/application-updates"
       ],
       "kind": "media",
-      "revision": "dca771943c74"
+      "revision": "866f4f126936"
     },
     {
       "id": "troubleshooting",
@@ -7667,7 +7667,7 @@
         "#/fr/diagnostics"
       ],
       "kind": "media",
-      "revision": "3eb58d1c480d"
+      "revision": "f7c5109f16c8"
     },
     {
       "id": "unreal-builds",
@@ -7707,7 +7707,7 @@
         "#/fr/remote-builds"
       ],
       "kind": "media",
-      "revision": "ebfec9f0c6dc"
+      "revision": "fe858c45413c"
     },
     {
       "id": "unreal-plugin",
@@ -7762,7 +7762,7 @@
         "#/fr/unreal-builds"
       ],
       "kind": "media",
-      "revision": "ff675919a8f2"
+      "revision": "828c840154d1"
     },
     {
       "id": "vpn",
@@ -7817,7 +7817,7 @@
         "#/fr/members-security"
       ],
       "kind": "media",
-      "revision": "df6a1725bea5"
+      "revision": "729011998ab0"
     },
     {
       "id": "work-item-api",

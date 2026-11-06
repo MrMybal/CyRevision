@@ -48,6 +48,8 @@ if(await fs.stat(path.join(workspace,'node_modules/three')).catch(()=>null))thro
 await fs.mkdir(cache,{recursive:true});
 for(const folder of [output,stage]){await removeGenerated(folder);await fs.mkdir(folder,{recursive:true});}
 await fs.cp(path.join(workspace,'manual'),stage,{recursive:true});
+// Normalize authored inputs before CyDoc computes implicit translation revisions.
+for(const file of await files(stage))await fs.writeFile(file,await read(file));
 const {generateApi}=await import('./api/generate.mjs');await generateApi({workspace,root,stage});
 const config=await json(path.join(workspace,'cydoc.config.json'));
 config.content='.cache/manual';config.out='.cache/export';
