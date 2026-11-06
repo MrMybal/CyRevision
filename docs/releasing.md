@@ -90,6 +90,8 @@ git push origin v0.1.0
 
 The validation job builds the complete solution and runs the test suite before any installer is published. Each native package is then created on a matching GitHub-hosted operating system.
 
+If a runner image changes after a tag is created, start the current workflow manually with that tag in **source_ref**, its version number, and **Publish release** enabled. Every job checks out the same resolved source SHA; publication requires it to match the existing version tag. This rebuilds the tagged code without moving tags or replacing an existing release. macOS builds use macos-15-intel for Intel packages and macos-15 for Apple Silicon.
+
 ## Code signing and trust warnings
 
 Packages are unsigned by default:

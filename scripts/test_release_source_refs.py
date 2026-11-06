@@ -9,6 +9,19 @@ CHECK = Path(__file__).with_name('check-repository-privacy.py').resolve()
 
 
 class SourceRevisionTests(unittest.TestCase):
+    def test_workflow_rebuilds_one_exact_tag_revision(self):
+        workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/release.yml').read_text(encoding='utf-8')
+        self.assertIn('ref: ${{ inputs.source_ref || github.ref }}', workflow)
+        self.assertEqual(5, workflow.count('ref: ${{ needs.prepare.outputs.source_sha }}'))
+        self.assertIn('tag_sha=$(git rev-parse "refs/tags/$tag^{commit}")', workflow)
+        self.assertIn('test "$source_sha" = "$tag_sha"', workflow)
+
+    def test_macos_uses_supported_architecture_specific_runners(self):
+        workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/release.yml').read_text(encoding='utf-8')
+        self.assertNotIn('runs-on: macos-14', workflow)
+        self.assertIn('runner: macos-15-intel', workflow)
+        self.assertIn('runner: macos-15', workflow)
+
     def test_each_release_builder_selects_only_its_target_revision(self):
         scripts = Path(__file__).parent
         for name in ('build-release.ps1', 'build-linux-release.sh', 'build-macos-release.sh'):
