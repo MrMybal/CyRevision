@@ -30,7 +30,7 @@ namespace cyrevision {
  * Aucun serveur HTTP ni schéma arbitraire fourni par un document n’est utilisé.
  */
 inline bool isLocalDocumentationLink(const std::string& url) {
-    return url.rfind("file:///",0)==0 && url.find("/Help/index.html#/")!=std::string::npos &&
+    return url.rfind("file:///",0)==0 && url.find("/Documentation/Documentation.html#/")!=std::string::npos &&
         std::none_of(url.begin(),url.end(),[](unsigned char c){return c<32 || c==127;});
 }
 }

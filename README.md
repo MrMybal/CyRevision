@@ -104,7 +104,7 @@ Publish on Windows:
 Build a self-contained Windows installer and portable release locally:
 
 ```powershell
-./scripts/build-release.cmd 0.1.32
+./scripts/build-release.cmd 0.1.34
 ```
 
 Native Linux (`.deb`) and macOS (`.dmg`) packages are built by the multiplatform GitHub Actions release workflow. They can also be built on their native operating system with `scripts/build-linux-release.sh` and `scripts/build-macos-release.sh`. See [Creating a release](docs/releasing.md).
@@ -130,9 +130,13 @@ In **Git + Sync** mode, the shared directory contains signed Git bundles, member
 
 ## Documentation
 
-The application bundles a CyDoc reader in English (default) and French: **Help > User guide** or **F1** for the current view. Its 48 bilingual chapters cover project modes, Git/LFS, PR/CI, synchronization, backups, networking, integrations, AI and troubleshooting. Screenshots and localized diagrams enlarge inside the reader. Native V2 and Classic open the same local `file://` guide in the system browser, without a web server or Internet connection. Technical references retain their maintained language; the coverage page lists missing translations and historical material.
+Open **Help > User guide**, or press **F1** for help on the current view. Native V2 and Classic use the same bundled CyDoc reader: `Documentation/Documentation.html`. Open that file directly after downloading the complete Documentation folder; no web server or Internet connection is needed.
 
-See [Maintaining the integrated guide](docs/offline-guide.md) for content, media and validation instructions. Additional technical documentation is available below; some of these developer documents are French-only:
+The manual has 86 pages in both English (default) and French, covering project modes, Git/LFS, PR/CI, synchronization, backups, networking, integrations, AI and troubleshooting. It includes a hierarchical contents tree, global search (**Ctrl+K**), themes, screenshots, an interface gallery and localized diagrams. Images enlarge inside the reader. Developer pages describe public signatures, parameters, return values and examples without exposing complete source files. `DocAI.md` is separate from the human reader.
+
+Sources and generation tools live in `.CyDocBuild`; only the complete `Documentation` export is packaged. Regenerate with `node .CyDocBuild/build.mjs`, verify with `node .CyDocBuild/build.mjs --check`, and run `node --test .CyDocBuild/test/*.test.mjs`. See [Documentation maintenance](.CyDocBuild/internal/maintenance.md) for build details.
+
+The following repository documents are separate developer references; some are French-only:
 
 - [User guide](docs/user-guide.md)
 - [Architecture](docs/architecture.md)

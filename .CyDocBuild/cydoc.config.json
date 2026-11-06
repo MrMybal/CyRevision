@@ -1,0 +1,33 @@
+{
+  "name": "CyRevision",
+  "version": "0.1.34",
+  "logo": "assets/cyrevision-logo.png",
+  "defaultLocale": "en",
+  "locales": [
+    {
+      "code": "en",
+      "label": "English"
+    },
+    {
+      "code": "fr",
+      "label": "Français"
+    }
+  ],
+  "homePage": "getting-started",
+  "content": "manual",
+  "assets": "assets",
+  "out": "../Documentation",
+  "modules": [
+    "image",
+    "gallery"
+  ],
+  "aliases": {
+    "overview": "getting-started",
+    "quickstart": "getting-started",
+    "api-links": "plugin-api",
+    "writing": "getting-started",
+    "technical-references": "plugin-api",
+    "translation-report": "getting-started",
+    "reference-offline-guide": "getting-started"
+  }
+}

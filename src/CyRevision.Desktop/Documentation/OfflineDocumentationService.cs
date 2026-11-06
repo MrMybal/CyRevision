@@ -10,9 +10,10 @@ public sealed class OfflineDocumentationService
     private readonly IReadOnlyList<CyDocPage> _pages;
     private readonly Dictionary<string, string> _routes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _aliases = new(StringComparer.Ordinal);
-    public bool IsAvailable => _pages.Count > 0 && File.Exists(Path.Combine(_directory, "index.html"));
-    public string IndexFile => Path.Combine(_directory, "index.html");
+    public bool IsAvailable => _pages.Count > 0 && File.Exists(IndexFile);
+    public string IndexFile => Path.Combine(_directory, "Documentation.html");
     public int PageCount => _pages.Select(page => page.Id).Distinct().Count();
+    public IReadOnlyList<string> Modules { get; }
 
     public OfflineDocumentationService(string documentationDirectory)
     {
@@ -21,7 +22,7 @@ public sealed class OfflineDocumentationService
         List<CyDocPage> pages = [];
         try
         {
-            string manifest = Path.Combine(_directory, "manifest.json");
+            string manifest = Path.Combine(_directory, "DocData", "manifest.json");
             if (File.Exists(manifest) && new FileInfo(manifest).Length <= 32 * 1024 * 1024)
             {
                 using var data = JsonDocument.Parse(File.ReadAllText(manifest));
@@ -39,7 +40,7 @@ public sealed class OfflineDocumentationService
                 if (data.RootElement.TryGetProperty("aliases", out var aliases) && aliases.ValueKind == JsonValueKind.Object)
                     foreach (var alias in aliases.EnumerateObject()) _aliases[alias.Name] = alias.Value.GetString()!;
             }
-            string routeFile = Path.Combine(_directory, "routes.json");
+            string routeFile = Path.Combine(_directory, "DocData", "routes.json");
             if (File.Exists(routeFile))
                 foreach (var route in JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(routeFile)) ?? [])
                     _routes[route.Key] = route.Value;
@@ -47,6 +48,8 @@ public sealed class OfflineDocumentationService
         catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException or KeyNotFoundException)
         { pages.Clear(); }
         _pages = pages;
+        Modules = pages.Count == 0 ? [] : new[] { "image", "gallery", "video", "gif", "mesh", "graph" }
+            .Where(module => File.Exists(Path.Combine(_directory, "DocData", "media-" + module + ".js"))).ToArray();
     }
 
     public IReadOnlyList<DocumentationTopic> Load(string languageCode)
@@ -61,7 +64,7 @@ public sealed class OfflineDocumentationService
                 { Language = page.Locale };
         }).ToArray();
         return topics.Length > 0 ? topics : [new("documentation-unavailable", "Help", "CyDoc documentation", "The local reader is unavailable.",
-            "Reinstall the application to restore its bundled Help directory.", [])];
+            "Reinstall the application to restore its bundled Documentation directory.", [])];
     }
 
     public string CreateLink(string reference, string languageCode, string? anchor = null, string? mediaId = null)

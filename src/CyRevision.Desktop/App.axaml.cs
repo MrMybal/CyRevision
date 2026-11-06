@@ -111,7 +111,7 @@ public partial class App : Application
                     ? nativeExecutable : null);
             ApplyStartupRegistrationAtLaunch();
             OfflineDocumentationService documentation = new(
-                Path.Combine(AppContext.BaseDirectory, "Help"));
+                Path.Combine(AppContext.BaseDirectory, "Documentation"));
             ApplicationUpdateService updates = new(
                 new Uri("https://github.com/MrMybal/CyRevision"),
                 ApplicationUpdateService.ReadCurrentVersion(typeof(App).Assembly));

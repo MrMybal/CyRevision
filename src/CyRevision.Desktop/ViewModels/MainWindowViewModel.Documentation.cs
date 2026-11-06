@@ -15,6 +15,6 @@ public sealed partial class MainWindowViewModel
         available = IsDocumentationAvailable,
         total = _documentationService.PageCount,
         reader = "CyDoc",
-        modules = new[] { "image" }
+        modules = _documentationService.Modules
     };
 }

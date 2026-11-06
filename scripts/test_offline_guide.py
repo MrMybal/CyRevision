@@ -14,14 +14,14 @@ FLAGS = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--engine', type=Path, default=ROOT/'artifacts/native-v2-cydoc/CyRevision.Desktop.exe')
+    parser.add_argument('--engine', type=Path, default=ROOT/'artifacts/native-v2-cydoc-update/CyRevision.Desktop.exe')
     args = parser.parse_args()
     engine = args.engine.resolve()
-    manifest = json.loads((engine.parent/'Help/manifest.json').read_text(encoding='utf-8'))
-    routes = json.loads((engine.parent/'Help/routes.json').read_text(encoding='utf-8'))
-    guides = [file.stem for file in (ROOT/'documentation/manual/en').glob('*.md')]
-    assert len(guides) == 48 and len(manifest['pages']) == 150
-    assert len({page['id'] for page in manifest['pages']}) == 94
+    manifest = json.loads((engine.parent/'Documentation/DocData/manifest.json').read_text(encoding='utf-8'))
+    routes = json.loads((engine.parent/'Documentation/DocData/routes.json').read_text(encoding='utf-8'))
+    guides = [page['id'] for page in manifest['pages'] if page['locale'] == 'en']
+    assert len(guides) == 86 and len(manifest['pages']) == 172
+    assert len({page['id'] for page in manifest['pages']}) == 86
     (ROOT/'artifacts').mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='cydoc-profile-', dir=ROOT/'artifacts') as temporary:
         process = subprocess.Popen([str(engine), '--native-backend', '--profile-dir', temporary],
@@ -51,7 +51,7 @@ def main():
             local = unquote(parsed.path)
             if len(local) > 2 and local[0] == '/' and local[2] == ':':
                 local = local[1:]
-            assert Path(local).resolve() == (engine.parent/'Help/index.html').resolve()
+            assert Path(local).resolve() == (engine.parent/'Documentation/Documentation.html').resolve()
             assert parsed.fragment.startswith('/'+locale+'/'+page)
         try:
             for locale in ('en', 'fr'):
@@ -59,8 +59,8 @@ def main():
                 state = request('state', workspace='help')
                 help_state = state['documentation']
                 assert help_state['language'] == locale and help_state['available']
-                assert help_state['reader'] == 'CyDoc' and help_state['total'] == 94
-                assert help_state['modules'] == ['image']
+                assert help_state['reader'] == 'CyDoc' and help_state['total'] == 86
+                assert help_state['modules'] == ['image', 'gallery']
                 for identifier in guides:
                     check_url(request('docs.open', topicId=identifier), locale, identifier)
                 for workspace, identifier in routes.items():
@@ -70,8 +70,8 @@ def main():
                 request('docs.open', topicId='missing-page', expect_ok=False)
                 request('docs.open', topicId='getting-started', anchor='missing-section', expect_ok=False)
             request('app.language', language='en')
-            check_url(request('docs.open', topicId='reference-server-api'), 'fr', 'reference-server-api')
-            print('PASS: 96 localized guide links, all context routes, anchors/media, fallback and error handling via real IPC; no browser launched.')
+            check_url(request('docs.open', topicId='reference-server-api'), 'en', 'server-api')
+            print('PASS: 172 localized page links, all context routes, anchors/media, fallback and error handling via real IPC; no browser launched.')
         finally:
             try:
                 request('shutdown')

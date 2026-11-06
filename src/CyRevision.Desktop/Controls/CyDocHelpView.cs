@@ -20,7 +20,7 @@ public sealed class CyDocHelpView : UserControl
         language.Bind(ItemsControl.ItemsSourceProperty, new Binding("Languages"));
         language.Bind(SelectingItemsControl.SelectedItemProperty, new Binding("SelectedLanguage") { Mode = BindingMode.TwoWay });
         var actions = new WrapPanel { Orientation = Orientation.Horizontal };
-        foreach (var (label, id) in new[] { ("Git / LFS", "git-workflow"), ("PR / CI", "ci-actions"), ("Preferences", "preferences"), ("Technical references", "technical-references") })
+        foreach (var (label, id) in new[] { ("Git / LFS", "git-workflow"), ("PR / CI", "ci-actions"), ("Preferences", "preferences"), ("Plugin API", "plugin-api") })
             actions.Children.Add(OpenButton(label, id));
         Content = new StackPanel { Spacing = 12, Children =
         {

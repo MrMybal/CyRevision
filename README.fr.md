@@ -65,6 +65,7 @@ Ouvrez `CyRevision.sln` dans JetBrains Rider. La solution cible actuellement **.
 ### Prérequis
 
 - .NET SDK 8 ou plus récent.
+- Node.js 22+ et npm pour générer et vérifier le manuel CyDoc (uniquement à la compilation).
 - Git.
 - Git LFS.
 - Syncthing uniquement si un mode Sync est utilisé.
@@ -89,7 +90,7 @@ Publication Windows :
 Création locale d'un installateur Windows autonome et d'une archive portable :
 
 ```powershell
-./scripts/build-release.cmd 0.1.32
+./scripts/build-release.cmd 0.1.34
 ```
 
 Les paquets Linux (`.deb`) et macOS (`.dmg`) natifs sont construits par le workflow GitHub Actions multiplateforme. Ils peuvent aussi être créés sur leur système natif avec `scripts/build-linux-release.sh` et `scripts/build-macos-release.sh`. Consultez [Créer une release](docs/releasing.md).
@@ -107,6 +108,14 @@ CyRevision ne recherche, ne configure et n'arrête jamais une installation Synct
 En mode **Git + Sync**, le dossier partagé contient les bundles Git signés, les certificats d'appartenance, les inventaires LFS signés et les objets LFS immuables adressés par leur contenu. Le working tree et le `.git` actif restent locaux. En mode **Sync sans Git**, Syncthing partage directement le dossier de projet sélectionné.
 
 ## Documentation
+
+Ouvrez **Aide > Guide utilisateur**, ou appuyez sur **F1** pour l'aide de la vue courante. Native V2 et Classic utilisent le même lecteur CyDoc embarqué : `Documentation/Documentation.html`. Ce fichier s'ouvre directement après téléchargement du dossier Documentation complet, sans serveur web ni connexion Internet.
+
+Le manuel comporte 86 pages en anglais (langue par défaut) et en français, couvrant les modes de projet, Git/LFS, PR/CI, synchronisation, sauvegardes, réseau, intégrations, IA et dépannage. Il propose une arborescence, une recherche globale (**Ctrl+K**), des thèmes, des captures, une galerie de l'interface et des schémas traduits. Les images s'agrandissent dans le lecteur. Les pages développeur présentent les signatures publiques, paramètres, retours et exemples sans publier les fichiers source complets. `DocAI.md` reste séparé du lecteur humain.
+
+Les sources et outils de génération sont dans `.CyDocBuild` ; seul l'export `Documentation` complet est distribué. Régénérez avec `node .CyDocBuild/build.mjs`, vérifiez avec `node .CyDocBuild/build.mjs --check`, puis lancez `node --test .CyDocBuild/test/*.test.mjs`. Consultez les [instructions de maintenance](.CyDocBuild/internal/maintenance.md) pour les détails de compilation.
+
+Les documents suivants sont des références développeur distinctes du manuel :
 
 - [Guide utilisateur](docs/user-guide.md)
 - [Architecture](docs/architecture.md)

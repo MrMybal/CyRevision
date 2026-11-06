@@ -119,7 +119,7 @@ public sealed class ApplicationUpdateStartupTests
     [Fact]
     public async Task CyDocLinksWorkWithoutAProjectAndDuringAnOperation()
     {
-        await using Fixture fixture = new(Path.Combine(AppContext.BaseDirectory, "Help"));
+        await using Fixture fixture = new(Path.Combine(AppContext.BaseDirectory, "Documentation"));
         Assert.True(fixture.Model.IsDocumentationAvailable);
         Assert.True(NativeWorkspaceCatalog.IsAvailable(NativeWorkspaceCatalog.Find("help"), fixture.Model));
         var busy = typeof(MainWindowViewModel).GetField("_isBusy", BindingFlags.Instance | BindingFlags.NonPublic)!;

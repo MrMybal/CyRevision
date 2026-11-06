@@ -35,7 +35,7 @@ public sealed class GuideCheckApp : Application
             {
                 try
                 {
-                    var service = new OfflineDocumentationService(Path.Combine(AppContext.BaseDirectory, "Help"));
+                    var service = new OfflineDocumentationService(Path.Combine(AppContext.BaseDirectory, "Documentation"));
                     var localization = new LocalizationService();
                     string profile = Path.Combine(output, "localization-fixture");
                     Directory.CreateDirectory(profile);
@@ -51,7 +51,7 @@ public sealed class GuideCheckApp : Application
                         using var localizer = new UiLocalizer(window, localization);
                         if (language == "fr" && localization.Translate("Open user guide") == "Open user guide")
                             throw new InvalidOperationException("The French launch-surface catalog is missing.");
-                        var expected = new HashSet<string> { "getting-started", "git-workflow", "ci-actions", "preferences", "technical-references" };
+                        var expected = new HashSet<string> { "getting-started", "git-workflow", "ci-actions", "preferences", "plugin-api" };
                         Button[] buttons = [];
                         for (int attempt = 0; attempt < 40; attempt++)
                         {

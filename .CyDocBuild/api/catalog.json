@@ -1,0 +1,282 @@
+[
+  [
+    "lifecycle.initialize",
+    "ICyRevisionPlugin",
+    "Task InitializeAsync(CyRevisionPluginContext context, CancellationToken cancellationToken = default);",
+    "plugin-contracts-api",
+    "Initialize the enabled plugin with the host directories and application version.",
+    "Initialiser le plugin activé avec les dossiers de l’hôte et la version de l’application.",
+    "Completes initialization; asynchronous failures are reported to the host.",
+    "Termine l’initialisation ; les échecs asynchrones sont transmis à l’hôte."
+  ],
+  [
+    "lifecycle.activate",
+    "IProjectScopedPlugin",
+    "Task ActivateProjectAsync(PluginProjectSandboxPolicy policy, IPluginProjectFileSandbox files, CancellationToken cancellationToken = default);",
+    "plugin-contracts-api",
+    "Attach an explicitly enabled plugin to one project and its cooperative file broker.",
+    "Rattacher un plugin explicitement activé à un projet et à son courtier de fichiers coopératif.",
+    "Completes activation for the supplied project context.",
+    "Termine l’activation dans le contexte du projet fourni."
+  ],
+  [
+    "lifecycle.deactivate",
+    "IProjectScopedPlugin",
+    "Task DeactivateProjectAsync(Guid projectId, CancellationToken cancellationToken = default);",
+    "plugin-contracts-api",
+    "Release the project-specific resources when the host disables or changes that context.",
+    "Libérer les ressources propres au projet lorsque l’hôte désactive ou remplace ce contexte.",
+    "Completes the requested project deactivation.",
+    "Termine la désactivation du projet demandé."
+  ],
+  [
+    "files.enumerate",
+    "IPluginProjectFileSandbox",
+    "Task<IReadOnlyList<string>> EnumerateFilesAsync(string relativeDirectory = \"\", string searchPattern = \"*\", int maximumResults = 10_000, CancellationToken cancellationToken = default);",
+    "plugin-file-broker-api",
+    "List permitted project-relative files without reading their contents.",
+    "Énumérer les fichiers relatifs autorisés sans lire leur contenu.",
+    "A bounded list of relative file paths inside the granted roots.",
+    "Une liste bornée de chemins relatifs situés dans les racines autorisées."
+  ],
+  [
+    "files.read",
+    "IPluginProjectFileSandbox",
+    "Task<byte[]> ReadAllBytesAsync(string relativePath, CancellationToken cancellationToken = default);",
+    "plugin-file-broker-api",
+    "Read a permitted file within the policy's read budget.",
+    "Lire un fichier autorisé dans la limite du budget de lecture.",
+    "The file bytes; invalid paths, missing permission or oversized content fail.",
+    "Les octets du fichier ; un chemin invalide, un droit manquant ou un contenu trop volumineux provoque un échec."
+  ],
+  [
+    "files.write",
+    "IPluginProjectFileSandbox",
+    "Task WriteAllBytesAsync(string relativePath, ReadOnlyMemory<byte> content, CancellationToken cancellationToken = default);",
+    "plugin-file-broker-api",
+    "Write permitted bytes through the host file broker rather than bypassing its path checks.",
+    "Écrire les octets autorisés par le courtier de l’hôte, sans contourner ses contrôles de chemin.",
+    "Completes the atomic write; requires write permission and an allowed destination.",
+    "Termine l’écriture atomique ; exige un droit d’écriture et une destination autorisée."
+  ],
+  [
+    "tasks.load",
+    "IWorkItemIntegrationPlugin",
+    "Task<WorkItemConnectionSettings> LoadConnectionAsync(Guid projectId, CancellationToken cancellationToken = default);",
+    "work-item-api",
+    "Load the issue tracker's non-secret connection settings for one project.",
+    "Charger les réglages de connexion non secrets du suivi de tâches pour un projet.",
+    "Project-scoped connection coordinates, not an access token.",
+    "Les coordonnées de connexion propres au projet, sans jeton d’accès."
+  ],
+  [
+    "tasks.save",
+    "IWorkItemIntegrationPlugin",
+    "Task SaveConnectionAsync(WorkItemConnectionSettings settings, CancellationToken cancellationToken = default);",
+    "work-item-api",
+    "Save non-secret provider coordinates separately from session credentials.",
+    "Enregistrer les coordonnées non secrètes du fournisseur séparément des identifiants de session.",
+    "Completes saving the connection settings.",
+    "Termine l’enregistrement des réglages de connexion."
+  ],
+  [
+    "tasks.test",
+    "IWorkItemIntegrationPlugin",
+    "Task<WorkItemConnectionTestResult> TestConnectionAsync(WorkItemConnectionSettings settings, string? sessionToken, CancellationToken cancellationToken = default);",
+    "work-item-api",
+    "Check a provider connection using the supplied session credential or configured environment.",
+    "Vérifier une connexion au fournisseur avec l’identifiant de session fourni ou l’environnement configuré.",
+    "Succeeded and a provider-specific message; inspecting a task remains a separate operation.",
+    "Succeeded et un message propre au fournisseur ; l’examen d’une tâche est une opération distincte."
+  ],
+  [
+    "tasks.search",
+    "IWorkItemIntegrationPlugin",
+    "Task<IReadOnlyList<WorkItemReference>> SearchAsync(WorkItemConnectionSettings settings, string? sessionToken, string query, int maximumResults = 50, CancellationToken cancellationToken = default);",
+    "work-item-api",
+    "Search available tasks without changing their status.",
+    "Rechercher les tâches disponibles sans modifier leur état.",
+    "Task references with provider IDs, keys, titles, status and URLs.",
+    "Des références de tâches avec identifiants de fournisseur, clés, titres, états et URL."
+  ],
+  [
+    "tasks.resolve",
+    "IWorkItemIntegrationPlugin",
+    "Task<WorkItemReference?> ResolveAsync(WorkItemConnectionSettings settings, string? sessionToken, string identifierOrUrl, CancellationToken cancellationToken = default);",
+    "work-item-api",
+    "Resolve a task identifier or URL in the configured provider context.",
+    "Résoudre un identifiant ou une URL de tâche dans le contexte du fournisseur configuré.",
+    "A resolved task, or null when the provider cannot resolve that reference.",
+    "Une tâche résolue, ou null lorsque le fournisseur ne peut pas résoudre cette référence."
+  ],
+  [
+    "tasks.transitions",
+    "IWorkItemIntegrationPlugin",
+    "Task<IReadOnlyList<WorkItemTransitionOption>> GetTransitionsAsync(WorkItemConnectionSettings settings, string? sessionToken, WorkItemReference workItem, CancellationToken cancellationToken = default);",
+    "work-item-api",
+    "Read transitions offered by the task's current workflow.",
+    "Lire les transitions proposées par le workflow actuel de la tâche.",
+    "Provider transition IDs, names and completion flags; no universal Done state is assumed.",
+    "Les identifiants, noms et indicateurs de fin des transitions du fournisseur ; aucun état Done universel n’est supposé."
+  ],
+  [
+    "tasks.apply",
+    "IWorkItemIntegrationPlugin",
+    "Task<WorkItemStatusUpdateResult> ApplyTransitionAsync(WorkItemConnectionSettings settings, string? sessionToken, WorkItemReference workItem, WorkItemTransitionOption transition, CancellationToken cancellationToken = default);",
+    "work-item-api",
+    "Apply a selected remote transition after the host's explicit merge/task policy decision.",
+    "Appliquer une transition distante choisie après la décision explicite de l’hôte concernant la fusion et les tâches.",
+    "The updated task and previous/new status; remote authorization and errors still apply.",
+    "La tâche mise à jour et ses états précédent/nouveau ; les autorisations et erreurs distantes restent applicables."
+  ],
+  [
+    "modes.evaluate",
+    "IProjectModeProvider",
+    "PluginProjectModeAvailability EvaluateProjectMode(string modeId, PluginProjectModeContext context);",
+    "project-mode-api",
+    "Evaluate whether a provider-owned mode is compatible with the selected project.",
+    "Évaluer la compatibilité d’un mode fourni par le plugin avec le projet sélectionné.",
+    "IsAvailable and a summary; evaluating is not applying the mode.",
+    "IsAvailable et un résumé ; évaluer le mode ne l’applique pas."
+  ],
+  [
+    "engine.inspect",
+    "IGameEngineIntegrationPlugin",
+    "GameEngineProjectInspection InspectProject(string path);",
+    "engine-plugin-api",
+    "Inspect engine project metadata before installing or connecting its editor companion.",
+    "Examiner les métadonnées d’un projet moteur avant d’installer ou de connecter son compagnon éditeur.",
+    "Detection, project root and compatibility information for this engine adapter.",
+    "Les informations de détection, racine et compatibilité propres à cet adaptateur moteur."
+  ],
+  [
+    "engine.install",
+    "IGameEngineIntegrationPlugin",
+    "Task<GameEnginePluginInstallationResult> InstallOrUpdateEditorPluginAsync(string projectPath, string cyRevisionExecutablePath, CancellationToken cancellationToken = default);",
+    "engine-plugin-api",
+    "Install or update the engine-specific editor companion and configure its application connection.",
+    "Installer ou mettre à jour le compagnon éditeur du moteur et configurer sa connexion à l’application.",
+    "Installation success and destination/message information; this operation can change project files.",
+    "La réussite de l’installation et ses destination/message ; cette opération peut modifier des fichiers du projet."
+  ],
+  [
+    "engine.configure",
+    "IGameEngineIntegrationPlugin",
+    "Task<GameEngineBridgeStatus> ConfigureProjectConnectionAsync(string projectPath, string cyRevisionExecutablePath, CancellationToken cancellationToken = default);",
+    "engine-plugin-api",
+    "Authorize the selected engine project for its private loopback bridge.",
+    "Autoriser le projet moteur sélectionné sur son pont local privé.",
+    "Bridge running state, endpoint, authorized project count and detail.",
+    "L’état de fonctionnement, l’adresse du pont, le nombre de projets autorisés et le détail."
+  ],
+  [
+    "preview.can-preview",
+    "IFilePresentationProvider",
+    "bool CanPreview(FilePreviewRequest request);",
+    "file-presentation-api",
+    "Declare whether this provider can preview the selected file request.",
+    "Déclarer si ce fournisseur sait produire l’aperçu du fichier demandé.",
+    "true when the provider accepts the request; no preview is generated by this check.",
+    "true lorsque le fournisseur accepte la demande ; ce contrôle ne génère pas l’aperçu."
+  ],
+  [
+    "preview.can-compare",
+    "IFilePresentationProvider",
+    "bool CanCompare(FileDiffRequest request);",
+    "file-presentation-api",
+    "Declare whether the baseline/candidate pair is supported.",
+    "Déclarer si la paire référence/candidat est prise en charge.",
+    "true when comparison is supported for this request.",
+    "true lorsque la comparaison est prise en charge pour cette demande."
+  ],
+  [
+    "preview.create-preview",
+    "IFilePresentationProvider",
+    "Task<FilePresentationResult?> CreatePreviewAsync(FilePreviewRequest request, CancellationToken cancellationToken = default);",
+    "file-presentation-api",
+    "Produce a UI-neutral text, image or metadata preview for a supported request.",
+    "Produire un aperçu texte, image ou métadonnées indépendant de l’interface pour une demande prise en charge.",
+    "A presentation result, or null if the provider does not supply one.",
+    "Un résultat de présentation, ou null si le fournisseur n’en produit pas."
+  ],
+  [
+    "preview.create-diff",
+    "IFilePresentationProvider",
+    "Task<FilePresentationResult?> CreateDiffAsync(FileDiffRequest request, CancellationToken cancellationToken = default);",
+    "file-presentation-api",
+    "Produce a comparison without coupling the plugin to Avalonia or native UI widgets.",
+    "Produire une comparaison sans coupler le plugin à Avalonia ou aux widgets natifs.",
+    "Text/metadata or image paths for the comparison; null means no result.",
+    "Le texte, les métadonnées ou les chemins d’images de comparaison ; null signifie aucun résultat."
+  ],
+  [
+    "store.inspect",
+    "ICyStorePlugin",
+    "CyStoreStatus InspectStore(string projectRoot);",
+    "cystore-api",
+    "Inspect the experimental chunk store independently from Git history.",
+    "Examiner le magasin expérimental de blocs indépendamment de l’historique Git.",
+    "Initialization, size/count and last-update information.",
+    "Les informations d’initialisation, de tailles/nombres et de dernière mise à jour."
+  ],
+  [
+    "store.initialize",
+    "ICyStorePlugin",
+    "Task<CyStoreStatus> InitializeStoreAsync(string projectRoot, CancellationToken cancellationToken = default);",
+    "cystore-api",
+    "Initialize the optional CyStore storage for an explicitly selected project.",
+    "Initialiser le stockage CyStore facultatif d’un projet explicitement sélectionné.",
+    "The resulting store status; ordinary Git and LFS remain separate.",
+    "L’état obtenu du magasin ; Git et LFS ordinaires restent séparés."
+  ],
+  [
+    "store.capture",
+    "ICyStorePlugin",
+    "Task<CyStoreCaptureResult> CaptureFileAsync(string projectRoot, string filePath, bool isGitLfsTracked, IProgress<CyStoreProgress>? progress = null, CancellationToken cancellationToken = default);",
+    "cystore-api",
+    "Capture a file as reusable content-addressed chunks.",
+    "Capturer un fichier sous forme de blocs réutilisables adressés par contenu.",
+    "Version metadata, new/reused chunk counts and written/reused byte counts.",
+    "Les métadonnées de version, nombres de blocs nouveaux/réutilisés et nombres d’octets écrits/réutilisés."
+  ],
+  [
+    "store.capture-lfs",
+    "ICyStorePlugin",
+    "Task<CyStoreBatchCaptureResult> CaptureTrackedGitLfsFilesAsync(string projectRoot, IProgress<CyStoreProgress>? progress = null, CancellationToken cancellationToken = default);",
+    "cystore-api",
+    "Capture the project's tracked LFS files into the optional chunk store.",
+    "Capturer les fichiers LFS suivis du projet dans le magasin de blocs facultatif.",
+    "Captured/skipped file counts, storage statistics, warnings and a summary.",
+    "Les nombres de fichiers capturés/ignorés, statistiques de stockage, avertissements et résumé."
+  ],
+  [
+    "store.list",
+    "ICyStorePlugin",
+    "Task<IReadOnlyList<CyStoreVersion>> ListVersionsAsync(string projectRoot, CancellationToken cancellationToken = default);",
+    "cystore-api",
+    "List stored versions without treating them as Git commits.",
+    "Énumérer les versions stockées sans les assimiler à des commits Git.",
+    "Version IDs, relative paths, SHA-256 values, sizes, capture times and LFS flags.",
+    "Les identifiants de version, chemins relatifs, SHA-256, tailles, dates de capture et indicateurs LFS."
+  ],
+  [
+    "store.verify",
+    "ICyStorePlugin",
+    "Task<CyStoreVerificationResult> VerifyVersionAsync(string projectRoot, string versionId, IProgress<CyStoreProgress>? progress = null, CancellationToken cancellationToken = default);",
+    "cystore-api",
+    "Verify the selected stored version before reconstructing it.",
+    "Vérifier la version stockée sélectionnée avant de la reconstruire.",
+    "Success, verified chunk/byte counts and a summary.",
+    "La réussite, les nombres de blocs/octets vérifiés et un résumé."
+  ],
+  [
+    "store.reconstruct",
+    "ICyStorePlugin",
+    "Task<CyStoreReconstructionResult> ReconstructVersionAsync(string projectRoot, string versionId, IProgress<CyStoreProgress>? progress = null, CancellationToken cancellationToken = default);",
+    "cystore-api",
+    "Reconstruct bytes from a selected CyStore version; inspect the returned destination before use.",
+    "Reconstruire les octets d’une version CyStore sélectionnée ; examiner la destination retournée avant utilisation.",
+    "Success, destination, reused chunks, reconstructed bytes and summary.",
+    "La réussite, la destination, les blocs réutilisés, les octets reconstruits et le résumé."
+  ]
+]

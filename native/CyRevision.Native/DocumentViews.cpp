@@ -42,7 +42,7 @@ void Workspace::documentationPanel(){
     cyui::space(8);
     if(cyui::button("Git / LFS"))openDocumentation("git-workflow");ImGui::SameLine();if(cyui::button("PR / CI"))openDocumentation("ci-actions");
     if(cyui::button(cyui::trLabel("Preferences").c_str()))openDocumentation("preferences");
-    ImGui::SameLine();if(cyui::button(cyui::trLabel("Technical references").c_str()))openDocumentation("technical-references");
+    ImGui::SameLine();if(cyui::button(cyui::trLabel("Plugin API").c_str()))openDocumentation("plugin-api");
     cyui::space(8);ImGui::TextWrapped("%s",cyui::tr("F1 opens help for the current view. Search, history, language and reading positions are managed by CyDoc.").c_str());
 }
 void Workspace::documentPanel(const char* property,const char* id){

@@ -47,7 +47,6 @@
 
   <ItemGroup>
     <None Update="Localization\Locales\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <None Update="Help\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="VpnRuntime\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="SyncthingRuntime\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\plugins\CyRevision.UnrealIntegration\cyrevision-plugin.json"
@@ -221,7 +220,15 @@
           DestinationFolder="$(PublishDir)Plugins\CyRevision.CyStoreIntegration"
           SkipUnchangedFiles="true" />
   </Target>
-  <Target Name="GenerateCyDocHelp" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)/../.." Command="node documentation/build.mjs --ensure" />
+  <Target Name="GenerateCyDocHelp" BeforeTargets="PrepareForBuild;AssignTargetPaths" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)/../.." Command="node .CyDocBuild/build.mjs --ensure" />
+    <ItemGroup>
+      <_CyDocGenerated Include="$(MSBuildProjectDirectory)/../../Documentation/**/*" />
+      <Content Include="@(_CyDocGenerated)">
+        <Link>Documentation/%(_CyDocGenerated.RecursiveDir)%(_CyDocGenerated.Filename)%(_CyDocGenerated.Extension)</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </Content>
+    </ItemGroup>
   </Target>
 </Project>

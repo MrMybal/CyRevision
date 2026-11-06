@@ -123,10 +123,10 @@ public:
             for(const auto& field:updateFields.items())result["fields"][field.key()]={{"value",field.value()}};
             if(guideEnabled){
                 result["navigation"]["tabs"].push_back({{"id","help"},{"label","Help"},{"category","Extensions & Help"},{"visible",true},{"available",true}});
-                result["documentation"]={{"language",guideLanguage},{"total",94},{"available",true},{"reader","CyDoc"},{"modules",Json::array({"image"})}};
+                result["documentation"]={{"language",guideLanguage},{"total",86},{"available",true},{"reader","CyDoc"},{"modules",Json::array({"image"})}};
             }
         } else if(command=="app.language")guideLanguage=text(request,"language");
-        else if(command=="docs.open"){guideTopic=text(request,"topicId");++guideOpens;result={{"url","file:///D:/Example/Help/index.html#/"+guideLanguage+"/"+guideTopic}};}
+        else if(command=="docs.open"){guideTopic=text(request,"topicId");++guideOpens;result={{"url","file:///D:/Example/Documentation/Documentation.html#/"+guideLanguage+"/"+guideTopic}};}
         else if(command=="docs.search")guideQuery=text(request,"query");
         else if(command=="updates.check"){
             ++updateChecks;if(holdUpdateCheck)checkingUpdates=true;else ++updateRevision;
@@ -220,7 +220,7 @@ void testGuide(){
     engine.operationBusy=true;updateSnapshot(workspace);WorkspaceTestAccess::guideLink(workspace);updateSnapshot(workspace);
     require(engine.guideOpens==3 && engine.mutations==0,"Guide navigation during a project operation invoked a mutation or was blocked.");
     engine.operationBusy=false;workspace.showWorkspace("help");updateSnapshot(workspace);
-    require(!isLocalDocumentationLink("https://example.invalid/Help/index.html#/en/a") && !isLocalDocumentationLink("file:///D:/other.html"),"The native help host accepted a non-CyDoc URL.");
+    require(!isLocalDocumentationLink("https://example.invalid/Documentation/Documentation.html#/en/a") && !isLocalDocumentationLink("file:///D:/other.html"),"The native help host accepted a non-CyDoc URL.");
     for(auto density:{cyui::Density::compact,cyui::Density::comfortable}){cyui::setDensity(density);for(auto theme:{"mid-grey","light-grey","amber-night","violet","navy"}){cyui::setTheme(theme);settle(workspace);}}
     cyui::setDensity(cyui::Density::compact);cyui::setTheme("mid-grey");cyui::setLocale("en");
 }

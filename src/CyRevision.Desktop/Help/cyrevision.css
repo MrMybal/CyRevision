@@ -1,5 +1,0 @@
-/* Application palette only. Rendering, keyboard, touch and enlargement remain CyDoc-owned. */
-.cydoc-viewer[data-theme=dark]{--bg:#242424;--sidebar:#202020;--surface:#303030;--card:#2b2b2b;--line:#454545;--text:#f1f1f1;--muted:#b9b9b9;--faint:#a4a4a4;--accent:#ff9d38;--accent-bg:#4a3521}
-.cydoc-viewer[data-theme=light]{--accent:#9b4700;--accent-bg:#fff0df}
-.cydoc-viewer .brand-mark{background:var(--accent-bg);color:var(--accent)}
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}

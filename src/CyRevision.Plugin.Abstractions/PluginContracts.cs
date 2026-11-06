@@ -27,7 +27,7 @@ public sealed record CyRevisionPluginContext(
  * Project activation is a separate optional `IProjectScopedPlugin` contract. Do not infer global project access.
  *
  * ## Source of truth {#source}
- * The indexed C# file contains the actual signatures. XML comments are shown as source, not inferred API declarations.
+ * The public reference documents signatures and parameters without distributing implementation listings.
  */
 /**
  * @doc plugin-contracts-api
@@ -42,7 +42,7 @@ public sealed record CyRevisionPluginContext(
  * L’activation par projet est le contrat optionnel distinct `IProjectScopedPlugin`, pas un accès global implicite.
  *
  * ## Référence {#source}
- * Le fichier C# indexé contient les signatures réelles. Les commentaires XML restent du code source, sans déclarations inférées.
+ * La référence publique présente signatures et paramètres sans distribuer les fichiers d’implémentation.
  */
 public interface ICyRevisionPlugin : IAsyncDisposable
 {
