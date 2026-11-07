@@ -93,6 +93,10 @@ Open **Help > User guide** or press **F1** for the active workspace. Both interf
 
 These are **local-reader links**: GitHub displays HTML files as source and does not host this manual as a live website. Download/extract the application or the complete documentation folder before opening `Documentation/Documentation.html`. The reader contains workflows and public API references; `DocAI.md` is a separate agent-oriented file, not a human manual chapter.
 
+### Showcase
+
+The [bilingual application showcase](website/README.md) presents the workflows with real screenshots, localized diagrams and in-page image enlargement. Build it with `node website/build.mjs`, then open `dist/website/index.html`. The complete CyDoc reader is copied into its `manual` directory. This is a local static companion, not a publicly hosted website.
+
 ## Source, build and required libraries
 
 <details>

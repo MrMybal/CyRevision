@@ -47,3 +47,4 @@ __pycache__/
 node_modules/
 /.CyDocBuild/.cache/
 /.CyDocBuild/.cydoc.build.*.json
+/dist/website/

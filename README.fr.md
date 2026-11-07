@@ -93,6 +93,10 @@ Ouvrez **Aide > Guide utilisateur**, ou appuyez sur **F1** pour l’espace actif
 
 Ces liens visent le **lecteur local** : GitHub affiche les fichiers HTML comme sources et n’héberge pas ce manuel sous forme de site actif. Téléchargez/extrayez l’application ou le dossier documentaire complet avant d’ouvrir `Documentation/Documentation.html`. Le lecteur contient les parcours et références d’API publique ; `DocAI.md` est un fichier distinct pour les agents, pas un chapitre du manuel humain.
 
+### Vitrine
+
+La [vitrine bilingue de l’application](website/README.md) présente les parcours avec captures réelles, schémas traduits et agrandissement dans la page. Générez-la avec `node website/build.mjs`, puis ouvrez `dist/website/index.html`. Le lecteur CyDoc complet est copié dans son dossier `manual`. Il s’agit d’un compagnon statique local, pas d’un site hébergé publiquement.
+
 ## Sources, compilation et bibliothèques nécessaires
 
 <details>
