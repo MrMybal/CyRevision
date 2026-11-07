@@ -3,7 +3,7 @@ export const escape = value=>String(value).replaceAll('&','&amp;').replaceAll('<
 export function renderPage(assets) {
   const t=key=>escape(copy.en[key]??(()=>{throw Error('Missing copy: '+key);})());
   const text=(tag,key,attrs='')=>`<${tag} data-i18n="${key}" ${attrs}>${t(key)}</${tag}>`;
-  const doc=(page,key,cls='text-link')=>`<a class="${cls}" data-doc="${page}" href="./manual/Documentation.html#/en/${page}">${t(key)} ↗</a>`;
+  const doc=(page,key,cls='text-link')=>`<a class="${cls}" data-doc="${page}" href="./manual/Documentation.html#/en/${page}"><span data-i18n="${key}">${t(key)}</span> ↗</a>`;
   const shot=(id,priority=false)=>{
     const item=media.find(item=>item.id===id);
     return `<figure class="screen"><button type="button" class="shot" data-shot="${id}" aria-label="${t('viewer.open')}: ${t('shot.'+id+'.caption')}"><img data-media="${id}" src="${assets[id].en}" data-i18n-alt="shot.${id}.alt" alt="${t('shot.'+id+'.alt')}" width="${item.width}" height="${item.height}" ${priority?'loading="eager" fetchpriority="high"':'loading="lazy"'} decoding="async"></button>${text('figcaption','shot.'+id+'.caption')}</figure>`;

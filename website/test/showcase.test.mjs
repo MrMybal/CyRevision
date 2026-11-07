@@ -48,7 +48,11 @@ test('French deep URL, document metadata, all visible strings, media and context
     for(const element of w.document.querySelectorAll('[data-i18n-label]'))assert.equal(element.getAttribute('aria-label'),copy.fr[element.dataset.i18nLabel]);
     for(const element of w.document.querySelectorAll('[data-i18n-alt]'))assert.equal(element.alt,copy.fr[element.dataset.i18nAlt]);
     assert.ok(select(w,'img[data-media=modes]').getAttribute('src').includes('modes.fr.'));
-    for(const link of w.document.querySelectorAll('[data-doc]'))assert.ok(link.href.includes('manual/Documentation.html#/fr/'+link.dataset.doc));
+    for(const link of w.document.querySelectorAll('[data-doc]')){
+      assert.ok(link.href.includes('manual/Documentation.html#/fr/'+link.dataset.doc));
+      const label=link.querySelector('[data-i18n]');assert.ok(label,'Reader links need a translated label');
+      assert.equal(link.textContent,copy.fr[label.dataset.i18n]+' ↗');
+    }
     select(w,'[data-lang=en]').click();assert.equal(w.document.documentElement.lang,'en');
     assert.equal(new URL(w.location.href).searchParams.get('keep'),'yes');assert.equal(w.location.hash,'#history');
     assert.equal(select(w,'[data-lang=en]').getAttribute('aria-pressed'),'true');assert.equal(select(w,'[data-lang=fr]').getAttribute('aria-pressed'),'false');
