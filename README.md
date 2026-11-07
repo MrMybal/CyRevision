@@ -2,7 +2,8 @@
   <tr>
     <td width="300" align="left" valign="top">
       <a href="#about-cyrevision">About CyRevision</a><br>
-      <a href="Documentation/Documentation.html#/en/getting-started">Offline manual · English</a><br>
+      <a href="https://mrmybal.github.io/CyRevision/">Application showcase</a><br>
+      <a href="https://mrmybal.github.io/CyRevision/manual/Documentation.html#/en/getting-started">Documentation · English</a><br>
       <a href="https://github.com/MrMybal/CyRevision">Source repository</a><br>
       <a href="https://github.com/MrMybal/CyRevision/issues">Issue tracker</a><br><br>
       <sub>README</sub><br>
@@ -89,13 +90,13 @@ Git and Git LFS are required for Git workflows. Syncthing is used only by Sync m
 
 ### Documentation
 
-Open **Help > User guide** or press **F1** for the active workspace. Both interfaces open the same [English HTML reader](Documentation/Documentation.html#/en/getting-started); [French is also available](Documentation/Documentation.html#/fr/getting-started). Keep the whole `Documentation` folder, including `DocData`. No web server, CDN, Node.js runtime or connection is required to read it.
+Read the [English online manual](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/en/getting-started) or [French edition](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/fr/getting-started). Both open the complete CyDoc HTML reader with navigation, search, images and diagrams.
 
-These are **local-reader links**: GitHub displays HTML files as source and does not host this manual as a live website. Download/extract the application or the complete documentation folder before opening `Documentation/Documentation.html`. The reader contains workflows and public API references; `DocAI.md` is a separate agent-oriented file, not a human manual chapter.
+The application also includes the same reader **offline**: open **Help > User guide** or press **F1** for the active workspace. Keep the whole `Documentation` folder, including `DocData`, or open `Documentation/Documentation.html` from the extracted package. No server, CDN, Node.js runtime or connection is required for local reading. `DocAI.md` remains a separate agent-oriented sidecar, outside human navigation.
 
 ### Showcase
 
-The [bilingual application showcase](website/README.md) presents the workflows with real screenshots, localized diagrams and in-page image enlargement. Build it with `node website/build.mjs`, then open `dist/website/index.html`. The complete CyDoc reader is copied into its `manual` directory. This is a local static companion, not a publicly hosted website.
+Visit the [CyRevision showcase](https://mrmybal.github.io/CyRevision/) or its [French edition](https://mrmybal.github.io/CyRevision/?lang=fr): real screenshots, localized diagrams, workflows and in-page image enlargement. The complete manual is included. [Build and hosting instructions](website/README.md) also describe how to generate a movable offline copy with `node website/build.mjs` and open `dist/website/index.html`.
 
 ## Source, build and required libraries
 
@@ -212,7 +213,7 @@ This is an index of main components, not a replacement for complete transitive n
 
 ## References and links
 
-- [English local manual](Documentation/Documentation.html#/en/getting-started) · [Manuel local en français](Documentation/Documentation.html#/fr/getting-started).
+- [Application showcase](https://mrmybal.github.io/CyRevision/) · [English manual](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/en/getting-started) · [Manuel en français](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/fr/getting-started).
 - [Release 0.1.34](https://github.com/MrMybal/CyRevision/releases/tag/v0.1.34) · [SHA-256 sums](https://github.com/MrMybal/CyRevision/releases/download/v0.1.34/SHA256SUMS.txt) · [Issue tracker](https://github.com/MrMybal/CyRevision/issues).
 - [Architecture](docs/architecture.md) · [Security model](docs/security.md) · [Server/API](docs/server-api.md) · [Linux server setup](docs/linux-server.md).
 - [Unreal companion](plugins/CyRevisionUnreal/README.md) · [Unity companion](plugins/CyRevisionUnity/README.md) · [Godot companion](plugins/CyRevisionGodot/README.md).

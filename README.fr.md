@@ -2,7 +2,8 @@
   <tr>
     <td width="300" align="left" valign="top">
       <a href="#à-propos-de-cyrevision">À propos de CyRevision</a><br>
-      <a href="Documentation/Documentation.html#/fr/getting-started">Manuel hors ligne · Français</a><br>
+      <a href="https://mrmybal.github.io/CyRevision/?lang=fr">Vitrine de l’application</a><br>
+      <a href="https://mrmybal.github.io/CyRevision/manual/Documentation.html#/fr/getting-started">Documentation · Français</a><br>
       <a href="https://github.com/MrMybal/CyRevision">Dépôt des sources</a><br>
       <a href="https://github.com/MrMybal/CyRevision/issues">Suivi des problèmes</a><br><br>
       <sub>README</sub><br>
@@ -89,13 +90,13 @@ Git et Git LFS sont nécessaires aux parcours Git. Syncthing sert uniquement aux
 
 ### Documentation
 
-Ouvrez **Aide > Guide utilisateur**, ou appuyez sur **F1** pour l’espace actif. Les deux interfaces ouvrent le même [lecteur HTML français](Documentation/Documentation.html#/fr/getting-started) ; [l’anglais est également disponible](Documentation/Documentation.html#/en/getting-started). Conservez tout le dossier `Documentation`, y compris `DocData`. La lecture ne nécessite ni serveur web, ni CDN, ni runtime Node.js, ni connexion.
+Consultez le [manuel français en ligne](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/fr/getting-started) ou sa [version anglaise](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/en/getting-started). Les deux ouvrent le lecteur HTML CyDoc complet avec navigation, recherche, images et schémas.
 
-Ces liens visent le **lecteur local** : GitHub affiche les fichiers HTML comme sources et n’héberge pas ce manuel sous forme de site actif. Téléchargez/extrayez l’application ou le dossier documentaire complet avant d’ouvrir `Documentation/Documentation.html`. Le lecteur contient les parcours et références d’API publique ; `DocAI.md` est un fichier distinct pour les agents, pas un chapitre du manuel humain.
+Le logiciel inclut aussi le même lecteur **hors ligne** : ouvrez **Aide > Guide utilisateur** ou appuyez sur **F1** pour l’espace actif. Conservez tout le dossier `Documentation`, y compris `DocData`, ou ouvrez `Documentation/Documentation.html` dans le paquet extrait. La lecture locale ne nécessite ni serveur, ni CDN, ni runtime Node.js, ni connexion. `DocAI.md` reste un fichier distinct pour les agents, hors de la navigation humaine.
 
 ### Vitrine
 
-La [vitrine bilingue de l’application](website/README.md) présente les parcours avec captures réelles, schémas traduits et agrandissement dans la page. Générez-la avec `node website/build.mjs`, puis ouvrez `dist/website/index.html`. Le lecteur CyDoc complet est copié dans son dossier `manual`. Il s’agit d’un compagnon statique local, pas d’un site hébergé publiquement.
+Découvrez la [vitrine française de CyRevision](https://mrmybal.github.io/CyRevision/?lang=fr) ou sa [version anglaise](https://mrmybal.github.io/CyRevision/) : captures réelles, schémas traduits, parcours et agrandissement dans la page. Le manuel complet est inclus. Les [instructions de génération et d’hébergement](website/README.md) expliquent aussi comment produire une copie hors ligne déplaçable avec `node website/build.mjs`, puis ouvrir `dist/website/index.html`.
 
 ## Sources, compilation et bibliothèques nécessaires
 
@@ -212,7 +213,7 @@ Ce tableau indexe les composants principaux sans remplacer leurs notices transit
 
 ## Références et liens
 
-- [Manuel local français](Documentation/Documentation.html#/fr/getting-started) · [English local manual](Documentation/Documentation.html#/en/getting-started).
+- [Vitrine de l’application](https://mrmybal.github.io/CyRevision/?lang=fr) · [Manuel français](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/fr/getting-started) · [English manual](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/en/getting-started).
 - [Release 0.1.34](https://github.com/MrMybal/CyRevision/releases/tag/v0.1.34) · [Sommes SHA-256](https://github.com/MrMybal/CyRevision/releases/download/v0.1.34/SHA256SUMS.txt) · [Suivi des problèmes](https://github.com/MrMybal/CyRevision/issues).
 - [Architecture](docs/architecture.md) · [Modèle de sécurité](docs/security.md) · [Serveur/API](docs/server-api.md) · [Configuration du serveur Linux](docs/linux-server.md).
 - [Compagnon Unreal](plugins/CyRevisionUnreal/README.md) · [Compagnon Unity](plugins/CyRevisionUnity/README.md) · [Compagnon Godot](plugins/CyRevisionGodot/README.md).

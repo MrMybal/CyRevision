@@ -32,6 +32,6 @@ The published notes for this release do not provide a bug-by-bug list. Consult t
 - Windows packages are unsigned. macOS bundles use an ad-hoc integrity signature and are not notarized; operating-system trust warnings can appear.
 - Offline Unreal package inspection is simplified metadata inspection, not an Unreal Editor rendering. Engine-specific editor workflows require the corresponding host installation.
 - Git, Git LFS, optional VPN tools and provider/editor integrations have separate installation or configuration requirements.
-- The complete CyDoc manual is bundled locally; no public documentation website is currently linked for this release. Keep Documentation.html and DocData together inside the Documentation folder.
+- The complete CyDoc manual is bundled locally and [available online](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/en/getting-started). For offline reading, keep Documentation.html and DocData together inside the Documentation folder.
 
 [Installation and requirements](../README.md#installation) · [All release files and checksums](https://github.com/MrMybal/CyRevision/releases/tag/v0.1.34)

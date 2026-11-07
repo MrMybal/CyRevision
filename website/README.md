@@ -21,7 +21,13 @@ node website/preview.mjs
 
 Open `http://127.0.0.1:4173/cyrevision/` or its `?lang=fr` edition. The server binds only to loopback, serves only generated output and stops with Ctrl+C. Set `CYREVISION_SHOWCASE_PORT` if needed. HTML revalidates; content-hashed styles/scripts/images can be cached long term. A host must also revalidate HTML; asset hashing alone cannot refresh stale HTML.
 
-This command does not publish. No GitHub Pages workflow, repository setting or release action is added. The output also works without Git metadata or a GitHub account and under any static project subpath without rewrites. Build refuses to replace unknown/edited generated files; preserve such files elsewhere before rebuilding.
+This command does not publish. The output also works without Git metadata or a GitHub account and under any static project subpath without rewrites. Build refuses to replace unknown/edited generated files; preserve such files elsewhere before rebuilding.
+
+## Public site and automated deployment
+
+The [public showcase](https://mrmybal.github.io/CyRevision/) defaults to English; [French](https://mrmybal.github.io/CyRevision/?lang=fr) is available explicitly. The real HTML manual is published under `manual/Documentation.html`, with `#/en/getting-started` and `#/fr/getting-started` routes. The local reader shipped with the app remains unchanged.
+
+`.github/workflows/pages.yml` installs the existing locked tools, checks the manual, builds/tests the showcase and uploads **only `dist/website`**. Pull requests run checks but never deploy. Pushes to `main`, or a manual workflow run on `main`, deploy the generated artifact through GitHub Pages using the `github-pages` environment. Generated output is not committed, no release is created, and no authoring workspace is uploaded. Styles, scripts and replaced images keep content-hashed URLs.
 
 ## Maintained inputs
 

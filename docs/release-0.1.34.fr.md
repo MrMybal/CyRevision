@@ -32,6 +32,6 @@ Les notes publiées pour cette version ne fournissent pas de liste détaillée d
 - Les paquets Windows ne sont pas signés. Les applications macOS ont une signature d’intégrité ad hoc et ne sont pas notariées ; le système peut afficher des avertissements de confiance.
 - L’inspection hors ligne des packages Unreal est une lecture simplifiée de métadonnées, pas un rendu de l’Unreal Editor. Les parcours propres à un moteur nécessitent son installation hôte.
 - Git, Git LFS, les outils VPN optionnels et les intégrations aux fournisseurs/éditeurs ont leurs propres prérequis d’installation ou de configuration.
-- Le manuel CyDoc complet est inclus localement ; aucun site documentaire public n’est actuellement lié pour cette version. Conservez Documentation.html et DocData ensemble dans le dossier Documentation.
+- Le manuel CyDoc complet est inclus localement et [disponible en ligne](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/fr/getting-started). Pour la lecture hors ligne, conservez Documentation.html et DocData ensemble dans le dossier Documentation.
 
 [Installation et prérequis](../README.fr.md#installation) · [Tous les fichiers et sommes de contrôle](https://github.com/MrMybal/CyRevision/releases/tag/v0.1.34)
