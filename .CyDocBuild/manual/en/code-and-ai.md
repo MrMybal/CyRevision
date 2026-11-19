@@ -5,7 +5,7 @@ description: Browse a complete project tree, search with Ctrl+Shift+F, follow se
 section: Workflows / Code and assets
 parent: code-explorer
 order: 24
-revision: 2
+revision: 3
 ---
 
 ## Code explorer {#code-explorer}
@@ -34,3 +34,5 @@ Choose project context and capabilities, send the prompt, observe the running st
 ```
 
 [See also](doc:mcp-policy)
+
+[CyMCPSDK assistant, shared CLI and MCP registry](doc:cymcp-automation)

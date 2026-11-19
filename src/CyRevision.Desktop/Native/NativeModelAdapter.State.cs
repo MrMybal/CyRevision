@@ -16,6 +16,7 @@ public sealed partial class NativeModelAdapter
         if(request.TryGetProperty("fields",out var requested) && requested.ValueKind==JsonValueKind.Array)
             foreach(var item in requested.EnumerateArray().Take(512))if(item.ValueKind==JsonValueKind.String)names.Add(item.GetString()!);
         var fields=new Dictionary<string,object?>();
+        names.UnionWith(new[]{"AiSdkHasApproval","AiSdkPendingApproval","IsAiSdkBusy"});
         names.UnionWith(new[]{"CurrentApplicationVersion","LatestApplicationVersion","UpdateStatus","HasUpdateAvailable","IsCheckingForUpdates","IsDownloadingUpdate","HasCheckedForUpdates","HasUpdateCheckFailed","UpdateCheckRevision","CanCheckForUpdates","CanInstallUpdate"});
         foreach(string name in names)
             if(TryResolve(name,out var owner,out var property) && NativeWorkspaceCatalog.IsScalar(property.PropertyType))
@@ -67,6 +68,7 @@ public sealed partial class NativeModelAdapter
             }).ToArray(),
             operations=model.ActiveOperations.Concat(model.RecentOperations.Take(30)).Select(operation=>new{operation.Id,operation.Title,operation.State,operation.Detail,operation.DurationText,operation.ProjectName,operation.IsRead}),
             navigation=_navigation.Snapshot(model),fields,selections,tableSelections,tables,table=primary,images=Images(workspaces.Select(view=>view.Id)),
+            automationNavigation=AutomationNavigation,automationAppearance=AutomationAppearance,
             documentation=workspaces.Any(view=>view.Id=="help") ? model.GetNativeDocumentation() : null,
             properties=fields.Values.ToArray(),actions=Actions.Values.Where(method=>NativeWorkspaceCatalog.GroupFor(method.Name)==workspace.Id).OrderBy(method=>method.Name).Select(DescribeAction).ToArray(),
             pullRequestContext=NativePullRequestActions.Snapshot(model),toolsContext=NativeToolsActions.Snapshot(model),overviewContext=NativeOverviewActions.Snapshot(model),preferences=Preferences?.Snapshot(),

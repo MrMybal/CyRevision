@@ -43,6 +43,8 @@ mkdir -p "$publish_directory" "$bundle_root/Contents/MacOS" "$app_root" "$iconse
 bash "$repository_root/scripts/prepare-syncthing-runtime.sh" "$rid"
 
 dotnet restore "$solution"
+bash "$repository_root/scripts/build-cymcp.sh" "$rid"
+dotnet publish "$repository_root/src/CyRevision.Cli/CyRevision.Cli.csproj" -c Release --runtime "$rid" --self-contained true -o "$publish_directory/Cli" "/p:Version=$version" /p:DebugType=None /p:DebugSymbols=false
 dotnet restore "$desktop_project" --runtime "$rid" /p:SelfContained=true
 dotnet restore "$agent_project" --runtime "$rid" /p:SelfContained=true
 dotnet restore "$build_agent_project" --runtime "$rid" /p:SelfContained=true

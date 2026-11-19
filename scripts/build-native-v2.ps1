@@ -6,6 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+& (Join-Path $PSScriptRoot 'build-cymcp.ps1')
 if ([string]::IsNullOrWhiteSpace($CyUiPath)) {
     $CyUiPath = Join-Path $repositoryRoot 'native/vendor/CyUI'
     $cyuiLock = Get-Content -LiteralPath (Join-Path $repositoryRoot 'native/cyui.lock.json') -Raw | ConvertFrom-Json
@@ -49,9 +50,16 @@ $ctest = Join-Path (Split-Path -Parent $cmake) 'ctest.exe'
 & $ctest --test-dir $nativeBuild -C Release --output-on-failure --no-tests=error --timeout 45
 if ($LASTEXITCODE -ne 0) { throw 'Native UI regression tests failed.' }
 if (-not $SkipManagedBuild) {
-    dotnet publish (Join-Path $repositoryRoot 'src/CyRevision.Desktop/CyRevision.Desktop.csproj') -c Release -o $output --nologo /p:DebugType=None /p:DebugSymbols=false
+    dotnet publish (Join-Path $repositoryRoot 'src/CyRevision.Desktop/CyRevision.Desktop.csproj') -c Release --runtime win-x64 --self-contained false -o $output --nologo /p:DebugType=None /p:DebugSymbols=false
     if ($LASTEXITCODE -ne 0) { throw 'Managed engine compilation failed.' }
+    dotnet publish (Join-Path $repositoryRoot 'src/CyRevision.Cli/CyRevision.Cli.csproj') -c Release --runtime win-x64 --self-contained false -o (Join-Path $output 'Cli') --nologo /p:DebugType=None /p:DebugSymbols=false
+    if ($LASTEXITCODE -ne 0) { throw 'CLI compilation failed.' }
 }
 & $cmake --install $nativeBuild --config Release --prefix $output
 if ($LASTEXITCODE -ne 0) { throw 'Native installation failed.' }
+# Native NuGet packages may copy their upstream debug symbols even with DebugType=None.
+foreach ($symbol in Get-ChildItem -LiteralPath $output -Filter '*.pdb' -File -Recurse) {
+    if (-not $symbol.FullName.StartsWith($output + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected symbol output path.' }
+    Remove-Item -LiteralPath $symbol.FullName -Force
+}
 Write-Output (Join-Path $output 'CyRevision.Native.exe')

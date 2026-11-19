@@ -126,10 +126,11 @@ void Workspace::command(const char* name,const char* label,bool primary){
     if(state_.contains("fields") && state_["fields"].contains(capability))available=available && flag(capability,true);
     if(method=="Fetch" || method=="Pull" || method=="Push")available=available && flag("AreGitActionsEnabled");
     bool cancel=std::string(name).find("Cancel")!=std::string::npos;
+    bool approval=method=="ApproveAiSdkOperation" || method=="RejectAiSdkOperation";
     bool running=!cancel && actionRunning(name);
     bool scanBlocked=!cancel && state_.value("projectLoading",false) && item.value("requiresProjectReady",false);
     bool canQueue=method.rfind("Refresh",0)==0;
-    cyui::ScopedDisabled disabled(!available || (!cancel && ((busy() && !canQueue) || running || scanBlocked)));
+    cyui::ScopedDisabled disabled(!available || (!cancel && !approval && ((busy() && !canQueue) || running || scanBlocked)));
     std::string title=cyui::tr(label?label:text(item,"label",name).c_str());
     bool clicked=activityButton(title.c_str(),running,primary);
     cyui::tooltip(queuedRefreshes_.count(name)?"Refresh queued for this project until the current operation finishes.":running?"This action is already running. Use Cancel to stop a cancellable operation.":scanBlocked?"Available when the project scan finishes.":!available?"This command is unavailable in the current context.":!cancel && busy()?canQueue?"Queue this refresh after the current operation.":"Another operation is in progress. Its activity is shown above.":text(item,"description",text(item,"label",name)).c_str());

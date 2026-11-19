@@ -33,6 +33,7 @@ struct WorkspaceTestAccess {
     static void checkUpdates(Workspace& workspace){workspace.checkForUpdates();}
     static bool busy(const Workspace& workspace){return workspace.busy();}
     static void showUpdate(Workspace& workspace){workspace.updateOpen_=true;}
+    static void sdkTurn(Workspace& workspace){workspace.send({{"command","invoke"},{"action","SendAiSdkMessageAsync"}});}
     static void guideRequest(Workspace& workspace,Json request){workspace.send(std::move(request));workspace.lastPoll_=0;}
     static void guideLink(Workspace& workspace){workspace.documentLink("doc:ci-actions");workspace.lastPoll_=0;}
     static std::string guideUrl(const Workspace& workspace){return workspace.lastDocumentationLink_;}
@@ -63,6 +64,8 @@ public:
     std::string guideLanguage="en",guideTopic="getting-started",guideQuery;
     int guideOpens=0;
     std::string propertyText="baseline";std::vector<Json> propertySets;
+    bool sdkApproval=false;int sdkApprovals=0,sdkRejects=0;
+    Json sdkNavigation=Json::object(),sdkAppearance=Json::object(),appearanceAcknowledgement=Json::object();
     void complete(){for(auto& response:held)responses_.push_back(std::move(response));held.clear();}
     unsigned long long send(Json request) override {
         auto id=next_++;
@@ -82,6 +85,7 @@ public:
                 })}
             };
             result["actions"].push_back({{"name","RefreshAsync"},{"label","Refresh"},{"confirmation",false},{"parameters",Json::array()}});
+            for(auto name:{"ApproveAiSdkOperation","RejectAiSdkOperation"})result["actions"].push_back({{"name",name},{"confirmation",false},{"parameters",Json::array()}});
         } else if(command=="state") {
             lastState=request;
             result={{"workspaceId",text(request,"workspace")},{"ready",applicationReady},{"busy",projectLoading || operationBusy},{"projectLoading",projectLoading},{"operationBusy",operationBusy},{"status","Ready"},
@@ -112,6 +116,13 @@ public:
             result["fields"]["IsWorkingTreeDiffLoading"]={{"value",diffLoading}};
             result["fields"]["IsChangesDiffPreviewEnabled"]={{"value",true}};
             result["fields"]["ModuleText"]={{"value",propertyText},{"editable",true},{"kind","text"}};
+            result["fields"]["AiSdkHasApproval"]={{"value",sdkApproval}};
+            result["fields"]["AiSdkPendingApproval"]={{"value","Synthetic exact target and arguments"}};
+            result["automationNavigation"]=sdkNavigation;result["automationAppearance"]=sdkAppearance;
+            if(sdkNavigation.contains("workspace")){
+                result["navigation"]["activeWorkspace"]=sdkNavigation["workspace"];
+                for(const auto& tab:result["navigation"]["tabs"])if(tab["id"]==sdkNavigation["workspace"])result["navigation"]["activeCategory"]=tab["category"];
+            }
             result["fields"]["ModuleDocument"]={{"value","# Module document\n\nA **formatted** paragraph and [a link](https://example.invalid/document).\n\n```json\n{\"enabled\":true}\n```\n\n| A | B |\n|---|---|\n| one | two |"}};
             if(!hasProjects)result["projects"]=Json::array();
             const Json updateFields={{"CurrentApplicationVersion","0.1.32"},{"LatestApplicationVersion",latestVersion},
@@ -125,7 +136,8 @@ public:
                 result["navigation"]["tabs"].push_back({{"id","help"},{"label","Help"},{"category","Extensions & Help"},{"visible",true},{"available",true}});
                 result["documentation"]={{"language",guideLanguage},{"total",86},{"available",true},{"reader","CyDoc"},{"modules",Json::array({"image"})}};
             }
-        } else if(command=="app.language")guideLanguage=text(request,"language");
+        } else if(command=="ui.appearance.ack")appearanceAcknowledgement=request;
+        else if(command=="app.language")guideLanguage=text(request,"language");
         else if(command=="docs.open"){guideTopic=text(request,"topicId");++guideOpens;result={{"url","file:///D:/Example/Documentation/Documentation.html#/"+guideLanguage+"/"+guideTopic}};}
         else if(command=="docs.search")guideQuery=text(request,"query");
         else if(command=="updates.check"){
@@ -134,13 +146,18 @@ public:
             ++updateInstalls;installConfirmed=request.value("confirmed",false);
         } else if(command=="set"){
             propertySets.push_back(request);if(text(request,"property")=="ModuleText")propertyText=text(request,"value");
-        } else if(command=="invoke") ++mutations;
+        } else if(command=="invoke") {
+            if(text(request,"action")=="ApproveAiSdkOperation"){++sdkApprovals;sdkApproval=false;}
+            else if(text(request,"action")=="RejectAiSdkOperation"){++sdkRejects;sdkApproval=false;}
+            else if(text(request,"action")=="SendAiSdkMessageAsync"){}
+            else ++mutations;
+        }
         else if(command=="project") {activeProject=text(request,"targetProjectId");++projectSwitches;}
         else if(command=="select"){selections.push_back(request);if(text(request,"source")=="History"){
             if(text(request,"selection")=="SelectedComparisonRevision")comparisonRevision=text(request,"key");
             else selectedRevision=text(request,"key");}}
         Json response={{"id",id},{"ok",true},{"result",std::move(result)}};
-        if((command=="invoke" && holdInvocations) || (command=="updates.check" && holdUpdateCheck))held.push_back(std::move(response));else responses_.push_back(std::move(response));
+        if((command=="invoke" && holdInvocations && text(request,"action")!="ApproveAiSdkOperation" && text(request,"action")!="RejectAiSdkOperation") || (command=="updates.check" && holdUpdateCheck))held.push_back(std::move(response));else responses_.push_back(std::move(response));
         return id;
     }
     std::vector<Json> take() override { std::vector<Json> result;result.swap(responses_);return result; }
@@ -223,6 +240,30 @@ void testGuide(){
     require(!isLocalDocumentationLink("https://example.invalid/Documentation/Documentation.html#/en/a") && !isLocalDocumentationLink("file:///D:/other.html"),"The native help host accepted a non-CyDoc URL.");
     for(auto density:{cyui::Density::compact,cyui::Density::comfortable}){cyui::setDensity(density);for(auto theme:{"mid-grey","light-grey","amber-night","violet","navy"}){cyui::setTheme(theme);settle(workspace);}}
     cyui::setDensity(cyui::Density::compact);cyui::setTheme("mid-grey");cyui::setLocale("en");
+}
+void testApplicationAutomation(){
+    FakeEngine engine;Workspace workspace(engine,L"not-used.exe");settle(workspace);
+    engine.sdkNavigation={{"revision",1},{"workspace","history"}};updateSnapshot(workspace);updateSnapshot(workspace);
+    require(WorkspaceTestAccess::workspace(workspace)=="history","SDK navigation did not change the actual selected view.");
+    engine.sdkAppearance={{"revision",1},{"request",{{"theme","violet"},{"density","comfortable"},{"locale","fr"}}}};
+    updateSnapshot(workspace);updateSnapshot(workspace);
+    require(cyui::currentThemeKey()=="violet" && cyui::density()==cyui::Density::comfortable && cyui::locale()=="fr","SDK appearance was not applied by the rendering thread.");
+    require(text(engine.appearanceAcknowledgement,"theme")=="violet" && text(engine.appearanceAcknowledgement,"locale")=="fr","Native appearance acknowledgement did not reach the backend.");
+    for(bool approve:{true,false}){
+        engine.holdInvocations=true;WorkspaceTestAccess::sdkTurn(workspace);
+        engine.sdkApproval=true;engine.operationBusy=true;updateSnapshot(workspace);
+        auto* modal=ImGui::GetTopMostPopupModal();
+        require(modal && std::string(modal->Name).find("###sdkApplicationApproval")!=std::string::npos,"SDK approval is not visible outside the AI tab while busy.");
+        auto firstWidth=cyui::buttonWidth(cyui::tr("Approve exact operation").c_str())+cyui::dp(18);
+        auto x=modal->DC.CursorStartPos.x+(approve?firstWidth*.5f:firstWidth+ImGui::GetStyle().ItemSpacing.x+(cyui::buttonWidth(cyui::tr("Reject").c_str())+cyui::dp(18))*.5f);
+        auto y=modal->DC.CursorMaxPos.y-ImGui::GetFrameHeight()*.5f;
+        auto& io=ImGui::GetIO();io.AddMousePosEvent(x,y);frame(workspace);io.AddMouseButtonEvent(0,true);frame(workspace);io.AddMouseButtonEvent(0,false);settle(workspace);updateSnapshot(workspace);
+        require(!engine.sdkApproval,"The global SDK approval button is blocked by the running operation.");
+        engine.holdInvocations=false;engine.complete();updateSnapshot(workspace);
+        require(ImGui::GetTopMostPopupModal()==nullptr,"Completed SDK confirmation still blocks the UI.");
+    }
+    require(engine.sdkApprovals==1 && engine.sdkRejects==1 && engine.mutations==0,"SDK approvals were repeated or invoked a different business action.");
+    cyui::setTheme("mid-grey");cyui::setDensity(cyui::Density::compact);cyui::setLocale("en");
 }
 void testUpdates(){
     FakeEngine engine;engine.activeProject="";engine.hasProjects=false;engine.applicationReady=false;
@@ -468,7 +509,7 @@ int main() {
         viewer.prepare("Alpha\nBeta\nAlpha\n","sample.txt");viewerFrame(workspace,viewer,false,true);viewerFrame(workspace,viewer);
         io.AddInputCharactersUTF8("alpha");viewerFrame(workspace,viewer);require(viewer.matchCount()==2 && viewer.matchNumber()==1,"Typing into the shared search lost the host match index.");
         io.AddKeyEvent(ImGuiKey_Enter,true);viewerFrame(workspace,viewer);io.AddKeyEvent(ImGuiKey_Enter,false);viewerFrame(workspace,viewer);require(viewer.matchNumber()==2,"Enter did not advance the shared source search.");
-        testGuide();testUpdates();
+        testGuide();testUpdates();testApplicationAutomation();
         ImGui::DestroyContext();
         std::cout<<"PASS: project selection, loading/queue protection, 150% DPI, tabs, detached views, independent filters, docking, layout restoration, preserved drafts, five themes and confirmations.\n";
         return 0;

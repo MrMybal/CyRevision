@@ -77,7 +77,7 @@ public static class NativeTable
         return new { name, total, skip, take, filter, sort, descending, maxTextColumns, columns = columns.Length == 0 ? ["Value"] : columns.Select(column => column.Name).ToArray(), rows };
     }
 
-    private sealed class ScalarComparer : IComparer<object?>
+    internal sealed class ScalarComparer : IComparer<object?>
     {
         public static readonly ScalarComparer Instance = new();
         public int Compare(object? x, object? y)

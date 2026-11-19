@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <CyMcpNativeRid Condition="'$(CyMcpNativeRid)' == '' And '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</CyMcpNativeRid>
+    <CyMcpNativeRid Condition="'$(CyMcpNativeRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</CyMcpNativeRid>
+    <CyMcpNativeRuntimeDirectory Condition="'$(CyMcpNativeRuntimeDirectory)' == ''">$(MSBuildThisFileDirectory)../../artifacts/cymcp/$(CyMcpNativeRid)</CyMcpNativeRuntimeDirectory>
+  </PropertyGroup>
+  <Target Name="PrepareCyMcpRuntime" BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems" Condition="'$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <_CyMcpRuntime Include="$(CyMcpNativeRuntimeDirectory)/CyRevision.CyMcpNative.dll;$(CyMcpNativeRuntimeDirectory)/libCyRevision.CyMcpNative.so;$(CyMcpNativeRuntimeDirectory)/libCyRevision.CyMcpNative.dylib" />
+      <_CyMcpRuntime Remove="@(_CyMcpRuntime)" Condition="!Exists('%(_CyMcpRuntime.Identity)')" />
+      <_CyMcpLicense Include="$(CyMcpNativeRuntimeDirectory)/Licenses/*" />
+      <Content Include="@(_CyMcpRuntime)">
+        <Link>%(_CyMcpRuntime.Filename)%(_CyMcpRuntime.Extension)</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory><CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </Content>
+      <Content Include="@(_CyMcpLicense)"><Link>Licenses/%(_CyMcpLicense.Filename)%(_CyMcpLicense.Extension)</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory><CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory></Content>
+    </ItemGroup>
+    <Warning Condition="!Exists('$(CyMcpNativeRuntimeDirectory)/CyRevision.CyMcpNative.dll') And !Exists('$(CyMcpNativeRuntimeDirectory)/libCyRevision.CyMcpNative.so') And !Exists('$(CyMcpNativeRuntimeDirectory)/libCyRevision.CyMcpNative.dylib')" Text="CyMCPSDK runtime not built. Run scripts/build-cymcp.ps1 or build-cymcp.sh before using the new assistant/CLI/MCP features. Existing features remain available." />
+  </Target>
+</Project>

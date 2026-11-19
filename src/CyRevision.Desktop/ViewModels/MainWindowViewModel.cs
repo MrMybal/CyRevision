@@ -2102,6 +2102,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
             _projectLoadCancellation?.Cancel();
             // Detach immediately, including cached sessions. Never expose A's engine as B's.
+            CancelAiSdkTurn();AiSdkMessages.Clear();AiSdkAllowWrite=false;AiSdkAllowStage=false;AiSdkAllowCommit=false;AiSdkAllowNetwork=false;AiSdkRemoteEnabled=false;OnPropertyChanged(nameof(CanSendAiSdk));
+            AiSdkAllowNavigation=false;AiSdkAllowPublication=false;AiSdkAllowDestructive=false;AiSdkAllowServices=false;AiSdkAllowAdministration=false;AiSdkAllowBuilds=false;
             if (_syncEngineProjectId != value?.Id)
                 _syncShutdownTask = Task.WhenAll(_syncShutdownTask, StopSyncCoreAsync(updateUi: false));
             _projectLoadCancellation?.Dispose();
@@ -6862,6 +6864,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public async Task EmergencyBlockAiMcpAsync()
     {
+        CancelAiSdkTurn();
         AiMcpEmergencyBlocked = true;
         _aiAgentCancellation?.Cancel();
         IAiIntegrationPlugin? plugin = _pluginManager.GetPlugin<IAiIntegrationPlugin>();
@@ -14763,6 +14766,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             return false;
 
         string name = field.Name;
+        if (name.StartsWith("_aiSdk", StringComparison.Ordinal)) return false;
         if (name.Contains("LoadVersion", StringComparison.Ordinal) ||
             name.Contains("Cancellation", StringComparison.Ordinal) ||
             (name.StartsWith("_is", StringComparison.Ordinal) && name.Contains("Loading", StringComparison.Ordinal)))
@@ -18661,6 +18665,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
 
     public async ValueTask DisposeAsync()
     {
+        await DisposeAiSdkAsync();
         CancelDebouncedUiActions();
         _repositoryConsoleCancellation?.Cancel();
         _repositoryConsoleCancellation?.Dispose();

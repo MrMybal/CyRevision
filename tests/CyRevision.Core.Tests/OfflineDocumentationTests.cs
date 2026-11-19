@@ -14,7 +14,7 @@ public sealed class OfflineDocumentationTests
     {
         var service = new OfflineDocumentationService(Bundled);
         Assert.True(service.IsAvailable);
-        Assert.Equal(86, service.PageCount);
+        Assert.Equal(87, service.PageCount);
         Assert.Equal(new[] { "image", "gallery" }, service.Modules);
         Assert.EndsWith("Documentation.html", service.IndexFile);
         Assert.Equal(service.Load("en").Select(page => page.Id), service.Load("fr").Select(page => page.Id));
@@ -22,7 +22,7 @@ public sealed class OfflineDocumentationTests
         Assert.All(service.Load("fr"), page => Assert.Equal("fr", page.Language));
         using var manifest = JsonDocument.Parse(File.ReadAllText(DataFile("manifest.json")));
         Assert.Equal("en", manifest.RootElement.GetProperty("defaultLocale").GetString());
-        Assert.Equal(172, manifest.RootElement.GetProperty("pages").GetArrayLength());
+        Assert.Equal(174, manifest.RootElement.GetProperty("pages").GetArrayLength());
         Assert.True(File.Exists(DataFile("media-image.js")));
         Assert.True(File.Exists(DataFile("media-gallery.js")));
         foreach (string module in new[] { "mesh", "video", "graph", "gif" })

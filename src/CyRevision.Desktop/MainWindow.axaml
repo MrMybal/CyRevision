@@ -5952,6 +5952,9 @@
                 </TabItem>
 
                 <TabItem x:Name="AiWorkspaceTab" Header="AI Assistant">
+                    <TabControl>
+                    <TabItem Header="CyMCPSDK"><controls:CyMcpAssistantView /></TabItem>
+                    <TabItem Header="Legacy assistants">
                     <Grid Margin="0,8,0,0" ColumnDefinitions="350,6,250,6,*">
                         <Border Classes="card" Padding="12">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -6195,6 +6198,8 @@
                     </Grid>
                 </TabItem>
 
+                    </TabControl>
+                </TabItem>
                 <TabItem x:Name="McpWorkspaceTab" Header="MCP">
                     <Grid Margin="0,8,0,0" RowDefinitions="Auto,*" RowSpacing="7">
                         <Border Classes="card" Padding="10">

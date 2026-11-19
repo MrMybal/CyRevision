@@ -1,7 +1,7 @@
 {
-  "inputDigest": "8e6c0fa43c007044cd523402d493a42f83ef123748f9150205a6e0b25c2b30cc",
+  "inputDigest": "79a96c3216e93150f613df06737459caf9971fd7a7ab949f15f350ea6d8105e7",
   "files": {
-    "DocAI.md": "cb2ba8cb4d044b7ca1f4590094bcf80ab893e8d71df48c22fd75151dd520f8bc",
+    "DocAI.md": "54fb55a4a4234e8777bea565ce398e38bef402e3e3685264df9f08e51bc75846",
     "DocData/CyDoc-LICENSE.txt": "60aaa0ed2087332acbaee219c088240f5ddda7e7fe393ad5c162b8c617e62bf0",
     "DocData/CyDoc-SOURCE.txt": "b452ab202f5501b6d4ea12eb6fa6964f94653065122e3e1f8f91b4782709cd32",
     "DocData/assets/ai.en.png": "f18ac8cf7feb332c0174a8b29be2d49db7a555094cf674e38221702082c3599d",
@@ -61,12 +61,12 @@
     "DocData/assets/vpn.fr.png": "cd17eb3da405a05de6d2a4965c4f2303bf22e26a4888a84ab1848d4198c4c2f9",
     "DocData/assets/vpn.fr.svg": "2b5f2cd66b119ff1d322d7c1cadf253707071d64f66c0f5819d7337fe933b45f",
     "DocData/assets/workspace-v2.png": "b95304c1728a9fffb95842f4600e47b90f9d48e2e7c0cc2211adef1efdc5ff57",
-    "DocData/data.js": "9bf27aabc3a0ca7a5c89691eb2d51cf414fcf82eb55338171703b9e7115020f3",
-    "DocData/manifest.json": "542f77811c918f89d29d31495a42b462cfa6a131a02f3517a47730d229e2008d",
+    "DocData/data.js": "afb3dd1808456678641f21b01ef5ba5947a09b36e7d9c12bf92f285e98d56675",
+    "DocData/manifest.json": "d3aad52bcc63f93eeb27f98a5763c2b318719f99961e435521b5f092560d5f44",
     "DocData/media-gallery.js": "f91ad56532d805a594413784544602a5227a16adc7f7b6b1389718f5049f15e1",
     "DocData/media-image.js": "182df084c547df55da727c49fee459ff8f1549b646b4299ab72f2201bb3b615c",
-    "DocData/routes.json": "20cb8f59ad11fa07458cdc6b1764eafd727c47335bdf672439d59889976aa431",
-    "DocData/translation-report.json": "854facac4f95c6dbfbf9db193bd626b782cc857aec04725edce208ae94cebb3b",
+    "DocData/routes.json": "4eb78ecdc66e32dec0fc93341ef22d725ce9f7b532c6208b8616cfd3f28802c8",
+    "DocData/translation-report.json": "7e8bed97da4bd32a6ff22797dcb8713aedda4f7af3f2e62262c1737f6157306c",
     "DocData/viewer.css": "0cd7fdce319cf0d1c2728ffeb53e45ffe7d14a5e86746d574649b6a5deb33575",
     "DocData/viewer.js": "3ddf91c11b09edb32f6a24e7ae034420a40357be1a4c1631a0b1674b75e0b949",
     "Documentation.html": "e536712b9356873ec403448ab22b39ff427291e9031a136467c9bd0f9ac9a0bb"

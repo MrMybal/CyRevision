@@ -5,10 +5,12 @@ description: Parcourir l'arborescence, chercher avec Ctrl+Shift+F, suivre l'hist
 section: Parcours / Code et ressources
 parent: code-explorer
 order: 24
-sourceRevision: 2
+sourceRevision: 3
 ---
 
 ## Explorateur de code {#code-explorer}
+[Assistant CyMCPSDK, CLI et registre MCP commun](doc:cymcp-automation)
+
 L'onglet Code affiche l'arborescence hiérarchique, les métadonnées, l'aperçu texte et les symboles détectés. Les sorties de build, caches Unreal, .git et caches de dépendances sont exclus automatiquement.
 
 ## Recherche globale {#global-search}

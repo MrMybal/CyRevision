@@ -47,6 +47,46 @@ public sealed partial class NativeModelAdapter(MainWindowViewModel model,string?
     private readonly NativeNavigationState _navigation=new(configurationDirectory);
     public NativePreferencesActions? Preferences {get;set;}
     public void MarkInitialized() => _initialized = true;
+    internal bool AutomationNativeFrontend {get;set;}
+    private long _automationNavigationRevision,_automationAppearanceRevision;
+    private string _automationWorkspace="";
+    private object _automationAppearance=new{};
+    private object _automationObservedAppearance=new{};
+    internal object AutomationNavigation=>new{revision=_automationNavigationRevision,workspace=_automationWorkspace};
+    internal object AutomationAppearance=>new{revision=_automationAppearanceRevision,request=_automationAppearance,observed=_automationObservedAppearance,available=AutomationNativeFrontend,themes=new[]{"mid-grey","light-grey","amber-night","violet","navy"}};
+    internal void AutomationSetAppearance(JsonElement request){_automationAppearance=request.Clone();_automationAppearanceRevision++;}
+    internal static IReadOnlyDictionary<string,MethodInfo> AutomationMethods=>Actions;
+    internal IList? AutomationList(string name)=>TryList(name);
+    internal void AutomationSelect(string source,object item)
+    {
+        if(DesktopAutomationCatalog.Network(NativeWorkspaceCatalog.All.First(view=>view.Tables.Contains(source,StringComparer.Ordinal)).Id,"selection")&&!model.AiSdkAllowNetwork)
+            throw new CyRevision.Automation.AutomationException("AccessDenied","Selecting this row can load remote details; enable network access in the host first.");
+        var list=TryList(source)??throw new ArgumentException("Unavailable table.");int index=list.IndexOf(item);
+        if(index<0)throw new InvalidOperationException("The row changed.");
+        if(!_selectionNames.ContainsKey(source)&&source!="ExplorerFileHistory"&&Properties.Values.Count(candidate=>candidate.Name.StartsWith("Selected",StringComparison.Ordinal)&&candidate.SetMethod?.IsPublic==true&&candidate.PropertyType==item.GetType())!=1)
+            throw new CyRevision.Automation.AutomationException("AccessDenied","This report has no application selection workflow. Read its rows instead.");
+        Select(JsonSerializer.SerializeToElement(new{source,index,key=NativeTable.Key(item)}));
+    }
+    internal async Task AutomationOpenAsync(NativeWorkspace workspace)
+    {
+        _navigation.Update(model,JsonSerializer.SerializeToElement(new{operation="visibility",workspace=workspace.Id,visible=true}));
+        _navigation.Navigate(model,workspace);
+        _automationWorkspace=workspace.Id;_automationNavigationRevision++;
+        await model.EnsureWorkspaceDataLoadedAsync(workspace.LoadTab);
+        if(workspace.Id=="code"){await model.EnsureCodeWorkspaceLoadedAsync();_nativeCodeFiles=(await model.LoadNativeCodeDirectoryAsync(_codeDirectory)).ToArray();}
+    }
+    internal void AutomationSet(string name,JsonElement value)=>SetField(name,value);
+    internal async Task<object?> AutomationInvokeAsync(string name,JsonElement parameters,CancellationToken token)
+    {
+        if(!Actions.TryGetValue(name,out var method))throw new ArgumentException("Unknown application action.");
+        var values=method.GetParameters().Select(parameter=>parameter.ParameterType==typeof(CancellationToken)?(object)token:
+            parameters.ValueKind==JsonValueKind.Object&&parameters.TryGetProperty(parameter.Name!,out var value)?ConvertValue(value,parameter.ParameterType):
+            parameter.IsOptional?parameter.DefaultValue:throw new ArgumentException("Enter "+parameter.Name)).ToArray();
+        object? result;
+        try{result=method.Invoke(model,values);}catch(TargetInvocationException error) when(error.InnerException is not null){System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error.InnerException).Throw();throw;}
+        if(result is Task task){await task;return task.GetType().GetProperty("Result")?.GetValue(task);}
+        return null;
+    }
     private static string Text(JsonElement request, string name, string fallback = "") =>
         request.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? fallback : fallback;
 
@@ -144,6 +184,7 @@ public sealed partial class NativeModelAdapter(MainWindowViewModel model,string?
         string command = Text(request, "command");
         if (command == "catalog") return Catalog();
         if (command == "state") return State(request);
+        if(command=="ui.appearance.ack"){_automationObservedAppearance=new{theme=Text(request,"theme"),density=Text(request,"density"),locale=Text(request,"locale")};return new{};}
         if (command == "app.language") { model.SetNativeDocumentationLanguage(Text(request, "language", "en")); return new { }; }
         if (command == "docs.open") return new { url = model.GetNativeDocumentationLink(Text(request, "topicId"), Text(request, "anchor"), Text(request, "mediaId")) };
         // Application-level, read-only check: also works before initialization,
@@ -156,6 +197,7 @@ public sealed partial class NativeModelAdapter(MainWindowViewModel model,string?
         if(command is "prefs.get" or "prefs.cancel")return Preferences is {} preferences?await preferences.ExecuteAsync(request):throw new InvalidOperationException("Preferences are unavailable.");
         if (command == "cancel")
         {
+            model.CancelAiSdkTurn();
             model.CancelNativeOperation();
             NativePullRequestActions.Cancel(model);
             NativeOverviewActions.Cancel(model);
@@ -176,6 +218,11 @@ public sealed partial class NativeModelAdapter(MainWindowViewModel model,string?
             else if(command=="tools.tree.select")return await NativeToolsActions.ExecuteAsync(model,request,TryList);
             else _navigation.Update(model,request);
             return new { message=model.StatusMessage };
+        }
+        if(command=="invoke" && Text(request,"action") is "ApproveAiSdkOperation" or "RejectAiSdkOperation")
+        {
+            if(Text(request,"action")=="ApproveAiSdkOperation")model.ApproveAiSdkOperation();else model.RejectAiSdkOperation();
+            return new { message="SDK confirmation received" };
         }
         if (_busy || model.IsBusy) throw new InvalidOperationException("An operation is already running.");
         if(model.IsProjectLoading && command is not ("project" or "workspace" or "directory" or "fileHistory" or "set" or "select" or "include" or "itemSet") &&

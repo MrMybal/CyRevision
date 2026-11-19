@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.35 Alpha — 2026-11-19
+
+- added the source-pinned CyMCPSDK assistant with streaming, conversation checkpoints and the console companion;
+- connected the assistant, CLI and MCP to the same project-scoped Git/LFS, file, code-search and backup operations;
+- exposed 264 reviewed desktop workflows, including PR/CI, Sync/VPN, plugins, builds and preferences, with separate capability grants and current-target validation;
+- added task-provider search and insertion of task links into PR/commit drafts;
+- made exact-operation confirmation available across all native tabs and in Classic, including while generation is active;
+- added Git checkout, push/pull, merge and conflict-recovery automation;
+- documented assistant setup, live-instance control, permissions and CLI usage in the 87-page English/French manual;
+- published locally built Windows x64 installer and portable packages; Linux/macOS downloads remain at 0.1.34.
+
 ## 0.1.32 Alpha — 2026-11-02
 
 - migrated native code, diff, conflict editing, descriptor forms, documents, conversations and image navigation to pinned CyUI modules;

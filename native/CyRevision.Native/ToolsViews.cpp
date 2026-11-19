@@ -257,6 +257,41 @@ bool Workspace::toolsView() {
         return true;
     }
     if(workspace_=="ai") {
+        if(!ImGui::BeginTabBar("##assistantModes"))return true;
+        if(ImGui::BeginTabItem("CyMCPSDK")) {
+            summary("AiSdkStatus");
+            if(toolColumns("##sdkSplit",0.34f)) {
+                scrollBegin("##sdkSettings");
+                if(cyui::beginSection("Provider",true)) {
+                    fields({{"AiSdkProviderId","Provider ID"},{"AiSdkModel","Model"},{"AiSdkEndpoint","API endpoint"},{"AiSdkExecutable","CLI executable"},{"AiSdkApiKeyEnvironment","API key environment name"}});
+                    commands({{"ListAiSdkProvidersAsync","List providers"},{"DiscoverAiSdkProvidersAsync","Detect providers"},{"ListAiSdkModelsAsync","List models"},{"ConnectAiSdkAsync","Connect"},{"DisconnectAiSdkAsync","Disconnect"}});cyui::endSection();
+                }
+                if(cyui::beginSection("Permissions",true)) {
+                    cyui::textDim("Read-only by default. Every write requires confirmation of its exact arguments.");
+                    fields({{"AiSdkAllowWrite","Allow file changes"},{"AiSdkAllowStage","Allow staging"},{"AiSdkAllowCommit","Allow commits"},{"AiSdkAllowNetwork","Allow network operations"},{"AiSdkRemoteEnabled","Allow external tools"}});
+                    fields({{"AiSdkAllowNavigation","Allow UI navigation and selection"},{"AiSdkAllowPublication","Allow publication and sending"},{"AiSdkAllowDestructive","Allow destructive operations"},{"AiSdkAllowServices","Allow service control"},{"AiSdkAllowAdministration","Allow project and app administration"},{"AiSdkAllowBuilds","Allow builds and agent execution"}});
+                    cyui::endSection();
+                }
+                if(cyui::beginSection("Session and attachments",true)) {
+                    fields({{"AiSdkHistoryId","History ID"},{"AiSdkRestoreHistory","Restore saved session"},{"AiSdkAttachmentPath","Attachment path"},{"AiSdkContextBytes","API context budget (bytes; 0 = unlimited)"}});
+                    command("SaveAiSdkSessionAsync","Save session");cyui::endSection();
+                }
+                if(cyui::beginSection("MCP and optimizations",false)) {
+                    fields({{"AiSdkCompactDiscovery","Compact discovery"},{"AiSdkDiskSpool","Disk result spool"},{"AiSdkMetrics","Metadata-only metrics"},{"AiSdkNotifications","Change notifications"},{"AiSdkResultTtlMs","Result retention (ms)"},{"AiSdkCacheTtlMs","Cache TTL (ms)"}});
+                    cyui::textDim("Restart the SDK runtime to apply optimization changes.");
+                    fields({{"AiSdkMemoryBytes","Memory result quota (bytes)"},{"AiSdkDiskBytes","Disk result quota (bytes)"},{"AiSdkChunkBytes","Resource chunk size (bytes)"}});
+                    command("ShowAiSdkMetricsAsync","Show SDK metrics");
+                    commands({{"RestartAiSdkAsync","Restart SDK runtime"},{"StartAiSdkMcpServerAsync","Start local MCP"},{"StopAiSdkMcpServerAsync","Stop local MCP"},{"ConnectAiSdkRemoteToolsAsync","Connect selected MCP profile"},{"ListAiSdkOperationsAsync","List operations"}});
+                    summary("AiSdkInstanceFile");textPanel("AiSdkCatalogue","##sdkCatalogue");cyui::endSection();
+                }
+                ImGui::EndChild();ImGui::TableNextColumn();scrollBegin("##sdkConversation");
+                transcriptPanel("AiSdkMessages","##sdkTranscript",ImVec2(0,std::max(cyui::dp(120),ImGui::GetContentRegionAvail().y-cyui::dp(flag("AiSdkHasApproval")?320.0f:150.0f))));
+                field("AiSdkPrompt","Message",true);command("SendAiSdkMessageAsync","Send",true);ImGui::SameLine();command("CancelAiSdkTurn","Cancel turn");
+                ImGui::EndChild();ImGui::EndTable();
+            }
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem(cyui::trLabel("Legacy assistants").c_str())) {
         summary("AiStatus");summary("CodexConnectionStatus");
         command("DetectCodexAsync","Detect provider");ImGui::SameLine();command("ToggleCodexChatConnectionAsync","Connect / disconnect");
         if(toolColumns("##aiSplit",0.34f)) {
@@ -287,6 +322,9 @@ bool Workspace::toolsView() {
             command("SendCodexChatMessageAsync","Send",true);ImGui::SameLine();command("CancelAiChat","Cancel turn");
             ImGui::EndChild();ImGui::EndTable();
         }
+        ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
         return true;
     }
     if(workspace_=="mcp") {

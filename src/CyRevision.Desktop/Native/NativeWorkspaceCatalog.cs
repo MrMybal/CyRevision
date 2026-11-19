@@ -19,7 +19,7 @@ public static class NativeWorkspaceCatalog
         new("composition","Compose","Git","CompositionWorkspaceTab",["MultiRestoreFiles","MultiRestoreOperations","BranchComparisonCommits","CherryPickOperations"],["MultiRestore","BranchCompare","BranchComparison","CherryPick"]),
         new("branches","Branches","Git","BranchesWorkspaceTab",["FilteredBranches","SelectedBranchHistory","HistoricalWorktrees","NativeBranchFiles","NativeBranchHistory"],["Branch","SelectedBranch","Historical"]),
         new("annotations","Annotations","Git","GitAnnotationsWorkspaceTab",["GitAnnotations"],["GitAnnotation"]),
-        new("pullrequests","Pull Requests","Git","PullRequestsWorkspaceTab",["FilteredPullRequests","PullRequestFiles","PullRequestReviews","PullRequestComments","PullRequestCiWorkflows","PullRequestCiRuns","PullRequestCiJobs","FilteredPullRequestCiLogLines","PullRequestConflictFiles","PullRequestLinkedWorkItems","PullRequestCommitRevisions"],["PullRequest"]),
+        new("pullrequests","Pull Requests","Git","PullRequestsWorkspaceTab",["FilteredPullRequests","PullRequestFiles","PullRequestReviews","PullRequestComments","PullRequestCiWorkflows","PullRequestCiRuns","PullRequestCiJobs","FilteredPullRequestCiLogLines","PullRequestConflictFiles","PullRequestLinkedWorkItems","PullRequestCommitRevisions","NativeWorkItemSearch"],["PullRequest"]),
         new("ci","CI / Actions","Git","CiWorkspaceTab",["CiRuns","CiJobs","FilteredCiLogLines","CiWorkflows"],["Ci","ReleaseVersion"]),
         new("graphs","Git graphs","Git","GitGraphsWorkspaceTab",["GitGraphCommits","GitGraphFileRelations","GitGraphTeamActivity"],["GitGraph"]),
         new("locks","File locks","Git","LfsLocksWorkspaceTab",["LfsLocks","WorkInProgressReservations"],["LfsLock","WorkInProgress","Lock"]),
@@ -29,7 +29,7 @@ public static class NativeWorkspaceCatalog
         new("search","Code search","Code & Assets","CodeWorkspaceTab",["CodeSearchResults","CodeHistory","CodeSymbols"],["Code"]),
         new("console","Console & Logs","Code & Assets","ConsoleWorkspaceTab",["FilteredApplicationLogEntries","RecentOperations"],["RepositoryConsole","RepositoryCommand","ApplicationLog","Console"]),
         new("assets","Asset preview & diff","Code & Assets","AssetDiffWorkspaceTab",["AssetExplorerFiles"],["Asset","UnrealAsset"]),
-        new("ai","AI Assistant","Code & Assets","AiWorkspaceTab",["AiChatMessages","AiProviders","AiConversations"],["Ai","Codex"]),
+        new("ai","AI Assistant","Code & Assets","AiWorkspaceTab",["AiSdkMessages","AiChatMessages","AiProviders","AiConversations"],["Ai","Codex"]),
         new("mcp","MCP","Code & Assets","McpWorkspaceTab",["AiMcpServers","AiMcpTools"],["AiMcp","Mcp"]),
         new("backups","Backups","Backup","BackupsWorkspaceTab",["Backups","GitArchiveCandidates","ArchivedGitBranches"],["Backup","ColdArchive","GitArchive"]),
         new("sync","Syncthing","Sync","SynchronizationWorkspaceTab",["SyncthingDifferences","SyncthingLogs","SyncHistory","SyncCommits"],["Sync","Syncthing","SmartSync"]),
@@ -81,7 +81,7 @@ public static class NativeWorkspaceCatalog
         model.ActivePluginOperatingModeWorkspaceTabs.Contains(workspace.LoadTab,StringComparer.OrdinalIgnoreCase)
             ? model.ActivePluginOperatingModeName : workspace.Category;
 
-    public static bool IsSecret(string name)=>new[]{"Password","ApiKey","ApiToken","SessionToken","PrivateKey","Certificate","WebhookUrl","Secret"}
+    public static bool IsSecret(string name)=>name!="AiSdkApiKeyEnvironment"&&new[]{"Password","ApiKey","ApiToken","SessionToken","PrivateKey","Certificate","WebhookUrl","Secret"}
         .Any(part=>name.Contains(part,StringComparison.OrdinalIgnoreCase)) ||
         name.EndsWith("Token",StringComparison.OrdinalIgnoreCase) && !name.EndsWith("EnvironmentVariable",StringComparison.OrdinalIgnoreCase);
     public static bool IsScalar(Type type)=>(Nullable.GetUnderlyingType(type)??type) is Type value &&
@@ -90,7 +90,7 @@ public static class NativeWorkspaceCatalog
     public static string GroupFor(string name)
     {
         string stripped=name;
-        foreach(string verb in new[]{"Refresh","Selected","Filtered","Configure","Initialize","Analyze","Execute","Create","Save","Load","Start","Stop","Pause","Resume","Apply","Set","Get","Cancel","Remove","Delete","Restore","Archive","Install","Detect","Enable","Disable","Open","Clear","Test","Compare","Read","List"})
+        foreach(string verb in new[]{"New","Refresh","Selected","Filtered","Configure","Initialize","Analyze","Execute","Create","Save","Load","Start","Stop","Pause","Resume","Apply","Set","Get","Cancel","Remove","Delete","Restore","Archive","Install","Detect","Enable","Disable","Open","Clear","Test","Compare","Read","List"})
             if(stripped.StartsWith(verb,StringComparison.Ordinal)){stripped=stripped[verb.Length..];break;}
         return All.OrderByDescending(workspace=>workspace.Prefixes.DefaultIfEmpty("").Max(prefix=>stripped.StartsWith(prefix,StringComparison.OrdinalIgnoreCase)?prefix.Length:0))
             .FirstOrDefault(workspace=>workspace.Prefixes.Any(prefix=>stripped.StartsWith(prefix,StringComparison.OrdinalIgnoreCase)))?.Id

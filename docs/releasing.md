@@ -1,6 +1,6 @@
 # Creating a CyRevision release
 
-CyRevision releases are self-contained: end users do not need to install the .NET runtime. Git, Git LFS, and Syncthing remain external tools because every project can enable or disable those modules independently. WireGuard may use either a system installation or a separately packaged, checksum-verified integrated runtime.
+CyRevision releases are self-contained: end users do not need to install the .NET runtime. Git and Git LFS are installed separately; official Syncthing runtimes are included for the optional Sync modes. WireGuard may use either a system installation or a separately packaged, checksum-verified integrated runtime.
 
 The autonomous Discord agent is published inside the `Agent` directory of every desktop package. Windows and macOS can launch it from the Discord tab. Debian packages also install the `cyrevision-discord-agent` command and a user-level systemd unit.
 
@@ -42,6 +42,16 @@ build verifies the checked-in CyUI snapshot, selects explicit module targets and
 installs their license notices (including editor and syntax dependencies). See
 [CyUI modular integration](cyui-modular-migration.md) for update and verification commands.
 Linux and macOS retain the Avalonia interface.
+
+Release builders also compile the CyMCPSDK source revision pinned in `native/cymcp.lock.json` and include the platform native bridge, notices and `Cli/CyRevision.Cli` companion. This requires CMake 3.24+, C++20 and, on Linux/macOS, libcurl development files. For a direct development build, prepare the native SDK first with `scripts/build-cymcp.ps1` or `scripts/build-cymcp.sh`; supplying `CyMcpNativeRuntimeDirectory` requires the correct target architecture.
+
+## Local publication without GitHub Actions
+
+Build packages on the available target operating system. A Windows-only release must identify that scope in both READMEs and release notes; retain older Linux/macOS links rather than relabeling their existing archives.
+
+Generate the bilingual manual with `node .CyDocBuild/build.mjs`, run local tests and commit the selected release sources. To intentionally avoid push-triggered Actions for that publication, include `[skip ci]` in the release commit message and do not dispatch workflows. Create the version tag on that same commit. Publish only newly built packages using the GitHub Releases API or CLI, with `SHA256SUMS.txt` covering the exact uploaded assets. Do not overwrite an existing release or draft.
+
+The local package builder does not publish the Pages site. Its `pages.yml` workflow is a separate deployment; skipping Actions leaves the existing online reader in place while the new manual is bundled in application packages.
 
 To test a current-user installation without prompts:
 

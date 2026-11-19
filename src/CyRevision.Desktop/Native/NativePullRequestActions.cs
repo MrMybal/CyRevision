@@ -93,12 +93,12 @@ public static class NativePullRequestActions
     };
 
     public static async Task<object?> ExecuteAsync(MainWindowViewModel model, JsonElement request,
-        Func<string, IList?> listResolver)
+        Func<string, IList?> listResolver,CancellationToken cancellationToken=default)
     {
         string command = Text(request, "command");
         if (!Handles(command)) throw new ArgumentException("Unknown review command.");
         ReviewState state = State(model);
-        using CancellationTokenSource operation = new();
+        using CancellationTokenSource operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         state.Operation = operation;
         try
         {

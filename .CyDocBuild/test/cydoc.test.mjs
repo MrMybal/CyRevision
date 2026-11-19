@@ -22,7 +22,7 @@ test('implicit French revisions are independent of checkout line endings',async(
 });
 
 test('all human pages are completely translated with shared IDs and anchors',()=>{
-  assert.equal(data.pages.length,172);assert.equal(docs.pages('en').length,86);assert.equal(data.defaultLocale,'en');
+  assert.equal(data.pages.length,174);assert.equal(docs.pages('en').length,87);assert.equal(data.defaultLocale,'en');
   assert.deepEqual(docs.availableLocales().map(locale=>locale.code),['en','fr']);
   for(const page of docs.pages('en')){
     const en=docs.resolve(page.id,'en'),fr=docs.resolve(page.id,'fr');assert.ok(en && fr && !fr.fallback,page.id);
@@ -70,7 +70,7 @@ test('reports, AI guidance and implementation listings are outside human navigat
   assert.ok(data.pages.every(page=>!/class GameEngineIntegrationPluginBase|SaveConnectionsCoreAsync|private readonly SemaphoreSlim/.test(page.code||'')));
   for(const id of ['technical-references','translation-report','reference-offline-guide','reference-cyui-modular-migration'])
     assert.ok(!data.pages.some(page=>page.id===id),id);
-  const report=JSON.parse(await fs.readFile(path.join(resources,'translation-report.json'),'utf8'));assert.equal(report.current,86);
+  const report=JSON.parse(await fs.readFile(path.join(resources,'translation-report.json'),'utf8'));assert.equal(report.current,87);
   for(const field of ['missing','untracked','outdated'])assert.equal(report[field].length,0);
   assert.ok((await fs.readFile(path.join(output,'DocAI.md'),'utf8')).length>100);
   const walk=async folder=>(await Promise.all((await fs.readdir(folder,{withFileTypes:true})).map(entry=>entry.isDirectory()?walk(path.join(folder,entry.name)):[entry.name]))).flat();

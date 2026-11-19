@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ x:Class="CyRevision.Desktop.Controls.CyMcpAssistantView" x:CompileBindings="False">
+ <Grid ColumnDefinitions="340,6,*" Margin="8" RowDefinitions="Auto,*" RowSpacing="8">
+  <TextBlock Grid.ColumnSpan="3" Text="{Binding AiSdkStatus}" TextWrapping="Wrap" />
+  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+   <StackPanel Spacing="8">
+    <TextBlock Text="CyMCPSDK · Provider" FontWeight="Bold" />
+    <TextBox PlaceholderText="Provider ID (ollama, openai, codex…)" Text="{Binding AiSdkProviderId}" />
+    <TextBox PlaceholderText="Model" Text="{Binding AiSdkModel}" />
+    <TextBox PlaceholderText="API endpoint" Text="{Binding AiSdkEndpoint}" />
+    <TextBox PlaceholderText="CLI executable" Text="{Binding AiSdkExecutable}" />
+    <TextBox PlaceholderText="API key environment name" Text="{Binding AiSdkApiKeyEnvironment}" />
+    <WrapPanel><Button Content="List providers" Tag="ListAiSdkProvidersAsync" Click="Run" /><Button Content="Detect providers" Tag="DiscoverAiSdkProvidersAsync" Click="Run" /><Button Content="List models" Tag="ListAiSdkModelsAsync" Click="Run" /><Button Content="Connect" Tag="ConnectAiSdkAsync" Click="Run" /><Button Content="Disconnect" Tag="DisconnectAiSdkAsync" Click="Run" /></WrapPanel>
+    <TextBlock Text="Permissions · Every write requires confirmation" TextWrapping="Wrap" FontWeight="Bold" />
+    <CheckBox Content="Allow file changes" IsChecked="{Binding AiSdkAllowWrite}" />
+    <CheckBox Content="Allow staging" IsChecked="{Binding AiSdkAllowStage}" />
+    <CheckBox Content="Allow commits" IsChecked="{Binding AiSdkAllowCommit}" />
+    <CheckBox Content="Allow network operations" IsChecked="{Binding AiSdkAllowNetwork}" />
+    <CheckBox Content="Allow external tools" IsChecked="{Binding AiSdkRemoteEnabled}" />
+    <CheckBox Content="Allow UI navigation and selection" IsChecked="{Binding AiSdkAllowNavigation}" />
+    <CheckBox Content="Allow publication and sending" IsChecked="{Binding AiSdkAllowPublication}" />
+    <CheckBox Content="Allow destructive operations" IsChecked="{Binding AiSdkAllowDestructive}" />
+    <CheckBox Content="Allow service control" IsChecked="{Binding AiSdkAllowServices}" />
+    <CheckBox Content="Allow project and app administration" IsChecked="{Binding AiSdkAllowAdministration}" />
+    <CheckBox Content="Allow builds and agent execution" IsChecked="{Binding AiSdkAllowBuilds}" />
+    <TextBlock Text="Session and attachments" FontWeight="Bold" />
+    <TextBox PlaceholderText="History ID" Text="{Binding AiSdkHistoryId}" />
+    <CheckBox Content="Restore saved session" IsChecked="{Binding AiSdkRestoreHistory}" />
+    <TextBox PlaceholderText="Attachment path" Text="{Binding AiSdkAttachmentPath}" />
+    <TextBlock Text="API context budget (bytes; 0 = unlimited)" /><TextBox Text="{Binding AiSdkContextBytes}" />
+    <Button Content="Save session" Tag="SaveAiSdkSessionAsync" Click="Run" />
+    <Expander Header="MCP and optimizations">
+     <StackPanel Spacing="6">
+      <CheckBox Content="Compact discovery" IsChecked="{Binding AiSdkCompactDiscovery}" />
+      <CheckBox Content="Disk result spool" IsChecked="{Binding AiSdkDiskSpool}" />
+      <CheckBox Content="Metadata-only metrics" IsChecked="{Binding AiSdkMetrics}" />
+      <CheckBox Content="Change notifications" IsChecked="{Binding AiSdkNotifications}" />
+      <TextBlock Text="Result retention (ms)" /><TextBox Text="{Binding AiSdkResultTtlMs}" />
+      <TextBlock Text="Cache TTL (ms)" /><TextBox Text="{Binding AiSdkCacheTtlMs}" />
+      <TextBlock Text="Memory result quota (bytes)" /><TextBox Text="{Binding AiSdkMemoryBytes}" />
+      <TextBlock Text="Disk result quota (bytes)" /><TextBox Text="{Binding AiSdkDiskBytes}" />
+      <TextBlock Text="Resource chunk size (bytes)" /><TextBox Text="{Binding AiSdkChunkBytes}" />
+      <Button Content="Show SDK metrics" Tag="ShowAiSdkMetricsAsync" Click="Run" />
+      <Button Content="Restart SDK runtime" Tag="RestartAiSdkAsync" Click="Run" />
+      <Button Content="Start local MCP" Tag="StartAiSdkMcpServerAsync" Click="Run" /><Button Content="Stop local MCP" Tag="StopAiSdkMcpServerAsync" Click="Run" />
+      <TextBlock Text="{Binding AiSdkInstanceFile}" TextWrapping="Wrap" />
+      <Button Content="Connect selected MCP profile" Tag="ConnectAiSdkRemoteToolsAsync" Click="Run" />
+      <Button Content="List operations" Tag="ListAiSdkOperationsAsync" Click="Run" />
+      <TextBox Text="{Binding AiSdkCatalogue}" IsReadOnly="True" AcceptsReturn="True" MaxHeight="280" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+     </StackPanel>
+    </Expander>
+   </StackPanel>
+  </ScrollViewer>
+  <GridSplitter Grid.Row="1" Grid.Column="1" ResizeDirection="Columns" />
+  <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="*,Auto,Auto,Auto" RowSpacing="8">
+   <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl ItemsSource="{Binding AiSdkMessages}"><ItemsControl.ItemTemplate><DataTemplate>
+    <Border Padding="10" Margin="0,0,0,8" BorderThickness="1" BorderBrush="{DynamicResource CyBorderBrush}"><StackPanel><TextBlock Text="{Binding RoleLabel}" FontWeight="Bold" /><TextBox Text="{Binding Text}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" BorderThickness="0" /></StackPanel></Border>
+   </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
+   <StackPanel Grid.Row="1" IsVisible="{Binding AiSdkHasApproval}" Spacing="6">
+    <TextBox Text="{Binding AiSdkPendingApproval}" IsReadOnly="True" AcceptsReturn="True" MaxHeight="180" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+    <WrapPanel><Button Content="Approve exact operation" Tag="ApproveAiSdkOperation" Click="Run" /><Button Content="Reject" Tag="RejectAiSdkOperation" Click="Run" /></WrapPanel>
+   </StackPanel>
+   <TextBox Grid.Row="2" Text="{Binding AiSdkPrompt}" PlaceholderText="Message" AcceptsReturn="True" MinHeight="70" MaxHeight="170" TextWrapping="Wrap" />
+   <WrapPanel Grid.Row="3"><Button Content="Send" Tag="SendAiSdkMessageAsync" Click="Run" IsEnabled="{Binding CanSendAiSdk}" /><Button Content="Cancel turn" Tag="CancelAiSdkTurn" Click="Run" /><ProgressBar IsIndeterminate="True" IsVisible="{Binding IsAiSdkBusy}" Width="70" Height="3" /></WrapPanel>
+  </Grid>
+ </Grid>
+</UserControl>

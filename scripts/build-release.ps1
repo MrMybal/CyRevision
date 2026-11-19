@@ -86,6 +86,7 @@ New-Item -ItemType Directory -Path $publishDirectory -Force | Out-Null
 & (Join-Path $PSScriptRoot 'prepare-syncthing-runtime.ps1') -Runtime 'win-x64'
 
 Invoke-NativeCommand 'dotnet' @('restore', $solution)
+& (Join-Path $PSScriptRoot 'build-cymcp.ps1')
 Invoke-NativeCommand 'dotnet' @('restore', $desktopProject, '--runtime', 'win-x64', '/p:SelfContained=true')
 Invoke-NativeCommand 'dotnet' @('restore', $agentProject, '--runtime', 'win-x64', '/p:SelfContained=true')
 Invoke-NativeCommand 'dotnet' @('restore', $buildAgentProject, '--runtime', 'win-x64', '/p:SelfContained=true')
@@ -129,6 +130,7 @@ Invoke-NativeCommand 'dotnet' @(
 )
 
 & (Join-Path $PSScriptRoot 'build-native-v2.ps1') -SkipManagedBuild -OutputDirectory $publishDirectory
+Invoke-NativeCommand 'dotnet' @('publish',(Join-Path $repositoryRoot 'src/CyRevision.Cli/CyRevision.Cli.csproj'),'-c',$Configuration,'--runtime','win-x64','--self-contained','true','-o',(Join-Path $publishDirectory 'Cli'),"/p:Version=$Version",'/p:DebugType=None','/p:DebugSymbols=false')
 
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination $publishDirectory
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination $publishDirectory

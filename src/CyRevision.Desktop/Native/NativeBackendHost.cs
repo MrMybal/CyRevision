@@ -28,6 +28,8 @@ public sealed class NativeBackendHost
     {
         _model=model;
         _adapter=new(model,configurationDirectory);
+        _adapter.AutomationNativeFrontend=true;
+        _model.ConfigureAutomationAdapter(_adapter);
         _desktop=desktop;
         _log=log;
         _monitor=new RepositoryChangeMonitor(batch=>Dispatcher.UIThread.Post(()=>_ = RefreshDetectedAsync(batch)));

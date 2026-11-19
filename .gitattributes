@@ -23,3 +23,4 @@ Documentation/Documentation.html text eol=lf
 Dockerfile text eol=lf
 # Vendored snapshots retain exact upstream bytes for the dependency lock.
 native/vendor/CyUI/** -text
+native/vendor/CyMCPSDK/** -text

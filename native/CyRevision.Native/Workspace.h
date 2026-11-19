@@ -32,6 +32,8 @@ class Workspace {
     std::string detail_, workspace_="changes", table_="PreparedChanges", filter_, sort_, searchActions_;
     std::string error_, projectId_, lastProject_;
     std::string queuedProject_,openingProject_;
+    long long lastAutomationNavigation_=0,lastAutomationAppearance_=0;
+    std::string lastObservedAppearance_;
     bool descending_=false, openWorkspace_=false, layoutChecked_=false, resetLayout_=false, selectTable_=true, showSettings_=false, themeEditor_=false;
     bool requestingState_=false, pendingAction_=false, done_=false;
     bool updateOpen_=false, offerUpdateAfterCheck_=false;

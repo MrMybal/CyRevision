@@ -163,12 +163,14 @@ public partial class App : Application
                 localization, documentation, updates, discordStore, discordAgent, discordConnections,
                 pluginManager, new CodeWorkspaceService(), pullRequests, ciWorkflows, applicationLog, repositoryConsole, initialProjectPath);
             _viewModel = viewModel;
+            var automationPreferences=new NativePreferencesActions(viewModel,defaultPaths,paths,_applicationPreferences,_desktopPreferences,SetApplicationPreferencesAsync,SetDesktopBehaviorPreferencesAsync,nativeTraySupported:OperatingSystem.IsWindows());
+            viewModel.ConfigureAutomationPreferences(automationPreferences);
 
             if (NativeBackendHost.IsRequested(desktop.Args))
             {
                 _mainTrayIcon.IsVisible = false;
                 NativeBackendHost host = new(viewModel, desktop, applicationLog,paths.ConfigurationDirectory);
-                host.Preferences=new NativePreferencesActions(viewModel,defaultPaths,paths,_applicationPreferences,_desktopPreferences,SetApplicationPreferencesAsync,SetDesktopBehaviorPreferencesAsync,nativeTraySupported:OperatingSystem.IsWindows());
+                host.Preferences=automationPreferences;
                 desktop.Exit += (_, _) =>
                 {
                     _mainTrayIcon.Dispose();

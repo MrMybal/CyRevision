@@ -21,7 +21,7 @@
   "search": "global-search",
   "assets": "asset-diff",
   "console": "console-logs",
-  "ai": "code-and-ai",
+  "ai": "cymcp-automation",
   "mcp": "mcp-policy",
   "sync": "sync-and-peers",
   "syncconflicts": "sync-conflicts",

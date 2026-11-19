@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\CyRevision.Automation\CyRevision.Automation.csproj" />
     <ProjectReference Include="..\CyRevision.Backup\CyRevision.Backup.csproj" />
     <ProjectReference Include="..\CyRevision.Code\CyRevision.Code.csproj" />
     <ProjectReference Include="..\CyRevision.Core\CyRevision.Core.csproj" />

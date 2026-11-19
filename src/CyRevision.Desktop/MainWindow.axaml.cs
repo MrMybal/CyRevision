@@ -216,6 +216,7 @@ public partial class MainWindow : Window
         _viewModel = viewModel;
         _configurationDirectory = configurationDirectory;
         DataContext = viewModel;
+        viewModel.ConfigureAutomationAdapter(new CyRevision.Desktop.Native.NativeModelAdapter(viewModel,configurationDirectory),name=>{if(this.FindControl<TabItem>(name) is {} tab)NavigateToWorkspace(tab);});
         _viewModel.UnrealBuildLogLines.CollectionChanged += OnUnrealBuildLogLinesChanged;
         _viewModel.AiChatMessages.CollectionChanged += OnAiChatMessagesChanged;
         _viewModel.TeamChatMessages.CollectionChanged += OnTeamChatMessagesChanged;
@@ -252,6 +253,7 @@ public partial class MainWindow : Window
         ApplyChangeColumnVisibility();
         ConsoleAndLogsTabs.SelectionChanged += OnConsoleAndLogsTabSelectionChanged;
         _viewModel.PropertyChanged += OnMainViewModelPropertyChanged;
+        _viewModel.PropertyChanged += OnAutomationApprovalChanged;
         _viewModel.UpdateAvailable += OnUpdateAvailable;
         _codeRefreshTimer.Tick += OnCodeRefreshTimerTick;
         _codeRefreshTimer.Start();

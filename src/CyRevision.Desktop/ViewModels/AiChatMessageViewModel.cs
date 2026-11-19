@@ -3,12 +3,14 @@ namespace CyRevision.Desktop.ViewModels;
 public sealed class AiChatMessageViewModel : ObservableObject
 {
     private string _text;
+    private readonly string? _displayName;
 
-    public AiChatMessageViewModel(string role, string text, DateTimeOffset? timestamp = null)
+    public AiChatMessageViewModel(string role, string text, DateTimeOffset? timestamp = null, string? displayName = null)
     {
         Role = role;
         _text = text;
         Timestamp = timestamp ?? DateTimeOffset.Now;
+        _displayName = displayName;
     }
 
     public string Role { get; }
@@ -17,7 +19,7 @@ public sealed class AiChatMessageViewModel : ObservableObject
     {
         "user" => "You",
         "system" => "CyRevision",
-        _ => "Codex"
+        _ => _displayName ?? "Codex"
     };
 
     public string AccentColor => Role.ToLowerInvariant() switch

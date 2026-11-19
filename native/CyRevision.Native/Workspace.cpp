@@ -16,7 +16,7 @@ std::string text(const Json& object,const char* key,const std::string& fallback)
 std::string display(const Json& value){if(value.is_null())return "";if(value.is_string())return value.get<std::string>();if(value.is_boolean())return value.get<bool>()?"Yes":"No";return value.dump();}
 ImU32 statusColour(const std::string& value){std::string normalized=value;std::transform(normalized.begin(),normalized.end(),normalized.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});const auto& p=cyui::palette();if(normalized=="success" || normalized=="completed" || normalized=="open" || normalized=="added")return p.success;if(normalized=="merged")return p.accent;if(normalized=="failure" || normalized=="failed" || normalized=="error" || normalized=="conflict" || normalized=="closed" || normalized=="deleted" || normalized=="removed")return p.error;if(normalized=="warning" || normalized=="queued" || normalized=="cancelled" || normalized=="untracked")return p.warning;if(normalized=="in_progress" || normalized=="running" || normalized=="modified")return p.info;return p.text;}
 Workspace::Workspace(EngineConnection& client,std::wstring backend,std::function<bool(const std::string&)> documentationOpener):client_(client),backend_(std::move(backend)),documentationOpener_(std::move(documentationOpener)){registerAppTranslations();workspace_="overview";table_="";send({{"command","catalog"}});}
-unsigned long long Workspace::send(Json request){auto command=text(request,"command");bool operation=command.rfind("docs.",0)!=0 && command!="app.language" && command!="state" && command!="catalog" && command!="updates.check" && command!="cancel" && command!="prefs.cancel" && command!="set" && command!="select" && command!="itemSet" && command!="include" && text(request,"operation")!="cancel";
+unsigned long long Workspace::send(Json request){auto command=text(request,"command");bool approval=text(request,"action")=="ApproveAiSdkOperation" || text(request,"action")=="RejectAiSdkOperation";bool operation=!approval && command!="ui.appearance.ack" && command.rfind("docs.",0)!=0 && command!="app.language" && command!="state" && command!="catalog" && command!="updates.check" && command!="cancel" && command!="prefs.cancel" && command!="set" && command!="select" && command!="itemSet" && command!="include" && text(request,"operation")!="cancel";
     if(command=="cancel")queuedRefreshes_.clear();
     if(operation){for(const auto& pending:pending_)if(pending.second==command)return 0;pendingAction_=true;}
     if(command=="overview.installUpdate")request["nativeProcessId"]=GetCurrentProcessId();
@@ -35,7 +35,7 @@ bool Workspace::selectionPending(const std::string& source)const{
 }
 std::string Workspace::loadingLabel(const std::string& workspace)const{
     for(const auto& entry:queuedRefreshes_)if(workspace.empty() || text(entry.second,"viewWorkspace")==workspace)return "Waiting for current operation · "+text(action(entry.first),"label",entry.first);
-    for(const auto& entry:pendingRequests_){auto& request=entry.second;auto command=text(request,"command");if(command.rfind("docs.",0)==0 || command=="app.language" || command=="state" || command=="catalog" || command=="updates.check" || command=="set" || command=="navigation")continue;
+    for(const auto& entry:pendingRequests_){auto& request=entry.second;auto command=text(request,"command");if(command.rfind("docs.",0)==0 || command=="app.language" || command=="ui.appearance.ack" || command=="state" || command=="catalog" || command=="updates.check" || command=="set" || command=="navigation")continue;
         if(workspace.empty() || text(request,"viewWorkspace")==workspace){auto name=text(request,"action",command);return "Loading · "+(command=="select"?text(request,"source","selection"):text(action(name),"label",name));}}
     if(state_.contains("activity")){const auto& activity=state_["activity"];if(!text(activity,"command").empty() && (workspace.empty() || text(activity,"workspace")==workspace)){auto name=text(activity,"action");if(name.empty())name=text(activity,"command");return "Loading · "+text(action(name),"label",name);}}
     if(state_.contains("loading"))for(const auto& item:state_["loading"])if(workspace.empty() || text(item,"workspace")==workspace || text(item,"workspace")=="project")return text(item,"label","Loading…");
@@ -50,12 +50,13 @@ bool Workspace::canSwitchProject()const{
 }
 Json Workspace::action(const std::string& name)const{if(catalog_.contains("actions"))for(const auto& item:catalog_["actions"])if(text(item,"name")==name)return item;if(state_.contains("actions"))for(const auto& item:state_["actions"])if(text(item,"name")==name)return item;return {{"name",name},{"label",name},{"missing",true},{"parameters",Json::array()}};}
 void Workspace::submitAction(const Json& item,const Json& parameters,bool confirmed){
-    Json request=item.value("context",Json::object());request["command"]=text(item,"rpc","invoke");request["action"]=text(item,"name");request["parameters"]=parameters;request["confirmed"]=confirmed;request["edits"]=draftValues_;
+    Json request=item.value("context",Json::object());request["command"]=text(item,"rpc","invoke");request["action"]=text(item,"name");request["parameters"]=parameters;request["confirmed"]=confirmed;bool approval=text(item,"name")=="ApproveAiSdkOperation" || text(item,"name")=="RejectAiSdkOperation";request["edits"]=approval?Json::object():draftValues_;
     auto name=text(item,"name");if(busy() && name.rfind("Refresh",0)==0){request["projectId"]=projectId_;request["viewWorkspace"]=workspace_;request["edits"]=Json::object();queuedRefreshes_[name]=std::move(request);return;}
-    pendingAction_=true;send(std::move(request));lastPoll_=0;
+    if(!approval)pendingAction_=true;send(std::move(request));lastPoll_=0;
 }
 void Workspace::invoke(const Json& item){
-    if((busy() && text(item,"name").rfind("Refresh",0)!=0) || item.value("missing",false))return;
+    auto actionName=text(item,"name");bool approval=actionName=="ApproveAiSdkOperation" || actionName=="RejectAiSdkOperation";
+    if((busy() && !approval && actionName.rfind("Refresh",0)!=0) || item.value("missing",false))return;
     if(item.value("confirmation",false) || !item.value("parameters",Json::array()).empty()){
         action_=item;parameters_=Json::object();for(auto it=edits_.begin();it!=edits_.end();)if(it->first.rfind("parameter:",0)==0)it=edits_.erase(it);else++it;
         for(const auto& field:item.value("parameters",Json::array())){auto name=text(field,"name");if(field.contains("value") && !field["value"].is_null())parameters_[name]=field["value"];else parameters_[name]=text(field,"kind")=="bool"?Json(false):Json("");}
@@ -124,7 +125,7 @@ void Workspace::tick(bool background){
     for(auto& response:client_.take()){
         auto id=response.value("id",0ULL);auto found=pending_.find(id);auto command=found==pending_.end()?"":found->second;if(found!=pending_.end())pending_.erase(found);pendingRequests_.erase(id);
         if(command=="state")requestingState_=false;
-        pendingAction_=false;for(const auto& pending:pending_)if(pending.second.rfind("docs.",0)!=0 && pending.second!="app.language" && pending.second!="state" && pending.second!="catalog" && pending.second!="updates.check" && pending.second!="cancel" && pending.second!="prefs.cancel" && pending.second!="set" && pending.second!="select" && pending.second!="itemSet" && pending.second!="include")pendingAction_=true;
+        pendingAction_=false;for(const auto& pending:pending_)if(pending.second.rfind("docs.",0)!=0 && pending.second!="app.language" && pending.second!="ui.appearance.ack" && pending.second!="state" && pending.second!="catalog" && pending.second!="updates.check" && pending.second!="cancel" && pending.second!="prefs.cancel" && pending.second!="set" && pending.second!="select" && pending.second!="itemSet" && pending.second!="include")pendingAction_=true;
         auto submitted=submittedDrafts_.find(id);
         if(!response.value("ok",false)){error_=text(response,"error","Engine request failed.");if(command=="project")openingProject_.clear();if(submitted!=submittedDrafts_.end())submittedDrafts_.erase(submitted);continue;}
         if(submitted!=submittedDrafts_.end()){for(const auto& entry:submitted->second.items()){if(draftValues_.contains(entry.key()) && draftValues_[entry.key()]==entry.value())draftValues_.erase(entry.key());auto draft=edits_.find(entry.key());if(draft!=edits_.end() && draft->second==display(entry.value()))edits_.erase(draft);}submittedDrafts_.erase(submitted);}
@@ -137,6 +138,12 @@ void Workspace::tick(bool background){
         else if(command=="catalog")catalog_=result;
         else if(command=="state"){
             if(text(result,"workspaceId")!=workspace_)continue;state_=result;++stateGeneration_;projectId_=text(state_,"projectId");
+            auto appearance=state_.value("automationAppearance",Json::object());auto appearanceRevision=appearance.value("revision",0LL);
+            if(appearanceRevision>lastAutomationAppearance_){lastAutomationAppearance_=appearanceRevision;auto request=appearance.value("request",Json::object());if(request.contains("theme"))cyui::setTheme(text(request,"theme").c_str());if(request.contains("density"))cyui::setDensity(text(request,"density")=="comfortable"?cyui::Density::comfortable:cyui::Density::compact);if(request.contains("locale"))cyui::setLocale(text(request,"locale").c_str());}
+            auto observed=Json{{"command","ui.appearance.ack"},{"theme",cyui::currentThemeKey()},{"density",cyui::density()==cyui::Density::comfortable?"comfortable":"compact"},{"locale",cyui::locale()}};
+            if(observed.dump()!=lastObservedAppearance_){lastObservedAppearance_=observed.dump();send(observed);}
+            auto automationNavigation=state_.value("automationNavigation",Json::object());auto navigationRevision=automationNavigation.value("revision",0LL);
+            if(navigationRevision>lastAutomationNavigation_){lastAutomationNavigation_=navigationRevision;workspace_=text(automationNavigation,"workspace",workspace_);category_=text(state_.value("navigation",Json::object()),"activeCategory",category_);openWorkspace_=true;selectTable_=true;lastPoll_=0;}
             if(projectId_==openingProject_)openingProject_.clear();
             if(projectId_!=lastProject_){lastProject_=projectId_;edits_.clear();draftValues_=Json::object();tableViews_.clear();requestedTables_=Json::object();requestedFields_.clear();detail_.clear();
                 textViews_.clear();sourceEditors_.clear();propertyViews_.clear();documents_.clear();transcripts_.clear();imageViews_.clear();pendingDocumentLink_.clear();
@@ -184,6 +191,20 @@ void Workspace::frame(){
     requestedTables_=Json::object();workspacePanel();detachedWindows();if(showInspector_)inspector();operations();modals();reviewLogWindows();gitInitializationWizard();gitConflictEditor();gitBranchInspector();
     for(auto& entry:enlargedText_)if(entry.second){ImGui::SetNextWindowSize(cyui::dp(1100,700),ImGuiCond_FirstUseEver);ImGuiWindowClass windowClass;windowClass.ParentViewportId=static_cast<ImGuiID>(-1);windowClass.ViewportFlagsOverrideSet=ImGuiViewportFlags_NoAutoMerge;windowClass.ViewportFlagsOverrideClear=ImGuiViewportFlags_NoTaskBarIcon;ImGui::SetNextWindowClass(&windowClass);activePane_="aux:"+entry.first;if(ImGui::Begin(entry.first.c_str(),&entry.second)){if(entry.first=="File history")fileHistoryWindow();else if(entry.first.rfind("text:",0)==0)textViews_[entry.first].draw("##fullText",value(entry.first.substr(5)));}ImGui::End();activePane_.clear();}
     if(themeEditor_)cyui::showThemeEditor(&themeEditor_);if(showSettings_)preferences();
+    // SDK approvals belong to the application, not to the currently visible tab.
+    auto sdkApprovalTitle=cyui::tr("Confirm application operation")+"###sdkApplicationApproval";
+    if(flag("AiSdkHasApproval") && !ImGui::IsPopupOpen(sdkApprovalTitle.c_str()))ImGui::OpenPopup(sdkApprovalTitle.c_str());
+    ImGui::SetNextWindowSize(cyui::dp(820,510),ImGuiCond_FirstUseEver);
+    if(ImGui::BeginPopupModal(sdkApprovalTitle.c_str(),nullptr,ImGuiWindowFlags_NoCollapse)){
+        if(!flag("AiSdkHasApproval"))ImGui::CloseCurrentPopup();
+        else{
+            cyui::textDim(cyui::tr("Review the exact operation, selected target and arguments. Approval applies once only.").c_str());
+            ImGui::BeginChild("##sdkApprovalPayload",ImVec2(0,-ImGui::GetFrameHeightWithSpacing()*2),ImGuiChildFlags_Borders,ImGuiWindowFlags_HorizontalScrollbar);
+            auto payload=value("AiSdkPendingApproval");ImGui::TextUnformatted(payload.c_str());ImGui::EndChild();
+            command("ApproveAiSdkOperation","Approve exact operation",true);ImGui::SameLine();command("RejectAiSdkOperation","Reject");
+        }
+        ImGui::EndPopup();
+    }
     // Confirmation dialogs must never become invisible input blockers when a
     // command is invoked from an auxiliary window while the main one is minimized.
     if(auto* modal=ImGui::GetTopMostPopupModal()){auto handle=static_cast<HWND>(ImGui::GetMainViewport()->PlatformHandle);if(handle && IsIconic(handle)){ShowWindow(handle,SW_RESTORE);RECT client{};GetClientRect(handle,&client);POINT origin{};ClientToScreen(handle,&origin);ImGui::SetWindowPos(modal,ImVec2(origin.x+(client.right-modal->Size.x)*.5f,origin.y+(client.bottom-modal->Size.y)*.5f),ImGuiCond_Always);ImGui::FocusWindow(modal);}}
