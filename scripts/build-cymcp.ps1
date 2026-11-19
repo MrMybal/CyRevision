@@ -7,7 +7,8 @@ foreach($entry in $lock.files.PSObject.Properties) {
     $file=Join-Path $root ('native/vendor/CyMCPSDK/'+$entry.Name)
     if (-not (Test-Path -LiteralPath $file) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.Value) { throw "SDK snapshot mismatch: $($entry.Name)" }
 }
-$cmake=(Get-Command cmake -ErrorAction SilentlyContinue).Source
+$cmakeCommand=Get-Command cmake -ErrorAction SilentlyContinue
+$cmake=if($cmakeCommand){$cmakeCommand.Source}else{$null}
 if (-not $cmake) {
     $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
     $installation=& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
