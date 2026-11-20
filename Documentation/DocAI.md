@@ -5,7 +5,7 @@ This file is for assistants working on the application's documentation. The huma
 ```json
 {
   "application": "CyRevision",
-  "version": "0.1.35",
+  "version": "0.1.36",
   "entry": "Documentation.html",
   "manifest": "DocData/manifest.json",
   "defaultLocale": "en",
