@@ -92,7 +92,7 @@ def run(cli):
         (repo / "large.txt").write_text("large fixture line\n" * 70000, encoding="utf-8")
         (repo / ".env").write_text("SYNTHETIC_PRIVATE_MARKER=hidden\n", encoding="utf-8")
         git("add", "notes.txt", "large.txt"); git("commit", "-m", "Initial fixture")
-        common = ["--project", str(repo), "--profile-dir", str(profile)]
+        common = ["--project", str(repo), "--profile-dir", str(profile), "--access-profile", "protected"]
         def call(*args, code=0):
             result = subprocess.run([str(cli), *args, *common], capture_output=True, encoding="utf-8", timeout=40)
             assert result.returncode == code, (args[:2], result.returncode, result.stderr)
@@ -103,7 +103,7 @@ def run(cli):
         def invoke(name, args, *flags, code=0): return call("invoke", name, "--arguments", json.dumps(args), *flags, code=code)[-1]
         check(len(call("list")[-1]["result"]) >= 34, "CLI shared registry")
         check(call("schema", "file.write")[-1]["result"]["inputSchema"]["required"] == ["path", "text", "expectedSha256"], "CLI schema")
-        check(invoke("project.info", {})["result"]["value"]["sdkVersion"] == "0.7.0", "source SDK revision")
+        check(invoke("project.info", {})["result"]["value"]["sdkVersion"] == "0.7.1", "source SDK revision")
         check(invoke("file.read", {"path": "notes.txt"})["result"]["value"]["text"].startswith("synthetic"), "real file read")
         invoke("file.read", {"path": "../outside"}, code=3); invoke("file.read", {"path": ".env"}, code=3)
         check(not invoke("code.search", {"text": "SYNTHETIC_PRIVATE_MARKER"})["result"]["value"]["items"], "private paths excluded from search")

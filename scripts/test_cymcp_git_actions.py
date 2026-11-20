@@ -15,7 +15,7 @@ def run(cli):
             (repo/"notes.txt").write_text(text,encoding="utf-8");git("add","notes.txt");git("commit","-m",message)
         commit("base\n","Base");git("branch","feature")
         def invoke(name,args=None,flags=(),code=0):
-            result=subprocess.run([str(cli),"invoke",name,"--project",str(repo),"--profile-dir",str(root/"profile"),"--arguments",json.dumps(args or {}),*flags],capture_output=True,text=True,encoding="utf-8",timeout=30)
+            result=subprocess.run([str(cli),"invoke",name,"--project",str(repo),"--profile-dir",str(root/"profile"),"--access-profile","protected","--arguments",json.dumps(args or {}),*flags],capture_output=True,text=True,encoding="utf-8",timeout=30)
             assert result.returncode==code,(name,result.stdout,result.stderr)
             return json.loads(result.stdout)
         write=["--allow-write","--confirm"];commit_flags=[*write,"--allow-commit"];destructive=[*write,"--allow-destructive"]

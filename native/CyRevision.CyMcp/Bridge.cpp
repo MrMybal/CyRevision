@@ -1,5 +1,6 @@
 #include <cymcp/ai.hpp>
 #include <cymcp/mcp.hpp>
+#include <cymcp/http.hpp>
 #include <cymcp/changes.hpp>
 #include <cymcp/performance.hpp>
 #include <cstdlib>
@@ -20,9 +21,18 @@ using HostEvent = void (*)(void*,const char*);
 namespace {
 char* owned(std::string value) {auto* p=static_cast<char*>(std::malloc(value.size()+1));if(!p) return nullptr;std::memcpy(p,value.c_str(),value.size()+1);return p;}
 Json failure(const std::exception& e) {const auto* error=dynamic_cast<const Error*>(&e);return {{"ok",false},{"error",{{"code",error?error->code:"InternalError"},{"message",redact_error_message(e.what())}}}};}
+LocalAccessProfile access_profile(const Json& settings) {
+    const auto profile=settings.value("accessProfile","free");
+    if(profile=="free")return LocalAccessProfile::free;
+    if(profile=="local_controlled")return LocalAccessProfile::local_controlled;
+    if(profile=="token_only")return LocalAccessProfile::token_only;
+    if(profile=="protected_access")return LocalAccessProfile::protected_access;
+    throw Error("InvalidParameters","Unknown local MCP access profile.");
+}
 struct Runtime {
     void* state; HostCall call; HostFree release; HostEvent event;
     Json options;
+    LocalAccessSettings access;
     std::shared_ptr<Registry> registry;
     std::shared_ptr<ResourceRegistry> resources;
     std::shared_ptr<ChangeFeed> changes;
@@ -60,12 +70,15 @@ struct Runtime {
     Runtime(const Json& catalogue,Json settings,void* userdata,HostCall invoke,HostFree free_result,HostEvent sink)
         :state(userdata),call(invoke),release(free_result),event(sink),options(std::move(settings)) {
         if(options.contains("privateDirectory"))private_directory(std::filesystem::u8path(options["privateDirectory"].get<std::string>()));
+        access=local_access_settings(access_profile(options));
         auto policy=Policy([this](const CallContext& ctx,const std::string& name,const Json& args){return host(name,args,ctx,0).value("allowed",false)?Decision::allow:Decision::deny;});
-        registry=std::make_shared<Registry>(policy);
+        registry=std::make_shared<Registry>(access.control_operations?policy:Policy::allow_all());
         ResourceOptions ro;ro.chunk_bytes=options.value("chunkBytes",32768u);ro.result_ttl=std::chrono::milliseconds(options.value("resultTtlMs",300000));
         ro.max_stored_bytes=options.value("memoryBytes",64u*1024*1024);ro.max_disk_bytes=options.value("diskBytes",1024ULL*1024*1024);
         if(options.value("diskSpool",false))ro.disk_directory=std::filesystem::u8path(options.at("spoolDirectory").get<std::string>());
-        resources=std::make_shared<ResourceRegistry>(Policy([this](const CallContext& ctx,const std::string&,const Json& args){return host("resources.read",args,ctx,0).value("allowed",false)?Decision::allow:Decision::deny;}),ro);
+        auto resource_policy=Policy([this](const CallContext& ctx,const std::string&,const Json& args){return host("resources.read",args,ctx,0).value("allowed",false)?Decision::allow:Decision::deny;});
+        // Resource access still follows project lifetime/emergency revocation in every profile.
+        resources=std::make_shared<ResourceRegistry>(resource_policy,ro);
         if(options.value("notifications",false)){changes=std::make_shared<ChangeFeed>();registry->set_change_feed(changes);resources->set_change_feed(changes);}
         if(options.value("performance",false)){PerformanceOptions po;if(options.contains("performanceFile"))po.jsonl_file=std::filesystem::u8path(options["performanceFile"].get<std::string>());performance=std::make_shared<PerformanceMonitor>(po);registry->set_performance_monitor(performance);}
         for(const auto& item:catalogue){
@@ -101,8 +114,10 @@ struct Runtime {
         if(command=="mcp-stdio"){mcp->serve_stdio(std::cin,std::cout);return Json::object();}
         if(command=="serve"){
             if(http)throw Error("Busy","The local endpoint is already running.");
-            http=std::make_unique<LocalHttpServer>(request.at("token"),[this](const Json& value,const CallContext& original){auto external=original;external.principal="application";external.performance=performance;return value.contains("jsonrpc")?mcp->handle(value,external):dispatch_app(*registry,value,external);});
-            return {{"port",http->start(request.value("port",0))}};
+            auto endpoint=[this](const Json& value,const CallContext& original){auto external=original;external.principal="application";external.performance=performance;return value.contains("jsonrpc")?mcp->handle(value,external):dispatch_app(*registry,value,external);};
+            if(access.require_token)http=std::make_unique<LocalHttpServer>(request.at("token").get<std::string>(),endpoint);
+            else http=std::make_unique<LocalHttpServer>(LocalHttpServer::UnauthenticatedLoopback{},endpoint);
+            return {{"port",http->start(request.value("port",0))},{"accessProfile",options.value("accessProfile","free")},{"requireToken",access.require_token},{"controlOperations",access.control_operations}};
         }
         if(command=="stop-server"){if(http)http->stop();http.reset();return Json::object();}
         if(command=="invalidate"){invalidate_snapshots();std::lock_guard lock(remote_mutex);for(auto& [_,client]:remotes)client->clear_cache();return Json::object();}

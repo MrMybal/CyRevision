@@ -51,6 +51,7 @@ def run(app, cli, native=None, capture=None):
             request("navigation", operation="visibility", workspace="ai", visible=True)
             request("workspace", workspace="ai")
             assert state()["navigation"]["activeWorkspace"] == "ai"
+            request("set", property="AiSdkLocalAccessProfile", value="Protected")
             request("set", property="AiSdkAllowWrite", value=True)
             request("invoke", action="StartAiSdkMcpServerAsync")
             endpoint_file = value(state(), "AiSdkInstanceFile")

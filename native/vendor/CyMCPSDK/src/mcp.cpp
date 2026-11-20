@@ -388,9 +388,11 @@ Json McpServer::dispatch(const Json& request, const CallContext& input) {
                 try {
                     auto value = registry_.invoke(params["name"].get<std::string>(),
                                                   params.value("arguments", Json::object()), input);
-                    result = {
-                        {"content", Json::array({{{"type", "text"}, {"text", value.dump()}}})},
-                        {"isError", false}};
+                    result = {{"content", Json::array({{{"type", "text"},
+                                                        {"text", options_.result_text
+                                                                     ? options_.result_text(value)
+                                                                     : value.dump()}}})},
+                              {"isError", false}};
                     if (value.is_object())
                         result["structuredContent"] = value;
                     if (options_.resources && value.is_object() && value.contains("resource") &&
@@ -653,9 +655,9 @@ struct McpClient::Impl {
                 HttpRequest req;
                 req.method = "DELETE";
                 req.url = url;
-                req.headers = {{"Authorization", "Bearer " + token},
-                               {"MCP-Protocol-Version", protocol},
-                               {"Mcp-Session-Id", session_id}};
+                req.headers = {{"MCP-Protocol-Version", protocol}, {"Mcp-Session-Id", session_id}};
+                if (!token.empty())
+                    req.headers["Authorization"] = "Bearer " + token;
                 req.timeout = std::chrono::seconds(1);
                 req.max_response_bytes = 4096;
                 HttpClient().perform(req, grace);
@@ -779,8 +781,9 @@ struct McpClient::Impl {
             req.max_response_bytes = provider_message_limit;
             req.headers = {{"Content-Type", "application/json"},
                            {"Accept", "application/json, text/event-stream"},
-                           {"Authorization", "Bearer " + token},
                            {"MCP-Protocol-Version", protocol}};
+            if (!token.empty())
+                req.headers["Authorization"] = "Bearer " + token;
             if (protocol == modern) {
                 req.headers["Mcp-Method"] = method;
                 const auto& fields = message.at("params");
@@ -1006,11 +1009,12 @@ void McpClient::start_notifications(Json filter, const Cancellation& input) {
         req.timeout = std::chrono::milliseconds(0);
         req.max_response_bytes = std::numeric_limits<std::size_t>::max();
         req.error_body_limit = 4096;
-        req.headers = {{"Authorization", "Bearer " + p.token},
-                       {"Content-Type", "application/json"},
+        req.headers = {{"Content-Type", "application/json"},
                        {"Accept", "text/event-stream"},
                        {"MCP-Protocol-Version", modern},
                        {"Mcp-Method", "subscriptions/listen"}};
+        if (!p.token.empty())
+            req.headers["Authorization"] = "Bearer " + p.token;
         w->worker = std::jthread([w, req = std::move(req)] {
             try {
                 std::string line, data;

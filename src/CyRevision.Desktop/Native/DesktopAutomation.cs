@@ -175,7 +175,7 @@ internal sealed partial class DesktopAutomation(MainWindowViewModel model,Revisi
         if(name is "StageAllAsync" or "CommitAsync" or "RollbackIncludedChangesAsync")
             foreach(var change in model.Changes.Where(change=>change.IsIncluded&&!change.IsLocalOnly))engine.Resolve(change.Path);
         if(name=="RollbackSelectedChangeAsync"&&model.SelectedChange is {} selectedChange)engine.Resolve(selectedChange.Path);
-        if(name=="CommitAsync"&&model.SelectedProject?.Definition.Features.PeerSyncEnabled==true&&
+        if(engine.Permissions.ControlOperations&&name=="CommitAsync"&&model.SelectedProject?.Definition.Features.PeerSyncEnabled==true&&
            (!engine.Permissions.Network||(engine.Permissions.Capabilities&(AutomationCapability.Publication|AutomationCapability.Services))!=(AutomationCapability.Publication|AutomationCapability.Services)))
             throw new AutomationException("AccessDenied","In this project's Git + Sync mode, committing can exchange revisions. Network, publication and service grants are also required before committing.");
         string can="Can"+name.Replace("Async","",StringComparison.Ordinal);

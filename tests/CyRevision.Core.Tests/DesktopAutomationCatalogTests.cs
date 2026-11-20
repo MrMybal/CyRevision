@@ -26,7 +26,7 @@ public sealed class DesktopAutomationCatalogTests
     public void HighImpactActionsRequireSeparateCapabilities(string module,string action,AutomationCapability required)
         =>Assert.Equal(required,DesktopAutomationCatalog.Capabilities(module,action)&required);
     [Theory]
-    [InlineData("AiSdkAllowWrite")][InlineData("AiMcpEnabled")][InlineData("AiMcpEmergencyBlocked")]
+    [InlineData("AiSdkAllowWrite")][InlineData("AiSdkLocalAccessProfile")][InlineData("AiMcpEnabled")][InlineData("AiMcpEmergencyBlocked")]
     [InlineData("PullRequestToken")][InlineData("VpnExchangeText")][InlineData("PeerExchangeText")][InlineData("RepositoryConsoleCommand")]
     [InlineData("SwarmAgentPath")][InlineData("SwarmCoordinatorPath")][InlineData("LoreCliPath")][InlineData("PerforceCliPath")]
     public void FieldsCannotGrantTheAssistantItsOwnAuthorityOrExposeSecrets(string name)
@@ -38,6 +38,7 @@ public sealed class DesktopAutomationCatalogTests
     public void AllGrantsAreOffUntilTheHostEnablesThem()
     {
         var permissions=new AutomationPermissions();Assert.Equal(AutomationCapability.None,permissions.Capabilities);
+        Assert.Equal(LocalMcpAccessProfile.Free,permissions.AccessProfile);Assert.False(permissions.ControlOperations);
         Assert.False(permissions.Write);Assert.False(permissions.Network);Assert.False(permissions.Stage);Assert.False(permissions.Commit);
     }
     [Theory]

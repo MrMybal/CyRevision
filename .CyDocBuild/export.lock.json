@@ -1,7 +1,7 @@
 {
-  "inputDigest": "79a96c3216e93150f613df06737459caf9971fd7a7ab949f15f350ea6d8105e7",
+  "inputDigest": "d5c8e504640fd7b9fec44d80075aa345af1b637b11f2fd0ffc2d789700609d51",
   "files": {
-    "DocAI.md": "54fb55a4a4234e8777bea565ce398e38bef402e3e3685264df9f08e51bc75846",
+    "DocAI.md": "21a71e19d99fd0998f30be7e29281250cfb123d477b0f547cb6468979b106813",
     "DocData/CyDoc-LICENSE.txt": "60aaa0ed2087332acbaee219c088240f5ddda7e7fe393ad5c162b8c617e62bf0",
     "DocData/CyDoc-SOURCE.txt": "b452ab202f5501b6d4ea12eb6fa6964f94653065122e3e1f8f91b4782709cd32",
     "DocData/assets/ai.en.png": "f18ac8cf7feb332c0174a8b29be2d49db7a555094cf674e38221702082c3599d",
@@ -61,8 +61,8 @@
     "DocData/assets/vpn.fr.png": "cd17eb3da405a05de6d2a4965c4f2303bf22e26a4888a84ab1848d4198c4c2f9",
     "DocData/assets/vpn.fr.svg": "2b5f2cd66b119ff1d322d7c1cadf253707071d64f66c0f5819d7337fe933b45f",
     "DocData/assets/workspace-v2.png": "b95304c1728a9fffb95842f4600e47b90f9d48e2e7c0cc2211adef1efdc5ff57",
-    "DocData/data.js": "afb3dd1808456678641f21b01ef5ba5947a09b36e7d9c12bf92f285e98d56675",
-    "DocData/manifest.json": "d3aad52bcc63f93eeb27f98a5763c2b318719f99961e435521b5f092560d5f44",
+    "DocData/data.js": "db056964f55edd83bc4124e2eef9e2c2902e6ba77e347354e0e9c9edaa646ebf",
+    "DocData/manifest.json": "06acf5ecd2f662810214554791984ef7a3e155ba044420efb3bb8626f3102a41",
     "DocData/media-gallery.js": "f91ad56532d805a594413784544602a5227a16adc7f7b6b1389718f5049f15e1",
     "DocData/media-image.js": "182df084c547df55da727c49fee459ff8f1549b646b4299ab72f2201bb3b615c",
     "DocData/routes.json": "4eb78ecdc66e32dec0fc93341ef22d725ce9f7b532c6208b8616cfd3f28802c8",

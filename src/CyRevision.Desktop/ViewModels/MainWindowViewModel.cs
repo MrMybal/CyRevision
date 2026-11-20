@@ -2104,6 +2104,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             // Detach immediately, including cached sessions. Never expose A's engine as B's.
             CancelAiSdkTurn();AiSdkMessages.Clear();AiSdkAllowWrite=false;AiSdkAllowStage=false;AiSdkAllowCommit=false;AiSdkAllowNetwork=false;AiSdkRemoteEnabled=false;OnPropertyChanged(nameof(CanSendAiSdk));
             AiSdkAllowNavigation=false;AiSdkAllowPublication=false;AiSdkAllowDestructive=false;AiSdkAllowServices=false;AiSdkAllowAdministration=false;AiSdkAllowBuilds=false;
+            LoadAiSdkAccessProfile();
             if (_syncEngineProjectId != value?.Id)
                 _syncShutdownTask = Task.WhenAll(_syncShutdownTask, StopSyncCoreAsync(updateUi: false));
             _projectLoadCancellation?.Dispose();

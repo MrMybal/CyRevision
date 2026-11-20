@@ -43,3 +43,29 @@ for updates to check again, or Help > View available update to reopen the offer.
 Checks also work without a project and during repository operations; network
 failures do not prevent startup. The release request times out after 20 seconds.
 Downloading and closing the application still require explicit confirmation.
+
+## Shared assistant, CLI and MCP runtime
+
+CyMCPSDK 0.7.1 is pinned at `34d4bcae126bc83d1a2925b5047dac36e3d09d92`
+in `cymcp.lock.json`. The application builds Core, Platform, Http, MCP and AI
+from the vendored source snapshot, not an SDK download or precompiled bridge.
+To refresh that snapshot from a local SDK checkout, use
+`./scripts/vendor-cymcp.ps1 -Source ../CyMCPSDK -Revision FULL_COMMIT -Update`.
+The script refuses modified vendored files; if the checkout is unavailable it
+uses the authenticated Git remote. `scripts/verify-cymcp-snapshot.py` verifies
+the pinned files before building with `scripts/build-cymcp.ps1` (Windows) or
+`scripts/build-cymcp.sh` (Linux/macOS on their target platform).
+
+Free is the default local MCP profile; the running UI displays its
+`http://127.0.0.1:PORT/mcp` address. Free accepts that URL alone and uses the SDK's
+`LocalAccessProfile::free`, tokenless loopback HTTP and `Policy::allow_all()`
+registry. Argument validation and project/mode checks are unchanged.
+Local controlled, Token only and Protected remain selectable. Choices are
+persisted per project. A profile change blocks the old registry until SDK
+restart or Start local MCP applies it. The CLI also accepts `--instance URL`
+and `--access-profile free|local-controlled|token-only|protected`; token profiles
+require a private descriptor or `--token` when attaching by URL.
+
+Run `python scripts/test_cymcp_access_profiles.py` against the development
+output in `artifacts/cymcp-access` for real desktop read/write, authentication,
+CLI and local-fixture chat checks. No GitHub workflow is needed.

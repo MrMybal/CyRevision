@@ -23,7 +23,9 @@ public sealed class RevisionAutomationEngine
     public string PrivateData=>_privateData;
     public AutomationPermissions Permissions {get;}
     public IReadOnlyList<AutomationOperation> Operations=>_operations;
-    public object Catalogue=>_operations.Select(operation=>new{operation.Name,operation.Description,operation.InputSchema,operation.OutputSchema,operation.ReadOnly,capabilities=operation.RequiredCapabilities.ToString(),confirmation=operation.ConfirmationRequired||!operation.ReadOnly});
+    public object Catalogue=>_operations.Select(operation=>new{operation.Name,
+        description=operation.Description+(Permissions.ControlOperations?"":" Local access profile: "+Permissions.AccessProfile.Id()+"; no operation grant or confirmation is required. Argument and business validation still apply."),
+        operation.InputSchema,operation.OutputSchema,operation.ReadOnly,capabilities=operation.RequiredCapabilities.ToString(),confirmation=Permissions.ControlOperations&&(operation.ConfirmationRequired||!operation.ReadOnly)});
     public event Action<string>? Changed;
 
     public RevisionAutomationEngine(string root,string privateData,AutomationPermissions permissions,IGitRepositoryService? git=null,string? backupStore=null,Guid? projectId=null)
@@ -90,18 +92,20 @@ public sealed class RevisionAutomationEngine
     }
     public bool IsAllowed(string name)
     {
-        if(Permissions.Blocked||!Permissions.Read||!Permissions.ScopeValid())return false;
+        if(Permissions.Blocked||!Permissions.ScopeValid()||(Permissions.ControlOperations&&!Permissions.Read))return false;
         if(name.StartsWith("git.",StringComparison.Ordinal)&&!Permissions.GitEnabled()||name.StartsWith("backup.",StringComparison.Ordinal)&&!Permissions.BackupEnabled())return false;
         if(name is "resources.read" or "resources.grep")return true;
         var op=_operations.FirstOrDefault(value=>value.Name==name);if(op is null)return false;
-        return (op.ReadOnly||Permissions.Write)&&(!op.Network||Permissions.Network)&&(!op.Stage||Permissions.Stage)&&(!op.Commit||Permissions.Commit)&&
-            (Permissions.Capabilities&op.RequiredCapabilities)==op.RequiredCapabilities&&(op.Available?.Invoke()??true);
+        return (op.Available?.Invoke()??true)&&(!Permissions.ControlOperations||
+            (op.ReadOnly||Permissions.Write)&&(!op.Network||Permissions.Network)&&(!op.Stage||Permissions.Stage)&&(!op.Commit||Permissions.Commit)&&
+            (Permissions.Capabilities&op.RequiredCapabilities)==op.RequiredCapabilities);
     }
-    public bool CanCallRemote(string name,bool readOnly)=>Permissions.RemoteTools&&!Permissions.Blocked&&Permissions.ScopeValid()&&Permissions.RemoteAllowed(name)&&Permissions.Read&&(readOnly||Permissions.Write);
+    public bool CanCallRemote(string name,bool readOnly)=>!Permissions.Blocked&&Permissions.ScopeValid()&&Permissions.RemoteAllowed(name)&&
+        (!Permissions.ControlOperations||Permissions.RemoteTools&&Permissions.Read&&(readOnly||Permissions.Write));
     public async Task ConfirmRemoteAsync(string name,JsonElement arguments,bool readOnly,CancellationToken token)
     {
         if(!CanCallRemote(name,readOnly))throw new AutomationException("AccessDenied","External tools are blocked by the host policy.");
-        if(!await Permissions.ConfirmAsync(name,arguments,token).ConfigureAwait(false))throw new AutomationException("ConfirmationRequired","External tool invocation requires explicit host approval.");
+        if(Permissions.ControlOperations&&!await Permissions.ConfirmAsync(name,arguments,token).ConfigureAwait(false))throw new AutomationException("ConfirmationRequired","External tool invocation requires explicit host approval.");
         if(!CanCallRemote(name,readOnly))throw new AutomationException("AccessDenied","External tool permissions changed before execution.");
     }
     public async Task<object> ExecuteAsync(string name,JsonElement arguments,CancellationToken token)
@@ -110,7 +114,7 @@ public sealed class RevisionAutomationEngine
         var operation=_operations.First(value=>value.Name==name);
         bool serialized=!operation.ReadOnly||operation.ConfirmationRequired;
         if(serialized){
-            if(!await Permissions.ConfirmAsync(name,arguments,token).ConfigureAwait(false))throw new AutomationException("ConfirmationRequired","Confirm this exact operation in the host, or use --confirm for a direct CLI invocation.");
+            if(Permissions.ControlOperations&&!await Permissions.ConfirmAsync(name,arguments,token).ConfigureAwait(false))throw new AutomationException("ConfirmationRequired","Confirm this exact operation in the host, or use --confirm for a direct CLI invocation.");
             if(!IsAllowed(name))throw new AutomationException("AccessDenied","The host permissions changed before execution.");
             if(!await _writes.WaitAsync(0,token).ConfigureAwait(false))throw new AutomationException("Busy","Another automation write is active for this project.");
         }
@@ -145,7 +149,7 @@ public sealed class RevisionAutomationEngine
     {
         int offset=Number(args,"offset",0),limit=Number(args,"limit",100);
         switch(name){
-            case "project.info":return new{root=Root,name=Path.GetFileName(Root),sdkVersion="0.7.0",sdkRevision="791d4d7d7680213b282ec8529d248a10f8494d77",operations=_operations.Count};
+            case "project.info":return new{root=Root,name=Path.GetFileName(Root),sdkVersion="0.7.1",sdkRevision="34d4bcae126bc83d1a2925b5047dac36e3d09d92",accessProfile=Permissions.AccessProfile.Id(),operations=_operations.Count};
             case "project.refresh":return new{refreshed=true};
             case "git.tools":return await _git.GetToolAvailabilityAsync(token);
             case "git.status":{var status=await _git.GetDetailedStatusAsync(Root,token);return new{status.CurrentBranch,status.AheadBy,status.BehindBy,changes=Paginate(status.Changes,args)};}

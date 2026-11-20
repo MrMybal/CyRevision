@@ -59,7 +59,7 @@ public sealed partial class NativeModelAdapter(MainWindowViewModel model,string?
     internal IList? AutomationList(string name)=>TryList(name);
     internal void AutomationSelect(string source,object item)
     {
-        if(DesktopAutomationCatalog.Network(NativeWorkspaceCatalog.All.First(view=>view.Tables.Contains(source,StringComparer.Ordinal)).Id,"selection")&&!model.AiSdkAllowNetwork)
+        if(model.AiSdkControlsOperations&&DesktopAutomationCatalog.Network(NativeWorkspaceCatalog.All.First(view=>view.Tables.Contains(source,StringComparer.Ordinal)).Id,"selection")&&!model.AiSdkAllowNetwork)
             throw new CyRevision.Automation.AutomationException("AccessDenied","Selecting this row can load remote details; enable network access in the host first.");
         var list=TryList(source)??throw new ArgumentException("Unavailable table.");int index=list.IndexOf(item);
         if(index<0)throw new InvalidOperationException("The row changed.");

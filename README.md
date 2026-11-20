@@ -14,8 +14,8 @@
     </td>
     <td width="300" align="right" valign="top">
       <p><sub>Application license</sub><br><a href="LICENSE"><strong>AGPL-3.0</strong></a></p>
-      <p><sub>Version</sub><br><a href="docs/release-0.1.35.md"><strong>0.1.35</strong></a><br><strong>ALPHA</strong></p>
-      <p><a href="https://github.com/MrMybal/CyRevision/releases/tag/v0.1.35"><strong>Download CyRevision</strong></a><br><sub>Windows x64 · Linux x64 / ARM64<br>macOS Intel / Apple Silicon</sub></p>
+      <p><sub>Version</sub><br><a href="docs/release-0.1.36.md"><strong>0.1.36</strong></a><br><strong>ALPHA</strong></p>
+      <p><a href="https://github.com/MrMybal/CyRevision/releases/tag/v0.1.36"><strong>Download CyRevision</strong></a><br><sub>Windows x64 · Linux x64 / ARM64<br>macOS Intel / Apple Silicon</sub></p>
     </td>
   </tr>
 </table>
@@ -24,13 +24,13 @@
 
 A revision-control, synchronization and backup client for large projects, especially Unreal Engine productions. Work with local Git and Git LFS, review changes and pull requests, or enable independent backup and peer-to-peer services when a project needs them. GitHub is optional.
 
-> **ALPHA · 0.1.35**
+> **ALPHA · 0.1.36**
 >
-> Published for testing and feedback; features, interfaces and storage formats can still change. Git workflows are **Beta**; Native V2, Sync, Git + Sync, Lore, Backup and plugins remain **Alpha**. Keep independent backups and test recovery before production use. Read the [version notes and documented limitations](docs/release-0.1.35.md).
+> Published for testing and feedback; features, interfaces and storage formats can still change. Git workflows are **Beta**; Native V2, Sync, Git + Sync, Lore, Backup and plugins remain **Alpha**. Keep independent backups and test recovery before production use. Read the [version notes and documented limitations](docs/release-0.1.36.md).
 
 [![CyRevision Windows V2 with grouped projects, change preparation and a syntax-highlighted C++ comparison](docs/images/workspace-v2.png)](docs/images/workspace-v2.png)
 
-The screenshots show the Windows V2 interface captured in 0.1.32 with the AuroraFlight sample project. The current published version is 0.1.35; Classic Avalonia remains available on Windows, Linux and macOS.
+The screenshots show the Windows V2 interface captured in 0.1.32 with the AuroraFlight sample project. The current published version is 0.1.36; Classic Avalonia remains available on Windows, Linux and macOS.
 
 ## About CyRevision
 
@@ -61,7 +61,7 @@ Text comparisons support unified and side-by-side views. Image comparisons, heat
 - **P2P collaboration:** signed Git exchange, LFS inventories, resumable transfers, role-based peer admission, verification codes and revocation. Git exchange does not synchronize the active `.git` directory.
 - **Backups and optional storage:** deduplicated snapshots, retention and cold-archive copies; safe LFS storage relocation/classification. The optional **Git + CyStore — Alpha** mode captures hydrated LFS data in verified, deduplicated 1–8 MiB chunks without rewriting Git pointers.
 - **Code and assets:** project tree, Ctrl+Shift+F search, file patterns, symbol outline, text preview, selected-line history and engine-independent asset comparisons.
-- **AI and MCP:** streaming CyMCPSDK assistant, CLI companion and authenticated local MCP sharing real operations; 264 reviewed desktop actions with separate grants and exact-target confirmations. Existing Codex CLI, **OpenCode CLI**, API/local-model integrations and project MCP profiles remain available.
+- **AI and MCP:** streaming CyMCPSDK assistant, CLI companion and local MCP with four access profiles sharing real operations; 264 reviewed desktop actions with argument and target validation. Existing Codex CLI, **OpenCode CLI**, API/local-model integrations and project MCP profiles remain available.
 - **Editor and task integrations:** optional Unreal, Unity and Godot companions, project-scoped Perforce `p4` workflows, and Jira Cloud, ClickUp and CyTask links/transitions. Task completion after merge can require confirmation or follow an explicitly configured policy.
 - **Network and agents:** optional WireGuard tunnels, Unreal Swarm tools, VPN file inbox/folder sharing, allowlisted remote-build recipes and an integrated or autonomous Discord agent. A separate optional Linux server provides an API, scheduling and a protected web dashboard.
 - **Workspace and help:** detachable views, resizable/reorderable tables where offered, themes, keyboard preferences, tray residence and launch-at-login controls. English is the default; French is included.
@@ -72,15 +72,15 @@ Text comparisons support unified and side-by-side views. Image comparisons, heat
 
 ## Installation
 
-[Download release 0.1.35 Alpha](https://github.com/MrMybal/CyRevision/releases/tag/v0.1.35). Desktop packages are self-contained: installing the .NET SDK or runtime is not required to run them.
+[Download release 0.1.36 Alpha](https://github.com/MrMybal/CyRevision/releases/tag/v0.1.36). Desktop packages are self-contained: installing the .NET SDK or runtime is not required to run them.
 
-**Package versions:** Windows x64 is **0.1.35**. Linux/macOS downloads below remain **0.1.34**; new packages for those platforms are not included in this release.
+**Package versions:** Windows x64 is **0.1.36**. Linux/macOS downloads below remain **0.1.34**; new packages for those platforms are not included in this release.
 
 Use the [0.1.34 checksums](https://github.com/MrMybal/CyRevision/releases/download/v0.1.34/SHA256SUMS.txt) for the older Linux/macOS packages.
 
 | Platform | Published packages | Start |
 | --- | --- | --- |
-| Windows 10/11 x64 · Direct3D 11 for V2 | [Installer](https://github.com/MrMybal/CyRevision/releases/download/v0.1.35/CyRevision-Setup-0.1.35-win-x64.exe) · [Portable ZIP](https://github.com/MrMybal/CyRevision/releases/download/v0.1.35/CyRevision-0.1.35-win-x64-portable.zip) | `CyRevision.Native.exe`; `CyRevision.Desktop.exe` or the Classic shortcut for Avalonia. |
+| Windows 10/11 x64 · Direct3D 11 for V2 | [Installer](https://github.com/MrMybal/CyRevision/releases/download/v0.1.36/CyRevision-Setup-0.1.36-win-x64.exe) · [Portable ZIP](https://github.com/MrMybal/CyRevision/releases/download/v0.1.36/CyRevision-0.1.36-win-x64-portable.zip) | `CyRevision.Native.exe`; `CyRevision.Desktop.exe` or the Classic shortcut for Avalonia. |
 | Debian/Ubuntu Linux x64 | [DEB](https://github.com/MrMybal/CyRevision/releases/download/v0.1.34/CyRevision-0.1.34-linux-x64.deb) · [Portable archive](https://github.com/MrMybal/CyRevision/releases/download/v0.1.34/CyRevision-0.1.34-linux-x64-portable.tar.gz) | `cyrevision` after package installation; `CyRevision.Desktop` from the archive. |
 | Debian/Ubuntu Linux ARM64 | [DEB](https://github.com/MrMybal/CyRevision/releases/download/v0.1.34/CyRevision-0.1.34-linux-arm64.deb) · [Portable archive](https://github.com/MrMybal/CyRevision/releases/download/v0.1.34/CyRevision-0.1.34-linux-arm64-portable.tar.gz) | Classic Avalonia. |
 | macOS 11+ · Intel | [DMG](https://github.com/MrMybal/CyRevision/releases/download/v0.1.34/CyRevision-0.1.34-osx-x64.dmg) · [App ZIP](https://github.com/MrMybal/CyRevision/releases/download/v0.1.34/CyRevision-0.1.34-osx-x64-portable.zip) | Copy `CyRevision.app` to Applications. |
@@ -90,7 +90,7 @@ Use the [0.1.34 checksums](https://github.com/MrMybal/CyRevision/releases/downlo
 2. Install/extract the application and open an existing repository, clone a repository, create one or add a folder.
 3. Select a project mode and enable only the services it needs.
 
-Git and Git LFS are required for Git workflows. Syncthing is used only by Sync modes; official runtimes are included in release packages. WireGuard and provider/editor tools are needed only when their integrations are enabled. See the [published SHA-256 sums](https://github.com/MrMybal/CyRevision/releases/download/v0.1.35/SHA256SUMS.txt) and [package/trust limitations](docs/release-0.1.35.md#documented-limitations). Use **Help > Check for updates** for later releases.
+Git and Git LFS are required for Git workflows. Syncthing is used only by Sync modes; official runtimes are included in release packages. WireGuard and provider/editor tools are needed only when their integrations are enabled. See the [published SHA-256 sums](https://github.com/MrMybal/CyRevision/releases/download/v0.1.36/SHA256SUMS.txt) and [package/trust limitations](docs/release-0.1.36.md#documented-limitations). Use **Help > Check for updates** for later releases.
 
 ### Documentation
 
@@ -98,15 +98,15 @@ Read the [English online manual](https://mrmybal.github.io/CyRevision/manual/Doc
 
 The application also includes the same reader **offline**: open **Help > User guide** or press **F1** for the active workspace. Keep the whole `Documentation` folder, including `DocData`, or open `Documentation/Documentation.html` from the extracted package. No server, CDN, Node.js runtime or connection is required for local reading. `DocAI.md` remains a separate agent-oriented sidecar, outside human navigation.
 
-The 0.1.35 package contains the updated 87-page-per-language manual. The online reader is deployed independently and may reflect the preceding documentation release.
+The 0.1.36 package contains the updated 87-page-per-language manual. The online reader is deployed independently and may reflect the preceding documentation release.
 
 ### Assistant, CLI and MCP
 
 Enable **AI Workspace** in Plugins, then open **Code & Assets > AI Assistant > CyMCPSDK**.
 
 1. List providers and models, choose their exact IDs, configure the provider and connect.
-2. Enable only the required grants: editing, staging, commits, network, navigation, publication, destructive operations, services, administration or builds.
-3. Review each mutation's target and arguments in the global confirmation window. Stale targets are rejected; an assistant cannot grant itself access.
+2. Choose the local access profile: **Free** is the default, allowing exposed operations without a token or extra confirmation. Local controlled, Token only and Protected remain available; explicit choices are preserved.
+3. In controlled profiles, enable the required grants and approve exact mutations in the global confirmation window. Argument validation and stale-target checks apply in every profile. Start local MCP displays its loopback URL directly.
 
 The live registry covers PR/CI, Sync/VPN, task links, plugins, builds, preferences and other existing workflows. Git/LFS, files, search and backups are also available headlessly. Credential enrollment, arbitrary shell execution and executable installation remain host-owned. Open the **CyMCPSDK assistant, CLI and MCP** chapter in the bundled manual for setup and operational limits.
 
@@ -162,19 +162,19 @@ Open `CyRevision.sln` in Rider or another .NET IDE. Avalonia's IDE tools are opt
 
 Start `artifacts/native-v2/CyRevision.Native.exe`. The pinned CyUI source and Dear ImGui are included under `native/vendor`; the script downloads a checksum-pinned nlohmann/json header. Only the selected native modules are linked; audio, CEF and the demo are disabled.
 
-CyMCPSDK 0.7.0 is source-pinned in `native/cymcp.lock.json`; the scripts compile Core, Platform, Http, MCP and AI and package their license notices. CMake 3.24+ and C++20 are required. Linux/macOS additionally need libcurl development files; run `bash scripts/build-cymcp.sh` before a direct Classic/CLI development build. The full platform packaging scripts perform this step automatically.
+CyMCPSDK 0.7.1 is source-pinned in `native/cymcp.lock.json`; the scripts compile Core, Platform, Http, MCP and AI and package their license notices. CMake 3.24+ and C++20 are required. Linux/macOS additionally need libcurl development files; run `bash scripts/build-cymcp.sh` before a direct Classic/CLI development build. The full platform packaging scripts perform this step automatically.
 
 ### Build packages and the manual
 
 ~~~powershell
-./scripts/build-release.cmd 0.1.35
+./scripts/build-release.cmd 0.1.36
 ~~~
 
 ~~~sh
-bash scripts/build-linux-release.sh 0.1.35 linux-x64
-bash scripts/build-linux-release.sh 0.1.35 linux-arm64
-bash scripts/build-macos-release.sh 0.1.35 osx-x64
-bash scripts/build-macos-release.sh 0.1.35 osx-arm64
+bash scripts/build-linux-release.sh 0.1.36 linux-x64
+bash scripts/build-linux-release.sh 0.1.36 linux-arm64
+bash scripts/build-macos-release.sh 0.1.36 osx-x64
+bash scripts/build-macos-release.sh 0.1.36 osx-arm64
 ~~~
 
 Run platform packaging on its matching operating system. [Release build instructions](docs/releasing.md) describe the installers and CI. `scripts/publish.ps1` and `scripts/publish.sh` provide development publish commands.
@@ -204,7 +204,7 @@ node --test .CyDocBuild/test/*.test.mjs
 | [Inter](https://github.com/rsms/inter) | [SIL OFL-1.1](https://github.com/rsms/inter/blob/master/LICENSE.txt) | Typeface supplied through Avalonia.Fonts.Inter; distinct from the framework license. |
 | [SkiaSharp](https://github.com/mono/SkiaSharp) | [MIT](https://github.com/mono/SkiaSharp/blob/main/LICENSE.txt), with Skia/native component notices | Image/asset comparisons and Classic graphics. Preserve native component notices. |
 | [CyUI 1.2](https://github.com/MrMybal/CyUI) | [MIT](native/vendor/CyUI/LICENSE) | Modular Windows V2 interface; source access currently requires permission. |
-| [CyMCPSDK 0.7.0](https://github.com/MrMybal/CyMCPSDK) | [MIT](native/vendor/CyMCPSDK/LICENSE) | Source-pinned Core, Platform, Http, MCP and AI modules; assistant/CLI/MCP registry. |
+| [CyMCPSDK 0.7.1](https://github.com/MrMybal/CyMCPSDK) | [MIT](native/vendor/CyMCPSDK/LICENSE) | Source-pinned Core, Platform, Http, MCP and AI modules; assistant/CLI/MCP registry. |
 | [Dear ImGui](https://github.com/ocornut/imgui) | [MIT](native/vendor/CyUI/third_party/imgui/LICENSE.txt); [stb MIT / public-domain choice](native/vendor/CyUI/THIRD_PARTY_NOTICES.md) | Native UI and embedded stb components. |
 | [ImGuiColorTextEdit](https://github.com/goossens/ImGuiColorTextEdit) | [MIT](native/vendor/CyUI/third_party/texteditor/LICENSE) | Optional editor component selected by V2's CodeEditor module. |
 | [Lexilla / Scintilla / SciTE](https://github.com/ScintillaOrg/lexilla) | [HPND-style permissive terms](native/vendor/CyUI/third_party/lexilla/License.txt) | Syntax engines, public headers and keyword data; no Scintilla UI is linked. |
@@ -241,7 +241,7 @@ This is an index of main components, not a replacement for complete transitive n
 ## References and links
 
 - [Application showcase](https://mrmybal.github.io/CyRevision/) · [English manual](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/en/getting-started) · [Manuel en français](https://mrmybal.github.io/CyRevision/manual/Documentation.html#/fr/getting-started).
-- [Release 0.1.35](https://github.com/MrMybal/CyRevision/releases/tag/v0.1.35) · [SHA-256 sums](https://github.com/MrMybal/CyRevision/releases/download/v0.1.35/SHA256SUMS.txt) · [Issue tracker](https://github.com/MrMybal/CyRevision/issues).
+- [Release 0.1.36](https://github.com/MrMybal/CyRevision/releases/tag/v0.1.36) · [SHA-256 sums](https://github.com/MrMybal/CyRevision/releases/download/v0.1.36/SHA256SUMS.txt) · [Issue tracker](https://github.com/MrMybal/CyRevision/issues).
 - [Architecture](docs/architecture.md) · [Security model](docs/security.md) · [Server/API](docs/server-api.md) · [Linux server setup](docs/linux-server.md).
 - [Unreal companion](plugins/CyRevisionUnreal/README.md) · [Unity companion](plugins/CyRevisionUnity/README.md) · [Godot companion](plugins/CyRevisionGodot/README.md).
-- [Release packaging](docs/releasing.md) · [English version notes](docs/release-0.1.35.md) · [Notes de version en français](docs/release-0.1.35.fr.md).
+- [Release packaging](docs/releasing.md) · [English version notes](docs/release-0.1.36.md) · [Notes de version en français](docs/release-0.1.36.fr.md).

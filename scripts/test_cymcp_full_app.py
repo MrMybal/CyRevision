@@ -126,6 +126,7 @@ def run(app,cli):
             row=next(row for row in plugins if row["values"].get("Id")=="cyrevision.ai")
             if not row["values"]["IsEnabled"]:
                 request("select",source="Plugins",selection="SelectedPlugin",index=row["index"],key=row["key"]);request("invoke",action="EnableSelectedPluginAsync")
+            host_set("AiSdkLocalAccessProfile","Protected")
             for prop in ["Write","Stage","Commit","Network","Navigation","Publication","Destructive","Services","Administration","Builds"]: host_set("AiSdkAllow"+prop,True)
             request("invoke",action="StartAiSdkMcpServerAsync");snapshot=state();endpoint=snapshot["fields"]["AiSdkInstanceFile"]["value"]
             assert endpoint,snapshot["fields"]["AiSdkStatus"]

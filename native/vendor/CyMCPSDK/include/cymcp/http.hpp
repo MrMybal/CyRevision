@@ -31,13 +31,46 @@ struct Url {
     bool loopback = false;
 };
 Url parse_url(const std::string&);
+// Host authentication returns an opaque identity from the transport Bearer credential.
+using TokenAuthenticator = std::function<std::string(std::string_view)>;
 using JsonEndpoint = std::function<Json(const Json&, const CallContext&)>;
+
+// Presets for hosts that expose their operations over loopback HTTP. The host applies
+// control_operations when it constructs its Registry policy. The transport only authenticates.
+enum class LocalAccessProfile { free, local_controlled, token_only, protected_access };
+struct LocalAccessSettings {
+    bool require_token = true;
+    bool control_operations = true;
+    constexpr bool operator==(const LocalAccessSettings&) const noexcept = default;
+};
+constexpr LocalAccessSettings local_access_settings(LocalAccessProfile profile) noexcept {
+    switch (profile) {
+    case LocalAccessProfile::free:
+        return {false, false};
+    case LocalAccessProfile::local_controlled:
+        return {false, true};
+    case LocalAccessProfile::token_only:
+        return {true, false};
+    case LocalAccessProfile::protected_access:
+        return {true, true};
+    }
+    return {};
+}
+
 class LocalHttpServer {
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
   public:
-    LocalHttpServer(std::string token, JsonEndpoint endpoint, std::size_t workers = 4);
+    // Explicit opt-in. Every local caller shares an unauthenticated identity on /mcp and /v1.
+    struct UnauthenticatedLoopback {};
+
+    LocalHttpServer(std::string token, JsonEndpoint endpoint, std::size_t workers = 4,
+                    std::size_t max_request_bytes = provider_message_limit);
+    LocalHttpServer(TokenAuthenticator, JsonEndpoint endpoint, std::size_t workers = 4,
+                    std::size_t max_request_bytes = provider_message_limit);
+    LocalHttpServer(UnauthenticatedLoopback, JsonEndpoint endpoint, std::size_t workers = 4,
+                    std::size_t max_request_bytes = provider_message_limit);
     ~LocalHttpServer();
     LocalHttpServer(const LocalHttpServer&) = delete;
     LocalHttpServer& operator=(const LocalHttpServer&) = delete;

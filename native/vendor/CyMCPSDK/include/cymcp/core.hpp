@@ -30,7 +30,7 @@ std::string path_utf8(const std::filesystem::path&);
 // conventional authorization fields, removes control characters and bounds the UTF-8 text.
 std::string redact_error_message(std::string_view message,
                                  const std::vector<std::string>& secrets = {});
-inline constexpr const char* version = "0.7.0";
+inline constexpr const char* version = "0.7.1";
 class Error : public std::runtime_error {
   public:
     std::string code;
@@ -97,12 +97,18 @@ class Policy {
 // Versioned, fail-closed JSON Schema profile; unsupported validation keywords are rejected.
 void check_schema(const Json& schema);
 void validate(const Json& instance, const Json& schema);
+struct SchemaValidation {
+    // An explicit host dialect. Both callbacks are required; default validation is unchanged.
+    std::function<void(const Json&)> check;
+    std::function<void(const Json&, const Json&)> validate;
+};
 struct Operation {
     std::string name, description;
     Json input_schema = {{"type", "object"}, {"additionalProperties", false}};
     Json output_schema = Json::object();
     bool read_only = false;
     std::function<Json(const Json&, const CallContext&)> handler;
+    std::shared_ptr<const SchemaValidation> schema_validation;
 };
 class Registry {
     mutable std::mutex mutex_;

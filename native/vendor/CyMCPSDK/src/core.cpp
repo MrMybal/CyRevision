@@ -102,8 +102,15 @@ void Registry::register_operation(Operation op, bool replace) {
     if (op.name.empty() || op.name.size() > 128 ||
         !std::regex_match(op.name, std::regex("[A-Za-z0-9_.-]+")) || !op.handler)
         throw Error("InvalidOperation", "Operation needs a portable name and handler");
-    check_schema(op.input_schema);
-    check_schema(op.output_schema);
+    if (op.schema_validation) {
+        if (!op.schema_validation->check || !op.schema_validation->validate)
+            throw Error("InvalidSchema", "Host validator requires check and validate callbacks");
+        op.schema_validation->check(op.input_schema);
+        op.schema_validation->check(op.output_schema);
+    } else {
+        check_schema(op.input_schema);
+        check_schema(op.output_schema);
+    }
     if (!op.input_schema.is_object() || !op.output_schema.is_object())
         throw Error("InvalidSchema", "Operation schemas must be objects");
     if (op.input_schema.value("type", Json()) != "object" ||
@@ -203,11 +210,17 @@ Json Registry::invoke(const std::string& name, const Json& args, const CallConte
             throw Error("UnknownOperation", "Unknown operation");
         if (!policy_.allows(context, name, args))
             throw Error("AccessDenied", "Operation denied by host policy");
-        validate(args, op->input_schema);
+        if (op->schema_validation)
+            op->schema_validation->validate(args, op->input_schema);
+        else
+            validate(args, op->input_schema);
         auto result = op->handler(args, context);
         context.cancellation.check();
         try {
-            validate(result, op->output_schema);
+            if (op->schema_validation)
+                op->schema_validation->validate(result, op->output_schema);
+            else
+                validate(result, op->output_schema);
         } catch (const Error&) {
             throw Error("InvalidOutput", "Handler output does not match its schema");
         }

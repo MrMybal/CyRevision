@@ -267,7 +267,9 @@ bool Workspace::toolsView() {
                     commands({{"ListAiSdkProvidersAsync","List providers"},{"DiscoverAiSdkProvidersAsync","Detect providers"},{"ListAiSdkModelsAsync","List models"},{"ConnectAiSdkAsync","Connect"},{"DisconnectAiSdkAsync","Disconnect"}});cyui::endSection();
                 }
                 if(cyui::beginSection("Permissions",true)) {
-                    cyui::textDim("Read-only by default. Every write requires confirmation of its exact arguments.");
+                    field("AiSdkLocalAccessProfile","Local MCP access profile");
+                    summary("AiSdkAccessStatus");
+                    cyui::textDim("Operation grants apply only to Local controlled and Protected profiles.");
                     fields({{"AiSdkAllowWrite","Allow file changes"},{"AiSdkAllowStage","Allow staging"},{"AiSdkAllowCommit","Allow commits"},{"AiSdkAllowNetwork","Allow network operations"},{"AiSdkRemoteEnabled","Allow external tools"}});
                     fields({{"AiSdkAllowNavigation","Allow UI navigation and selection"},{"AiSdkAllowPublication","Allow publication and sending"},{"AiSdkAllowDestructive","Allow destructive operations"},{"AiSdkAllowServices","Allow service control"},{"AiSdkAllowAdministration","Allow project and app administration"},{"AiSdkAllowBuilds","Allow builds and agent execution"}});
                     cyui::endSection();
@@ -282,7 +284,7 @@ bool Workspace::toolsView() {
                     fields({{"AiSdkMemoryBytes","Memory result quota (bytes)"},{"AiSdkDiskBytes","Disk result quota (bytes)"},{"AiSdkChunkBytes","Resource chunk size (bytes)"}});
                     command("ShowAiSdkMetricsAsync","Show SDK metrics");
                     commands({{"RestartAiSdkAsync","Restart SDK runtime"},{"StartAiSdkMcpServerAsync","Start local MCP"},{"StopAiSdkMcpServerAsync","Stop local MCP"},{"ConnectAiSdkRemoteToolsAsync","Connect selected MCP profile"},{"ListAiSdkOperationsAsync","List operations"}});
-                    summary("AiSdkInstanceFile");textPanel("AiSdkCatalogue","##sdkCatalogue");cyui::endSection();
+                    summary("AiSdkMcpUrl");summary("AiSdkInstanceFile");textPanel("AiSdkCatalogue","##sdkCatalogue");cyui::endSection();
                 }
                 ImGui::EndChild();ImGui::TableNextColumn();scrollBegin("##sdkConversation");
                 transcriptPanel("AiSdkMessages","##sdkTranscript",ImVec2(0,std::max(cyui::dp(120),ImGui::GetContentRegionAvail().y-cyui::dp(flag("AiSdkHasApproval")?320.0f:150.0f))));

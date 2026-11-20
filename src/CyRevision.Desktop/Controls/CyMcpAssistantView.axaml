@@ -11,7 +11,10 @@
     <TextBox PlaceholderText="CLI executable" Text="{Binding AiSdkExecutable}" />
     <TextBox PlaceholderText="API key environment name" Text="{Binding AiSdkApiKeyEnvironment}" />
     <WrapPanel><Button Content="List providers" Tag="ListAiSdkProvidersAsync" Click="Run" /><Button Content="Detect providers" Tag="DiscoverAiSdkProvidersAsync" Click="Run" /><Button Content="List models" Tag="ListAiSdkModelsAsync" Click="Run" /><Button Content="Connect" Tag="ConnectAiSdkAsync" Click="Run" /><Button Content="Disconnect" Tag="DisconnectAiSdkAsync" Click="Run" /></WrapPanel>
-    <TextBlock Text="Permissions · Every write requires confirmation" TextWrapping="Wrap" FontWeight="Bold" />
+    <TextBlock Text="Local MCP access profile" FontWeight="Bold" />
+    <ComboBox ItemsSource="{Binding AiSdkAccessProfiles}" SelectedItem="{Binding AiSdkLocalAccessProfile}" />
+    <TextBlock Text="{Binding AiSdkAccessStatus}" TextWrapping="Wrap" />
+    <TextBlock Text="Permissions · Controlled profiles only" TextWrapping="Wrap" FontWeight="Bold" />
     <CheckBox Content="Allow file changes" IsChecked="{Binding AiSdkAllowWrite}" />
     <CheckBox Content="Allow staging" IsChecked="{Binding AiSdkAllowStage}" />
     <CheckBox Content="Allow commits" IsChecked="{Binding AiSdkAllowCommit}" />
@@ -44,6 +47,7 @@
       <Button Content="Restart SDK runtime" Tag="RestartAiSdkAsync" Click="Run" />
       <Button Content="Start local MCP" Tag="StartAiSdkMcpServerAsync" Click="Run" /><Button Content="Stop local MCP" Tag="StopAiSdkMcpServerAsync" Click="Run" />
       <TextBlock Text="{Binding AiSdkInstanceFile}" TextWrapping="Wrap" />
+      <TextBox Text="{Binding AiSdkMcpUrl}" IsReadOnly="True" />
       <Button Content="Connect selected MCP profile" Tag="ConnectAiSdkRemoteToolsAsync" Click="Run" />
       <Button Content="List operations" Tag="ListAiSdkOperationsAsync" Click="Run" />
       <TextBox Text="{Binding AiSdkCatalogue}" IsReadOnly="True" AcceptsReturn="True" MaxHeight="280" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto" />

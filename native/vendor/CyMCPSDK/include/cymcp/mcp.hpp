@@ -15,6 +15,8 @@ struct McpServerOptions {
     std::shared_ptr<ChangeFeed> changes; // optional shared journal wired to the host registries
     std::shared_ptr<PerformanceMonitor> performance;
     std::size_t max_subscriptions = 2, max_resource_subscriptions = 64;
+    // Optional host presentation; structuredContent retains the original operation result.
+    std::function<std::string(const Json&)> result_text;
 };
 struct McpClientOptions {
     std::size_t cache_entries = 256, cache_bytes = 16 * 1024 * 1024;
@@ -55,7 +57,8 @@ class McpClient {
   public:
     explicit McpClient(ProcessOptions, McpClientOptions = {});
 #ifdef CYMCP_HAS_HTTP
-    McpClient(std::string url, std::string token, McpClientOptions = {});
+    // An empty token omits the HTTP Authorization header.
+    McpClient(std::string url, std::string token = {}, McpClientOptions = {});
 #endif
     ~McpClient();
     void connect(const Cancellation& = {});

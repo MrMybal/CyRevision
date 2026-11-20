@@ -11,7 +11,7 @@ public sealed class AutomationPermissionTests
     {
         string root=Path.Combine(Path.GetTempPath(),"cyrevision-automation-permissions",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
         try{
-            int calls=0,confirmations=0;var permissions=new AutomationPermissions();var engine=new RevisionAutomationEngine(root,Path.Combine(root,"private"),permissions);
+            int calls=0,confirmations=0;var permissions=new AutomationPermissions{AccessProfile=LocalMcpAccessProfile.Protected};var engine=new RevisionAutomationEngine(root,Path.Combine(root,"private"),permissions);
             engine.Add(new("test.navigate","Test navigation",new JsonObject(),new JsonObject(),true,Handler:(_,_)=>{calls++;return Task.FromResult<object>(new{});},RequiredCapabilities:AutomationCapability.Navigation,ConfirmationRequired:true));
             var args=JsonSerializer.SerializeToElement(new{});
             Assert.Equal("AccessDenied",(await Assert.ThrowsAsync<AutomationException>(()=>engine.ExecuteAsync("test.navigate",args,default))).Code);

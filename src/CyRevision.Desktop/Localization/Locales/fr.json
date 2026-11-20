@@ -1,5 +1,11 @@
 {
   "$name": "Français",
+  "Local MCP access profile": "Profil d’accès MCP local",
+  "Free": "Free (libre)",
+  "LocalControlled": "Local contrôlé",
+  "TokenOnly": "Jeton seul",
+  "Protected": "Protégé",
+  "Permissions · Controlled profiles only": "Permissions · Profils contrôlés uniquement",
   "Allow network operations": "Autoriser les opérations réseau",
   "Allow UI navigation and selection": "Autoriser la navigation et la sélection",
   "Allow publication and sending": "Autoriser la publication et les envois",

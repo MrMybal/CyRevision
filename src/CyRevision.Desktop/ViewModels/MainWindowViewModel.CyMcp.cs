@@ -25,8 +25,39 @@ public sealed partial class MainWindowViewModel
     internal void ConfigureAutomationAdapter(CyRevision.Desktop.Native.NativeModelAdapter adapter,Action<string>? navigate=null){_aiSdkUiAdapter=adapter;_aiSdkClassicNavigate=navigate;}
     private System.ComponentModel.PropertyChangedEventHandler? _aiSdkUiChanges;
     private bool _aiSdkBusy, _aiSdkAllowWrite, _aiSdkAllowStage, _aiSdkAllowCommit, _aiSdkAllowNetwork, _aiSdkCompact = true, _aiSdkDiskSpool, _aiSdkMetrics, _aiSdkNotifications, _aiSdkRestore, _aiSdkRemoteEnabled;
-    private string _aiSdkProvider = "ollama", _aiSdkModel = "", _aiSdkEndpoint = "", _aiSdkExecutable = "", _aiSdkKeyEnv = "", _aiSdkPrompt = "", _aiSdkStatus = "CyMCPSDK 0.7.0 · Not connected", _aiSdkCatalogue = "", _aiSdkPending = "", _aiSdkInstanceFile = "", _aiSdkAttachment = "", _aiSdkHistoryId = "main", _aiSdkContextBytes = "0", _aiSdkResultTtl = "300000", _aiSdkCacheTtl = "30000";
-    private bool _aiSdkConnected;
+    private string _aiSdkProvider = "ollama", _aiSdkModel = "", _aiSdkEndpoint = "", _aiSdkExecutable = "", _aiSdkKeyEnv = "", _aiSdkPrompt = "", _aiSdkStatus = "CyMCPSDK 0.7.1 · Not connected", _aiSdkCatalogue = "", _aiSdkPending = "", _aiSdkInstanceFile = "", _aiSdkAttachment = "", _aiSdkHistoryId = "main", _aiSdkContextBytes = "0", _aiSdkResultTtl = "300000", _aiSdkCacheTtl = "30000";
+    private bool _aiSdkConnected, _aiSdkAccessLoadFailed;
+    private LocalMcpAccessProfile _aiSdkLocalAccessProfile;
+    private string _aiSdkMcpUrl = "";
+    public LocalMcpAccessProfile[] AiSdkAccessProfiles => Enum.GetValues<LocalMcpAccessProfile>();
+    public LocalMcpAccessProfile AiSdkLocalAccessProfile
+    {
+        get => _aiSdkLocalAccessProfile;
+        set
+        {
+            if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            if (SelectedProject is not {} project) return;
+            LocalMcpAccessStore.Save(AiSdkAccessSettingsPath(project.Id), value);
+            _aiSdkAccessLoadFailed = false;
+            SetProperty(ref _aiSdkLocalAccessProfile, value);
+            OnPropertyChanged(nameof(AiSdkAccessStatus));
+        }
+    }
+    public bool AiSdkControlsOperations => (_aiSdkEngine?.Permissions.AccessProfile ?? AiSdkLocalAccessProfile).ControlsOperations();
+    public string AiSdkAccessStatus => _aiSdkAccessLoadFailed ? "Invalid local MCP settings; access is blocked." :
+        _aiSdkEngine is {} engine && engine.Permissions.AccessProfile != AiSdkLocalAccessProfile ?
+        "Profile changed; access is blocked until Restart SDK runtime or Start local MCP." :
+        AiSdkLocalAccessProfile.ControlsOperations() ? "Operation grants and exact confirmations apply." :
+        AiSdkLocalAccessProfile.RequiresToken() ? "A token is required; exposed operations need no additional confirmation." :
+        "Free: local processes can call every exposed operation without a token or confirmation.";
+    public string AiSdkMcpUrl { get => _aiSdkMcpUrl; private set => SetProperty(ref _aiSdkMcpUrl, value); }
+    private string AiSdkAccessSettingsPath(Guid project) => Path.Combine(_applicationPaths.DataDirectory, "automation", project.ToString("N"), "local-access.json");
+    private void LoadAiSdkAccessProfile()
+    {
+        try { _aiSdkLocalAccessProfile = SelectedProject is {} project ? LocalMcpAccessStore.LoadOrMigrate(AiSdkAccessSettingsPath(project.Id)) : LocalMcpAccessProfile.Free; _aiSdkAccessLoadFailed = false; }
+        catch (Exception error) { _aiSdkLocalAccessProfile = LocalMcpAccessProfile.Protected; _aiSdkAccessLoadFailed = true; AiSdkStatus = error.Message; }
+        OnPropertyChanged(nameof(AiSdkLocalAccessProfile)); OnPropertyChanged(nameof(AiSdkAccessStatus));
+    }
     private bool _aiSdkNavigation,_aiSdkPublication,_aiSdkDestructive,_aiSdkServices,_aiSdkAdministration,_aiSdkBuilds;
     public bool AiSdkAllowNavigation {get=>_aiSdkNavigation;set{SetProperty(ref _aiSdkNavigation,value);UpdateAiSdkPermissions();}}
     public bool AiSdkAllowPublication {get=>_aiSdkPublication;set{SetProperty(ref _aiSdkPublication,value);UpdateAiSdkPermissions();}}
@@ -76,7 +107,8 @@ public sealed partial class MainWindowViewModel
         var project = SelectedProject ?? throw new InvalidOperationException(_localization.Translate("Select a project first."));
         if (_aiSdkRuntime is not null && _aiSdkProjectId == project.Id) { UpdateAiSdkPermissions(); return _aiSdkRuntime; }
         await ReleaseAiSdkRuntimeAsync(); _aiSdkProjectId = project.Id;
-        var permissions = new AutomationPermissions { ScopeValid = () => SelectedProject?.Id == project.Id && !IsProjectLoading && !AiMcpEmergencyBlocked && IsAiIntegrationEnabled, ConfirmAsync = ConfirmAiSdkAsync };
+        var profile = AiSdkLocalAccessProfile;
+        var permissions = new AutomationPermissions { AccessProfile = profile, ScopeValid = () => !_aiSdkAccessLoadFailed && AiSdkLocalAccessProfile == profile && SelectedProject?.Id == project.Id && !IsProjectLoading && !AiMcpEmergencyBlocked && IsAiIntegrationEnabled, ConfirmAsync = ConfirmAiSdkAsync };
         permissions.RemoteAllowed = name => _aiSdkRemotePolicies.TryGetValue(name, out var check) && check();
         permissions.GitEnabled = () => SelectedProject?.Definition.Features.GitEnabled == true;
         permissions.BackupEnabled = () => SelectedProject?.Definition.Features.BackupEnabled == true;
@@ -92,7 +124,7 @@ public sealed partial class MainWindowViewModel
             try { _aiSdkRuntime.Request(new { command = "invalidate" }); } catch (AutomationException) { /* A concurrent connection failure is shown by its owning operation. */ }
         };
         PropertyChanged += _aiSdkUiChanges;
-        UpdateAiSdkPermissions(); return _aiSdkRuntime;
+        UpdateAiSdkPermissions(); OnPropertyChanged(nameof(AiSdkAccessStatus)); return _aiSdkRuntime;
     }
     private static JsonObject AutomationObjectSchema() => new() { ["type"] = "object", ["additionalProperties"] = false };
     private static JsonObject AutomationOutputSchema() => new() { ["type"] = "object", ["properties"] = new JsonObject { ["value"] = new JsonObject() }, ["required"] = new JsonArray("value") };
@@ -132,9 +164,10 @@ public sealed partial class MainWindowViewModel
         bool directTools = AiSdkProviderId is "codex" or "openai" or "anthropic" or "openrouter" or "ollama" or "openai-compatible" or "llama.cpp" or "lmstudio";
         if (!directTools && AiSdkInstanceFile.Length > 0)
         {
-            using var descriptor = JsonDocument.Parse(File.ReadAllText(AiSdkInstanceFile)); string url = descriptor.RootElement.GetProperty("url").GetString()!; string token = descriptor.RootElement.GetProperty("token").GetString()!;
-            if (AiSdkProviderId == "claude-code") settings["mcp_servers"] = new JsonObject { ["cyrevision"] = new JsonObject { ["type"] = "http", ["url"] = url + "/mcp", ["headers"] = new JsonObject { ["Authorization"] = "Bearer " + token } } };
-            else settings["mcp_servers"] = new JsonArray(new JsonObject { ["type"] = "http", ["name"] = "cyrevision", ["url"] = url + "/mcp", ["headers"] = new JsonArray(new JsonObject { ["name"] = "Authorization", ["value"] = "Bearer " + token }) });
+            using var descriptor = JsonDocument.Parse(File.ReadAllText(AiSdkInstanceFile)); string url = descriptor.RootElement.GetProperty("url").GetString()!; string token = descriptor.RootElement.TryGetProperty("token", out var secret) ? secret.GetString() ?? "" : "";
+            var server = new JsonObject { ["type"] = "http", ["url"] = url + "/mcp" };
+            if (AiSdkProviderId == "claude-code") { if (token.Length > 0) server["headers"] = new JsonObject { ["Authorization"] = "Bearer " + token }; settings["mcp_servers"] = new JsonObject { ["cyrevision"] = server }; }
+            else { server["name"] = "cyrevision"; if (token.Length > 0) server["headers"] = new JsonArray(new JsonObject { ["name"] = "Authorization", ["value"] = "Bearer " + token }); settings["mcp_servers"] = new JsonArray(server); }
         }
         return new JsonObject { ["command"] = command, ["provider"] = AiSdkProviderId, ["model"] = AiSdkModel, ["executable"] = AiSdkExecutable, ["cwd"] = _aiSdkEngine!.Root, ["apiKey"] = string.IsNullOrWhiteSpace(AiSdkApiKeyEnvironment) ? "" : Environment.GetEnvironmentVariable(AiSdkApiKeyEnvironment) ?? "", ["attachTools"] = directTools, ["contextBytes"] = SdkInteger(AiSdkContextBytes), ["settings"] = settings };
     }
@@ -196,27 +229,29 @@ public sealed partial class MainWindowViewModel
     public async Task StartAiSdkMcpServerAsync() => await SdkAction(async runtime =>
     {
         if (AiMcpEmergencyBlocked) throw new AutomationException("AccessDenied", "MCP is emergency-blocked.");
-        if (AiSdkInstanceFile.Length > 0) return; string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        if (_aiSdkAccessLoadFailed) throw new AutomationException("AccessDenied", "Repair the local MCP settings before starting the server.");
+        if (_aiSdkEngine!.Permissions.AccessProfile != AiSdkLocalAccessProfile) { await ReleaseAiSdkRuntimeAsync(); runtime = await EnsureAiSdkAsync(); }
+        if (AiSdkInstanceFile.Length > 0) return; string token = AiSdkLocalAccessProfile.RequiresToken() ? Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant() : "";
         var server = await runtime.RequestAsync(new { command = "serve", token }); string url = "http://127.0.0.1:" + server.GetProperty("port").GetInt32();
-        string file = Path.Combine(AiSdkDataDirectory, "instance.json"); await runtime.RequestAsync(new { command = "private-write", path = file, text = JsonSerializer.Serialize(new { url, token, pid = Environment.ProcessId, project = _aiSdkEngine!.Root }, CyMcpRuntime.JsonOptions) });
-        AiSdkInstanceFile = file; AiSdkStatus = url + "/mcp · " + _localization.Translate("Authenticated local MCP is running.");
+        string file = Path.Combine(AiSdkDataDirectory, "instance.json"); await runtime.RequestAsync(new { command = "private-write", path = file, text = JsonSerializer.Serialize(new { url, token, accessProfile = AiSdkLocalAccessProfile.Id(), pid = Environment.ProcessId, project = _aiSdkEngine!.Root }, CyMcpRuntime.JsonOptions) });
+        AiSdkInstanceFile = file; AiSdkMcpUrl = url + "/mcp"; AiSdkStatus = AiSdkMcpUrl + " · " + AiSdkLocalAccessProfile.Id();
     });
-    public async Task StopAiSdkMcpServerAsync() => await SdkAction(async runtime => { await runtime.RequestAsync(new { command = "stop-server" }); if (File.Exists(AiSdkInstanceFile)) File.Delete(AiSdkInstanceFile); AiSdkInstanceFile = ""; });
+    public async Task StopAiSdkMcpServerAsync() => await SdkAction(async runtime => { await runtime.RequestAsync(new { command = "stop-server" }); if (File.Exists(AiSdkInstanceFile)) File.Delete(AiSdkInstanceFile); AiSdkInstanceFile = ""; AiSdkMcpUrl = ""; });
     public async Task ConnectAiSdkRemoteToolsAsync() => await SdkAction(async runtime =>
     {
         UpdateAiSdkPermissions(); var selected = SelectedAiMcpServer ?? throw new InvalidOperationException("Select a configured MCP server first.");
-        if (!AiMcpEnabled || AiMcpEmergencyBlocked || !selected.Enabled || !AiSdkRemoteEnabled) throw new AutomationException("AccessDenied", "Enable the project MCP policy, the selected server, and remote tools explicitly.");
+        if (!AiMcpEnabled || AiMcpEmergencyBlocked || !selected.Enabled || (AiSdkControlsOperations && !AiSdkRemoteEnabled)) throw new AutomationException("AccessDenied", "Enable the project MCP policy, the selected server, and remote tools explicitly.");
         var allowed = selected.EnabledTools.Split(['\r', '\n', ','], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Except(selected.DisabledTools.Split(['\r', '\n', ','], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries), StringComparer.Ordinal).ToArray();
         if (allowed.Length == 0) throw new AutomationException("AccessDenied", "Select explicit allowed tool names; wildcard forwarding is not enabled.");
         JsonObject request = new() { ["command"] = "remote-connect", ["id"] = selected.Id, ["allowedTools"] = new JsonArray(allowed.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()), ["cacheTtlMs"] = SdkInteger(AiSdkCacheTtlMs) };
         request["startupTimeoutMs"] = Math.Clamp(SdkInteger(selected.StartupTimeoutSeconds), 1, 300) * 1000; request["toolTimeoutMs"] = Math.Clamp(SdkInteger(selected.ToolTimeoutSeconds), 1, 3600) * 1000;
-        if ((selected.IsHttp || selected.RequiresNetwork) && !AiSdkAllowNetwork) throw new AutomationException("AccessDenied", "External network tools require network permission.");
-        if (selected.Capability == AiMcpCapability.ReadWrite && !AiSdkAllowWrite) throw new AutomationException("AccessDenied", "The configured server requires write permission.");
+        if (AiSdkControlsOperations && (selected.IsHttp || selected.RequiresNetwork) && !AiSdkAllowNetwork) throw new AutomationException("AccessDenied", "External network tools require network permission.");
+        if (AiSdkControlsOperations && selected.Capability == AiMcpCapability.ReadWrite && !AiSdkAllowWrite) throw new AutomationException("AccessDenied", "The configured server requires write permission.");
         if (selected.IsHttp) { if (selected.HttpAuth != AiMcpHttpAuth.None) throw new AutomationException("Unsupported", "This SDK transport needs a configured bearer token; existing OAuth integrations remain available in the legacy mode."); request["url"] = selected.Url; request["token"] = string.IsNullOrWhiteSpace(selected.BearerTokenEnvironmentVariable) ? "" : Environment.GetEnvironmentVariable(selected.BearerTokenEnvironmentVariable) ?? ""; }
         else { request["executable"] = selected.Command; request["arguments"] = new JsonArray(selected.Arguments.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()); request["cwd"] = string.IsNullOrWhiteSpace(selected.WorkingDirectory) ? _aiSdkEngine!.Root : selected.WorkingDirectory; }
         if (!string.IsNullOrWhiteSpace(selected.HttpHeaders) || !string.IsNullOrWhiteSpace(selected.EnvironmentHttpHeaders)) throw new AutomationException("Unsupported", "Custom HTTP headers are not supported by this SDK adapter; use the existing MCP integration or a bearer profile.");
         if (!selected.IsHttp) { var environment = new JsonObject(); foreach (var line in selected.EnvironmentVariables.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)) { int equals = line.IndexOf('='); if (equals <= 0) throw new ArgumentException("Environment overrides use NAME=value."); environment[line[..equals].Trim()] = line[(equals + 1)..]; } foreach (var name in selected.ForwardEnvironmentVariables.Split(['\r', '\n', ','], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)) environment[name] = Environment.GetEnvironmentVariable(name) ?? ""; request["environment"] = environment; }
-        var registered = await runtime.ConnectRemoteAsync(request); foreach (var tool in registered.EnumerateArray()) { string name = tool.GetProperty("sourceName").GetString()!; bool readOnly = tool.GetProperty("readOnly").GetBoolean(); _aiSdkRemotePolicies[tool.GetProperty("name").GetString()!] = () => AiMcpEnabled && selected.Enabled && AiMcpServers.Contains(selected) && (!(selected.IsHttp || selected.RequiresNetwork) || AiSdkAllowNetwork) && (selected.Capability == AiMcpCapability.ReadOnly ? readOnly : AiSdkAllowWrite) && selected.EnabledTools.Split(['\r', '\n', ','], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Contains(name, StringComparer.Ordinal) && !selected.DisabledTools.Split(['\r', '\n', ','], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Contains(name, StringComparer.Ordinal); }
+        var registered = await runtime.ConnectRemoteAsync(request); foreach (var tool in registered.EnumerateArray()) { string name = tool.GetProperty("sourceName").GetString()!; bool readOnly = tool.GetProperty("readOnly").GetBoolean(); _aiSdkRemotePolicies[tool.GetProperty("name").GetString()!] = () => AiMcpEnabled && selected.Enabled && AiMcpServers.Contains(selected) && (!AiSdkControlsOperations || !(selected.IsHttp || selected.RequiresNetwork) || AiSdkAllowNetwork) && (selected.Capability == AiMcpCapability.ReadOnly ? readOnly : !AiSdkControlsOperations || AiSdkAllowWrite) && selected.EnabledTools.Split(['\r', '\n', ','], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Contains(name, StringComparer.Ordinal) && !selected.DisabledTools.Split(['\r', '\n', ','], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Contains(name, StringComparer.Ordinal); }
         AiSdkCatalogue = registered.GetRawText();
     });
     private async Task SdkAction(Func<CyMcpRuntime, Task> action)
@@ -238,6 +273,6 @@ public sealed partial class MainWindowViewModel
         if (_aiSdkUiChanges is not null) { PropertyChanged -= _aiSdkUiChanges; _aiSdkUiChanges = null; }
         if (_aiSdkRuntime is not null) { await Task.Run(_aiSdkRuntime.Dispose); _aiSdkRuntime = null; }
         _aiSdkRemotePolicies.Clear();
-        if (File.Exists(AiSdkInstanceFile)) File.Delete(AiSdkInstanceFile); AiSdkInstanceFile = ""; AiSdkConnected = false; _aiSdkEngine = null;
+        if (File.Exists(AiSdkInstanceFile)) File.Delete(AiSdkInstanceFile); AiSdkInstanceFile = ""; AiSdkMcpUrl = ""; AiSdkConnected = false; _aiSdkEngine = null;
     }
 }

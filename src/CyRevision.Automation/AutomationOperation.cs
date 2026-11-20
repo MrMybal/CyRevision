@@ -16,6 +16,8 @@ public sealed record AutomationOperation(string Name,string Description,JsonObje
 
 public sealed class AutomationPermissions
 {
+    public LocalMcpAccessProfile AccessProfile { get; set; } = LocalMcpAccessProfile.Free;
+    public bool ControlOperations => AccessProfile.ControlsOperations();
     public bool Read {get;set;}=true;
     public bool Write {get;set;}
     public bool Network {get;set;}

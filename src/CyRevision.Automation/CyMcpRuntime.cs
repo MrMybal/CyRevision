@@ -43,6 +43,9 @@ public sealed class CyMcpRuntime : IDisposable
         _engine=engine;_hostCall=CallHost;_hostFree=Marshal.FreeCoTaskMem;
         _hostEvent=(_,data)=>{try{using var value=JsonDocument.Parse(Marshal.PtrToStringUTF8(data)!);Event?.Invoke(new(value.RootElement.GetProperty("type").GetString()!,value.RootElement.GetProperty("data").Clone()));}catch{/* Never unwind a managed subscriber into native code. */}};
         var configuration=JsonSerializer.SerializeToNode(options??new{},JsonOptions)!.AsObject();
+        engine.Permissions.AccessProfile = configuration["accessProfile"] is {} selectedProfile
+            ? LocalMcpAccess.Parse(selectedProfile.GetValue<string>()) : engine.Permissions.AccessProfile;
+        configuration["accessProfile"] = engine.Permissions.AccessProfile.Id();
         configuration["privateDirectory"]=engine.PrivateData;
         configuration["spoolDirectory"]??=Path.Combine(engine.PrivateData,"results");
         if(configuration["performance"]?.GetValue<bool>()==true)configuration["performanceFile"]??=Path.Combine(engine.PrivateData,"performance.jsonl");

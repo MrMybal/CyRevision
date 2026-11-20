@@ -49,7 +49,8 @@ struct LocalHttpServer::Impl {
     httplib::Server server;
     std::thread thread;
     std::mutex lifecycle;
-    std::string token;
+    TokenAuthenticator authenticate;
+    std::size_t max_request_bytes;
     JsonEndpoint endpoint;
     Cancellation shutdown;
     struct LegacySession {
@@ -103,15 +104,14 @@ struct LocalHttpServer::Impl {
         }
         return session;
     }
-    Impl(std::string key, JsonEndpoint fn, std::size_t workers)
-        : token(std::move(key)), endpoint(std::move(fn)) {
-        if (token.size() < 32 || !endpoint || workers < 1 || workers > 64)
-            throw Error("InvalidOptions",
-                        "Server requires a strong token, endpoint and worker limit");
+    Impl(TokenAuthenticator auth, JsonEndpoint fn, std::size_t workers, std::size_t bytes)
+        : authenticate(std::move(auth)), max_request_bytes(bytes), endpoint(std::move(fn)) {
+        if (!endpoint || workers < 1 || workers > 64 || !bytes || bytes > provider_message_limit)
+            throw Error("InvalidOptions", "Server requires an endpoint and valid limits");
         server.new_task_queue = [workers] {
             return new httplib::ThreadPool(workers, workers, 128, 30);
         };
-        server.set_payload_max_length(provider_message_limit);
+        server.set_payload_max_length(max_request_bytes);
         server.set_read_timeout(10, 0);
         server.set_write_timeout(10, 0);
         server.set_keep_alive_max_count(100);
@@ -126,10 +126,21 @@ struct LocalHttpServer::Impl {
                 res.status = 403;
                 return;
             }
-            if (!constant_time_equal(req.get_header_value("Authorization"), "Bearer " + token)) {
-                res.status = 401;
-                res.set_header("WWW-Authenticate", "Bearer");
-                return;
+            std::string principal = "unauthenticated-local";
+            if (authenticate) {
+                try {
+                    const auto header = req.get_header_value("Authorization");
+                    if (req.get_header_value_count("Authorization") != 1 ||
+                        header.rfind("Bearer ", 0) != 0 || header.size() <= 7)
+                        throw Error("AuthenticationRequired", "Bearer credential required");
+                    principal = authenticate(std::string_view(header).substr(7));
+                    if (principal.empty())
+                        throw Error("AuthenticationRequired", "Empty principal");
+                } catch (...) {
+                    res.status = 401;
+                    res.set_header("WWW-Authenticate", "Bearer");
+                    return;
+                }
             }
             if (req.method == "GET") {
                 // This transport has no standalone SSE stream, including on legacy sessions.
@@ -148,7 +159,7 @@ struct LocalHttpServer::Impl {
                 return;
             }
             try {
-                auto value = parse_json(req.body, provider_message_limit);
+                auto value = parse_json(req.body, max_request_bytes);
                 if (req.path == "/mcp" && !valid_mcp_headers(req, value)) {
                     res.status = 400;
                     Json error = {
@@ -159,7 +170,7 @@ struct LocalHttpServer::Impl {
                     return;
                 }
                 CallContext context;
-                context.principal = "authenticated-local";
+                context.principal = principal;
                 // Modern HTTP uses a separate channel per POST. In legacy mode a cancellation
                 // arrives in another POST belonging to the same initialized session.
                 static std::atomic<std::uint64_t> channel{0};
@@ -257,8 +268,26 @@ struct LocalHttpServer::Impl {
         });
     }
 };
-LocalHttpServer::LocalHttpServer(std::string token, JsonEndpoint endpoint, std::size_t workers)
-    : impl_(std::make_unique<Impl>(std::move(token), std::move(endpoint), workers)) {}
+LocalHttpServer::LocalHttpServer(std::string token, JsonEndpoint endpoint, std::size_t workers,
+                                 std::size_t bytes) {
+    if (token.size() < 32)
+        throw Error("InvalidOptions", "Server requires a strong token");
+    auto auth = [token = std::move(token)](std::string_view supplied) {
+        if (!constant_time_equal(std::string(supplied), token))
+            throw Error("AuthenticationRequired", "Invalid credential");
+        return std::string("authenticated-local");
+    };
+    impl_ = std::make_unique<Impl>(std::move(auth), std::move(endpoint), workers, bytes);
+}
+LocalHttpServer::LocalHttpServer(TokenAuthenticator auth, JsonEndpoint endpoint,
+                                 std::size_t workers, std::size_t bytes) {
+    if (!auth)
+        throw Error("InvalidOptions", "Server requires an authentication callback");
+    impl_ = std::make_unique<Impl>(std::move(auth), std::move(endpoint), workers, bytes);
+}
+LocalHttpServer::LocalHttpServer(UnauthenticatedLoopback, JsonEndpoint endpoint,
+                                 std::size_t workers, std::size_t bytes)
+    : impl_(std::make_unique<Impl>(TokenAuthenticator{}, std::move(endpoint), workers, bytes)) {}
 LocalHttpServer::~LocalHttpServer() {
     stop();
 }
